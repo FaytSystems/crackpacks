@@ -1,0 +1,12 @@
+{
+  "name": "Crack Packs",
+  "short_name": "Crack Packs",
+  "description": "Collector storefront, live rips, and Pokémon TCG release radar.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#050615",
+  "theme_color": "#07091b",
+  "icons": [
+    { "src": "assets/images/favicon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}
