@@ -1,6 +1,8 @@
 window.CRACKPACKS_CONFIG = {
   whatnotUrl: "https://www.whatnot.com/user/YOUR_USERNAME",
   storeUrl: "shop.html",
+  cardApiUrl: "https://api.crackpacks.com/cards",
+  cardSearchPageSize: 24,
   email: "hello@crackpacks.com",
   domain: "https://crackpacks.com",
   updated: "July 15, 2026",

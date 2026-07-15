@@ -70,6 +70,41 @@
       </div>
     </section>
 
+    <section class="section catalog-section" id="card-database">
+      <div class="container">
+        <div class="section-heading reveal">
+          <div>
+            <p class="eyebrow">Live card database</p>
+            <h2>Search the entire <span>card catalog.</span></h2>
+            <p>Explore card names, sets, rarities, images, and market-reference data. Catalog results are informational and do not mean a card is currently in Crack Packs inventory.</p>
+          </div>
+        </div>
+
+        <form class="catalog-search-panel holo-panel reveal" data-card-catalog-form>
+          <label class="catalog-search-field">
+            <span>Card name</span>
+            <input type="search" data-card-catalog-input placeholder="Try Charizard, Pikachu ex, Umbreon…" minlength="2" autocomplete="off" required>
+          </label>
+          <label class="catalog-order-field">
+            <span>Sort results</span>
+            <select data-card-catalog-order>
+              <option value="-set.releaseDate">Newest sets first</option>
+              <option value="set.releaseDate">Oldest sets first</option>
+              <option value="name">Card name A–Z</option>
+              <option value="-name">Card name Z–A</option>
+            </select>
+          </label>
+          <button class="btn btn-primary catalog-search-button" type="submit">Search cards</button>
+        </form>
+
+        <div class="catalog-status" data-card-catalog-status role="status" aria-live="polite">Search by card name to explore the Pokémon TCG catalog.</div>
+        <div class="catalog-grid" data-card-catalog-results></div>
+        <div class="empty-state" data-card-catalog-empty hidden><strong>No catalog matches found.</strong><span>Try a shorter card name or different spelling.</span></div>
+        <div class="catalog-pagination"><button class="btn btn-glass" type="button" data-card-catalog-more hidden>Load more cards</button></div>
+        <p class="catalog-source">Card catalog data is provided through the independent Pokémon TCG API. Pokémon and related marks belong to their respective owners.</p>
+      </div>
+    </section>
+
     <section class="section process-section">
       <div class="container">
         <div class="section-heading reveal"><div><p class="eyebrow">How it works</p><h2>Shop it your <span>way.</span></h2></div></div>

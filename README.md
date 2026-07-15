@@ -1,149 +1,182 @@
 # CrackPacks.com
 
-Static storefront and release-radar website for **Crack Packs**.
+Static storefront, release radar, and secure Pokémon card-catalog search for **Crack Packs**.
 
 Repository: `FaytSystems/crackpacks`
+
+## Architecture
+
+- GitHub Pages serves the storefront.
+- The browser calls `https://api.crackpacks.com/cards`.
+- A Cloudflare Worker receives the search request.
+- The Worker reads the encrypted Cloudflare secret named `POKEMON_TCG_API_KEY`.
+- The Worker sends that secret to Pokémon TCG API in the `X-Api-Key` header.
+- The API key is never stored in the public GitHub repository or browser JavaScript.
 
 ## Included
 
 - `index.html` — homepage
-- `shop.html` — searchable/filterable shop
+- `shop.html` — inventory plus live card-catalog search
 - `releases.html` — release calendar with live countdowns
 - `404.html` — custom error page
 - `assets/css/styles.css` — complete responsive visual system
-- `assets/js/config.js` — Whatnot URL, email, site status, update date
-- `assets/js/data.js` — products, prices, stock labels, images, links, and releases
-- `assets/js/app.js` — rendering, filters, slideshow, countdowns, mobile navigation
+- `assets/js/config.js` — Whatnot URL, public Worker endpoint, email, and site settings
+- `assets/js/data.js` — store inventory and release data
+- `assets/js/app.js` — storefront rendering, filtering, catalog search, slideshows, and navigation
+- `cloudflare-worker/src/index.js` — secure Pokémon TCG API proxy
+- `cloudflare-worker/wrangler.jsonc` — Worker configuration and allowed public origins
+- `cloudflare-worker/package.json` — Worker development commands
+- `cloudflare-worker/deploy-worker.ps1` — PowerShell deployment helper
 - `.github/workflows/pages.yml` — GitHub Pages deployment
-- `deploy-to-github.ps1` — initializes, commits, and pushes the full site to `FaytSystems/crackpacks`
-- `CNAME` — custom domain mapping for `crackpacks.com`
-- `.nojekyll` — disables Jekyll processing
+- `deploy-to-github.ps1` — site repository deployment helper
 
-## Required edits before launch
+## Cloudflare secret
 
-### 1. Add the real Whatnot profile
+Create exactly this secret name:
 
-Open:
+```text
+POKEMON_TCG_API_KEY
+```
+
+The Worker accesses it with:
+
+```js
+env.POKEMON_TCG_API_KEY
+```
+
+Never add the API key to `wrangler.jsonc`, `config.js`, a GitHub secret that is copied into the static site, or any committed `.env` file.
+
+## Deploy the Cloudflare Worker
+
+From PowerShell:
+
+```powershell
+Set-Location "D:\crackpacks\crackpacks-github-ready\cloudflare-worker"
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+.\deploy-worker.ps1 -SetSecret
+```
+
+When Wrangler prompts for the secret value, paste only the Pokémon TCG API key and press Enter.
+
+The equivalent manual commands are:
+
+```powershell
+Set-Location "D:\crackpacks\crackpacks-github-ready\cloudflare-worker"
+npm install
+npx wrangler login
+npx wrangler deploy
+npx wrangler secret put POKEMON_TCG_API_KEY
+```
+
+## Cloudflare Dashboard alternative
+
+1. Open **Cloudflare Dashboard → Workers & Pages**.
+2. Open the Worker named **crackpacks-card-search**.
+3. Open **Settings → Variables and Secrets**.
+4. Add a new encrypted secret.
+5. Name it `POKEMON_TCG_API_KEY`.
+6. Paste the API key as the value and save.
+7. Redeploy the Worker if Cloudflare requests it.
+
+## Add the API custom domain
+
+In the Worker dashboard:
+
+1. Open **Settings → Domains & Routes**.
+2. Add the Custom Domain `api.crackpacks.com`.
+3. Wait for Cloudflare to activate the hostname.
+4. Open `https://api.crackpacks.com/health`.
+
+Expected response:
+
+```json
+{
+  "ok": true,
+  "service": "crackpacks-card-search",
+  "apiKeyConfigured": true
+}
+```
+
+The storefront already uses this endpoint in:
 
 `assets/js/config.js`
 
-Replace:
+```js
+cardApiUrl: "https://api.crackpacks.com/cards"
+```
+
+If you use the generated `workers.dev` URL instead, replace `cardApiUrl` with that URL plus `/cards`.
+
+## Local Worker development
+
+Copy the example secret file without committing it:
+
+```powershell
+Set-Location "D:\crackpacks\crackpacks-github-ready\cloudflare-worker"
+Copy-Item ".dev.vars.example" ".dev.vars"
+notepad ".dev.vars"
+```
+
+Place the API key after the equals sign:
+
+```text
+POKEMON_TCG_API_KEY=YOUR_REAL_KEY
+```
+
+Then run:
+
+```powershell
+npm install
+npm run dev
+```
+
+`.dev.vars` is ignored by Git.
+
+## Push the updated website to GitHub
+
+```powershell
+Set-Location "D:\crackpacks\crackpacks-github-ready"
+git add .
+git commit -m "Add secure Pokémon card database search"
+git push origin main
+```
+
+## Required storefront edits
+
+### Whatnot profile
+
+Open `assets/js/config.js` and replace:
 
 ```js
 whatnotUrl: "https://www.whatnot.com/user/YOUR_USERNAME"
 ```
 
-with the actual profile URL.
+Also replace every `YOUR_USERNAME` placeholder in `assets/js/data.js`.
 
-Also replace every `YOUR_USERNAME` placeholder in:
+### Store inventory
 
-`assets/js/data.js`
+Open `assets/js/data.js` and update each product's name, price, stock, description, image, and checkout URL.
 
-A repository-wide search for `YOUR_USERNAME` will find all placeholders.
+### Product images
 
-### 2. Replace preview inventory
+Use photos taken by Crack Packs, distributor-authorized assets, or images with a valid license. The live catalog uses images returned by Pokémon TCG API; continue to comply with the API's terms and attribution requirements.
 
-Open:
+## Test URLs
 
-`assets/js/data.js`
+Worker health:
 
-Edit each product's:
-
-- `name`
-- `category`
-- `priceLabel`
-- `stockLabel`
-- `description`
-- `image`
-- `url`
-- `featured`
-- `enabled`
-
-Product links may point to Whatnot, Shopify, Stripe Payment Links, Square, WooCommerce, or another checkout page.
-
-### 3. Use legally cleared product images
-
-The included banners and product visuals are original abstract Crack Packs artwork. They do not depict Pokémon characters or official packaging.
-
-For real product photos, use only:
-
-- Photos taken by Crack Packs
-- Images supplied by an authorized distributor under its usage terms
-- Images for which Crack Packs has written permission or a valid license
-
-Do not assume that an image being visible on Pokémon, retailer, marketplace, or search-engine pages grants permission to copy it into the site.
-
-### 4. Connect the newsletter form
-
-The form is visual only. Connect it to Mailchimp, Klaviyo, ConvertKit, Brevo, or another provider before collecting addresses.
-
-## Deploy to GitHub Pages
-
-The included workflow deploys the repository whenever `main` is updated.
-
-Fastest method from PowerShell after extracting the project:
-
-```powershell
-cd C:\path\to\crackpacks
-.\deploy-to-github.ps1
+```text
+https://api.crackpacks.com/health
 ```
 
-Manual method:
+Example card search:
 
-```powershell
-cd C:\path\to\crackpacks
-
-git init
-git branch -M main
-git remote add origin https://github.com/FaytSystems/crackpacks.git
-git add .
-git commit -m "Launch Crack Packs storefront"
-git push -u origin main
+```text
+https://api.crackpacks.com/cards?term=charizard&page=1&pageSize=24&orderBy=-set.releaseDate
 ```
 
-In GitHub:
+Website shop:
 
-1. Open **Settings → Pages**.
-2. Under **Build and deployment**, choose **GitHub Actions**.
-3. Let the included `Deploy Crack Packs to GitHub Pages` workflow finish.
-4. Confirm the custom domain is `crackpacks.com`.
-
-## Domain DNS
-
-For an apex domain on GitHub Pages, GitHub normally documents these `A` records:
-
-- `185.199.108.153`
-- `185.199.109.153`
-- `185.199.110.153`
-- `185.199.111.153`
-
-For `www`, use a `CNAME` pointing to:
-
-`faytsystems.github.io`
-
-Recheck GitHub's current Pages documentation before changing DNS because hosting requirements can change.
-
-## Preview locally
-
-```powershell
-cd C:\path\to\crackpacks
-python -m http.server 8080
+```text
+https://crackpacks.com/shop.html#card-database
 ```
-
-Open:
-
-`http://localhost:8080`
-
-## Release data currently seeded
-
-The site includes verified information available on July 15, 2026 for:
-
-- Mega Evolution—Pitch Black Booster Box — July 17, 2026
-- Mega Evolution—Pitch Black Elite Trainer Box — July 17, 2026
-- Mega Evolution—Pitch Black Booster Bundle — July 17, 2026
-- Mega Evolution—Pitch Black Three-Pack Booster — July 17, 2026
-- Mega Evolution—Phantasmal Flames Elite Trainer Box — released November 14, 2025
-
-Source links are stored with each release in `assets/js/data.js`.
-
-Release dates and availability can change. Recheck every source before publishing or advertising a launch.

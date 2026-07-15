@@ -1,0 +1,11 @@
+# Cloudflare Worker local files
+cloudflare-worker/node_modules/
+cloudflare-worker/.dev.vars
+cloudflare-worker/.env
+cloudflare-worker/.env.*
+cloudflare-worker/.wrangler/
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/

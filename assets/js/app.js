@@ -134,6 +134,176 @@
     button?.click();
   }
 
+
+  function cardMarketPrice(card) {
+    const priceGroups = card?.tcgplayer?.prices || {};
+    const priority = [
+      "normal",
+      "holofoil",
+      "reverseHolofoil",
+      "unlimitedHolofoil",
+      "unlimited",
+      "firstEditionHolofoil",
+      "firstEditionNormal"
+    ];
+
+    for (const groupName of priority) {
+      const market = Number(priceGroups[groupName]?.market);
+      if (Number.isFinite(market) && market > 0) return market;
+    }
+
+    for (const group of Object.values(priceGroups)) {
+      const market = Number(group?.market);
+      if (Number.isFinite(market) && market > 0) return market;
+    }
+
+    return null;
+  }
+
+  function catalogCard(card) {
+    const image = card?.images?.small || card?.images?.large || "assets/images/product-cosmic.svg";
+    const largeImage = card?.images?.large || image;
+    const setName = card?.set?.name || "Unknown set";
+    const number = card?.number ? `#${card.number}` : "Number unavailable";
+    const rarity = card?.rarity || "Rarity unavailable";
+    const types = Array.isArray(card?.types) && card.types.length ? card.types.join(" · ") : "Trading Card";
+    const price = cardMarketPrice(card);
+    const priceLabel = price === null ? "Market price unavailable" : `Market reference $${price.toFixed(2)}`;
+    const pricingUrl = card?.tcgplayer?.url || largeImage;
+
+    return `
+      <article class="catalog-card holo-panel reveal is-visible">
+        <a class="catalog-card-media" href="${escapeHtml(largeImage)}" target="_blank" rel="noopener noreferrer" aria-label="Open large image of ${escapeHtml(card?.name || "card")}">
+          <img src="${escapeHtml(image)}" alt="${escapeHtml(card?.name || "Pokémon trading card")}" loading="lazy">
+          <span class="holo-sheen" aria-hidden="true"></span>
+        </a>
+        <div class="catalog-card-body">
+          <p class="card-kicker">${escapeHtml(types)}</p>
+          <h3>${escapeHtml(card?.name || "Unknown card")}</h3>
+          <p class="catalog-set">${escapeHtml(setName)} <span>${escapeHtml(number)}</span></p>
+          <p class="catalog-rarity">${escapeHtml(rarity)}</p>
+          <div class="catalog-card-footer">
+            <strong>${escapeHtml(priceLabel)}</strong>
+            <a class="text-link" href="${escapeHtml(pricingUrl)}" target="_blank" rel="noopener noreferrer">Card details ↗</a>
+          </div>
+        </div>
+      </article>`;
+  }
+
+  const catalogForm = document.querySelector("[data-card-catalog-form]");
+  if (catalogForm) {
+    const catalogInput = catalogForm.querySelector("[data-card-catalog-input]");
+    const catalogOrder = catalogForm.querySelector("[data-card-catalog-order]");
+    const catalogResults = document.querySelector("[data-card-catalog-results]");
+    const catalogStatus = document.querySelector("[data-card-catalog-status]");
+    const catalogEmpty = document.querySelector("[data-card-catalog-empty]");
+    const catalogLoadMore = document.querySelector("[data-card-catalog-more]");
+    const catalogSubmit = catalogForm.querySelector('button[type="submit"]');
+    const cardApiUrl = String(config.cardApiUrl || "").trim();
+    const pageSize = Math.min(Math.max(Number(config.cardSearchPageSize) || 24, 1), 48);
+
+    let activeSearch = "";
+    let activeOrder = "-set.releaseDate";
+    let activePage = 1;
+    let totalCount = 0;
+    let renderedCount = 0;
+    let requestController = null;
+
+    function setCatalogLoading(loading) {
+      catalogForm.setAttribute("aria-busy", String(loading));
+      if (catalogSubmit) catalogSubmit.disabled = loading;
+      if (catalogLoadMore) catalogLoadMore.disabled = loading;
+      catalogResults?.classList.toggle("is-loading", loading);
+    }
+
+    function setCatalogStatus(message, state = "") {
+      if (!catalogStatus) return;
+      catalogStatus.textContent = message;
+      catalogStatus.dataset.state = state;
+    }
+
+    function buildCatalogUrl(term, page) {
+      const url = new URL(cardApiUrl);
+      url.searchParams.set("term", term);
+      url.searchParams.set("page", String(page));
+      url.searchParams.set("pageSize", String(pageSize));
+      url.searchParams.set("orderBy", activeOrder);
+      return url.toString();
+    }
+
+    async function searchCatalog({ append = false } = {}) {
+      if (!cardApiUrl) {
+        setCatalogStatus("Card search is not configured yet. Add cardApiUrl in assets/js/config.js.", "error");
+        return;
+      }
+
+      if (activeSearch.length < 2) {
+        setCatalogStatus("Enter at least two characters, such as Charizard, Pikachu ex, or Umbreon.", "error");
+        catalogInput?.focus();
+        return;
+      }
+
+      requestController?.abort();
+      requestController = new AbortController();
+      setCatalogLoading(true);
+      setCatalogStatus(append ? "Loading more cards…" : `Searching the card catalog for “${activeSearch}”…`, "loading");
+      if (!append && catalogEmpty) catalogEmpty.hidden = true;
+
+      try {
+        const response = await fetch(buildCatalogUrl(activeSearch, activePage), {
+          headers: { Accept: "application/json" },
+          signal: requestController.signal
+        });
+        const payload = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(payload?.error || `Card search failed with status ${response.status}.`);
+        }
+
+        const cards = Array.isArray(payload?.data) ? payload.data : [];
+        totalCount = Number(payload?.totalCount) || cards.length;
+        renderedCount = append ? renderedCount + cards.length : cards.length;
+
+        if (catalogResults) {
+          const markup = cards.map(catalogCard).join("");
+          if (append) catalogResults.insertAdjacentHTML("beforeend", markup);
+          else catalogResults.innerHTML = markup;
+        }
+
+        const noResults = renderedCount === 0;
+        if (catalogEmpty) catalogEmpty.hidden = !noResults;
+        if (catalogLoadMore) catalogLoadMore.hidden = noResults || renderedCount >= totalCount || cards.length < pageSize;
+
+        if (noResults) {
+          setCatalogStatus(`No cards found for “${activeSearch}”. Try a shorter name or different spelling.`, "empty");
+        } else {
+          setCatalogStatus(`Showing ${renderedCount.toLocaleString()} of ${totalCount.toLocaleString()} matching cards.`, "success");
+        }
+      } catch (error) {
+        if (error?.name === "AbortError") return;
+        if (!append && catalogResults) catalogResults.innerHTML = "";
+        if (catalogLoadMore) catalogLoadMore.hidden = true;
+        setCatalogStatus(error?.message || "Card search is temporarily unavailable.", "error");
+      } finally {
+        setCatalogLoading(false);
+      }
+    }
+
+    catalogForm.addEventListener("submit", event => {
+      event.preventDefault();
+      activeSearch = catalogInput?.value.trim() || "";
+      activeOrder = catalogOrder?.value || "-set.releaseDate";
+      activePage = 1;
+      renderedCount = 0;
+      searchCatalog();
+    });
+
+    catalogLoadMore?.addEventListener("click", () => {
+      activePage += 1;
+      searchCatalog({ append: true });
+    });
+  }
+
   function releaseStatus(dateString) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
