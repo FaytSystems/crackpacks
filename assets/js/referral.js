@@ -30,12 +30,12 @@
         sendButton.textContent = "Complete security check";
         showStatus("Security check expired. Complete it again.", "error");
       },
-      "error-callback": () => {
+      "error-callback": errorCode => {
         turnstileTokenValue = "";
         const sendButton = $("[data-send-verification]");
         sendButton.disabled = true;
         sendButton.textContent = "Security check unavailable";
-        showStatus("Security check could not load. Refresh and try again.", "error");
+        showStatus(`Security check could not load${errorCode ? ` (Cloudflare code ${errorCode})` : ""}. Refresh and try again.`, "error");
       }
     }); };
     const script = document.createElement("script"); script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?onload=cpTurnstileReady&render=explicit"; script.async = true; script.defer = true; document.head.append(script);
