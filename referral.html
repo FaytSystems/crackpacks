@@ -9,7 +9,7 @@
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/css/styles.css?v=1.9.2">
   <link rel="stylesheet" href="assets/css/referral.css?v=1.9.2">
-  <link rel="stylesheet" href="assets/css/rewards-modal.css?v=1.9.1">
+  <link rel="stylesheet" href="assets/css/rewards-modal.css?v=1.9.7">
 </head>
 <body data-page="rewards">
   <a class="skip-link" href="#main">Skip to content</a>
@@ -26,22 +26,20 @@
 
   <main id="main" class="rewards-main">
     <section class="rewards-hero">
-      <div class="container rewards-hero-grid">
+      <div class="container rewards-hero-grid rewards-hero-single">
         <div>
           <p class="eyebrow">Scan. Save. Share.</p>
           <h1>Crack Packs <span>Rewards.</span></h1>
           <p>Use the sticker QR to claim a discount or invite verified collector friends. Every qualified signup moves you toward the next prize tier.</p>
         </div>
-        <div class="sticker-preview">
-          <span>STICKER QR</span>
-          <img data-sticker-qr alt="QR code linking to Crack Packs Rewards">
-          <strong>SCAN FOR REWARDS</strong>
-          <small>crackpacks.com/referral.html</small>
-        </div>
       </div>
     </section>
 
     <section class="container rewards-shell" data-rewards-app>
+      <div class="referral-attached" data-referral-banner hidden>
+        <strong>Friend referral attached</strong>
+        <span>Invite code <b data-attached-referral></b> will receive +1 after you complete verified signup.</span>
+      </div>
       <div class="rewards-notice" data-app-status aria-live="polite"></div>
 
       <section class="reward-card auth-card" data-auth-panel>
@@ -88,7 +86,7 @@
         </div>
         <div class="choice-grid">
           <button class="choice-card" type="button" data-view="discount"><span>01</span><strong>Claim discount code</strong><small>Get your available one-time offer.</small></button>
-          <button class="choice-card" type="button" data-view="invite"><span>02</span><strong>Invite a friend</strong><small>Email or share your personal QR code.</small></button>
+          <button class="choice-card" type="button" data-view="invite"><span>02</span><strong>REFER</strong><small>Share your unique account QR and grow your crew.</small></button>
         </div>
         <section class="reward-card action-panel" data-discount-panel hidden>
           <p class="eyebrow">Member discount</p><h3>Your offer</h3>
@@ -99,7 +97,8 @@
         <section class="reward-card action-panel" data-invite-panel hidden>
           <div class="invite-layout">
             <div>
-              <p class="eyebrow">Friend invitation</p><h3>Invite a verified collector</h3>
+              <p class="eyebrow">REFER</p><h3>Your unique friend-referral QR</h3>
+              <p>Every new person who joins through this QR and completes all verification adds +1 to your verified friends total.</p>
               <form data-invite-form><label>Friend's email<input name="email" type="email" autocomplete="email" required placeholder="friend@example.com"></label><button class="btn btn-primary" type="submit">Send verified invite</button></form>
               <div class="share-row"><input data-invite-url readonly aria-label="Your invitation link"><button class="btn btn-outline btn-small" type="button" data-copy-link>Copy link</button></div>
             </div>
@@ -127,6 +126,6 @@
   </div>
   <script src="assets/js/config.js?v=1.9.6"></script>
   <script src="assets/js/app.js?v=1.9.2"></script>
-  <script src="assets/js/referral.js?v=1.9.5"></script>
+  <script src="assets/js/referral.js?v=1.9.7"></script>
 </body>
 </html>

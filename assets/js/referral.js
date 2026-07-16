@@ -45,9 +45,11 @@
   let token = localStorage.getItem("cp_rewards_token") || "";
 
   const qrUrl = value => `https://api.qrserver.com/v1/create-qr-code/?size=420x420&margin=12&data=${encodeURIComponent(value)}`;
-  const stickerUrl = `${config.domain || location.origin}/referral.html`;
-  $("[data-sticker-qr]").src = qrUrl(stickerUrl);
   const show = (selector, visible) => { $(selector).hidden = !visible; };
+  if (referralCode) {
+    show("[data-referral-banner]", true);
+    $("[data-attached-referral]").textContent = referralCode;
+  }
   const request = async (path, options = {}) => {
     if (!api) throw new Error("Rewards service is not configured yet.");
     const response = await fetch(`${api}${path}`, {

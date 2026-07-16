@@ -6,3 +6,7 @@
 .rewards-modal-card .eyebrow{justify-content:center}
 .rewards-modal-close{position:absolute;right:14px;top:12px;width:42px;height:42px;border:0;background:transparent;font-size:2rem;cursor:pointer}
 .email-icon{display:grid;place-items:center;width:74px;height:74px;margin:0 auto 22px;border-radius:22px;color:#070815;background:linear-gradient(135deg,var(--electric),var(--cyan));font-size:2rem}
+.rewards-hero-single{grid-template-columns:1fr!important;max-width:980px}
+.referral-attached{max-width:1040px;margin:0 auto 22px;padding:16px 20px;border:1px solid var(--mint);border-radius:16px;background:rgba(93,255,197,.09);color:var(--mint)}
+.referral-attached strong,.referral-attached span{display:block}
+.referral-attached span{margin-top:4px;color:#e8fff7}

@@ -64,7 +64,7 @@ function account(member, count, env) {
   const next = TIERS.find(t => t.threshold > count);
   return {
     deviceVerified: Boolean(member.device_verified), profileComplete: member.identity_status === "verified", firstName: member.first_name,
-    inviteCode: member.invite_code, inviteUrl: `${env.SITE_URL}/referral.html?ref=${member.invite_code}`,
+    inviteCode: member.invite_code, inviteUrl: `${env.SITE_URL}/referral?ref=${member.invite_code}`,
     referralCount: count, tier, tiers: TIERS,
     nextTier: next ? { ...next, remaining: next.threshold - count } : null
   };
