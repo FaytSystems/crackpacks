@@ -20,6 +20,7 @@ The included internal checker accepts any valid verified email address and enfor
    - `npx wrangler secret put RESEND_API_KEY`
    - `npx wrangler secret put ADMIN_EMAIL`
    - `npx wrangler secret put DISCOUNT_NOTIFY_EMAIL`
+   - `npx wrangler secret put OWNER_REFERRAL_SECRET`
 5. Run `npm run db:remote`.
 6. Configure Cloudflare Email Routing so `rewards@crackpacks.com` may send.
 7. Run `npm run deploy`.
@@ -29,9 +30,9 @@ The included internal checker accepts any valid verified email address and enfor
 
 10. Create a free Resend account, verify `crackpacks.com` (or change the Worker sender to a verified sending subdomain), create a sending-only API key, and store it as `RESEND_API_KEY`. The free Resend tier currently includes 3,000 emails per month with a 100-email daily limit.
 
-`ADMIN_EMAIL` is the one exact email allowed to open the owner dashboard. `DISCOUNT_NOTIFY_EMAIL` receives member redemption-request alerts. Keep both out of `wrangler.jsonc` if they identify a private owner account. Database deployment uses the versioned SQL files in `rewards-worker/migrations`; `schema.sql` is the current schema snapshot and should not be used as an upgrade command for an existing database.
+`ADMIN_EMAIL` is the one exact email allowed to open the owner dashboard. `DISCOUNT_NOTIFY_EMAIL` receives member redemption-request alerts. `OWNER_REFERRAL_SECRET` signs the opaque 12-hour owner campaign URLs and should be an independent random secret. Keep these values out of `wrangler.jsonc`. Database deployment uses the versioned SQL files in `rewards-worker/migrations`; `schema.sql` is the current schema snapshot and should not be used as an upgrade command for an existing database.
 
-For local UI testing, serve the repository on `http://localhost:8080`. WebAuthn production registration requires HTTPS and the exact `crackpacks.com` relying-party domain. The QR images currently use `api.qrserver.com`; vendor a reviewed QR library if the campaign requires QR generation without a third-party image request.
+For local UI testing, serve the repository on `http://localhost:8080`. WebAuthn production registration requires HTTPS and the exact `crackpacks.com` relying-party domain. Referral QR images are generated inside the authenticated Crack Packs flow; signed owner referral URLs are not sent to a third-party QR service.
 
 ## Sticker destination
 
@@ -40,3 +41,5 @@ Print the durable campaign URL:
 `https://crackpacks.com/referral.html`
 
 Do not print a discount code directly. The page requires verified sign-in before issuing a one-time code.
+
+The owner dashboard generates an additional signed digital referral QR that changes at 7:00 AM and 7:00 PM Eastern. Downloaded copies expire at the next boundary. A physically printed QR cannot rotate, so use the durable campaign URL above for permanent sticker inventory and the owner dashboard QR for time-limited digital posts.

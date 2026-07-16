@@ -5,6 +5,8 @@
   const api = String(config.rewardsApiUrl || "").replace(/\/$/, "");
   const qs = new URLSearchParams(location.search);
   const referralCode = (qs.get("ref") || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 16);
+  const ownerReferralToken = String(qs.get("owner_ref") || "").slice(0, 80);
+  const hasAttachedReferral = Boolean(referralCode || ownerReferralToken);
   const verificationToken = String(qs.get("verify") || "");
   const $ = selector => document.querySelector(selector);
   const status = $("[data-app-status]");
@@ -14,9 +16,13 @@
   let turnstileWidgetId = null;
   let authRequestSent = false;
   let authRequestPending = false;
-  let authMode = referralCode || qs.get("mode") === "signup" ? "signup" : "signin";
+  let authMode = hasAttachedReferral || qs.get("mode") === "signup" ? "signup" : "signin";
   let accountState = null;
   let welcomeDiscountLoaded = false;
+  let attachedReferralValid = !hasAttachedReferral;
+  let referralValidationPromise = null;
+  let personalQrObjectUrl = "";
+  let personalQrInviteUrl = "";
   const authModeCopy = {
     signin: {
       kicker: "Returning collector",
@@ -134,7 +140,6 @@
   });
   let token = localStorage.getItem("cp_rewards_token") || "";
 
-  const qrUrl = value => `https://api.qrserver.com/v1/create-qr-code/?size=1000x1000&qzone=4&format=png&data=${encodeURIComponent(value)}`;
   const safeHttpUrl = value => {
     try {
       const parsed = new URL(String(value || ""));
@@ -144,9 +149,11 @@
     }
   };
   const show = (selector, visible) => { $(selector).hidden = !visible; };
-  if (referralCode) {
+  if (hasAttachedReferral) {
     show("[data-referral-banner]", true);
-    $("[data-attached-referral]").textContent = referralCode;
+    $("[data-referral-banner]").dataset.state = "checking";
+    $("[data-referral-banner-title]").textContent = "Checking referral...";
+    $("[data-referral-banner-copy]").textContent = "Confirming that this is the current, valid referral link.";
   }
   const request = async (path, options = {}) => {
     if (!api) throw new Error("Rewards service is not configured yet.");
@@ -158,6 +165,59 @@
     if (!response.ok) throw new Error(payload.error || "The rewards service could not complete that request.");
     return payload;
   };
+  const requestBlob = async (path, inviteUrl) => {
+    if (!api) throw new Error("Rewards service is not configured yet.");
+    const response = await fetch(`${api}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify({ inviteUrl })
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload.error || "The referral QR could not be generated.");
+    }
+    return response.blob();
+  };
+
+  async function validateAttachedReferral() {
+    if (!hasAttachedReferral) return true;
+    const banner = $("[data-referral-banner]");
+    const heading = $("[data-referral-banner-title]");
+    const copy = $("[data-referral-banner-copy]");
+    banner.dataset.state = "checking";
+    try {
+      const data = await request("/referral/status", {
+        method: "POST",
+        body: JSON.stringify({ ownerReferralToken, referralCode })
+      });
+      attachedReferralValid = Boolean(data.valid);
+      banner.dataset.state = attachedReferralValid ? "valid" : "invalid";
+      if (attachedReferralValid && data.rotating) {
+        heading.textContent = "Current owner referral attached - unlock 10% off";
+        copy.textContent = `Complete verified signup before ${data.nextBoundaryLabel} to lock in the referral. The emailed verification link may be finished afterward.`;
+      } else if (attachedReferralValid) {
+        heading.textContent = "Friend referral attached - unlock 10% off";
+        copy.textContent = "Complete verified signup to receive a one-time 10% discount code and add +1 to the friend who referred you.";
+      } else if (!attachedReferralValid && data.rotating) {
+        heading.textContent = "This owner referral window expired";
+        copy.textContent = "Ask the owner for the current QR or referral link. You can still create an account, but this expired link cannot award referral credit.";
+        showStatus("This rotating owner referral has expired. Ask for the current QR or link.", "error");
+      } else {
+        heading.textContent = "This referral link is invalid";
+        copy.textContent = "Ask your friend for a new referral link. You can still create an account without referral credit.";
+        showStatus("This referral link is invalid. Ask for a new link or remove the referral from the address.", "error");
+      }
+      return attachedReferralValid;
+    } catch (error) {
+      attachedReferralValid = false;
+      banner.dataset.state = "invalid";
+      heading.textContent = "Referral check unavailable";
+      copy.textContent = "Refresh the page before creating your account so the referral can be checked securely.";
+      showStatus("The referral could not be validated. Refresh before creating your account.", "error");
+      return false;
+    }
+  }
+  referralValidationPromise = validateAttachedReferral();
 
   async function loadAccount() {
     if (!token) return;
@@ -166,6 +226,54 @@
       renderAccount(data);
     } catch {
       localStorage.removeItem("cp_rewards_token"); token = "";
+    }
+  }
+  function clearPersonalQr() {
+    const image = $("[data-personal-qr]");
+    image.removeAttribute("src");
+    image.classList.remove("is-loading");
+    personalQrInviteUrl = "";
+    if (personalQrObjectUrl) {
+      URL.revokeObjectURL(personalQrObjectUrl);
+      personalQrObjectUrl = "";
+    }
+  }
+  function setMemberInviteToolsEnabled(enabled) {
+    show("[data-member-invite-tools]", enabled);
+    show("[data-member-referral-share]", enabled);
+    show("[data-owner-dashboard-referral]", !enabled);
+    $("[data-invite-url]").disabled = !enabled;
+    $("[data-copy-link]").disabled = !enabled;
+    document.querySelectorAll("[data-invite-form] input, [data-invite-form] button, [data-download-qr]").forEach(control => {
+      control.disabled = !enabled;
+    });
+  }
+  async function loadPersonalQr(inviteUrl) {
+    if (accountState?.ownerReferralDashboardOnly) {
+      clearPersonalQr();
+      return;
+    }
+    if (!inviteUrl || inviteUrl === personalQrInviteUrl) return;
+    const image = $("[data-personal-qr]");
+    let blobUrl = "";
+    image.classList.add("is-loading");
+    image.removeAttribute("src");
+    try {
+      blobUrl = URL.createObjectURL(await requestBlob("/profile/referral/qr", inviteUrl));
+      if (accountState?.ownerReferralDashboardOnly || accountState?.inviteUrl !== inviteUrl) {
+        URL.revokeObjectURL(blobUrl);
+        return;
+      }
+      image.src = blobUrl;
+      if (image.decode) await image.decode();
+      if (personalQrObjectUrl) URL.revokeObjectURL(personalQrObjectUrl);
+      personalQrObjectUrl = blobUrl;
+      personalQrInviteUrl = inviteUrl;
+    } catch (error) {
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
+      showStatus(error.message, "error");
+    } finally {
+      image.classList.remove("is-loading");
     }
   }
   function renderAccount(data) {
@@ -179,9 +287,20 @@
     $("[data-admin-link]").hidden = !data.isAdmin;
     $("[data-referral-count]").textContent = data.referralCount;
     $("[data-tier-name]").textContent = data.tier.name;
-    $("[data-invite-code]").textContent = data.inviteCode;
-    $("[data-invite-url]").value = data.inviteUrl;
-    $("[data-personal-qr]").src = qrUrl(data.inviteUrl);
+    const ownerDashboardOnly = Boolean(data.ownerReferralDashboardOnly);
+    setMemberInviteToolsEnabled(!ownerDashboardOnly);
+    if (ownerDashboardOnly) {
+      $("[data-invite-code]").textContent = "";
+      $("[data-invite-url]").value = "";
+      $("[data-invite-code-label]").textContent = "Owner referral protected by passkey";
+      clearPersonalQr();
+    } else {
+      $("[data-invite-code]").textContent = data.inviteDisplayCode || data.inviteCode;
+      $("[data-invite-url]").value = data.inviteUrl || "";
+      $("[data-invite-code-label]").textContent = "Your personal invite code";
+      $("[data-invite-copy-message]").textContent = "Your unique referral is ready to paste into a text, post, bio, or group chat.";
+      loadPersonalQr(data.inviteUrl).catch(error => showStatus(error.message, "error"));
+    }
     $("[data-whatnot-username]").value = data.whatnotUsername || "";
     $("[data-next-tier]").textContent = data.nextTier ? `${data.nextTier.remaining} more verified friend${data.nextTier.remaining === 1 ? "" : "s"} to unlock ${data.nextTier.name}: ${data.nextTier.reward}.` : "You have reached the highest published reward tier.";
     $("[data-tier-track]").innerHTML = data.tiers.map(t => `<div class="tier-node ${data.referralCount >= t.threshold ? "is-earned" : ""}"><strong>${t.threshold}</strong><br>${t.name}</div>`).join("");
@@ -208,15 +327,29 @@
     }
     const submittedMode = authMode;
     const submittedReferral = submittedMode === "signup" ? referralCode : "";
+    const submittedOwnerReferral = submittedMode === "signup" ? ownerReferralToken : "";
     const sendButton = $("[data-send-verification]");
     const emailInput = requestForm.querySelector("input[name='email']");
     authRequestPending = true;
     sendButton.disabled = true;
-    sendButton.textContent = "Sending secure link...";
+    sendButton.textContent = "Validating referral...";
     emailInput.disabled = true;
     authModeButtons.forEach(button => { button.disabled = true; });
+    if (submittedMode === "signup" && hasAttachedReferral) {
+      const validReferral = await referralValidationPromise;
+      if (!validReferral) {
+        authRequestPending = false;
+        emailInput.disabled = false;
+        authModeButtons.forEach(button => { button.disabled = false; });
+        sendButton.disabled = false;
+        sendButton.textContent = authModeCopy[submittedMode].sendLabel;
+        showStatus("This referral is not current. Ask for a new owner QR or remove the referral from the address.", "error");
+        return;
+      }
+    }
+    sendButton.textContent = "Sending secure link...";
     try {
-      await request("/auth/request", { method: "POST", body: JSON.stringify({ email, referralCode: submittedReferral, authMode: submittedMode, turnstileToken }) });
+      await request("/auth/request", { method: "POST", body: JSON.stringify({ email, referralCode: submittedReferral, ownerReferralToken: submittedOwnerReferral, authMode: submittedMode, turnstileToken }) });
       authRequestSent = true;
       resetTurnstile();
       sendButton.textContent = "Check Inbox 10 min code";
@@ -262,6 +395,7 @@
     } catch (error) { showStatus(error.message || "Device verification was cancelled.", "error"); }
   });
   async function copyInviteLink() {
+    if (accountState?.ownerReferralDashboardOnly) throw new Error("Open the Owner Dashboard to copy the current owner referral.");
     const inviteUrl = $("[data-invite-url]").value;
     if (!inviteUrl) throw new Error("Your invite link is not ready yet.");
     if (navigator.clipboard?.writeText) {
@@ -280,7 +414,7 @@
     const inviteView = button.dataset.view === "invite";
     show("[data-discount-panel]", button.dataset.view === "discount");
     show("[data-invite-panel]", inviteView);
-    if (inviteView) {
+    if (inviteView && !accountState?.ownerReferralDashboardOnly) {
       try { await copyInviteLink(); }
       catch (error) { showStatus(error.message, "error"); }
     }
@@ -315,6 +449,10 @@
   });
   $("[data-invite-form]").addEventListener("submit", async event => {
     event.preventDefault();
+    if (accountState?.ownerReferralDashboardOnly) {
+      showStatus("Open the Owner Dashboard to use owner referral tools.", "error");
+      return;
+    }
     const inviteForm = event.currentTarget;
     const inviteEmail = new FormData(inviteForm).get("email");
     try {
@@ -326,16 +464,24 @@
     catch (error) { showStatus(error.message, "error"); }
   });
   $("[data-copy-link]").addEventListener("click", () => copyInviteLink().catch(error => showStatus(error.message, "error")));
+  async function qrPngBlob(image) {
+    if (image.decode) await image.decode();
+    const canvas = document.createElement("canvas");
+    canvas.width = 1200; canvas.height = 1200;
+    const context = canvas.getContext("2d");
+    context.fillStyle = "#ffffff"; context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    return new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error("The QR PNG could not be prepared.")), "image/png"));
+  }
   async function downloadInviteQr(button) {
     button.disabled = true;
     const originalText = button.textContent;
     button.textContent = "Preparing QR...";
     try {
-      const imageUrl = $("[data-personal-qr]").src;
-      if (!imageUrl) throw new Error("Your QR code is not ready yet.");
-      const response = await fetch(imageUrl);
-      if (!response.ok) throw new Error("The QR download could not be prepared.");
-      const blobUrl = URL.createObjectURL(await response.blob());
+      if (accountState?.ownerReferralDashboardOnly) throw new Error("Open the Owner Dashboard to download the current owner QR.");
+      const image = $("[data-personal-qr]");
+      if (!image.src) throw new Error("Your QR code is not ready yet.");
+      const blobUrl = URL.createObjectURL(await qrPngBlob(image));
       const link = document.createElement("a");
       link.href = blobUrl;
       link.download = `crack-packs-invite-${accountState?.inviteCode || "qr"}.png`;
@@ -374,14 +520,15 @@
     try {
       const data = await request("/auth/verify-link", { method: "POST", body: JSON.stringify({ token: verificationToken }) });
       token = data.token; localStorage.setItem("cp_rewards_token", token);
-      history.replaceState({}, document.title, `${location.pathname}${referralCode ? `?ref=${encodeURIComponent(referralCode)}` : ""}`);
+      history.replaceState({}, document.title, location.pathname);
       const accountReady = data.account.deviceVerified && data.account.profileComplete;
       const signedIn = data.authFlow === "signin" || data.authFlow === "admin" || data.authFlow === "legacy";
       showStatus(accountReady ? "Signed in to your Profile." : signedIn ? "Signed in. Continue account verification." : "Email verified. Continue secure account verification.", "success");
       renderAccount(data.account);
     } catch (error) {
       const preserved = new URLSearchParams();
-      if (referralCode) preserved.set("ref", referralCode);
+      if (ownerReferralToken) preserved.set("owner_ref", ownerReferralToken);
+      else if (referralCode) preserved.set("ref", referralCode);
       if (authMode === "signup") preserved.set("mode", "signup");
       const query = preserved.toString();
       history.replaceState({}, document.title, `${location.pathname}${query ? `?${query}` : ""}`);
@@ -410,6 +557,9 @@
       youtube.hidden = false;
     }
   }
+  window.addEventListener("beforeunload", () => {
+    clearPersonalQr();
+  });
   configureSocialLinks();
   confirmEmailLink();
 })();

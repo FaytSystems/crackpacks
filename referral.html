@@ -8,7 +8,7 @@
   <meta name="theme-color" content="#07091b">
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/css/styles.css?v=1.9.2">
-  <link rel="stylesheet" href="assets/css/referral.css?v=2.4.0">
+  <link rel="stylesheet" href="assets/css/referral.css?v=2.5.1">
   <link rel="stylesheet" href="assets/css/rewards-modal.css?v=2.2.0">
   <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.1.0">
 </head>
@@ -41,9 +41,9 @@
     </section>
 
     <section class="container rewards-shell" data-rewards-app>
-      <div class="referral-attached" data-referral-banner hidden>
-        <strong>Friend referral attached — unlock 10% off</strong>
-        <span>Complete verified signup to receive a one-time 10% discount code. Invite <b data-attached-referral></b> adds +1 to the friend who referred you.</span>
+      <div class="referral-attached" data-referral-banner data-state="checking" hidden>
+        <strong data-referral-banner-title>Checking referral...</strong>
+        <span data-referral-banner-copy>Confirming that this is the current, valid referral link.</span>
       </div>
       <div class="rewards-notice" data-app-status aria-live="polite"></div>
 
@@ -83,7 +83,7 @@
       <section class="reward-card" data-device-panel hidden>
         <p class="eyebrow">Free secure device check</p>
         <h2>Create a Crack Packs passkey</h2>
-        <p>Confirm this signup on the device you are currently using with its screen lock, fingerprint sensor, Face ID, Touch ID, Windows Hello, or device PIN. Crack Packs receives a public key—not your fingerprint or biometric data.</p>
+        <p>Confirm this signup on the device you are currently using with its screen lock, fingerprint sensor, Face ID, Touch ID, Windows Hello, or device PIN. Crack Packs receives a public key - not your fingerprint or biometric data.</p>
         <button class="btn btn-primary" type="button" data-register-passkey>Verify this device</button>
         <p class="fine-print">Choose the local device or Windows Hello option if your browser asks. You should not need to scan a Google/FIDO QR code. Your passkey may sync through your device account or password manager.</p>
       </section>
@@ -108,7 +108,15 @@
           <p class="fine-print">Use the code during an eligible Whatnot show. Crack Packs marks it redeemed in the owner dashboard after the purchase.</p>
         </section>
         <section class="reward-card action-panel" data-invite-panel hidden>
-          <div class="invite-layout">
+          <div class="owner-dashboard-referral" data-owner-dashboard-referral hidden>
+            <div class="owner-dashboard-referral-signal">OWNER ACCESS</div>
+            <p class="eyebrow">Protected rotating referral</p>
+            <h3>Your current 12-hour QR lives in the Owner Dashboard.</h3>
+            <p>For security, the owner referral address, QR, email invitation tools, and downloads are available only after a fresh owner passkey check.</p>
+            <a class="btn btn-primary" href="admin.html">Open Owner Dashboard</a>
+            <small>The active owner referral changes automatically at 7:00 AM and 7:00 PM Eastern.</small>
+          </div>
+          <div class="invite-layout" data-member-invite-tools>
             <div>
               <p class="eyebrow">REFER</p><h3>Your unique friend-referral QR</h3>
               <p>Every new person who joins through this QR and completes all verification adds +1 to your verified friends total.</p>
@@ -118,7 +126,7 @@
             <div class="personal-qr">
               <img data-personal-qr alt="Personal friend invitation QR code">
               <strong data-invite-code></strong>
-              <small>Your personal invite code</small>
+              <small data-invite-code-label>Your personal invite code</small>
               <button class="btn btn-primary btn-small qr-download-button" type="button" data-download-qr>Download QR</button>
               <small>Save the PNG and post it anywhere your crew follows you.</small>
             </div>
@@ -128,7 +136,7 @@
           <div class="progress-summary"><div><span>Verified friends</span><strong data-referral-count>0</strong></div><div><span>Current tier</span><strong data-tier-name>Starter</strong></div></div>
           <div class="tier-track" data-tier-track></div>
           <p data-next-tier></p>
-          <div class="reward-share-strip">
+          <div class="reward-share-strip" data-member-referral-share>
             <div><strong>Post your unique QR</strong><span>Download it for Facebook, YouTube, stories, and group chats.</span></div>
             <button class="btn btn-primary btn-small" type="button" data-download-qr>Download unique QR</button>
           </div>
@@ -184,7 +192,7 @@
       <button class="rewards-modal-close" type="button" data-invite-copy-close aria-label="Close">&times;</button>
       <div class="invite-copy-signal" aria-hidden="true">LINK LOCKED</div>
       <h2 id="invite-copy-title">Copied Invite Link to clipboard</h2>
-      <p>Your unique referral is ready to paste into a text, post, bio, or group chat.</p>
+      <p data-invite-copy-message>Your unique referral is ready to paste into a text, post, bio, or group chat.</p>
       <button class="btn btn-primary" type="button" data-invite-copy-close>Close</button>
     </section>
   </div>
@@ -202,6 +210,6 @@
   <script src="assets/js/config.js?v=2.2.0"></script>
   <script src="assets/js/app.js?v=1.9.2"></script>
   <script src="assets/js/nav-profile.js?v=2.1.0"></script>
-  <script src="assets/js/referral.js?v=2.4.0"></script>
+  <script src="assets/js/referral.js?v=2.5.1"></script>
 </body>
 </html>

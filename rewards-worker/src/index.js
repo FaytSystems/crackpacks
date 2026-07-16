@@ -1,4 +1,7 @@
-const VERSION = "2.4.0";
+import QRCode from "qrcode";
+import { issueOwnerReferral, ownerReferralSlotAt, verifyOwnerReferral } from "./referral-rotation.js";
+
+const VERSION = "2.5.0";
 const TIERS = [
   { threshold: 0, name: "Starter", reward: "Member access" },
   { threshold: 3, name: "Crew", reward: "Bonus discount" },
@@ -11,6 +14,10 @@ const now = () => new Date().toISOString();
 const id = () => crypto.randomUUID();
 const normalizeEmail = value => String(value || "").trim().toLowerCase().slice(0, 254);
 const clean = (value, max = 64) => String(value || "").trim().replace(/\s+/g, " ").slice(0, max);
+const boundedString = (value, max) => {
+  if (value === undefined || value === null) return "";
+  return typeof value === "string" && value.length <= max ? value : null;
+};
 const escapeHtml = value => String(value || "").replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
 const randomString = (length, alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789") => Array.from(crypto.getRandomValues(new Uint8Array(length)), n => alphabet[n % alphabet.length]).join("");
 async function hash(value, secret = "") {
@@ -18,6 +25,7 @@ async function hash(value, secret = "") {
   return [...new Uint8Array(bytes)].map(b => b.toString(16).padStart(2, "0")).join("");
 }
 function response(body, status = 200, cors = {}) { return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...cors } }); }
+function svgResponse(svg, cors = {}) { return new Response(svg, { status: 200, headers: { "Content-Type": "image/svg+xml; charset=utf-8", "Content-Disposition": "inline; filename=crack-packs-referral-qr.svg", "Cache-Control": "private, no-store", "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'", "X-Content-Type-Options": "nosniff", ...cors } }); }
 function corsFor(request, env) {
   const origin = request.headers.get("Origin"); const allowed = String(env.ALLOWED_ORIGINS || "").split(",").map(x => x.trim());
   if (!origin) return { "Access-Control-Allow-Origin": "*" };
@@ -64,19 +72,73 @@ function isAdmin(member, env) {
   const adminEmail = normalizeEmail(env.ADMIN_EMAIL);
   return Boolean(adminEmail && member && normalizeEmail(member.email) === adminEmail && member.email_verified_at && member.device_verified && member.identity_status === "verified");
 }
+const isOwnerEmail = (member, env) => Boolean(member && normalizeEmail(env.ADMIN_EMAIL) && normalizeEmail(member.email) === normalizeEmail(env.ADMIN_EMAIL));
 async function hasFreshAdminSession(request, member, env) {
   const adminToken = request.headers.get("X-Admin-Token") || "";
   if (!adminToken || !isAdmin(member, env)) return false;
   const row = await env.DB.prepare(`SELECT member_id FROM admin_sessions WHERE token_hash=? AND member_id=? AND expires_at>?`).bind(await hash(adminToken, env.AUTH_SECRET), member.id, now()).first();
   return Boolean(row);
 }
-function account(member, count, env) {
+async function inviteDetailsFor(member, env, epochMs = Date.now(), allowOwnerToken = false) {
+  if (isOwnerEmail(member, env)) {
+    if (!allowOwnerToken) {
+      return {
+        url: "",
+        displayCode: "OWNER DASHBOARD",
+        rotating: false,
+        ownerDashboardOnly: true,
+        startsAt: null,
+        expiresAt: null,
+        windowLabel: "Protected owner referral",
+        nextBoundaryLabel: "",
+        serverNow: new Date(epochMs).toISOString()
+      };
+    }
+    const current = await issueOwnerReferral(env.SITE_URL, member.id, env.OWNER_REFERRAL_SECRET, epochMs);
+    return {
+      url: current.url,
+      displayCode: "LIVE 12H",
+      rotating: true,
+      ownerDashboardOnly: false,
+      startsAt: current.startsAt,
+      expiresAt: current.expiresAt,
+      windowLabel: current.label,
+      nextBoundaryLabel: current.nextBoundaryLabel,
+      serverNow: new Date(epochMs).toISOString()
+    };
+  }
+  return {
+    url: `${env.SITE_URL}/referral.html?ref=${member.invite_code}`,
+    displayCode: member.invite_code,
+    rotating: false,
+    ownerDashboardOnly: false,
+    startsAt: null,
+    expiresAt: null,
+    windowLabel: "No expiration",
+    nextBoundaryLabel: "",
+    serverNow: new Date(epochMs).toISOString()
+  };
+}
+async function referralQrSvg(inviteUrl) {
+  return QRCode.toString(inviteUrl, {
+    type: "svg",
+    errorCorrectionLevel: "H",
+    margin: 4,
+    width: 1200,
+    color: { dark: "#070815FF", light: "#FFFFFFFF" }
+  });
+}
+async function account(member, count, env) {
   const tier = [...TIERS].reverse().find(t => count >= t.threshold);
   const next = TIERS.find(t => t.threshold > count);
+  const invite = await inviteDetailsFor(member, env);
   return {
     deviceVerified: Boolean(member.device_verified), profileComplete: member.identity_status === "verified", firstName: member.first_name,
     whatnotUsername: member.whatnot_username || "", referredSignup: Boolean(member.referred_by_member_id), isAdmin: isAdmin(member, env),
-    inviteCode: member.invite_code, inviteUrl: `${env.SITE_URL}/referral.html?ref=${member.invite_code}`,
+    inviteCode: invite.ownerDashboardOnly ? "" : member.invite_code, inviteDisplayCode: invite.displayCode, inviteUrl: invite.url,
+    rotatingReferral: invite.rotating, ownerReferralDashboardOnly: invite.ownerDashboardOnly,
+    inviteStartsAt: invite.startsAt, inviteExpiresAt: invite.expiresAt,
+    inviteWindowLabel: invite.windowLabel, inviteNextBoundaryLabel: invite.nextBoundaryLabel, serverNow: invite.serverNow,
     referralCount: count, tier, tiers: TIERS,
     nextTier: next ? { ...next, remaining: next.threshold - count } : null
   };
@@ -101,6 +163,35 @@ async function verifyTurnstile(env, token, request) {
 async function route(request, env, cors, ctx) {
   const url = new URL(request.url);
   if (url.pathname === "/health") return response({ ok: true, service: "crackpacks-rewards", version: VERSION, identityMode: env.IDENTITY_MODE }, 200, cors);
+  if (url.pathname === "/referral/status" && request.method === "POST") {
+    const contentLength = Number(request.headers.get("Content-Length") || 0);
+    if (Number.isFinite(contentLength) && contentLength > 512) return response({ error: "Referral validation request is too large." }, 413, cors);
+    const data = await body(request);
+    const rawOwnerToken = boundedString(data?.ownerReferralToken, 80);
+    const rawReferralCode = boundedString(data?.referralCode, 16);
+    if (rawOwnerToken === null || rawReferralCode === null) return response({ error: "Invalid referral credential." }, 400, cors);
+    const ownerToken = rawOwnerToken;
+    const ref = rawReferralCode.trim().toUpperCase();
+    if ((ownerToken && ref) || (ref && !/^[A-Z0-9]{1,16}$/.test(ref))) return response({ error: "Invalid referral credential." }, 400, cors);
+    const epochMs = Date.now();
+    const serverNow = new Date(epochMs).toISOString();
+    if (ownerToken) {
+      const owner = normalizeEmail(env.ADMIN_EMAIL) ? await env.DB.prepare(`SELECT id FROM members WHERE email=? AND identity_status='verified'`).bind(normalizeEmail(env.ADMIN_EMAIL)).first() : null;
+      const slot = ownerReferralSlotAt(epochMs);
+      const valid = Boolean(owner && await verifyOwnerReferral(ownerToken, env.SITE_URL, owner.id, env.OWNER_REFERRAL_SECRET, epochMs));
+      return response({ valid, rotating: true, expiresAt: slot.expiresAt, windowLabel: slot.label, nextBoundaryLabel: slot.nextBoundaryLabel, serverNow, reason: valid ? "current" : "expired" }, 200, cors);
+    }
+    if (ref) {
+      const inviter = await env.DB.prepare(`SELECT id,email,identity_status FROM members WHERE invite_code=?`).bind(ref).first();
+      if (inviter && isOwnerEmail(inviter, env)) {
+        const slot = ownerReferralSlotAt(epochMs);
+        return response({ valid: false, rotating: true, expiresAt: slot.expiresAt, windowLabel: slot.label, nextBoundaryLabel: slot.nextBoundaryLabel, serverNow, reason: "owner_rotation_required" }, 200, cors);
+      }
+      const valid = inviter?.identity_status === "verified";
+      return response({ valid, rotating: false, expiresAt: null, windowLabel: "No expiration", nextBoundaryLabel: "", serverNow, reason: valid ? "current" : "invalid" }, 200, cors);
+    }
+    return response({ valid: false, rotating: false, expiresAt: null, serverNow, reason: "missing" }, 200, cors);
+  }
   if (url.pathname === "/auth/request" && request.method === "POST") {
     const data = await body(request); const email = normalizeEmail(data.email);
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return response({ error: "Enter a valid email address." }, 400, cors);
@@ -118,15 +209,26 @@ async function route(request, env, cors, ctx) {
         ? Boolean(existingMember) && email === normalizeEmail(env.ADMIN_EMAIL)
         : Boolean(existingMember);
     const linkToken = randomString(48); const created = now();
-    const ref = authFlow === "signup" ? clean(data.referralCode, 16).toUpperCase() : "";
+    const rawReferralCode = authFlow === "signup" ? boundedString(data.referralCode, 16) : "";
+    const rawOwnerReferralToken = authFlow === "signup" ? boundedString(data.ownerReferralToken, 80) : "";
+    if (rawReferralCode === null || rawOwnerReferralToken === null) return response({ error: "Invalid referral credential." }, 400, cors);
+    const ref = rawReferralCode.trim().toUpperCase();
+    const ownerReferralToken = rawOwnerReferralToken;
+    if ((ownerReferralToken && ref) || (ref && !/^[A-Z0-9]{1,16}$/.test(ref))) return response({ error: "Invalid referral credential." }, 400, cors);
     let referrerMemberId = null;
-    if (ref) {
-      const inviter = await env.DB.prepare(`SELECT id,email FROM members WHERE invite_code=? AND identity_status='verified'`).bind(ref).first();
-      if (inviter && normalizeEmail(inviter.email) !== email) referrerMemberId = inviter.id;
+    let ownerReferralRejected = false;
+    if (ownerReferralToken) {
+      const owner = normalizeEmail(env.ADMIN_EMAIL) ? await env.DB.prepare(`SELECT id,email FROM members WHERE email=? AND identity_status='verified'`).bind(normalizeEmail(env.ADMIN_EMAIL)).first() : null;
+      if (owner && normalizeEmail(owner.email) !== email && await verifyOwnerReferral(ownerReferralToken, env.SITE_URL, owner.id, env.OWNER_REFERRAL_SECRET)) referrerMemberId = owner.id;
+      else ownerReferralRejected = true;
+    } else if (ref) {
+      const inviter = await env.DB.prepare(`SELECT id,email,identity_status FROM members WHERE invite_code=?`).bind(ref).first();
+      if (inviter && isOwnerEmail(inviter, env)) ownerReferralRejected = true;
+      else if (inviter?.identity_status === "verified" && normalizeEmail(inviter.email) !== email) referrerMemberId = inviter.id;
     }
+    if (ownerReferralRejected) return response({ error: "This owner referral window has expired. Ask for the current QR or referral link." }, 410, cors);
     const destinationPath = returnTo === "admin" ? "/admin.html" : "/referral.html";
     const verifyParams = new URLSearchParams({ verify: linkToken, mode: authFlow });
-    if (ref) verifyParams.set("ref", ref);
     const verifyUrl = `${env.SITE_URL}${destinationPath}?${verifyParams}`;
     const codeId = id();
     await env.DB.prepare(`INSERT INTO login_codes(id,email,code_hash,auth_flow,referrer_member_id,expires_at,created_at) VALUES(?,?,?,?,?,?,?)`).bind(codeId, email, await hash(linkToken, env.AUTH_SECRET), authFlow, referrerMemberId, new Date(Date.now() + 10 * 60e3).toISOString(), created).run();
@@ -197,6 +299,15 @@ async function route(request, env, cors, ctx) {
   const member = await memberFromRequest(request, env);
   if (!member) return response({ error: "Sign in is required." }, 401, cors);
   if (url.pathname === "/me" && request.method === "GET") return response(await accountFor(member, env), 200, cors);
+  if (url.pathname === "/profile/referral/qr" && request.method === "POST") {
+    if (!member.device_verified || member.identity_status !== "verified") return response({ error: "Complete account verification before generating a referral QR." }, 403, cors);
+    if (isOwnerEmail(member, env)) return response({ error: "Owner referral links and QR codes are generated only in the protected Owner Dashboard." }, 403, cors);
+    const data = await body(request);
+    if (boundedString(data?.inviteUrl, 512) === null) return response({ error: "Invalid referral address." }, 400, cors);
+    const invite = await inviteDetailsFor(member, env);
+    if (String(data.inviteUrl || "") !== invite.url) return response({ error: "That referral window changed. Refresh the current link before generating its QR." }, 409, cors);
+    return svgResponse(await referralQrSvg(invite.url), cors);
+  }
   if (url.pathname === "/device/register/options" && request.method === "POST") {
     const existing = await env.DB.prepare(`SELECT credential_id id, transports FROM webauthn_credentials WHERE member_id=?`).bind(member.id).all();
     if (member.device_verified && (existing.results || []).length) return response({ error: "A passkey is already registered for this account. Contact support for secure recovery." }, 409, cors);
@@ -315,6 +426,18 @@ async function route(request, env, cors, ctx) {
     if (adminToken) await env.DB.prepare(`DELETE FROM admin_sessions WHERE token_hash=?`).bind(await hash(adminToken, env.AUTH_SECRET)).run();
     return response({ ok: true }, 200, cors);
   }
+  if (url.pathname === "/admin/referral/current" && request.method === "GET") {
+    if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
+    return response(await inviteDetailsFor(member, env, Date.now(), true), 200, cors);
+  }
+  if (url.pathname === "/admin/referral/qr" && request.method === "POST") {
+    if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
+    const data = await body(request);
+    if (boundedString(data?.inviteUrl, 512) === null) return response({ error: "Invalid referral address." }, 400, cors);
+    const invite = await inviteDetailsFor(member, env, Date.now(), true);
+    if (String(data.inviteUrl || "") !== invite.url) return response({ error: "That referral window changed. Refresh the current link before generating its QR." }, 409, cors);
+    return svgResponse(await referralQrSvg(invite.url), cors);
+  }
   if (url.pathname === "/admin/summary" && request.method === "GET") {
     if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
     const summary = await env.DB.prepare(`
@@ -368,6 +491,7 @@ async function route(request, env, cors, ctx) {
     return response({ id: claim.id, code: claim.code, memberEmail: claim.email, redeemedAt }, 200, cors);
   }
   if (url.pathname === "/invites" && request.method === "POST") {
+    if (isOwnerEmail(member, env)) return response({ error: "Open the protected Owner Dashboard to copy the current owner referral link or QR." }, 403, cors);
     const data = await body(request); const invitee = normalizeEmail(data.email);
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(invitee)) return response({ error: "Enter a valid friend email." }, 400, cors);
     if (invitee === member.email) return response({ error: "You cannot invite yourself." }, 400, cors);
@@ -378,9 +502,10 @@ async function route(request, env, cors, ctx) {
     const invitationId = id();
     const inserted = await env.DB.prepare(`INSERT OR IGNORE INTO invitations(id,inviter_member_id,invitee_email,created_at) VALUES(?,?,?,?)`).bind(invitationId, member.id, invitee, now()).run();
     if (Number(inserted.meta?.changes || 0) !== 1) return response({ error: "That friend has already been invited from your account." }, 409, cors);
-    const link = `${env.SITE_URL}/referral.html?ref=${member.invite_code}`;
+    const invite = await inviteDetailsFor(member, env); const link = invite.url;
     try {
-      await sendEmail(env, invitee, `${member.first_name} invited you to Crack Packs`, `<h1>Join Crack Packs Rewards</h1><p>${escapeHtml(member.first_name)} invited you to join the collector community.</p><p><a href="${escapeHtml(link)}">Verify your email and join</a></p>`, invitationId);
+      const expiration = invite.rotating ? `<p>This owner referral link is valid for the current ${escapeHtml(invite.windowLabel)} window and changes at ${escapeHtml(invite.nextBoundaryLabel)}.</p>` : "";
+      await sendEmail(env, invitee, `${member.first_name} invited you to Crack Packs`, `<h1>Join Crack Packs Rewards</h1><p>${escapeHtml(member.first_name)} invited you to join the collector community.</p><p><a href="${escapeHtml(link)}">Verify your email and join</a></p>${expiration}`, invitationId);
     } catch (error) {
       await env.DB.prepare(`DELETE FROM invitations WHERE id=?`).bind(invitationId).run();
       throw error;
