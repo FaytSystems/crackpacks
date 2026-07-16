@@ -8,17 +8,29 @@
   const verificationToken = String(qs.get("verify") || "");
   const $ = selector => document.querySelector(selector);
   const status = $("[data-app-status]");
+  const showStatus = (message = "", kind = "") => { status.textContent = message; status.dataset.kind = kind; };
   let email = "";
   let turnstileTokenValue = "";
+  let turnstileWidgetId = null;
+  let submitAfterTurnstile = false;
   const turnstileNode = $("[data-turnstile]");
   if (turnstileNode && config.turnstileSiteKey) {
-    window.cpTurnstileReady = () => window.turnstile.render(turnstileNode, {
+    window.cpTurnstileReady = () => { turnstileWidgetId = window.turnstile.render(turnstileNode, {
       sitekey: config.turnstileSiteKey,
       theme: "dark",
-      callback: tokenValue => { turnstileTokenValue = tokenValue; showStatus(""); },
+      execution: "execute",
+      appearance: "interaction-only",
+      callback: tokenValue => {
+        turnstileTokenValue = tokenValue;
+        showStatus("");
+        if (submitAfterTurnstile) {
+          submitAfterTurnstile = false;
+          $("[data-request-form]").requestSubmit();
+        }
+      },
       "expired-callback": () => { turnstileTokenValue = ""; showStatus("Security check expired. Complete it again.", "error"); },
       "error-callback": () => { turnstileTokenValue = ""; showStatus("Security check could not load. Refresh and try again.", "error"); }
-    });
+    }); };
     const script = document.createElement("script"); script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?onload=cpTurnstileReady&render=explicit"; script.async = true; script.defer = true; document.head.append(script);
   } else if (turnstileNode) {
     turnstileNode.textContent = "Security verification is awaiting its Cloudflare site key.";
@@ -28,7 +40,6 @@
   const qrUrl = value => `https://api.qrserver.com/v1/create-qr-code/?size=420x420&margin=12&data=${encodeURIComponent(value)}`;
   const stickerUrl = `${config.domain || location.origin}/referral.html`;
   $("[data-sticker-qr]").src = qrUrl(stickerUrl);
-  const showStatus = (message = "", kind = "") => { status.textContent = message; status.dataset.kind = kind; };
   const show = (selector, visible) => { $(selector).hidden = !visible; };
   const request = async (path, options = {}) => {
     if (!api) throw new Error("Rewards service is not configured yet.");
@@ -69,7 +80,16 @@
   $("[data-request-form]").addEventListener("submit", async event => {
     event.preventDefault(); const form = new FormData(event.currentTarget); email = String(form.get("email")).trim().toLowerCase();
     const turnstileToken = turnstileTokenValue || String(form.get("cf-turnstile-response") || "");
-    if (!turnstileToken) { showStatus("Complete the security check before requesting your verification link.", "error"); return; }
+    if (!turnstileToken) {
+      if (turnstileWidgetId !== null && window.turnstile) {
+        submitAfterTurnstile = true;
+        showStatus("Complete the security check to continue.");
+        window.turnstile.execute(turnstileWidgetId);
+      } else {
+        showStatus("Security check is still loading. Wait a moment and try again.", "error");
+      }
+      return;
+    }
     try {
       await request("/auth/request", { method: "POST", body: JSON.stringify({ email, referralCode, turnstileToken }) });
       const sendButton = $("[data-send-verification]");
