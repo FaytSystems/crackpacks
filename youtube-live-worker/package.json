@@ -1,0 +1,16 @@
+{
+  "name": "crackpacks-youtube-live-worker",
+  "version": "1.6.0",
+  "private": true,
+  "description": "Cloudflare Worker that detects Crack Packs YouTube live and upcoming streams without exposing the YouTube API key.",
+  "type": "module",
+  "scripts": {
+    "check": "node --check src/index.js",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

@@ -4,25 +4,35 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Crack Packs | Pokémon Cards, Live Rips &amp; Release Radar</title>
-  <meta name="description" content="Crack Packs is a vibrant Pokémon TCG storefront with live Whatnot rips, collector inventory, release tracking, and a card search and price-check tool.">
+  <meta name="description" content="Crack Packs is a vibrant Pokémon TCG storefront with live YouTube streams, collector inventory, release tracking, and a card search and price-check tool.">
   <meta name="theme-color" content="#07091b">
   <meta property="og:title" content="Crack Packs | Rip. Chase. Hit.">
-  <meta property="og:description" content="Shop collector inventory, search card values, track releases, and join Crack Packs live on Whatnot.">
+  <meta property="og:description" content="Watch Crack Packs live, shop collector inventory, search card values, and track upcoming releases.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://crackpacks.com/">
   <meta property="og:image" content="https://crackpacks.com/assets/images/social-card.svg">
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="stylesheet" href="assets/css/styles.css?v=1.5.0">
+  <link rel="stylesheet" href="assets/css/styles.css?v=1.6.0">
+  <link rel="stylesheet" href="assets/css/youtube-live.css?v=1.6.0">
 </head>
 <body data-page="home">
   <a class="skip-link" href="#main">Skip to content</a>
-  <div class="ambient-layer" aria-hidden="true"><span class="ambient-orb orb-a"></span><span class="ambient-orb orb-b"></span><span class="ambient-orb orb-c"></span><span class="grain"></span></div>
+  <div class="ambient-layer" aria-hidden="true">
+    <span class="ambient-orb orb-a"></span>
+    <span class="ambient-orb orb-b"></span>
+    <span class="ambient-orb orb-c"></span>
+    <span class="grain"></span>
+  </div>
 
   <header class="site-header">
     <div class="container nav-shell">
-      <a class="brand" href="index.html" aria-label="Crack Packs home"><img src="assets/images/logo.svg" alt="Crack Packs"></a>
-      <button class="menu-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="site-nav"><span></span><span></span><span></span></button>
+      <a class="brand" href="index.html" aria-label="Crack Packs home">
+        <img src="assets/images/logo.svg" alt="Crack Packs">
+      </a>
+      <button class="menu-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="site-nav">
+        <span></span><span></span><span></span>
+      </button>
       <nav class="site-nav" id="site-nav" aria-label="Primary navigation">
         <a href="index.html" aria-current="page">Home</a>
         <a href="shop.html">Shop</a>
@@ -35,10 +45,26 @@
 
   <section class="visual-marquee visual-marquee-top" aria-label="Crack Packs visual showcase">
     <div class="marquee-slides" data-marquee>
-      <a class="marquee-slide is-active" href="card-lookup.html" style="--slide-image:url('assets/images/banner-electric.svg')"><span class="marquee-kicker">Collector utility</span><strong>Search cards. Check market value.</strong><em>Open price check</em></a>
-      <a class="marquee-slide" href="shop.html" style="--slide-image:url('assets/images/banner-flame.svg')"><span class="marquee-kicker">Pull the heat</span><strong>Collector fire lives here.</strong><em>See inventory</em></a>
-      <a class="marquee-slide" href="releases.html" style="--slide-image:url('assets/images/banner-cosmic.svg')"><span class="marquee-kicker">Release radar</span><strong>Know what drops next.</strong><em>View calendar</em></a>
-      <a class="marquee-slide" data-whatnot href="#" style="--slide-image:url('assets/images/banner-vintage.svg')"><span class="marquee-kicker">Live rip energy</span><strong>Watch every pack crack.</strong><em>Join Whatnot</em></a>
+      <a class="marquee-slide is-active" href="card-lookup.html" style="--slide-image:url('assets/images/banner-electric.svg')">
+        <span class="marquee-kicker">Collector utility</span>
+        <strong>Search cards. Check market value.</strong>
+        <em>Open price check</em>
+      </a>
+      <a class="marquee-slide" href="shop.html" style="--slide-image:url('assets/images/banner-flame.svg')">
+        <span class="marquee-kicker">Pull the heat</span>
+        <strong>Collector fire lives here.</strong>
+        <em>See inventory</em>
+      </a>
+      <a class="marquee-slide" href="releases.html" style="--slide-image:url('assets/images/banner-cosmic.svg')">
+        <span class="marquee-kicker">Release radar</span>
+        <strong>Know what drops next.</strong>
+        <em>View calendar</em>
+      </a>
+      <a class="marquee-slide" href="#crack-packs-live" style="--slide-image:url('assets/images/banner-vintage.svg')">
+        <span class="marquee-kicker">YouTube live room</span>
+        <strong>Watch every pack crack.</strong>
+        <em>Open live player</em>
+      </a>
       <div class="marquee-dots" aria-label="Choose showcase slide"></div>
     </div>
   </section>
@@ -53,7 +79,7 @@
           <div class="actions">
             <a class="btn btn-primary" href="shop.html">Shop collector inventory</a>
             <a class="btn btn-glass" href="card-lookup.html">Search cards &amp; prices</a>
-            <a class="btn btn-glass" data-whatnot href="#">Watch live on Whatnot ↗</a>
+            <a class="btn btn-glass" href="#crack-packs-live">Watch YouTube live</a>
           </div>
           <div class="mini-proof" aria-label="Store highlights">
             <div><strong>Rip or ship</strong><span>Choose live opening or sealed delivery</span></div>
@@ -63,12 +89,20 @@
         </div>
 
         <div class="hero-art reveal" aria-label="Original abstract trading-card display">
-          <div class="energy-ring ring-1"></div><div class="energy-ring ring-2"></div><div class="energy-ring ring-3"></div>
+          <div class="energy-ring ring-1"></div>
+          <div class="energy-ring ring-2"></div>
+          <div class="energy-ring ring-3"></div>
           <div class="card-stack">
-            <div class="show-card show-card-back"></div><div class="show-card show-card-mid"></div>
-            <div class="show-card show-card-front holo-card"><span class="show-card-tag">CP // LIVE</span><strong>CRACK<br>PACKS</strong><em>RIP • CHASE • HIT</em></div>
+            <div class="show-card show-card-back"></div>
+            <div class="show-card show-card-mid"></div>
+            <div class="show-card show-card-front holo-card">
+              <span class="show-card-tag">CP // LIVE</span>
+              <strong>CRACK<br>PACKS</strong>
+              <em>RIP • CHASE • HIT</em>
+            </div>
           </div>
-          <div class="hero-burst burst-electric">⚡</div><div class="hero-burst burst-fire">✦</div>
+          <div class="hero-burst burst-electric">⚡</div>
+          <div class="hero-burst burst-fire">✦</div>
           <div class="hero-chip chip-a"><span>Card search</span><strong>Find sets, numbers &amp; rarity</strong></div>
           <div class="hero-chip chip-b"><span>Live opening</span><strong>See every rip happen</strong></div>
           <div class="hero-chip chip-c"><span>Collector grade</span><strong>Singles, slabs &amp; sealed</strong></div>
@@ -87,31 +121,158 @@
 
     <section class="section" id="available-now">
       <div class="container">
-        <div class="section-heading reveal"><div><p class="eyebrow">Available now</p><h2>Collector inventory with <span>live-show energy.</span></h2><p>Browse the current inventory, then open the listing or Whatnot profile to verify availability.</p></div><a class="btn btn-outline" href="shop.html">Open full shop →</a></div>
+        <div class="section-heading reveal">
+          <div>
+            <p class="eyebrow">Available now</p>
+            <h2>Collector inventory with <span>live-show energy.</span></h2>
+            <p>Browse the current inventory, then open the listing or Whatnot profile to verify availability.</p>
+          </div>
+          <a class="btn btn-outline" href="shop.html">Open full shop →</a>
+        </div>
         <div class="product-grid" data-featured-products></div>
       </div>
     </section>
 
     <section class="section element-zone">
       <div class="container element-panel holo-panel reveal">
-        <div class="element-panel-copy"><p class="eyebrow">Collector utility</p><h2>Know the card before you set the bid.</h2><p>Search by name, set, number, rarity, type, or keyword. Compare returned market references, then open the external market listing to verify the current value.</p><div class="actions"><a class="btn btn-primary" href="card-lookup.html">Open Card Search &amp; Price Check</a><a class="btn btn-glass" href="shop.html">Browse inventory</a></div></div>
-        <div class="element-wheel" aria-hidden="true"><div class="wheel-core"><span>CP</span></div><span class="wheel-node wheel-electric">⌕</span><span class="wheel-node wheel-fire">$</span><span class="wheel-node wheel-water">#</span><span class="wheel-node wheel-leaf">◆</span><span class="wheel-node wheel-psychic">★</span><span class="wheel-node wheel-cosmic">↗</span></div>
+        <div class="element-panel-copy">
+          <p class="eyebrow">Collector utility</p>
+          <h2>Know the card before you set the bid.</h2>
+          <p>Search by name, set, number, rarity, type, or keyword. Compare returned market references, then open the external market listing to verify the current value.</p>
+          <div class="actions">
+            <a class="btn btn-primary" href="card-lookup.html">Open Card Search &amp; Price Check</a>
+            <a class="btn btn-glass" href="shop.html">Browse inventory</a>
+          </div>
+        </div>
+        <div class="element-wheel" aria-hidden="true">
+          <div class="wheel-core"><span>CP</span></div>
+          <span class="wheel-node wheel-electric">⌕</span>
+          <span class="wheel-node wheel-fire">$</span>
+          <span class="wheel-node wheel-water">#</span>
+          <span class="wheel-node wheel-leaf">◆</span>
+          <span class="wheel-node wheel-psychic">★</span>
+          <span class="wheel-node wheel-cosmic">↗</span>
+        </div>
       </div>
     </section>
 
     <section class="section release-preview">
       <div class="container">
-        <div class="section-heading reveal"><div><p class="eyebrow">Release radar</p><h2>Know what <span>drops next.</span></h2><p>Collector-friendly product dates, countdowns, and direct paths to source details and store availability.</p></div><a class="btn btn-outline" href="releases.html">View full calendar →</a></div>
+        <div class="section-heading reveal">
+          <div>
+            <p class="eyebrow">Release radar</p>
+            <h2>Know what <span>drops next.</span></h2>
+            <p>Collector-friendly product dates, countdowns, and direct paths to source details and store availability.</p>
+          </div>
+          <a class="btn btn-outline" href="releases.html">View full calendar →</a>
+        </div>
         <div class="release-grid" data-featured-releases></div>
       </div>
     </section>
 
-    <section class="section live-section">
-      <div class="container live-panel holo-panel reveal"><div class="live-visual" aria-hidden="true"><span class="live-orbit orbit-one"></span><span class="live-orbit orbit-two"></span><span class="live-mark">LIVE</span></div><div class="live-copy"><p class="eyebrow"><span class="live-pulse"></span> Crack Packs live</p><h2>Watch the chase unfold in real time.</h2><p>Follow the Whatnot profile for rip-and-ship openings, claim sales, pack lots, singles, slabs, and special release-night streams.</p><a class="btn btn-primary" data-whatnot href="#">Open the Whatnot profile ↗</a></div></div>
+    <section class="section live-section" id="crack-packs-live">
+      <div class="container">
+        <div class="youtube-live-shell holo-panel reveal" data-youtube-live data-state="loading">
+          <div class="youtube-live-header">
+            <div>
+              <p class="eyebrow youtube-live-kicker"><span class="youtube-status-light" aria-hidden="true"></span><span data-live-kicker>Checking YouTube status</span></p>
+              <h2>Crack Packs <span>Live Room.</span></h2>
+            </div>
+            <div class="youtube-live-status" aria-live="polite">
+              <span class="youtube-live-badge" data-live-badge>CHECKING</span>
+              <span class="youtube-viewers" data-live-viewers hidden></span>
+            </div>
+          </div>
+
+          <div class="youtube-live-grid">
+            <div class="youtube-stage" data-youtube-stage>
+              <div class="youtube-player" data-live-player hidden></div>
+
+              <div class="offline-carousel" data-offline-carousel aria-label="Crack Packs offline artwork slideshow">
+                <article class="offline-slide is-active" data-offline-slide style="--offline-image:url('assets/images/banner-electric.svg')">
+                  <div class="offline-slide-shade"></div>
+                  <div class="offline-slide-copy">
+                    <span>Crack Packs offline showcase</span>
+                    <strong>Charged for the next chase.</strong>
+                    <p>Subscribe on YouTube so the live room is ready when the next rip starts.</p>
+                  </div>
+                </article>
+                <article class="offline-slide" data-offline-slide style="--offline-image:url('assets/images/banner-flame.svg')">
+                  <div class="offline-slide-shade"></div>
+                  <div class="offline-slide-copy">
+                    <span>Break-night heat</span>
+                    <strong>Fresh packs. Loud pulls.</strong>
+                    <p>Check the Crack Packs shop and Whatnot profile while the YouTube room is offline.</p>
+                  </div>
+                </article>
+                <article class="offline-slide" data-offline-slide style="--offline-image:url('assets/images/banner-cosmic.svg')">
+                  <div class="offline-slide-shade"></div>
+                  <div class="offline-slide-copy">
+                    <span>Release radar</span>
+                    <strong>The next drop is already moving.</strong>
+                    <p>Track upcoming products and countdowns before release-night inventory lands.</p>
+                  </div>
+                </article>
+                <article class="offline-slide" data-offline-slide style="--offline-image:url('assets/images/banner-vintage.svg')">
+                  <div class="offline-slide-shade"></div>
+                  <div class="offline-slide-copy">
+                    <span>Collector utility</span>
+                    <strong>Search it before you bid it.</strong>
+                    <p>Use Card Search &amp; Price Check for set details and current market references.</p>
+                  </div>
+                </article>
+
+                <div class="offline-controls">
+                  <button class="offline-control" type="button" data-slide-previous aria-label="Show previous artwork">←</button>
+                  <div class="offline-dots" data-slide-dots aria-label="Choose offline artwork"></div>
+                  <button class="offline-control" type="button" data-slide-next aria-label="Show next artwork">→</button>
+                </div>
+              </div>
+
+              <div class="youtube-stage-corner" aria-hidden="true">
+                <span>CP</span>
+                <small>RIP • CHASE • HIT</small>
+              </div>
+            </div>
+
+            <aside class="youtube-live-copy">
+              <p class="youtube-live-message" data-live-message>Checking whether Crack Packs is live on YouTube.</p>
+              <h3 data-live-title>Live stream status loading…</h3>
+              <p data-live-description>The artwork slideshow will remain visible whenever the channel is offline.</p>
+
+              <div class="youtube-upcoming" data-live-upcoming hidden>
+                <span>Next scheduled stream</span>
+                <strong data-upcoming-title></strong>
+                <time data-upcoming-time></time>
+              </div>
+
+              <div class="actions youtube-live-actions">
+                <a class="btn btn-primary" data-youtube-watch href="#" target="_blank" rel="noopener noreferrer" hidden>Watch on YouTube ↗</a>
+                <a class="btn btn-glass" data-youtube-channel href="#" target="_blank" rel="noopener noreferrer" hidden>Open YouTube channel ↗</a>
+                <a class="btn btn-glass" data-whatnot href="#">Shop / watch on Whatnot ↗</a>
+              </div>
+
+              <p class="youtube-refresh-note"><span aria-hidden="true">↻</span> The website automatically checks for live and scheduled YouTube streams.</p>
+            </aside>
+          </div>
+        </div>
+      </div>
     </section>
 
     <section class="section newsletter-section">
-      <div class="container newsletter-panel reveal"><div><p class="eyebrow">Restock signal</p><h2>Get notified when the next drop lands.</h2><p>Connect this form to your email provider before collecting addresses.</p></div><form class="newsletter-form" data-newsletter><label class="sr-only" for="home-email">Email address</label><input id="home-email" name="email" type="email" autocomplete="email" required placeholder="collector@email.com"><button class="btn btn-primary" type="submit">Join drop alerts</button><span class="form-message" data-form-message aria-live="polite"></span></form></div>
+      <div class="container newsletter-panel reveal">
+        <div>
+          <p class="eyebrow">Restock signal</p>
+          <h2>Get notified when the next drop lands.</h2>
+          <p>Connect this form to your email provider before collecting addresses.</p>
+        </div>
+        <form class="newsletter-form" data-newsletter>
+          <label class="sr-only" for="home-email">Email address</label>
+          <input id="home-email" name="email" type="email" autocomplete="email" required placeholder="collector@email.com">
+          <button class="btn btn-primary" type="submit">Join drop alerts</button>
+          <span class="form-message" data-form-message aria-live="polite"></span>
+        </form>
+      </div>
     </section>
   </main>
 
@@ -119,29 +280,41 @@
     <div class="marquee-slides" data-marquee>
       <a class="marquee-slide is-active" href="card-lookup.html" style="--slide-image:url('assets/images/banner-electric.svg')"><span class="marquee-kicker">Card value signal</span><strong>Search the card. Check the reference.</strong><em>Open tool</em></a>
       <a class="marquee-slide" href="releases.html" style="--slide-image:url('assets/images/banner-cosmic.svg')"><span class="marquee-kicker">Drop signal</span><strong>Dates, countdowns and release-night heat.</strong><em>Open radar</em></a>
-      <a class="marquee-slide" data-whatnot href="#" style="--slide-image:url('assets/images/banner-flame.svg')"><span class="marquee-kicker">Live room</span><strong>Bring the energy. Crack the packs.</strong><em>Watch live</em></a>
+      <a class="marquee-slide" href="#crack-packs-live" style="--slide-image:url('assets/images/banner-flame.svg')"><span class="marquee-kicker">YouTube live room</span><strong>Bring the energy. Crack the packs.</strong><em>Watch live</em></a>
       <div class="marquee-dots" aria-label="Choose showcase slide"></div>
     </div>
   </section>
 
   <footer class="site-footer">
     <div class="container footer-grid">
-      <div class="footer-brand"><img src="assets/images/logo.svg" alt="Crack Packs"><p>A vibrant independent trading-card storefront for collectors, live rips, card price checks, sealed products, singles, and new-release tracking.</p></div>
+      <div class="footer-brand">
+        <img src="assets/images/logo.svg" alt="Crack Packs">
+        <p>A vibrant independent trading-card storefront for collectors, live rips, card price checks, sealed products, singles, and new-release tracking.</p>
+      </div>
       <div class="footer-links">
         <h3>Explore</h3>
         <a href="index.html">Home</a>
         <a href="shop.html">Shop</a>
         <a href="releases.html">Release Radar</a>
         <a href="card-lookup.html">Card Search &amp; Price Check</a>
+        <a href="#crack-packs-live">YouTube Live Room</a>
         <a data-whatnot href="#">Whatnot</a>
       </div>
-      <div class="footer-links"><h3>Contact</h3><a data-email href="#">hello@crackpacks.com</a><a href="https://github.com/FaytSystems/crackpacks" target="_blank" rel="noopener noreferrer">GitHub repository ↗</a></div>
+      <div class="footer-links">
+        <h3>Contact</h3>
+        <a data-email href="#">hello@crackpacks.com</a>
+        <a href="https://github.com/FaytSystems/crackpacks" target="_blank" rel="noopener noreferrer">GitHub repository ↗</a>
+      </div>
     </div>
-    <div class="container footer-bottom"><span>© <span data-year></span> Crack Packs.</span><span>Independent retailer. Pokémon and related marks belong to their respective owners. Card values are estimates and may change.</span></div>
+    <div class="container footer-bottom">
+      <span>© <span data-year></span> Crack Packs.</span>
+      <span>Independent retailer. Pokémon and related marks belong to their respective owners. Card values are estimates and may change.</span>
+    </div>
   </footer>
 
-  <script src="assets/js/config.js?v=1.5.0"></script>
-  <script src="assets/js/data.js?v=1.5.0"></script>
-  <script src="assets/js/app.js?v=1.5.0"></script>
+  <script src="assets/js/config.js?v=1.6.0"></script>
+  <script src="assets/js/data.js?v=1.6.0"></script>
+  <script src="assets/js/app.js?v=1.6.0"></script>
+  <script src="assets/js/youtube-live.js?v=1.6.0"></script>
 </body>
 </html>

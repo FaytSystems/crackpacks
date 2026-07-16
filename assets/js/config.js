@@ -1,6 +1,14 @@
+// D:\crackpacks\crackpacks-github-ready\assets\js\config.js
+
 window.CRACKPACKS_CONFIG = {
   whatnotUrl: "https://www.whatnot.com/user/crack_packs",
   cardApiUrl: "https://api.crackpacks.com/cards",
+  youtubeLiveStatusUrl: "https://live-api.crackpacks.com/status",
+  youtubeChannelUrl: "",
+  youtubeManualVideoId: "",
+  youtubeStatusRefreshMs: 60000,
+  youtubeSlideshowMs: 6500,
+  youtubeRequestTimeoutMs: 8000,
   storeUrl: "shop.html",
   email: "hello@crackpacks.com",
   domain: "https://crackpacks.com",
