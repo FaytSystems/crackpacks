@@ -2,10 +2,10 @@
 Full file:
   D:\crackpacks\crackpacks-github-ready\contact-worker\src\index.js
 
-Crack Packs Contact Worker v1.7.0
+Crack Packs Contact Worker v1.7.1
 */
 
-const VERSION = "1.7.0";
+const VERSION = "1.7.1";
 const SERVICE = "crackpacks-contact";
 const CONTACT_ADDRESS = "support@crackpacks.com";
 const DEFAULT_MAX_MESSAGE_LENGTH = 4000;
@@ -15,13 +15,12 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const origin = request.headers.get("Origin") || "";
-    const allowedOrigins = parseAllowedOrigins(env.ALLOWED_ORIGINS);
-    const corsOrigin = allowedOrigins.has(origin) ? origin : "";
+    const corsOrigin = getAllowedOrigin(origin, env.ALLOWED_ORIGINS);
 
     if (request.method === "OPTIONS") {
       if (origin && !corsOrigin) {
         return jsonResponse(
-          { ok: false, error: "Origin is not allowed." },
+          { ok: false, error: "Origin is not allowed.", reference: "ORIGIN_DENIED" },
           403,
           corsHeaders("")
         );
@@ -34,12 +33,23 @@ export default {
     }
 
     if (url.pathname === "/health" && request.method === "GET") {
+      const missing = [];
+      if (!env.CONTACT_EMAIL) {
+        missing.push("CONTACT_EMAIL");
+      }
+      if (!env.CONTACT_DESTINATION) {
+        missing.push("CONTACT_DESTINATION");
+      }
+
       return jsonResponse(
         {
           ok: true,
           service: SERVICE,
           version: VERSION,
-          configured: Boolean(env.CONTACT_EMAIL && env.CONTACT_DESTINATION),
+          configured: missing.length === 0,
+          bindingConfigured: Boolean(env.CONTACT_EMAIL),
+          destinationConfigured: Boolean(env.CONTACT_DESTINATION),
+          missing,
           contactAddress: CONTACT_ADDRESS,
           endpoints: ["/health", "/contact"]
         },
@@ -50,7 +60,7 @@ export default {
 
     if (url.pathname !== "/contact") {
       return jsonResponse(
-        { ok: false, error: "Not found." },
+        { ok: false, error: "Not found.", reference: "NOT_FOUND" },
         404,
         corsHeaders(corsOrigin)
       );
@@ -58,7 +68,7 @@ export default {
 
     if (request.method !== "POST") {
       return jsonResponse(
-        { ok: false, error: "Method not allowed." },
+        { ok: false, error: "Method not allowed.", reference: "METHOD_NOT_ALLOWED" },
         405,
         {
           ...corsHeaders(corsOrigin),
@@ -69,7 +79,7 @@ export default {
 
     if (origin && !corsOrigin) {
       return jsonResponse(
-        { ok: false, error: "Origin is not allowed." },
+        { ok: false, error: "Origin is not allowed.", reference: "ORIGIN_DENIED" },
         403,
         corsHeaders("")
       );
@@ -77,7 +87,13 @@ export default {
 
     if (!env.CONTACT_EMAIL || !env.CONTACT_DESTINATION) {
       return jsonResponse(
-        { ok: false, error: "Contact service is not configured." },
+        {
+          ok: false,
+          error: "Contact service is not configured.",
+          reference: !env.CONTACT_EMAIL
+            ? "EMAIL_BINDING_MISSING"
+            : "DESTINATION_SECRET_MISSING"
+        },
         503,
         corsHeaders(corsOrigin)
       );
@@ -86,7 +102,11 @@ export default {
     const contentType = request.headers.get("Content-Type") || "";
     if (!contentType.toLowerCase().includes("application/json")) {
       return jsonResponse(
-        { ok: false, error: "Content-Type must be application/json." },
+        {
+          ok: false,
+          error: "Content-Type must be application/json.",
+          reference: "CONTENT_TYPE"
+        },
         415,
         corsHeaders(corsOrigin)
       );
@@ -95,7 +115,7 @@ export default {
     const contentLength = Number(request.headers.get("Content-Length") || "0");
     if (Number.isFinite(contentLength) && contentLength > 20000) {
       return jsonResponse(
-        { ok: false, error: "Request is too large." },
+        { ok: false, error: "Request is too large.", reference: "REQUEST_TOO_LARGE" },
         413,
         corsHeaders(corsOrigin)
       );
@@ -106,7 +126,7 @@ export default {
       payload = await request.json();
     } catch {
       return jsonResponse(
-        { ok: false, error: "Invalid JSON request." },
+        { ok: false, error: "Invalid JSON request.", reference: "INVALID_JSON" },
         400,
         corsHeaders(corsOrigin)
       );
@@ -115,7 +135,7 @@ export default {
     const email = normalizeText(payload?.email, 254).toLowerCase();
     const message = normalizeMessage(payload?.message);
     const honeypot = normalizeText(payload?.company, 200);
-    const page = normalizePage(payload?.page, allowedOrigins);
+    const page = normalizePage(payload?.page);
     const maxMessageLength = positiveInteger(
       env.MAX_MESSAGE_LENGTH,
       DEFAULT_MAX_MESSAGE_LENGTH
@@ -135,7 +155,7 @@ export default {
 
     if (!isValidEmail(email)) {
       return jsonResponse(
-        { ok: false, error: "Enter a valid email address." },
+        { ok: false, error: "Enter a valid email address.", reference: "INVALID_EMAIL" },
         400,
         corsHeaders(corsOrigin)
       );
@@ -143,7 +163,11 @@ export default {
 
     if (message.length < 10) {
       return jsonResponse(
-        { ok: false, error: "Enter a message with at least 10 characters." },
+        {
+          ok: false,
+          error: "Enter a message with at least 10 characters.",
+          reference: "MESSAGE_TOO_SHORT"
+        },
         400,
         corsHeaders(corsOrigin)
       );
@@ -151,7 +175,11 @@ export default {
 
     if (message.length > maxMessageLength) {
       return jsonResponse(
-        { ok: false, error: `Keep the message under ${maxMessageLength} characters.` },
+        {
+          ok: false,
+          error: `Keep the message under ${maxMessageLength} characters.`,
+          reference: "MESSAGE_TOO_LONG"
+        },
         400,
         corsHeaders(corsOrigin)
       );
@@ -166,7 +194,8 @@ export default {
       return jsonResponse(
         {
           ok: false,
-          error: "Please wait a minute before sending another message."
+          error: "Please wait a minute before sending another message.",
+          reference: "CONTACT_RATE_LIMIT"
         },
         429,
         {
@@ -213,20 +242,11 @@ export default {
     try {
       const result = await env.CONTACT_EMAIL.send({
         to: env.CONTACT_DESTINATION,
-        from: {
-          email: CONTACT_ADDRESS,
-          name: "Crack Packs Support"
-        },
-        replyTo: {
-          email,
-          name: "Website Visitor"
-        },
+        from: CONTACT_ADDRESS,
+        replyTo: email,
         subject,
         text: textBody,
-        html: htmlBody,
-        headers: {
-          "X-Crack-Packs-Source": "website-contact-form"
-        }
+        html: htmlBody
       });
 
       ctx.waitUntil(
@@ -250,37 +270,55 @@ export default {
         corsHeaders(corsOrigin)
       );
     } catch (error) {
+      const code = normalizeErrorCode(error?.code);
       console.error("Contact email send failed", {
-        code: error?.code || "",
+        code,
         message: error instanceof Error ? error.message : String(error)
       });
 
       return jsonResponse(
         {
           ok: false,
-          error: "The message could not be sent. Please try again."
+          error: friendlySendError(code),
+          reference: code || "EMAIL_SEND_FAILED"
         },
-        502,
+        statusForSendError(code),
         corsHeaders(corsOrigin)
       );
     }
   }
 };
 
-function parseAllowedOrigins(raw) {
-  const defaults = [
-    "https://crackpacks.com",
-    "https://www.crackpacks.com",
-    "http://localhost:8080",
-    "http://127.0.0.1:8080"
-  ];
+function getAllowedOrigin(origin, rawOrigins) {
+  if (!origin) {
+    return "";
+  }
 
-  return new Set(
-    String(raw || defaults.join(","))
+  const exactOrigins = new Set(
+    String(rawOrigins || "")
       .split(",")
       .map((value) => value.trim())
       .filter(Boolean)
   );
+
+  if (exactOrigins.has(origin)) {
+    return origin;
+  }
+
+  try {
+    const url = new URL(origin);
+    const isHttps = url.protocol === "https:";
+    const isPagesProduction = url.hostname === "crackpacks.pages.dev";
+    const isPagesPreview = url.hostname.endsWith(".crackpacks.pages.dev");
+
+    if (isHttps && (isPagesProduction || isPagesPreview)) {
+      return origin;
+    }
+  } catch {
+    return "";
+  }
+
+  return "";
 }
 
 function corsHeaders(origin) {
@@ -326,7 +364,7 @@ function isValidEmail(value) {
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
-function normalizePage(value, allowedOrigins) {
+function normalizePage(value) {
   const raw = normalizeText(value, 1000);
   if (!raw) {
     return "";
@@ -334,7 +372,7 @@ function normalizePage(value, allowedOrigins) {
 
   try {
     const url = new URL(raw);
-    return allowedOrigins.has(url.origin) ? url.href : "";
+    return ["https:", "http:"].includes(url.protocol) ? url.href : "";
   } catch {
     return "";
   }
@@ -355,6 +393,51 @@ async function createRateLimitKey(ip, email) {
   return new Request(`https://contact-rate-limit.invalid/${hash}`, {
     method: "GET"
   });
+}
+
+function normalizeErrorCode(value) {
+  return String(value || "")
+    .trim()
+    .replace(/[^A-Z0-9_]/g, "")
+    .slice(0, 80);
+}
+
+function friendlySendError(code) {
+  switch (code) {
+    case "E_SENDER_NOT_VERIFIED":
+    case "E_SENDER_DOMAIN_NOT_AVAILABLE":
+      return "The support sender domain is not ready in Cloudflare Email Service.";
+    case "E_RECIPIENT_NOT_ALLOWED":
+      return "The support destination is not allowed by the email binding.";
+    case "E_RECIPIENT_SUPPRESSED":
+      return "The support destination is temporarily suppressed by the email service.";
+    case "E_RATE_LIMIT_EXCEEDED":
+    case "E_DAILY_LIMIT_EXCEEDED":
+      return "The email service is temporarily rate limited. Please try again later.";
+    case "E_VALIDATION_ERROR":
+    case "E_FIELD_MISSING":
+      return "The email service rejected the message format.";
+    case "E_DELIVERY_FAILED":
+      return "The email service could not deliver the message.";
+    default:
+      return "The message could not be sent. Please try again.";
+  }
+}
+
+function statusForSendError(code) {
+  switch (code) {
+    case "E_RATE_LIMIT_EXCEEDED":
+    case "E_DAILY_LIMIT_EXCEEDED":
+      return 429;
+    case "E_SENDER_NOT_VERIFIED":
+    case "E_SENDER_DOMAIN_NOT_AVAILABLE":
+    case "E_RECIPIENT_NOT_ALLOWED":
+    case "E_VALIDATION_ERROR":
+    case "E_FIELD_MISSING":
+      return 503;
+    default:
+      return 502;
+  }
 }
 
 function escapeHtml(value) {

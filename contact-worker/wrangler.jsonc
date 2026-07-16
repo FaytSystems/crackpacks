@@ -18,10 +18,14 @@
       "name": "CONTACT_EMAIL",
       "allowed_sender_addresses": [
         "support@crackpacks.com"
-      ],
-      "remote": true
+      ]
     }
   ],
+  "secrets": {
+    "required": [
+      "CONTACT_DESTINATION"
+    ]
+  },
   "vars": {
     "ALLOWED_ORIGINS": "https://crackpacks.com,https://www.crackpacks.com,http://localhost:8080,http://127.0.0.1:8080",
     "RATE_LIMIT_SECONDS": "60",

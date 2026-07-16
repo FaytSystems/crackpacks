@@ -1,74 +1,56 @@
 {
-  "package": "Crack Packs Contact Form and Cloudflare Email Worker",
-  "version": "1.7.0",
+  "package": "Crack Packs Contact Form and Cloudflare Email Worker Hotfix",
+  "version": "1.7.1",
   "created": "2026-07-16",
   "repository_root": "D:\\crackpacks\\crackpacks-github-ready",
-  "worker": {
-    "name": "crackpacks-contact",
-    "custom_domain": "contact-api.crackpacks.com",
-    "sender": "support@crackpacks.com",
-    "destination_secret": "CONTACT_DESTINATION"
-  },
   "validation": {
     "javascript_syntax": "passed",
-    "powershell_installer_ascii_only": true,
-    "powershell_deployer_ascii_only": true,
-    "contact_success_copy_present": true,
-    "worker_destination_is_secret": true,
-    "frontend_contains_no_private_destination": true,
-    "syntax_details": {
-      "assets/js/contact-form.js": {
-        "ok": true,
-        "stderr": ""
-      },
-      "contact-worker/src/index.js": {
-        "ok": true,
-        "stderr": ""
-      }
-    },
-    "powershell_switch_invocation_review": "passed",
-    "git_path_array_review": "passed"
+    "powershell_ascii_only": true,
+    "honeypot_native_hidden": true,
+    "diagnostic_health": true,
+    "cloudflare_pages_preview_origins": true,
+    "required_destination_secret": true
   },
   "files": [
     {
       "path": "CONTACT-FORM-README.md",
-      "bytes": 3992,
-      "sha256": "0319211bf46a57e540a577c107b63aa6d3864a4288368155f9e60feecccdf63f"
+      "bytes": 1937,
+      "sha256": "b594196eeab5172627395e51c845b307790ad530cda6447f04992e52c6b07d9a"
     },
     {
       "path": "assets/css/contact-form.css",
-      "bytes": 6415,
-      "sha256": "28bea915abeb854dbe25ac1d5a53c01e7bd92992828c284eed39dfd7c98e41b6"
+      "bytes": 6538,
+      "sha256": "2ec90e1f396f09a66714ef173839ddeb8fc20388bbff3c12316b22ad61093398"
     },
     {
       "path": "assets/js/contact-form.js",
-      "bytes": 5141,
-      "sha256": "f646fa982a0f091c602ae82d78dfdced927144084a39b5e80ce7bcd7b937115b"
+      "bytes": 5651,
+      "sha256": "814453abb8af74b20420a058efcdf4cb49405588ed8de02aa04cd50c4aa220db"
     },
     {
       "path": "contact-worker/deploy-worker.ps1",
-      "bytes": 2029,
-      "sha256": "d3800c9d87ed80ab23edd086ea2e6f50ba4cdc4be4f8852938d3faa0c25d9ae3"
+      "bytes": 2784,
+      "sha256": "c1c0619187a51350a5b5bc3a083967f9aee64f27230f51bec73d1a99fe040de0"
     },
     {
       "path": "contact-worker/package.json",
       "bytes": 190,
-      "sha256": "1d2dce7afdd389893a167019cc8e089e5074da865857c7e589248023ae1ab89a"
+      "sha256": "8e3134a60ba75848827d16d08e82cf329f8cb1e194ce4e8d9e14e89678fa7424"
     },
     {
       "path": "contact-worker/src/index.js",
-      "bytes": 9969,
-      "sha256": "a2a9a2e69ba0c2a050669ae995804c5ec242c368ba145216d942274726d1f43e"
+      "bytes": 12393,
+      "sha256": "9d57c138470904c15a428098e917fad4695590e5c5f30191e84a54e824671d4f"
     },
     {
       "path": "contact-worker/wrangler.jsonc",
-      "bytes": 811,
-      "sha256": "2a563dda24154bf053c19cc7fd759748e07cc25af77e572cb8c9715f02b9bb0c"
+      "bytes": 861,
+      "sha256": "ab6c052f9531f43af38990e1585f03207349a110da2d6836b8dc74a875254dcd"
     },
     {
-      "path": "install-crackpacks-contact-form-v1.7.0.ps1",
-      "bytes": 14390,
-      "sha256": "0dd7274fe07709118972c57c28e7827cffb1915c5c20c9aae775fbd0086c4269"
+      "path": "install-crackpacks-contact-form-v1.7.1.ps1",
+      "bytes": 13569,
+      "sha256": "6ab5fe0e82b521be376b84fee934f6146084f43ded15cac1069ef1e290c80208"
     }
   ]
 }

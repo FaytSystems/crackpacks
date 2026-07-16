@@ -2,8 +2,8 @@
 Full file:
   D:\crackpacks\crackpacks-github-ready\contact-worker\deploy-worker.ps1
 
-Deploys the Crack Packs contact Worker.
-This source is ASCII-only for Windows PowerShell 5.1 compatibility.
+Crack Packs Contact Worker deployer v1.7.1.
+This source is ASCII-only for Windows PowerShell 5.1.
 #>
 
 [CmdletBinding()]
@@ -31,11 +31,10 @@ function Invoke-Checked {
     }
 }
 
-$WorkerRoot = $PSScriptRoot
-Set-Location -LiteralPath $WorkerRoot
+Set-Location -LiteralPath $PSScriptRoot
 
 if (-not (Get-Command "node" -ErrorAction SilentlyContinue)) {
-    throw "Node.js was not found. Install Node.js before deploying the Worker."
+    throw "Node.js was not found."
 }
 
 Invoke-Checked `
@@ -45,21 +44,22 @@ Invoke-Checked `
         "whoami"
     )
 
-Write-Host ""
-Write-Host "Deploying crackpacks-contact..." -ForegroundColor Cyan
+$SecretList = @(
+    & npx wrangler secret list --name crackpacks-contact
+)
 
-Invoke-Checked `
-    -Command "npx" `
-    -Arguments @(
-        "wrangler",
-        "deploy"
-    )
+if ($LASTEXITCODE -ne 0) {
+    throw "Unable to list Worker secrets."
+}
 
-if ($SetDestination) {
+$HasDestination = (
+    $SecretList -join "`n"
+).Contains("CONTACT_DESTINATION")
+
+if ($SetDestination -or -not $HasDestination) {
     Write-Host ""
     Write-Host "Enter the verified private destination address." -ForegroundColor Yellow
-    Write-Host "For this account, enter: robertreese@faytsystems.com" -ForegroundColor DarkGray
-    Write-Host "The value will be stored as the encrypted CONTACT_DESTINATION secret." -ForegroundColor DarkGray
+    Write-Host "Use: robertreese@faytsystems.com" -ForegroundColor DarkGray
 
     Invoke-Checked `
         -Command "npx" `
@@ -74,6 +74,44 @@ if ($SetDestination) {
 }
 
 Write-Host ""
-Write-Host "Contact Worker deployment complete." -ForegroundColor Green
-Write-Host "Health:  https://contact-api.crackpacks.com/health"
-Write-Host "Endpoint: https://contact-api.crackpacks.com/contact"
+Write-Host "Deploying crackpacks-contact v1.7.1..." -ForegroundColor Cyan
+
+Invoke-Checked `
+    -Command "npx" `
+    -Arguments @(
+        "wrangler",
+        "deploy"
+    )
+
+Write-Host ""
+Write-Host "Waiting for the production health endpoint..." -ForegroundColor Cyan
+
+$HealthUri = "https://contact-api.crackpacks.com/health"
+$Health = $null
+
+for ($Attempt = 1; $Attempt -le 12; $Attempt++) {
+    try {
+        $Timestamp = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+        $Health = Invoke-RestMethod `
+            -Uri "$HealthUri`?ts=$Timestamp" `
+            -Method Get `
+            -TimeoutSec 20
+        break
+    }
+    catch {
+        Start-Sleep -Seconds 5
+    }
+}
+
+if (-not $Health) {
+    throw "The contact Worker deployed, but the health endpoint could not be reached: $HealthUri"
+}
+
+$Health | ConvertTo-Json -Depth 10
+
+if ($Health.configured -ne $true) {
+    throw "The contact Worker is reachable but not configured. Review the missing array above."
+}
+
+Write-Host ""
+Write-Host "Contact Worker is configured." -ForegroundColor Green

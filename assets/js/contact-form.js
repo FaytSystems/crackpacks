@@ -2,7 +2,7 @@
 Full file:
   D:\crackpacks\crackpacks-github-ready\assets\js\contact-form.js
 
-Crack Packs Contact Form v1.7.0
+Crack Packs Contact Form v1.7.1
 */
 
 (() => {
@@ -89,6 +89,13 @@ Crack Packs Contact Form v1.7.0
     }
   };
 
+  const errorWithReference = (message, reference) => {
+    if (!reference) {
+      return message;
+    }
+    return `${message} Reference: ${reference}`;
+  };
+
   document.addEventListener("click", (event) => {
     const openButton = event.target.closest("[data-contact-open]");
     if (openButton) {
@@ -144,7 +151,7 @@ Crack Packs Contact Form v1.7.0
     submitting = true;
     submitButton.disabled = true;
     submitButton.textContent = "Sending...";
-    setStatus("Sending your message securely...", "");
+    setStatus("Sending your message securely...");
 
     try {
       const response = await fetch(CONTACT_ENDPOINT, {
@@ -170,7 +177,9 @@ Crack Packs Contact Form v1.7.0
         const fallback = response.status === 429
           ? "Please wait a minute before sending another message."
           : "The message could not be sent. Please try again.";
-        throw new Error(payload.error || fallback);
+        throw new Error(
+          errorWithReference(payload.error || fallback, payload.reference)
+        );
       }
 
       showSuccess();
@@ -178,8 +187,17 @@ Crack Packs Contact Form v1.7.0
       submitting = false;
       submitButton.disabled = false;
       submitButton.textContent = "Send Message";
+
+      const isNetworkFailure =
+        error instanceof TypeError &&
+        /fetch|network|load/i.test(error.message);
+
       setStatus(
-        error instanceof Error ? error.message : "The message could not be sent.",
+        isNetworkFailure
+          ? "The contact service could not be reached. Open this page from https://crackpacks.com and try again."
+          : (error instanceof Error
+              ? error.message
+              : "The message could not be sent."),
         "error"
       );
     }

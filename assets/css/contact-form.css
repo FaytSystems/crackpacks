@@ -2,8 +2,13 @@
 Full file:
   D:\crackpacks\crackpacks-github-ready\assets\css\contact-form.css
 
-Crack Packs Contact Form v1.7.0
+Crack Packs Contact Form v1.7.1
 */
+
+.contact-modal [hidden],
+.contact-honeypot[hidden] {
+  display: none !important;
+}
 
 .contact-footer-cta {
   display: flex;
@@ -62,7 +67,7 @@ Crack Packs Contact Form v1.7.0
 }
 
 .contact-modal[hidden] {
-  display: none;
+  display: none !important;
 }
 
 .contact-modal {
@@ -193,6 +198,7 @@ Crack Packs Contact Form v1.7.0
 }
 
 .contact-honeypot {
+  display: none !important;
   position: absolute !important;
   left: -10000px !important;
   width: 1px !important;
