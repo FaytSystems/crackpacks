@@ -9,9 +9,16 @@
   const $ = selector => document.querySelector(selector);
   const status = $("[data-app-status]");
   let email = "";
+  let turnstileTokenValue = "";
   const turnstileNode = $("[data-turnstile]");
   if (turnstileNode && config.turnstileSiteKey) {
-    window.cpTurnstileReady = () => window.turnstile.render(turnstileNode, { sitekey: config.turnstileSiteKey, theme: "dark" });
+    window.cpTurnstileReady = () => window.turnstile.render(turnstileNode, {
+      sitekey: config.turnstileSiteKey,
+      theme: "dark",
+      callback: tokenValue => { turnstileTokenValue = tokenValue; showStatus(""); },
+      "expired-callback": () => { turnstileTokenValue = ""; showStatus("Security check expired. Complete it again.", "error"); },
+      "error-callback": () => { turnstileTokenValue = ""; showStatus("Security check could not load. Refresh and try again.", "error"); }
+    });
     const script = document.createElement("script"); script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?onload=cpTurnstileReady&render=explicit"; script.async = true; script.defer = true; document.head.append(script);
   } else if (turnstileNode) {
     turnstileNode.textContent = "Security verification is awaiting its Cloudflare site key.";
@@ -61,7 +68,8 @@
 
   $("[data-request-form]").addEventListener("submit", async event => {
     event.preventDefault(); const form = new FormData(event.currentTarget); email = String(form.get("email")).trim().toLowerCase();
-    const turnstileToken = String(form.get("cf-turnstile-response") || "");
+    const turnstileToken = turnstileTokenValue || String(form.get("cf-turnstile-response") || "");
+    if (!turnstileToken) { showStatus("Complete the security check before requesting your verification link.", "error"); return; }
     try {
       await request("/auth/request", { method: "POST", body: JSON.stringify({ email, referralCode, turnstileToken }) });
       const sendButton = $("[data-send-verification]");

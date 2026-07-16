@@ -61,6 +61,7 @@ async function verifyTurnstile(env, token, request) {
   form.set("remoteip", request.headers.get("CF-Connecting-IP") || "");
   const result = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", { method: "POST", body: form });
   const payload = await result.json();
+  if (payload.success !== true) console.warn("Turnstile rejected request", { errorCodes: payload["error-codes"] || [], hostname: payload.hostname || "", action: payload.action || "" });
   return payload.success === true;
 }
 async function route(request, env, cors) {
