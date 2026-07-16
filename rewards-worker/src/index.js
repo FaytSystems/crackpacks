@@ -23,7 +23,29 @@ function corsFor(request, env) {
   return allowed.includes(origin) ? { "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Headers": "Content-Type, Authorization", "Access-Control-Allow-Methods": "GET, POST, OPTIONS", Vary: "Origin" } : null;
 }
 async function body(request) { try { return await request.json(); } catch { throw new Error("INVALID_JSON"); } }
-async function sendEmail(env, to, subject, html) {
+async function sendEmail(env, to, subject, html, idempotencyKey = id()) {
+  if (env.RESEND_API_KEY) {
+    const result = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.RESEND_API_KEY}`,
+        "Content-Type": "application/json",
+        "Idempotency-Key": idempotencyKey
+      },
+      body: JSON.stringify({
+        from: "Crack Packs Rewards <rewards@crackpacks.com>",
+        to: [to],
+        subject,
+        html
+      })
+    });
+    if (!result.ok) {
+      const payload = await result.json().catch(() => ({}));
+      console.error("Resend delivery failed", { status: result.status, name: payload.name || "", message: payload.message || "" });
+      throw new Error("EMAIL_DELIVERY_FAILED");
+    }
+    return;
+  }
   if (!env.REWARDS_EMAIL) {
     if (env.ENVIRONMENT === "development") return;
     throw new Error("EMAIL_NOT_CONFIGURED");
@@ -74,10 +96,11 @@ async function route(request, env, cors) {
     const recent = await env.DB.prepare(`SELECT COUNT(*) count FROM login_codes WHERE email=? AND created_at>?`).bind(email, new Date(Date.now() - 15 * 60e3).toISOString()).first();
     if (Number(recent.count) >= 3) return response({ error: "Too many codes requested. Try again later." }, 429, cors);
     const linkToken = randomString(48); const created = now();
-    await env.DB.prepare(`INSERT INTO login_codes(id,email,code_hash,expires_at,created_at) VALUES(?,?,?,?,?)`).bind(id(), email, await hash(linkToken, env.AUTH_SECRET), new Date(Date.now() + 10 * 60e3).toISOString(), created).run();
     const ref = clean(data.referralCode, 16).toUpperCase();
     const verifyUrl = `${env.SITE_URL}/referral.html?verify=${encodeURIComponent(linkToken)}${ref ? `&ref=${encodeURIComponent(ref)}` : ""}`;
-    await sendEmail(env, email, "Verify your Crack Packs email", `<h1>Verify your email</h1><p><a href="${verifyUrl}" style="display:inline-block;padding:14px 22px;background:#f8ff46;color:#070815;text-decoration:none;font-weight:bold;border-radius:10px">Verify email and continue</a></p><p>This secure link expires in 10 minutes and can only be used once. If you did not request it, ignore this message.</p>`);
+    const codeId = id();
+    await sendEmail(env, email, "Verify your Crack Packs email", `<h1>Verify your email</h1><p><a href="${verifyUrl}" style="display:inline-block;padding:14px 22px;background:#f8ff46;color:#070815;text-decoration:none;font-weight:bold;border-radius:10px">Verify email and continue</a></p><p>This secure link expires in 10 minutes and can only be used once. If you did not request it, ignore this message.</p>`, codeId);
+    await env.DB.prepare(`INSERT INTO login_codes(id,email,code_hash,expires_at,created_at) VALUES(?,?,?,?,?)`).bind(codeId, email, await hash(linkToken, env.AUTH_SECRET), new Date(Date.now() + 10 * 60e3).toISOString(), created).run();
     await audit(env, request, "login_code_requested", null, email); return response({ ok: true }, 200, cors);
   }
   if (url.pathname === "/auth/verify-link" && request.method === "POST") {
