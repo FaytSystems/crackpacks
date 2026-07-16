@@ -61,7 +61,7 @@
   $("[data-request-form]").addEventListener("submit", async event => {
     event.preventDefault(); const form = new FormData(event.currentTarget); email = String(form.get("email")).trim().toLowerCase();
     const turnstileToken = String(form.get("cf-turnstile-response") || "");
-    try { await request("/auth/request", { method: "POST", body: JSON.stringify({ email, whatnotConfirmed: form.get("whatnotConfirmed") === "on", referralCode, turnstileToken }) }); show("[data-request-panel]", false); show("[data-verify-panel]", true); showStatus("A sign-in code was sent. It expires in 10 minutes.", "success"); }
+    try { await request("/auth/request", { method: "POST", body: JSON.stringify({ email, referralCode, turnstileToken }) }); show("[data-request-panel]", false); show("[data-verify-panel]", true); showStatus("A sign-in code was sent. It expires in 10 minutes.", "success"); }
     catch (error) { showStatus(error.message, "error"); }
   });
   $("[data-verify-form]").addEventListener("submit", async event => {

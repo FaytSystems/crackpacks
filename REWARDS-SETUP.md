@@ -6,7 +6,7 @@ The website UI and Worker backend are implemented, but the backend must be confi
 
 Email verification, legal name, date of birth, a unique Whatnot username, hashed identity fingerprints, rate limits, self-referral prevention, and database uniqueness rules reduce abuse. They do **not** prove that one physical human has only one account. Whatnot does not provide a general-purpose identity guarantee merely because an email is entered.
 
-The included internal checker enforces unique verified email addresses, a required WebAuthn passkey, unique collector usernames, and a salted one-way identity fingerprint made from normalized legal name plus birth date. Cloudflare Turnstile blocks automated signup abuse. Exact duplicate identities and reused passkey credentials are blocked. Suspicious cases should be manually reviewed. Publish official eligibility, privacy, prize, expiration, tax, geographic, and no-purchase-necessary rules before launch.
+The included internal checker accepts any valid verified email address and enforces one account per email, a required WebAuthn passkey, unique collector usernames, and a salted one-way identity fingerprint made from normalized legal name plus birth date. Cloudflare Turnstile blocks automated signup abuse. Exact duplicate identities and reused passkey credentials are blocked. Suspicious cases should be manually reviewed. Publish official eligibility, privacy, prize, expiration, tax, geographic, and no-purchase-necessary rules before launch.
 
 ## Deploy
 

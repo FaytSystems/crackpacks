@@ -68,7 +68,7 @@ async function route(request, env, cors) {
   if (url.pathname === "/health") return response({ ok: true, service: "crackpacks-rewards", version: VERSION, identityMode: env.IDENTITY_MODE }, 200, cors);
   if (url.pathname === "/auth/request" && request.method === "POST") {
     const data = await body(request); const email = normalizeEmail(data.email);
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !data.whatnotConfirmed) return response({ error: "Enter and confirm the email used on your Whatnot account." }, 400, cors);
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return response({ error: "Enter a valid email address." }, 400, cors);
     if (!await verifyTurnstile(env, data.turnstileToken, request)) return response({ error: "Security check failed. Refresh the page and try again." }, 403, cors);
     const recent = await env.DB.prepare(`SELECT COUNT(*) count FROM login_codes WHERE email=? AND created_at>?`).bind(email, new Date(Date.now() - 15 * 60e3).toISOString()).first();
     if (Number(recent.count) >= 3) return response({ error: "Too many codes requested. Try again later." }, 429, cors);
