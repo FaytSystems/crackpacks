@@ -8,8 +8,9 @@
   <meta name="theme-color" content="#07091b">
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/css/styles.css?v=1.9.2">
-  <link rel="stylesheet" href="assets/css/referral.css?v=1.9.2">
-  <link rel="stylesheet" href="assets/css/rewards-modal.css?v=1.9.8">
+  <link rel="stylesheet" href="assets/css/referral.css?v=2.2.0">
+  <link rel="stylesheet" href="assets/css/rewards-modal.css?v=2.2.0">
+  <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.1.0">
 </head>
 <body data-page="rewards">
   <a class="skip-link" href="#main">Skip to content</a>
@@ -18,8 +19,12 @@
       <a class="brand" href="index.html" aria-label="Crack Packs home"><img src="assets/images/logo.svg" alt="Crack Packs"></a>
       <button class="menu-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="site-nav"><span></span><span></span><span></span></button>
       <nav class="site-nav" id="site-nav" aria-label="Primary navigation">
-        <a href="index.html">Home</a><a href="shop.html">Shop</a><a href="releases.html">Release Radar</a>
-        <a href="card-lookup.html">Card Search</a><a href="referral.html" aria-current="page">Rewards &amp; Invites</a>
+        <a href="index.html">Home</a><a href="shop.html">Shop</a><a href="releases.html">Releases</a>
+        <a href="card-lookup.html">Card Search ($)</a>
+        <div class="nav-profile is-current" data-nav-profile>
+          <button class="nav-profile-trigger" type="button" data-profile-trigger aria-expanded="false">Profile <span class="nav-profile-caret" aria-hidden="true">▼</span></button>
+          <div class="nav-profile-menu"><a href="referral.html" aria-current="page"><strong>Invites &amp; Rewards</strong><small>QR referrals, tiers and member offers</small></a></div>
+        </div>
       </nav>
     </div>
   </header>
@@ -65,7 +70,7 @@
             <label>Legal last name<input name="lastName" autocomplete="family-name" required maxlength="60"></label>
           </div>
           <label>Date of birth<input name="birthDate" type="date" autocomplete="bday" required></label>
-          <label>Collector username<input name="whatnotUsername" required maxlength="64" pattern="[A-Za-z0-9_.-]+"></label>
+          <label>WhatNot User Name<input name="whatnotUsername" required maxlength="64" pattern="[A-Za-z0-9_.-]+"></label>
           <label class="check-line"><input name="consent" type="checkbox" required> I consent to identity and duplicate-account checks and confirm this information is mine.</label>
           <button class="btn btn-primary" type="submit">Verify identity</button>
         </form>
@@ -82,18 +87,21 @@
       <section data-dashboard hidden>
         <div class="dashboard-head">
           <div><p class="eyebrow">Your collector dashboard</p><h2>Welcome, <span data-member-name></span></h2></div>
-          <button class="btn btn-outline btn-small" type="button" data-sign-out>Sign out</button>
+          <div class="dashboard-actions">
+            <a class="btn btn-primary btn-small" href="admin.html" data-admin-link hidden>Owner dashboard</a>
+            <button class="btn btn-outline btn-small" type="button" data-sign-out>Sign out</button>
+          </div>
         </div>
         <div class="choice-grid">
-          <button class="choice-card" type="button" data-view="discount"><span>01</span><strong>Claim discount code</strong><small>Get your available one-time offer.</small></button>
-          <button class="choice-card" type="button" data-view="invite"><span>02</span><strong>REFER</strong><small>Share your unique account QR and grow your crew.</small></button>
+          <button class="choice-card" type="button" data-view="discount"><span>01</span><strong>Rewards</strong><small>Claim and track your available one-time offer.</small></button>
+          <button class="choice-card choice-card-invites" type="button" data-view="invite"><span>02</span><strong>Invites</strong><small>Copy your personal invite link and open sharing tools.</small></button>
         </div>
         <section class="reward-card action-panel" data-discount-panel hidden>
           <p class="eyebrow">Member discount</p><h3>Your offer</h3>
           <p class="code-output" data-discount-code>Claim when ready</p>
           <button class="btn btn-primary" type="button" data-claim-discount>Claim discount</button>
-          <button class="btn btn-primary" type="button" data-redeem-discount hidden>Redeem discount</button>
-          <p class="fine-print">One claim per verified person. Redemption rules and expiration are returned with the code.</p>
+          <button class="btn btn-primary" type="button" data-redeem-discount hidden>Request Whatnot redemption</button>
+          <p class="fine-print">Use the code during an eligible Whatnot show. Crack Packs marks it redeemed in the owner dashboard after the purchase.</p>
         </section>
         <section class="reward-card action-panel" data-invite-panel hidden>
           <div class="invite-layout">
@@ -101,15 +109,45 @@
               <p class="eyebrow">REFER</p><h3>Your unique friend-referral QR</h3>
               <p>Every new person who joins through this QR and completes all verification adds +1 to your verified friends total.</p>
               <form data-invite-form><label>Friend's email<input name="email" type="email" autocomplete="email" required placeholder="friend@example.com"></label><button class="btn btn-primary" type="submit">Send verified invite</button></form>
-              <div class="share-row"><input data-invite-url readonly aria-label="Your invitation link"><button class="btn btn-outline btn-small" type="button" data-copy-link>Copy link</button></div>
+              <div class="share-row"><input data-invite-url readonly aria-label="Your invitation link"><button class="btn btn-outline btn-small" type="button" data-copy-link>Copy invite link</button></div>
             </div>
-            <div class="personal-qr"><img data-personal-qr alt="Personal friend invitation QR code"><strong data-invite-code></strong><small>Your personal invite code</small></div>
+            <div class="personal-qr">
+              <img data-personal-qr alt="Personal friend invitation QR code">
+              <strong data-invite-code></strong>
+              <small>Your personal invite code</small>
+              <button class="btn btn-primary btn-small qr-download-button" type="button" data-download-qr>Download QR</button>
+              <small>Save the PNG and post it anywhere your crew follows you.</small>
+            </div>
           </div>
         </section>
         <section class="reward-card progress-card">
           <div class="progress-summary"><div><span>Verified friends</span><strong data-referral-count>0</strong></div><div><span>Current tier</span><strong data-tier-name>Starter</strong></div></div>
           <div class="tier-track" data-tier-track></div>
           <p data-next-tier></p>
+          <div class="reward-share-strip">
+            <div><strong>Post your unique QR</strong><span>Download it for Facebook, YouTube, stories, and group chats.</span></div>
+            <button class="btn btn-primary btn-small" type="button" data-download-qr>Download unique QR</button>
+          </div>
+        </section>
+        <section class="reward-card profile-settings-card">
+          <p class="eyebrow">Profile details</p>
+          <h3>Your WhatNot User Name</h3>
+          <p>Keep this matched to the name you use during live shows so the owner can find your reward code quickly.</p>
+          <form class="username-settings-form" data-username-form>
+            <label>WhatNot User Name<input name="whatnotUsername" data-whatnot-username required maxlength="64" pattern="[A-Za-z0-9_.-]+"></label>
+            <button class="btn btn-outline" type="submit">Save user name</button>
+          </form>
+        </section>
+        <section class="reward-card social-links-card">
+          <p class="eyebrow">Crack_Pots Social Links</p>
+          <h3>Follow the next drop.</h3>
+          <p>Use these official links for live alerts, stream replays, and Whatnot shows.</p>
+          <div class="profile-social-links">
+            <a class="social-link facebook" data-facebook-social href="#" target="_blank" rel="noopener noreferrer" hidden><span>f</span><strong>Facebook</strong></a>
+            <a class="social-link youtube" data-youtube-social href="#" target="_blank" rel="noopener noreferrer" hidden><span>&#9654;</span><strong>YouTube</strong></a>
+            <a class="social-link whatnot" data-whatnot href="#" target="_blank" rel="noopener noreferrer"><span>W</span><strong>Whatnot</strong></a>
+          </div>
+          <p class="fine-print" data-facebook-pending>Facebook will appear here as soon as the Crack_Pots Page URL is connected.</p>
         </section>
       </section>
     </section>
@@ -136,19 +174,30 @@
       <button class="btn btn-primary" type="button" data-invite-sent-close>Close</button>
     </section>
   </div>
+  <div class="rewards-modal invite-copy-modal" data-invite-copy-modal hidden>
+    <button class="rewards-modal-backdrop" type="button" data-invite-copy-close aria-label="Close"></button>
+    <section class="rewards-modal-card invite-copy-card" role="dialog" aria-modal="true" aria-labelledby="invite-copy-title">
+      <button class="rewards-modal-close" type="button" data-invite-copy-close aria-label="Close">&times;</button>
+      <div class="invite-copy-signal" aria-hidden="true">LINK LOCKED</div>
+      <h2 id="invite-copy-title">Copied Invite Link to clipboard</h2>
+      <p>Your unique referral is ready to paste into a text, post, bio, or group chat.</p>
+      <button class="btn btn-primary" type="button" data-invite-copy-close>Close</button>
+    </section>
+  </div>
   <div class="rewards-modal" data-discount-redeemed-modal hidden>
     <button class="rewards-modal-backdrop" type="button" data-discount-redeemed-close aria-label="Close"></button>
     <section class="rewards-modal-card" role="dialog" aria-modal="true" aria-labelledby="discount-redeemed-title">
       <button class="rewards-modal-close" type="button" data-discount-redeemed-close aria-label="Close">&times;</button>
       <div class="email-icon invite-sent-icon" aria-hidden="true">&#10003;</div>
-      <p class="eyebrow">One-time redemption</p>
-      <h2 id="discount-redeemed-title">Discount redeemed</h2>
-      <p>Your code is now marked as used and cannot be redeemed again. Crack Packs has been notified by email.</p>
+      <p class="eyebrow">Whatnot redemption</p>
+      <h2 id="discount-redeemed-title">Redemption requested</h2>
+      <p>Crack Packs has been notified. Use the code during the live show; the owner will mark it redeemed after it is used on Whatnot.</p>
       <button class="btn btn-primary" type="button" data-discount-redeemed-close>Close</button>
     </section>
   </div>
-  <script src="assets/js/config.js?v=1.9.6"></script>
+  <script src="assets/js/config.js?v=2.2.0"></script>
   <script src="assets/js/app.js?v=1.9.2"></script>
-  <script src="assets/js/referral.js?v=2.0.0"></script>
+  <script src="assets/js/nav-profile.js?v=2.1.0"></script>
+  <script src="assets/js/referral.js?v=2.2.0"></script>
 </body>
 </html>

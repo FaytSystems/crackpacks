@@ -11,6 +11,7 @@
   const showStatus = (message = "", kind = "") => { status.textContent = message; status.dataset.kind = kind; };
   let email = "";
   let turnstileTokenValue = "";
+  let accountState = null;
   const turnstileNode = $("[data-turnstile]");
   if (turnstileNode && config.turnstileSiteKey) {
     window.cpTurnstileReady = () => { window.turnstile.render(turnstileNode, {
@@ -45,6 +46,14 @@
   let token = localStorage.getItem("cp_rewards_token") || "";
 
   const qrUrl = value => `https://api.qrserver.com/v1/create-qr-code/?size=420x420&margin=12&data=${encodeURIComponent(value)}`;
+  const safeHttpUrl = value => {
+    try {
+      const parsed = new URL(String(value || ""));
+      return ["http:", "https:"].includes(parsed.protocol) ? parsed.toString() : "";
+    } catch {
+      return "";
+    }
+  };
   const show = (selector, visible) => { $(selector).hidden = !visible; };
   if (referralCode) {
     show("[data-referral-banner]", true);
@@ -71,17 +80,20 @@
     }
   }
   function renderAccount(data) {
+    accountState = data;
     show("[data-auth-panel]", false);
     if (!data.deviceVerified) { show("[data-device-panel]", true); show("[data-profile-panel]", false); show("[data-dashboard]", false); return; }
     show("[data-device-panel]", false);
     if (!data.profileComplete) { show("[data-profile-panel]", true); show("[data-dashboard]", false); return; }
     show("[data-profile-panel]", false); show("[data-dashboard]", true);
     $("[data-member-name]").textContent = data.firstName || "Collector";
+    $("[data-admin-link]").hidden = !data.isAdmin;
     $("[data-referral-count]").textContent = data.referralCount;
     $("[data-tier-name]").textContent = data.tier.name;
     $("[data-invite-code]").textContent = data.inviteCode;
     $("[data-invite-url]").value = data.inviteUrl;
     $("[data-personal-qr]").src = qrUrl(data.inviteUrl);
+    $("[data-whatnot-username]").value = data.whatnotUsername || "";
     $("[data-next-tier]").textContent = data.nextTier ? `${data.nextTier.remaining} more verified friend${data.nextTier.remaining === 1 ? "" : "s"} to unlock ${data.nextTier.name}: ${data.nextTier.reward}.` : "You have reached the highest published reward tier.";
     $("[data-tier-track]").innerHTML = data.tiers.map(t => `<div class="tier-node ${data.referralCount >= t.threshold ? "is-earned" : ""}"><strong>${t.threshold}</strong><br>${t.name}</div>`).join("");
   }
@@ -105,6 +117,7 @@
   });
   document.querySelectorAll("[data-email-modal-close]").forEach(button => button.addEventListener("click", () => { $("[data-email-modal]").hidden = true; }));
   document.querySelectorAll("[data-invite-sent-close]").forEach(button => button.addEventListener("click", () => { $("[data-invite-sent-modal]").hidden = true; }));
+  document.querySelectorAll("[data-invite-copy-close]").forEach(button => button.addEventListener("click", () => { $("[data-invite-copy-modal]").hidden = true; }));
   document.querySelectorAll("[data-discount-redeemed-close]").forEach(button => button.addEventListener("click", () => { $("[data-discount-redeemed-modal]").hidden = true; }));
   $("[data-profile-form]").addEventListener("submit", async event => {
     event.preventDefault(); const form = Object.fromEntries(new FormData(event.currentTarget));
@@ -124,8 +137,29 @@
       const data = await request("/device/register/verify", { method: "POST", body: JSON.stringify(payload) }); showStatus("Device passkey verified.", "success"); renderAccount(data.account);
     } catch (error) { showStatus(error.message || "Device verification was cancelled.", "error"); }
   });
-  document.querySelectorAll("[data-view]").forEach(button => button.addEventListener("click", () => {
-    show("[data-discount-panel]", button.dataset.view === "discount"); show("[data-invite-panel]", button.dataset.view === "invite");
+  async function copyInviteLink() {
+    const inviteUrl = $("[data-invite-url]").value;
+    if (!inviteUrl) throw new Error("Your invite link is not ready yet.");
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(inviteUrl);
+    } else {
+      const input = $("[data-invite-url]");
+      input.focus();
+      input.select();
+      if (!document.execCommand("copy")) throw new Error("Copy was blocked by this browser.");
+      input.setSelectionRange(0, 0);
+    }
+    $("[data-invite-copy-modal]").hidden = false;
+    showStatus("Invitation link copied.", "success");
+  }
+  document.querySelectorAll("[data-view]").forEach(button => button.addEventListener("click", async () => {
+    const inviteView = button.dataset.view === "invite";
+    show("[data-discount-panel]", button.dataset.view === "discount");
+    show("[data-invite-panel]", inviteView);
+    if (inviteView) {
+      try { await copyInviteLink(); }
+      catch (error) { showStatus(error.message, "error"); }
+    }
   }));
   $("[data-claim-discount]").addEventListener("click", async () => {
     try {
@@ -137,6 +171,9 @@
       if (data.redeemedAt) {
         redeemButton.disabled = true;
         redeemButton.textContent = "Already redeemed";
+      } else if (data.requestedAt) {
+        redeemButton.disabled = true;
+        redeemButton.textContent = "Redemption requested";
       }
       showStatus(`${data.description} Expires ${new Date(data.expiresAt).toLocaleDateString()}.`, "success");
     }
@@ -147,9 +184,9 @@
       const data = await request("/discount/redeem", { method: "POST" });
       const redeemButton = $("[data-redeem-discount]");
       redeemButton.disabled = true;
-      redeemButton.textContent = "Redeemed";
+      redeemButton.textContent = "Redemption requested";
       $("[data-discount-redeemed-modal]").hidden = false;
-      showStatus(`Discount redeemed at ${new Date(data.redeemedAt).toLocaleString()}.`, "success");
+      showStatus(`Redemption requested at ${new Date(data.requestedAt).toLocaleString()}.`, "success");
     } catch (error) { showStatus(error.message, "error"); }
   });
   $("[data-invite-form]").addEventListener("submit", async event => {
@@ -164,8 +201,50 @@
     }
     catch (error) { showStatus(error.message, "error"); }
   });
-  $("[data-copy-link]").addEventListener("click", async () => { await navigator.clipboard.writeText($("[data-invite-url]").value); showStatus("Invitation link copied.", "success"); });
-  $("[data-sign-out]").addEventListener("click", () => { localStorage.removeItem("cp_rewards_token"); location.reload(); });
+  $("[data-copy-link]").addEventListener("click", () => copyInviteLink().catch(error => showStatus(error.message, "error")));
+  async function downloadInviteQr(button) {
+    button.disabled = true;
+    const originalText = button.textContent;
+    button.textContent = "Preparing QR...";
+    try {
+      const imageUrl = $("[data-personal-qr]").src;
+      if (!imageUrl) throw new Error("Your QR code is not ready yet.");
+      const response = await fetch(imageUrl);
+      if (!response.ok) throw new Error("The QR download could not be prepared.");
+      const blobUrl = URL.createObjectURL(await response.blob());
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      link.download = `crack-packs-invite-${accountState?.inviteCode || "qr"}.png`;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+      showStatus("Your unique invite QR was downloaded.", "success");
+    } catch (error) {
+      showStatus(error.message, "error");
+    } finally {
+      button.disabled = false;
+      button.textContent = originalText;
+    }
+  }
+  document.querySelectorAll("[data-download-qr]").forEach(button => button.addEventListener("click", () => downloadInviteQr(button)));
+  $("[data-username-form]").addEventListener("submit", async event => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    try {
+      const data = await request("/profile/username", { method: "POST", body: JSON.stringify({ whatnotUsername: form.get("whatnotUsername") }) });
+      renderAccount(data.account);
+      showStatus("WhatNot User Name saved. It is now searchable in the owner dashboard.", "success");
+    } catch (error) {
+      showStatus(error.message, "error");
+    }
+  });
+  $("[data-sign-out]").addEventListener("click", async () => {
+    try { await request("/auth/logout", { method: "POST" }); } catch {}
+    localStorage.removeItem("cp_rewards_token");
+    sessionStorage.removeItem("cp_admin_token");
+    location.href = "referral.html";
+  });
   async function confirmEmailLink() {
     if (!verificationToken) return loadAccount();
     try {
@@ -177,5 +256,28 @@
       history.replaceState({}, document.title, location.pathname); showStatus(error.message, "error");
     }
   }
+  async function configureSocialLinks() {
+    const facebookUrl = safeHttpUrl(config.facebookUrl);
+    if (facebookUrl) {
+      const facebook = $("[data-facebook-social]");
+      facebook.href = facebookUrl;
+      facebook.hidden = false;
+      $("[data-facebook-pending]").hidden = true;
+    }
+    let youtubeUrl = safeHttpUrl(config.youtubeChannelUrl);
+    if (!youtubeUrl && config.youtubeLiveStatusUrl) {
+      try {
+        const response = await fetch(config.youtubeLiveStatusUrl, { headers: { Accept: "application/json" } });
+        const payload = response.ok ? await response.json() : {};
+        youtubeUrl = safeHttpUrl(payload.channelUrl || payload.upcoming?.channelUrl);
+      } catch {}
+    }
+    if (youtubeUrl) {
+      const youtube = $("[data-youtube-social]");
+      youtube.href = youtubeUrl;
+      youtube.hidden = false;
+    }
+  }
+  configureSocialLinks();
   confirmEmailLink();
 })();

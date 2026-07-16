@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Crack Packs Owner Dashboard</title>
+  <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/css/styles.css?v=2.1.0">
+  <link rel="stylesheet" href="assets/css/referral.css?v=2.1.0">
+  <link rel="stylesheet" href="assets/css/rewards-modal.css?v=2.1.0">
+  <link rel="stylesheet" href="assets/css/admin.css?v=2.1.0">
+</head>
+<body>
+  <header class="site-header">
+    <div class="container nav-shell">
+      <a class="brand" href="index.html"><img src="assets/images/logo.svg" alt="Crack Packs"></a>
+      <button class="menu-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="admin-site-nav"><span></span><span></span><span></span></button>
+      <nav class="site-nav" id="admin-site-nav" aria-label="Owner navigation"><a href="referral.html">Member account</a><a href="index.html">Storefront</a></nav>
+    </div>
+  </header>
+
+  <main class="admin-main" data-admin-app>
+    <section class="container admin-hero">
+      <p class="eyebrow">Protected owner tools</p>
+      <h1>Redemption <span>Dashboard.</span></h1>
+      <p>Search reward members during a Whatnot live and mark codes redeemed only after they are actually used.</p>
+    </section>
+
+    <section class="container">
+      <div class="rewards-notice" data-admin-status aria-live="polite"></div>
+
+      <section class="reward-card" data-admin-login>
+        <p class="eyebrow">Owner sign in</p>
+        <h2>Access the dashboard</h2>
+        <p>Sign in with the authorized owner email. A verification link and your registered passkey are both required.</p>
+        <form data-admin-login-form>
+          <label>Owner email<input name="email" type="email" autocomplete="email" required placeholder="owner@example.com"></label>
+          <div data-admin-turnstile></div>
+          <button class="btn btn-primary" type="submit" data-admin-send disabled>Complete security check</button>
+        </form>
+        <p class="fine-print">Returning after logout? Use this form to receive a fresh secure login link.</p>
+      </section>
+
+      <section class="reward-card" data-admin-setup hidden>
+        <p class="eyebrow">Security setup required</p>
+        <h2>Finish the owner account first</h2>
+        <p>The owner account must complete its passkey and identity profile before dashboard access is allowed.</p>
+        <a class="btn btn-primary" href="referral.html">Complete account setup</a>
+      </section>
+
+      <section class="reward-card" data-admin-step-up hidden>
+        <p class="eyebrow">Fresh passkey required</p>
+        <h2>Verify owner access</h2>
+        <p>Use the passkey already registered to this owner account. This short-lived verification protects redemption controls even if a normal login session is copied.</p>
+        <button class="btn btn-primary" type="button" data-admin-passkey>Verify owner passkey</button>
+        <button class="btn btn-outline" type="button" data-admin-logout>Log out</button>
+      </section>
+
+      <section class="reward-card" data-admin-denied hidden>
+        <p class="eyebrow">Access denied</p>
+        <h2>This is not the owner account</h2>
+        <p>Log out and sign in with the authorized Crack Packs owner email.</p>
+        <button class="btn btn-primary" type="button" data-admin-logout>Log out and return to login</button>
+      </section>
+
+      <section data-admin-dashboard hidden>
+        <div class="dashboard-head admin-dashboard-head">
+          <div><p class="eyebrow">Live-show controls</p><h2>Discount redemptions</h2></div>
+          <div class="dashboard-actions"><button class="btn btn-outline btn-small" type="button" data-admin-refresh>Refresh</button><button class="btn btn-outline btn-small" type="button" data-admin-logout>Log out</button></div>
+        </div>
+        <div class="admin-summary">
+          <div><span>Total</span><strong data-count-total>0</strong></div>
+          <div><span>Issued</span><strong data-count-issued>0</strong></div>
+          <div><span>Requested</span><strong data-count-requested>0</strong></div>
+          <div><span>Redeemed</span><strong data-count-redeemed>0</strong></div>
+          <div><span>Expired</span><strong data-count-expired>0</strong></div>
+        </div>
+        <section class="reward-card admin-search-card">
+          <div class="admin-filters">
+            <label>Search member or code<input type="search" data-admin-search placeholder="Type name, email, username, or code" autocomplete="off"></label>
+            <label>Status<select data-admin-filter><option value="all">All statuses</option><option value="issued">Issued</option><option value="requested">Requested</option><option value="redeemed">Redeemed</option><option value="expired">Expired</option></select></label>
+          </div>
+          <p class="fine-print">Results update as you type. Search is limited to 100 records and never exposes birthdays or identity-security data.</p>
+        </section>
+        <div class="admin-results" data-admin-results></div>
+      </section>
+    </section>
+  </main>
+
+  <div class="rewards-modal" data-admin-email-modal hidden>
+    <button class="rewards-modal-backdrop" type="button" data-admin-email-close aria-label="Close"></button>
+    <section class="rewards-modal-card" role="dialog" aria-modal="true" aria-labelledby="admin-email-title">
+      <button class="rewards-modal-close" type="button" data-admin-email-close>&times;</button>
+      <div class="email-icon" aria-hidden="true">&#9993;</div>
+      <p class="eyebrow">Owner login</p>
+      <h2 id="admin-email-title">Check your inbox</h2>
+      <p>Open the owner verification link within 10 minutes. You will then confirm the registered passkey.</p>
+      <button class="btn btn-primary" type="button" data-admin-email-close>Close</button>
+    </section>
+  </div>
+
+  <script src="assets/js/config.js?v=1.9.6"></script>
+  <script src="assets/js/admin.js?v=2.1.0"></script>
+</body>
+</html>

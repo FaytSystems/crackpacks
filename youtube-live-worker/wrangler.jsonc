@@ -4,13 +4,36 @@
   "name": "crackpacks-youtube-live",
   "main": "src/index.js",
   "compatibility_date": "2026-07-16",
+  "routes": [{ "pattern": "live-api.crackpacks.com", "custom_domain": true }],
   "workers_dev": true,
   "preview_urls": true,
   "vars": {
     "ALLOWED_ORIGINS": "https://crackpacks.com,https://www.crackpacks.com",
     "STATUS_CACHE_SECONDS": "45",
-    "DISCOVERY_CACHE_SECONDS": "3600"
+    "DISCOVERY_CACHE_SECONDS": "3600",
+    "WORKER_PUBLIC_URL": "https://live-api.crackpacks.com",
+    "FACEBOOK_AUTO_POST_ENABLED": "false",
+    "FACEBOOK_GRAPH_VERSION": "v25.0",
+    "FACEBOOK_PAGE_ID": "",
+    "WHATNOT_LIVE_URL": "https://www.whatnot.com/user/crack_packs"
   },
+  "triggers": {
+    "crons": ["* * * * *"]
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "SOCIAL_ANNOUNCEMENTS",
+        "class_name": "SocialAnnouncementCoordinator"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "social-announcements-v1",
+      "new_sqlite_classes": ["SocialAnnouncementCoordinator"]
+    }
+  ],
   "observability": {
     "enabled": true
   }

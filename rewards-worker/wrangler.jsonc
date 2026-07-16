@@ -13,8 +13,7 @@
     "RP_ID": "crackpacks.com",
     "RP_NAME": "Crack Packs",
     "DISCOUNT_PREFIX": "CRACK",
-    "DISCOUNT_PERCENT": "10",
-    "DISCOUNT_NOTIFY_EMAIL": "hello@crackpacks.com"
+    "DISCOUNT_PERCENT": "10"
   },
   "observability": { "enabled": true }
 }

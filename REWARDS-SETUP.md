@@ -18,14 +18,18 @@ The included internal checker accepts any valid verified email address and enfor
    - `npx wrangler secret put IDENTITY_PEPPER`
    - `npx wrangler secret put TURNSTILE_SECRET_KEY`
    - `npx wrangler secret put RESEND_API_KEY`
+   - `npx wrangler secret put ADMIN_EMAIL`
+   - `npx wrangler secret put DISCOUNT_NOTIFY_EMAIL`
 5. Run `npm run db:remote`.
 6. Configure Cloudflare Email Routing so `rewards@crackpacks.com` may send.
 7. Run `npm run deploy`.
 8. Confirm `https://rewards-api.crackpacks.com/health`.
 
-8. Create a free Cloudflare Turnstile widget for `crackpacks.com`, put its public site key in `assets/js/config.js`, and put its secret in the Worker secret above.
+9. Create a free Cloudflare Turnstile widget for `crackpacks.com`, put its public site key in `assets/js/config.js`, and put its secret in the Worker secret above.
 
-9. Create a free Resend account, verify `crackpacks.com` (or change the Worker sender to a verified sending subdomain), create a sending-only API key, and store it as `RESEND_API_KEY`. The free Resend tier currently includes 3,000 emails per month with a 100-email daily limit.
+10. Create a free Resend account, verify `crackpacks.com` (or change the Worker sender to a verified sending subdomain), create a sending-only API key, and store it as `RESEND_API_KEY`. The free Resend tier currently includes 3,000 emails per month with a 100-email daily limit.
+
+`ADMIN_EMAIL` is the one exact email allowed to open the owner dashboard. `DISCOUNT_NOTIFY_EMAIL` receives member redemption-request alerts. Keep both out of `wrangler.jsonc` if they identify a private owner account. Database deployment uses the versioned SQL files in `rewards-worker/migrations`; `schema.sql` is the current schema snapshot and should not be used as an upgrade command for an existing database.
 
 For local UI testing, serve the repository on `http://localhost:8080`. WebAuthn production registration requires HTTPS and the exact `crackpacks.com` relying-party domain. The QR images currently use `api.qrserver.com`; vendor a reviewed QR library if the campaign requires QR generation without a third-party image request.
 

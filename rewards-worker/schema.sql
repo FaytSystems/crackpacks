@@ -17,6 +17,10 @@ CREATE TABLE IF NOT EXISTS sessions (
   token_hash TEXT PRIMARY KEY, member_id TEXT NOT NULL, expires_at TEXT NOT NULL, created_at TEXT NOT NULL,
   FOREIGN KEY(member_id) REFERENCES members(id)
 );
+CREATE TABLE IF NOT EXISTS admin_sessions (
+  token_hash TEXT PRIMARY KEY, member_id TEXT NOT NULL, expires_at TEXT NOT NULL, created_at TEXT NOT NULL,
+  FOREIGN KEY(member_id) REFERENCES members(id)
+);
 CREATE TABLE IF NOT EXISTS invitations (
   id TEXT PRIMARY KEY, inviter_member_id TEXT NOT NULL, invitee_email TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'sent', created_at TEXT NOT NULL,
@@ -24,7 +28,7 @@ CREATE TABLE IF NOT EXISTS invitations (
 );
 CREATE TABLE IF NOT EXISTS discount_claims (
   id TEXT PRIMARY KEY, member_id TEXT NOT NULL UNIQUE, code TEXT NOT NULL UNIQUE,
-  percent INTEGER NOT NULL, expires_at TEXT NOT NULL, redeemed_at TEXT, created_at TEXT NOT NULL,
+  percent INTEGER NOT NULL, expires_at TEXT NOT NULL, redemption_requested_at TEXT, redeemed_at TEXT, redeemed_by_member_id TEXT, created_at TEXT NOT NULL,
   FOREIGN KEY(member_id) REFERENCES members(id)
 );
 CREATE TABLE IF NOT EXISTS webauthn_credentials (
