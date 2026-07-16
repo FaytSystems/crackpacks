@@ -105,6 +105,7 @@
   });
   document.querySelectorAll("[data-email-modal-close]").forEach(button => button.addEventListener("click", () => { $("[data-email-modal]").hidden = true; }));
   document.querySelectorAll("[data-invite-sent-close]").forEach(button => button.addEventListener("click", () => { $("[data-invite-sent-modal]").hidden = true; }));
+  document.querySelectorAll("[data-discount-redeemed-close]").forEach(button => button.addEventListener("click", () => { $("[data-discount-redeemed-modal]").hidden = true; }));
   $("[data-profile-form]").addEventListener("submit", async event => {
     event.preventDefault(); const form = Object.fromEntries(new FormData(event.currentTarget));
     try { const data = await request("/profile", { method: "POST", body: JSON.stringify(form) }); showStatus("Identity profile verified.", "success"); renderAccount(data.account); }
@@ -127,8 +128,29 @@
     show("[data-discount-panel]", button.dataset.view === "discount"); show("[data-invite-panel]", button.dataset.view === "invite");
   }));
   $("[data-claim-discount]").addEventListener("click", async () => {
-    try { const data = await request("/discount/claim", { method: "POST" }); $("[data-discount-code]").textContent = data.code; showStatus(`${data.description} Expires ${new Date(data.expiresAt).toLocaleDateString()}.`, "success"); }
+    try {
+      const data = await request("/discount/claim", { method: "POST" });
+      $("[data-discount-code]").textContent = data.code;
+      $("[data-claim-discount]").hidden = true;
+      const redeemButton = $("[data-redeem-discount]");
+      redeemButton.hidden = false;
+      if (data.redeemedAt) {
+        redeemButton.disabled = true;
+        redeemButton.textContent = "Already redeemed";
+      }
+      showStatus(`${data.description} Expires ${new Date(data.expiresAt).toLocaleDateString()}.`, "success");
+    }
     catch (error) { showStatus(error.message, "error"); }
+  });
+  $("[data-redeem-discount]").addEventListener("click", async () => {
+    try {
+      const data = await request("/discount/redeem", { method: "POST" });
+      const redeemButton = $("[data-redeem-discount]");
+      redeemButton.disabled = true;
+      redeemButton.textContent = "Redeemed";
+      $("[data-discount-redeemed-modal]").hidden = false;
+      showStatus(`Discount redeemed at ${new Date(data.redeemedAt).toLocaleString()}.`, "success");
+    } catch (error) { showStatus(error.message, "error"); }
   });
   $("[data-invite-form]").addEventListener("submit", async event => {
     event.preventDefault();

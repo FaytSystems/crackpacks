@@ -92,6 +92,7 @@
           <p class="eyebrow">Member discount</p><h3>Your offer</h3>
           <p class="code-output" data-discount-code>Claim when ready</p>
           <button class="btn btn-primary" type="button" data-claim-discount>Claim discount</button>
+          <button class="btn btn-primary" type="button" data-redeem-discount hidden>Redeem discount</button>
           <p class="fine-print">One claim per verified person. Redemption rules and expiration are returned with the code.</p>
         </section>
         <section class="reward-card action-panel" data-invite-panel hidden>
@@ -135,8 +136,19 @@
       <button class="btn btn-primary" type="button" data-invite-sent-close>Close</button>
     </section>
   </div>
+  <div class="rewards-modal" data-discount-redeemed-modal hidden>
+    <button class="rewards-modal-backdrop" type="button" data-discount-redeemed-close aria-label="Close"></button>
+    <section class="rewards-modal-card" role="dialog" aria-modal="true" aria-labelledby="discount-redeemed-title">
+      <button class="rewards-modal-close" type="button" data-discount-redeemed-close aria-label="Close">&times;</button>
+      <div class="email-icon invite-sent-icon" aria-hidden="true">&#10003;</div>
+      <p class="eyebrow">One-time redemption</p>
+      <h2 id="discount-redeemed-title">Discount redeemed</h2>
+      <p>Your code is now marked as used and cannot be redeemed again. Crack Packs has been notified by email.</p>
+      <button class="btn btn-primary" type="button" data-discount-redeemed-close>Close</button>
+    </section>
+  </div>
   <script src="assets/js/config.js?v=1.9.6"></script>
   <script src="assets/js/app.js?v=1.9.2"></script>
-  <script src="assets/js/referral.js?v=1.9.9"></script>
+  <script src="assets/js/referral.js?v=2.0.0"></script>
 </body>
 </html>

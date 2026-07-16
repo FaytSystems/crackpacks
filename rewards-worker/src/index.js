@@ -11,6 +11,7 @@ const now = () => new Date().toISOString();
 const id = () => crypto.randomUUID();
 const normalizeEmail = value => String(value || "").trim().toLowerCase().slice(0, 254);
 const clean = (value, max = 64) => String(value || "").trim().replace(/\s+/g, " ").slice(0, max);
+const escapeHtml = value => String(value || "").replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
 const randomString = (length, alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789") => Array.from(crypto.getRandomValues(new Uint8Array(length)), n => alphabet[n % alphabet.length]).join("");
 async function hash(value, secret = "") {
   const bytes = await crypto.subtle.digest("SHA-256", encoder.encode(`${secret}:${value}`));
@@ -186,7 +187,31 @@ async function route(request, env, cors) {
       await env.DB.prepare(`INSERT INTO discount_claims(id,member_id,code,percent,expires_at,created_at) VALUES(?,?,?,?,?,?)`).bind(id(), member.id, code, Number(env.DISCOUNT_PERCENT || 10), expires, now()).run();
       claim = { code, percent: Number(env.DISCOUNT_PERCENT || 10), expires_at: expires };
     }
-    return response({ code: claim.code, expiresAt: claim.expires_at, description: `${claim.percent}% off one eligible order.` }, 200, cors);
+    return response({ code: claim.code, expiresAt: claim.expires_at, redeemedAt: claim.redeemed_at || null, description: `${claim.percent}% off one eligible order.` }, 200, cors);
+  }
+  if (url.pathname === "/discount/redeem" && request.method === "POST") {
+    const claim = await env.DB.prepare(`SELECT * FROM discount_claims WHERE member_id=?`).bind(member.id).first();
+    if (!claim) return response({ error: "Claim your discount code before redeeming it." }, 400, cors);
+    if (claim.redeemed_at) return response({ error: "This discount code has already been redeemed." }, 409, cors);
+    if (claim.expires_at <= now()) return response({ error: "This discount code has expired." }, 410, cors);
+    const redeemedAt = now();
+    const update = await env.DB.prepare(`UPDATE discount_claims SET redeemed_at=? WHERE id=? AND redeemed_at IS NULL`).bind(redeemedAt, claim.id).run();
+    if (Number(update.meta?.changes || 0) !== 1) return response({ error: "This discount code has already been redeemed." }, 409, cors);
+    const notifyEmail = normalizeEmail(env.DISCOUNT_NOTIFY_EMAIL || "hello@crackpacks.com");
+    try {
+      await sendEmail(
+        env,
+        notifyEmail,
+        `Discount redeemed: ${claim.code}`,
+        `<h1>Crack Packs discount redeemed</h1><p><strong>Code:</strong> ${escapeHtml(claim.code)}</p><p><strong>Discount:</strong> ${Number(claim.percent)}%</p><p><strong>Member:</strong> ${escapeHtml(member.first_name)} ${escapeHtml(member.last_name)}</p><p><strong>Member email:</strong> ${escapeHtml(member.email)}</p><p><strong>Collector username:</strong> ${escapeHtml(member.whatnot_username || "Not provided")}</p><p><strong>Redeemed:</strong> ${escapeHtml(redeemedAt)}</p><p>This code has been permanently marked as used in the rewards database.</p>`,
+        `discount-${claim.id}`
+      );
+      await audit(env, request, "discount_redeemed", member.id, claim.code);
+    } catch (error) {
+      console.error("Discount notification failed", error);
+      await audit(env, request, "discount_redeemed_notification_failed", member.id, claim.code);
+    }
+    return response({ code: claim.code, redeemedAt, notificationEmail: notifyEmail }, 200, cors);
   }
   return response({ error: "Not found." }, 404, cors);
 }

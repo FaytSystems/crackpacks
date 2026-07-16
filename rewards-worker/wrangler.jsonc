@@ -1,39 +1,20 @@
-﻿{
-	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "crackpacks-rewards",
-	"main": "src/index.js",
-	"compatibility_date": "2026-07-16",
-	"routes": [
-		{
-			"pattern": "rewards-api.crackpacks.com",
-			"custom_domain": true
-		}
-	],
-	"d1_databases": [
-		{
-			"binding": "DB",
-			"database_name": "crackpacks-rewards",
-			"database_id": "8b0edc0e-4766-47e0-89e0-2dcf1f46ce1b"
-		}
-	],
-	"send_email": [
-		{
-			"name": "REWARDS_EMAIL",
-			"allowed_sender_addresses": [
-				"rewards@crackpacks.com"
-			]
-		}
-	],
-	"vars": {
-		"ALLOWED_ORIGINS": "https://crackpacks.com,https://www.crackpacks.com,http://localhost:8080,http://127.0.0.1:8080",
-		"SITE_URL": "https://crackpacks.com",
-		"IDENTITY_MODE": "internal",
-		"RP_ID": "crackpacks.com",
-		"RP_NAME": "Crack Packs",
-		"DISCOUNT_PREFIX": "CRACK",
-		"DISCOUNT_PERCENT": "10"
-	},
-	"observability": {
-		"enabled": true
-	}
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "crackpacks-rewards",
+  "main": "src/index.js",
+  "compatibility_date": "2026-07-16",
+  "routes": [{ "pattern": "rewards-api.crackpacks.com", "custom_domain": true }],
+  "d1_databases": [{ "binding": "DB", "database_name": "crackpacks-rewards", "database_id": "8b0edc0e-4766-47e0-89e0-2dcf1f46ce1b" }],
+  "send_email": [{ "name": "REWARDS_EMAIL", "allowed_sender_addresses": ["rewards@crackpacks.com"] }],
+  "vars": {
+    "ALLOWED_ORIGINS": "https://crackpacks.com,https://www.crackpacks.com,http://localhost:8080,http://127.0.0.1:8080",
+    "SITE_URL": "https://crackpacks.com",
+    "IDENTITY_MODE": "internal",
+    "RP_ID": "crackpacks.com",
+    "RP_NAME": "Crack Packs",
+    "DISCOUNT_PREFIX": "CRACK",
+    "DISCOUNT_PERCENT": "10",
+    "DISCOUNT_NOTIFY_EMAIL": "hello@crackpacks.com"
+  },
+  "observability": { "enabled": true }
 }
