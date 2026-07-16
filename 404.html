@@ -4,18 +4,60 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Page Not Found | Crack Packs</title>
+  <meta name="description" content="The requested Crack Packs page could not be found.">
   <meta name="theme-color" content="#07091b">
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="assets/css/styles.css">
+  <link rel="stylesheet" href="assets/css/styles.css?v=1.5.0">
 </head>
-<body class="error-page">
+<body data-page="404">
+  <a class="skip-link" href="#main">Skip to content</a>
   <div class="ambient-layer" aria-hidden="true"><span class="ambient-orb orb-a"></span><span class="ambient-orb orb-b"></span><span class="ambient-orb orb-c"></span><span class="grain"></span></div>
-  <main class="error-shell">
-    <img src="assets/images/logo.svg" alt="Crack Packs">
-    <p class="eyebrow">404 • Empty pack</p>
-    <h1>That page did not <span>hit.</span></h1>
-    <p>The link may have moved, sold out, or never existed.</p>
-    <div class="actions"><a class="btn btn-primary" href="index.html">Return home</a><a class="btn btn-glass" href="shop.html">Open shop</a></div>
+
+  <header class="site-header">
+    <div class="container nav-shell">
+      <a class="brand" href="index.html" aria-label="Crack Packs home"><img src="assets/images/logo.svg" alt="Crack Packs"></a>
+      <button class="menu-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="site-nav"><span></span><span></span><span></span></button>
+      <nav class="site-nav" id="site-nav" aria-label="Primary navigation">
+        <a href="index.html">Home</a>
+        <a href="shop.html">Shop</a>
+        <a href="releases.html">Release Radar</a>
+        <a href="card-lookup.html">Card Search &amp; Price Check</a>
+        <a class="nav-live" data-whatnot href="#">Live on Whatnot <span aria-hidden="true">↗</span></a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="section">
+      <div class="container">
+        <div class="error-shell holo-panel reveal">
+          <p class="eyebrow">404 • Missed pull</p>
+          <h1>That page is <span>not in the pack.</span></h1>
+          <p>The address may have changed or the page may no longer exist. Return home, browse the shop, or use Card Search &amp; Price Check.</p>
+          <div class="actions"><a class="btn btn-primary" href="index.html">Return home</a><a class="btn btn-glass" href="shop.html">Open shop</a><a class="btn btn-glass" href="card-lookup.html">Search cards &amp; prices</a></div>
+        </div>
+      </div>
+    </section>
   </main>
+
+  <footer class="site-footer">
+    <div class="container footer-grid">
+      <div class="footer-brand"><img src="assets/images/logo.svg" alt="Crack Packs"><p>Independent collector storefront for live rips, sealed products, singles, card price checks, and release tracking.</p></div>
+      <div class="footer-links">
+        <h3>Explore</h3>
+        <a href="index.html">Home</a>
+        <a href="shop.html">Shop</a>
+        <a href="releases.html">Release Radar</a>
+        <a href="card-lookup.html">Card Search &amp; Price Check</a>
+        <a data-whatnot href="#">Whatnot</a>
+      </div>
+      <div class="footer-links"><h3>Contact</h3><a data-email href="#">hello@crackpacks.com</a><a href="https://github.com/FaytSystems/crackpacks" target="_blank" rel="noopener noreferrer">GitHub repository ↗</a></div>
+    </div>
+    <div class="container footer-bottom"><span>© <span data-year></span> Crack Packs.</span><span>Independent retailer. Pokémon and related marks belong to their respective owners. Card values are estimates and may change.</span></div>
+  </footer>
+
+  <script src="assets/js/config.js?v=1.5.0"></script>
+  <script src="assets/js/data.js?v=1.5.0"></script>
+  <script src="assets/js/app.js?v=1.5.0"></script>
 </body>
 </html>

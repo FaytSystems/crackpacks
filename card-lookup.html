@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pokémon Card Search &amp; Price Check | Crack Packs</title>
+  <meta name="description" content="Search Pokémon cards by name, set, number, rarity, type, or keyword and review current market-reference pricing returned by the card database.">
+  <meta name="theme-color" content="#07091b">
+  <meta property="og:title" content="Card Search &amp; Price Check | Crack Packs">
+  <meta property="og:description" content="Find Pokémon cards, view artwork and card details, and check estimated market-reference prices.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://crackpacks.com/card-lookup.html">
+  <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="assets/css/styles.css?v=1.5.0">
+  <link rel="stylesheet" href="assets/css/card-lookup.css?v=1.5.0">
+</head>
+<body data-page="card-lookup">
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div class="ambient-layer" aria-hidden="true"><span class="ambient-orb orb-a"></span><span class="ambient-orb orb-b"></span><span class="ambient-orb orb-c"></span><span class="grain"></span></div>
+
+  <header class="site-header">
+    <div class="container nav-shell">
+      <a class="brand" href="index.html" aria-label="Crack Packs home"><img src="assets/images/logo.svg" alt="Crack Packs"></a>
+      <button class="menu-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="site-nav"><span></span><span></span><span></span></button>
+      <nav class="site-nav" id="site-nav" aria-label="Primary navigation">
+        <a href="index.html">Home</a>
+        <a href="shop.html">Shop</a>
+        <a href="releases.html">Release Radar</a>
+        <a href="card-lookup.html" aria-current="page">Card Search &amp; Price Check</a>
+        <a class="nav-live" data-whatnot href="#">Live on Whatnot <span aria-hidden="true">↗</span></a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="lookup-hero">
+      <div class="container lookup-hero-grid">
+        <div class="lookup-hero-copy reveal">
+          <p class="eyebrow">Live collector tool</p>
+          <h1>Card search.<span>Price check.</span></h1>
+          <p>Search Pokémon cards by card or Pokémon name, set, card number, rarity, type, or a broader keyword. Review artwork, card details, and current market-reference pricing when the API returns it.</p>
+          <div class="lookup-proof" aria-label="Search features">
+            <span>Live card database</span>
+            <span>TCGplayer references</span>
+            <span>Desktop + mobile</span>
+            <span>No API key exposed</span>
+          </div>
+        </div>
+
+        <div class="lookup-search-panel holo-panel reveal">
+          <form data-price-check-form>
+            <label class="lookup-field">
+              <span>What card are you checking?</span>
+              <input type="search" data-price-check-term minlength="2" maxlength="80" autocomplete="off" placeholder="Try Charizard, Base Set, 4/102, Rare Holo…" required>
+            </label>
+
+            <div class="lookup-search-row">
+              <label class="lookup-field">
+                <span>Search in</span>
+                <select data-price-check-field>
+                  <option value="all">All searchable fields</option>
+                  <option value="name">Card / Pokémon name</option>
+                  <option value="set">Set name</option>
+                  <option value="number">Card number</option>
+                  <option value="rarity">Rarity</option>
+                  <option value="type">Type or subtype</option>
+                </select>
+              </label>
+
+              <label class="lookup-field">
+                <span>Sort results</span>
+                <select data-price-check-order>
+                  <option value="-set.releaseDate">Newest sets first</option>
+                  <option value="set.releaseDate">Oldest sets first</option>
+                  <option value="name">Card name A–Z</option>
+                  <option value="-name">Card name Z–A</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="lookup-search-row lookup-search-row-secondary">
+              <label class="lookup-field">
+                <span>Results per page</span>
+                <select data-price-check-size>
+                  <option value="12">12 cards</option>
+                  <option value="20" selected>20 cards</option>
+                  <option value="24">24 cards</option>
+                  <option value="36">36 cards</option>
+                  <option value="48">48 cards</option>
+                </select>
+              </label>
+              <div class="lookup-search-actions">
+                <button class="btn btn-primary" type="submit" data-price-check-submit>Search &amp; check prices</button>
+                <button class="btn btn-glass" type="button" data-price-check-reset>Clear</button>
+              </div>
+            </div>
+          </form>
+
+          <div class="lookup-examples" aria-label="Example searches">
+            <span>Quick searches:</span>
+            <button class="lookup-example" type="button" data-price-check-example="Charizard" data-price-check-field="name">Charizard</button>
+            <button class="lookup-example" type="button" data-price-check-example="Pikachu ex" data-price-check-field="name">Pikachu ex</button>
+            <button class="lookup-example" type="button" data-price-check-example="151" data-price-check-field="set">151</button>
+            <button class="lookup-example" type="button" data-price-check-example="Rare Holo" data-price-check-field="rarity">Rare Holo</button>
+          </div>
+
+          <p class="lookup-disclaimer">Market values are estimates from third-party reference data, can be delayed, and may vary by condition, printing, language, grading, seller, fees, and recent sales. Verify the external listing before buying, selling, or setting a starting bid.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="lookup-results-section" id="lookup-results">
+      <div class="container">
+        <div class="lookup-results-header">
+          <div>
+            <p class="eyebrow">Search results</p>
+            <h2>Current card references.</h2>
+          </div>
+          <div class="lookup-summary" data-price-check-summary hidden></div>
+        </div>
+
+        <div class="lookup-status" data-price-check-status role="status" aria-live="polite">Search by card name, set, number, rarity, type, or keyword.</div>
+        <div class="lookup-state lookup-error" data-price-check-error hidden><strong>Search unavailable</strong><span data-price-check-error-text></span></div>
+        <div class="lookup-state" data-price-check-empty hidden><strong>No matching cards found.</strong><span>Try a shorter term, another field, or a different spelling.</span></div>
+        <div class="lookup-grid" data-price-check-results></div>
+
+        <nav class="lookup-pager" data-price-check-pager aria-label="Card search pages" hidden>
+          <button class="btn btn-glass" type="button" data-price-check-previous>← Previous</button>
+          <span data-price-check-page>Page 1 of 1</span>
+          <button class="btn btn-glass" type="button" data-price-check-next>Next →</button>
+        </nav>
+      </div>
+    </section>
+
+    <section class="lookup-education">
+      <div class="container lookup-education-grid">
+        <article class="lookup-tip holo-panel"><strong>01 • Identify</strong><h2>Match the exact printing.</h2><p>Confirm the set, collector number, rarity, finish, language, and card condition before using a price reference.</p></article>
+        <article class="lookup-tip holo-panel"><strong>02 • Compare</strong><h2>Use more than one number.</h2><p>Market, low, and mid values can tell different stories. Recent sold listings are usually more useful than a single asking price.</p></article>
+        <article class="lookup-tip holo-panel"><strong>03 • Verify</strong><h2>Open the market listing.</h2><p>Use the external link to confirm the current listing page because prices and availability can change after the API response is cached.</p></article>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-grid">
+      <div class="footer-brand"><img src="assets/images/logo.svg" alt="Crack Packs"><p>A collector-first storefront with live rips, sealed products, singles, release tracking, and a live card price-reference tool.</p></div>
+      <div class="footer-links">
+        <h3>Explore</h3>
+        <a href="index.html">Home</a>
+        <a href="shop.html">Shop</a>
+        <a href="releases.html">Release Radar</a>
+        <a href="card-lookup.html">Card Search &amp; Price Check</a>
+        <a data-whatnot href="#">Whatnot</a>
+      </div>
+      <div class="footer-links"><h3>Contact</h3><a data-email href="#">hello@crackpacks.com</a><a href="https://github.com/FaytSystems/crackpacks" target="_blank" rel="noopener noreferrer">GitHub repository ↗</a></div>
+    </div>
+    <div class="container footer-bottom"><span>© <span data-year></span> Crack Packs.</span><span>Independent retailer. Pokémon and related marks belong to their respective owners. Card values are estimates and may change.</span></div>
+  </footer>
+
+  <script src="assets/js/config.js?v=1.5.0"></script>
+  <script src="assets/js/data.js?v=1.5.0"></script>
+  <script src="assets/js/app.js?v=1.5.0"></script>
+  <script src="assets/js/card-lookup.js?v=1.5.0"></script>
+</body>
+</html>

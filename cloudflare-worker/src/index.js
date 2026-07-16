@@ -1,7 +1,10 @@
+// D:\crackpacks\crackpacks-github-ready\cloudflare-worker\src\index.js
+
 const POKEMON_API_BASE = "https://api.pokemontcg.io/v2";
-const DEFAULT_PAGE_SIZE = 24;
+const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 48;
 const CACHE_SECONDS = 300;
+const WORKER_VERSION = "1.5.0";
 
 function jsonResponse(body, status = 200, headers = {}) {
   return new Response(JSON.stringify(body), {
@@ -59,10 +62,9 @@ function sanitizeSearchTerm(value) {
     .slice(0, 80);
 }
 
-function pokemonNameQuery(term) {
-  const words = term.split(" ").filter(Boolean);
-  if (words.length === 1) return `name:${words[0]}*`;
-  return `name:"${term}"`;
+function validField(value) {
+  const allowed = new Set(["all", "name", "set", "number", "rarity", "type"]);
+  return allowed.has(value) ? value : "all";
 }
 
 function validOrderBy(value) {
@@ -73,6 +75,41 @@ function validOrderBy(value) {
     "-name"
   ]);
   return allowed.has(value) ? value : "-set.releaseDate";
+}
+
+function fieldValue(term, { wildcard = false } = {}) {
+  const words = term.split(" ").filter(Boolean);
+  if (words.length === 1) return `${words[0]}${wildcard ? "*" : ""}`;
+  return `"${term}"`;
+}
+
+function buildPokemonQuery(term, field) {
+  const nameValue = fieldValue(term, { wildcard: true });
+  const generalValue = fieldValue(term, { wildcard: true });
+  const exactValue = fieldValue(term);
+
+  switch (field) {
+    case "name":
+      return `name:${nameValue}`;
+    case "set":
+      return `set.name:${generalValue}`;
+    case "number":
+      return `number:${exactValue}`;
+    case "rarity":
+      return `rarity:${generalValue}`;
+    case "type":
+      return `(types:${generalValue} OR subtypes:${generalValue})`;
+    case "all":
+    default:
+      return [
+        `name:${nameValue}`,
+        `set.name:${generalValue}`,
+        `rarity:${generalValue}`,
+        `number:${exactValue}`,
+        `types:${generalValue}`,
+        `subtypes:${generalValue}`
+      ].join(" OR ");
+  }
 }
 
 async function handleCards(request, env, cors) {
@@ -86,6 +123,7 @@ async function handleCards(request, env, cors) {
 
   const incomingUrl = new URL(request.url);
   const term = sanitizeSearchTerm(incomingUrl.searchParams.get("term"));
+  const field = validField(incomingUrl.searchParams.get("field"));
   const page = boundedInteger(incomingUrl.searchParams.get("page"), 1, 1, 1000);
   const pageSize = boundedInteger(
     incomingUrl.searchParams.get("pageSize"),
@@ -103,14 +141,15 @@ async function handleCards(request, env, cors) {
     );
   }
 
+  const submittedQuery = buildPokemonQuery(term, field);
   const upstreamUrl = new URL(`${POKEMON_API_BASE}/cards`);
-  upstreamUrl.searchParams.set("q", pokemonNameQuery(term));
+  upstreamUrl.searchParams.set("q", submittedQuery);
   upstreamUrl.searchParams.set("page", String(page));
   upstreamUrl.searchParams.set("pageSize", String(pageSize));
   upstreamUrl.searchParams.set("orderBy", orderBy);
   upstreamUrl.searchParams.set(
     "select",
-    "id,name,supertype,subtypes,hp,types,set,number,artist,rarity,images,tcgplayer"
+    "id,name,supertype,subtypes,hp,types,set,number,artist,rarity,images,tcgplayer,cardmarket"
   );
 
   let upstreamResponse;
@@ -144,15 +183,34 @@ async function handleCards(request, env, cors) {
   if (!upstreamResponse.ok) {
     return jsonResponse(
       {
-        error: payload?.error?.message || payload?.message || "The card database rejected the request."
+        error: payload?.error?.message ||
+          payload?.message ||
+          "The card database rejected the request."
       },
       upstreamResponse.status >= 500 ? 502 : upstreamResponse.status,
       cors
     );
   }
 
+  const responsePayload = payload || {
+    data: [],
+    page,
+    pageSize,
+    count: 0,
+    totalCount: 0
+  };
+
+  responsePayload.meta = {
+    ...(responsePayload.meta || {}),
+    workerVersion: WORKER_VERSION,
+    authMode: "cloudflare-secret",
+    submittedField: field,
+    submittedTerm: term,
+    submittedQuery
+  };
+
   return jsonResponse(
-    payload || { data: [], page, pageSize, count: 0, totalCount: 0 },
+    responsePayload,
     200,
     {
       ...cors,
@@ -184,7 +242,9 @@ export default {
         {
           ok: true,
           service: "crackpacks-card-search",
-          apiKeyConfigured: Boolean(env.POKEMON_TCG_API_KEY)
+          version: WORKER_VERSION,
+          apiKeyConfigured: Boolean(env.POKEMON_TCG_API_KEY),
+          supportedFields: ["all", "name", "set", "number", "rarity", "type"]
         },
         200,
         cors
