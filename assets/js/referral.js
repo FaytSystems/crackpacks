@@ -104,6 +104,7 @@
     catch (error) { showStatus(error.message, "error"); }
   });
   document.querySelectorAll("[data-email-modal-close]").forEach(button => button.addEventListener("click", () => { $("[data-email-modal]").hidden = true; }));
+  document.querySelectorAll("[data-invite-sent-close]").forEach(button => button.addEventListener("click", () => { $("[data-invite-sent-modal]").hidden = true; }));
   $("[data-profile-form]").addEventListener("submit", async event => {
     event.preventDefault(); const form = Object.fromEntries(new FormData(event.currentTarget));
     try { const data = await request("/profile", { method: "POST", body: JSON.stringify(form) }); showStatus("Identity profile verified.", "success"); renderAccount(data.account); }
@@ -131,7 +132,12 @@
   });
   $("[data-invite-form]").addEventListener("submit", async event => {
     event.preventDefault();
-    try { await request("/invites", { method: "POST", body: JSON.stringify({ email: new FormData(event.currentTarget).get("email") }) }); event.currentTarget.reset(); showStatus("Invitation sent. It counts after your friend verifies and completes signup.", "success"); }
+    try {
+      await request("/invites", { method: "POST", body: JSON.stringify({ email: new FormData(event.currentTarget).get("email") }) });
+      event.currentTarget.reset();
+      $("[data-invite-sent-modal]").hidden = false;
+      showStatus("Invitation sent. It counts after your friend verifies and completes signup.", "success");
+    }
     catch (error) { showStatus(error.message, "error"); }
   });
   $("[data-copy-link]").addEventListener("click", async () => { await navigator.clipboard.writeText($("[data-invite-url]").value); showStatus("Invitation link copied.", "success"); });

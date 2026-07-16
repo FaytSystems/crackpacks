@@ -9,7 +9,7 @@
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/css/styles.css?v=1.9.2">
   <link rel="stylesheet" href="assets/css/referral.css?v=1.9.2">
-  <link rel="stylesheet" href="assets/css/rewards-modal.css?v=1.9.7">
+  <link rel="stylesheet" href="assets/css/rewards-modal.css?v=1.9.8">
 </head>
 <body data-page="rewards">
   <a class="skip-link" href="#main">Skip to content</a>
@@ -124,8 +124,19 @@
       <button class="btn btn-primary" type="button" data-email-modal-close>Got it</button>
     </section>
   </div>
+  <div class="rewards-modal" data-invite-sent-modal hidden>
+    <button class="rewards-modal-backdrop" type="button" data-invite-sent-close aria-label="Close"></button>
+    <section class="rewards-modal-card" role="dialog" aria-modal="true" aria-labelledby="invite-sent-title">
+      <button class="rewards-modal-close" type="button" data-invite-sent-close aria-label="Close">&times;</button>
+      <div class="email-icon invite-sent-icon" aria-hidden="true">&#10003;</div>
+      <p class="eyebrow">Friend referral</p>
+      <h2 id="invite-sent-title">Invitation sent</h2>
+      <p>Your friend received the verified signup link. Your total increases by +1 after they complete the full verification process.</p>
+      <button class="btn btn-primary" type="button" data-invite-sent-close>Close</button>
+    </section>
+  </div>
   <script src="assets/js/config.js?v=1.9.6"></script>
   <script src="assets/js/app.js?v=1.9.2"></script>
-  <script src="assets/js/referral.js?v=1.9.7"></script>
+  <script src="assets/js/referral.js?v=1.9.8"></script>
 </body>
 </html>
