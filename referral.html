@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Crack Packs Rewards | Discounts & Friend Invites</title>
+  <meta name="description" content="Sign in to claim Crack Packs discounts, create a personal invite QR code, and earn referral rewards.">
+  <meta name="theme-color" content="#07091b">
+  <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/css/styles.css?v=1.8.0">
+  <link rel="stylesheet" href="assets/css/referral.css?v=1.8.0">
+</head>
+<body data-page="rewards">
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="container nav-shell">
+      <a class="brand" href="index.html" aria-label="Crack Packs home"><img src="assets/images/logo.svg" alt="Crack Packs"></a>
+      <button class="menu-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="site-nav"><span></span><span></span><span></span></button>
+      <nav class="site-nav" id="site-nav" aria-label="Primary navigation">
+        <a href="index.html">Home</a><a href="shop.html">Shop</a><a href="releases.html">Release Radar</a>
+        <a href="card-lookup.html">Card Search</a><a href="referral.html" aria-current="page">Rewards &amp; Invites</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main" class="rewards-main">
+    <section class="rewards-hero">
+      <div class="container rewards-hero-grid">
+        <div>
+          <p class="eyebrow">Scan. Save. Share.</p>
+          <h1>Crack Packs <span>Rewards.</span></h1>
+          <p>Use the sticker QR to claim a discount or invite verified collector friends. Every qualified signup moves you toward the next prize tier.</p>
+        </div>
+        <div class="sticker-preview">
+          <span>STICKER QR</span>
+          <img data-sticker-qr alt="QR code linking to Crack Packs Rewards">
+          <strong>SCAN FOR REWARDS</strong>
+          <small>crackpacks.com/referral.html</small>
+        </div>
+      </div>
+    </section>
+
+    <section class="container rewards-shell" data-rewards-app>
+      <div class="rewards-notice" data-app-status aria-live="polite"></div>
+
+      <section class="reward-card auth-card" data-auth-panel>
+        <div data-request-panel>
+          <p class="eyebrow">Collector account</p>
+          <h2>Sign in or create your account</h2>
+          <p>Use the same email address as your Whatnot account. We will email a one-time verification code.</p>
+          <form data-request-form>
+            <label>Email used on Whatnot<input name="email" type="email" autocomplete="email" required maxlength="254" placeholder="collector@example.com"></label>
+            <label class="check-line"><input name="whatnotConfirmed" type="checkbox" required> I confirm this is the email on my Whatnot account.</label>
+            <div data-turnstile></div>
+            <button class="btn btn-primary" type="submit">Email my sign-in code</button>
+          </form>
+        </div>
+        <div data-verify-panel hidden>
+          <p class="eyebrow">Check your inbox</p>
+          <h2>Enter the 6-digit code</h2>
+          <form data-verify-form>
+            <label>Verification code<input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required placeholder="123456"></label>
+            <button class="btn btn-primary" type="submit">Verify and continue</button>
+          </form>
+        </div>
+      </section>
+
+      <section class="reward-card" data-profile-panel hidden>
+        <p class="eyebrow">Identity profile</p>
+        <h2>Complete verification</h2>
+          <p>Crack Packs checks your verified email, legal name, birthday, and username against existing accounts. Duplicate identities are blocked and suspicious profiles can be held for review.</p>
+        <form data-profile-form>
+          <div class="field-grid">
+            <label>Legal first name<input name="firstName" autocomplete="given-name" required maxlength="60"></label>
+            <label>Legal last name<input name="lastName" autocomplete="family-name" required maxlength="60"></label>
+          </div>
+          <label>Date of birth<input name="birthDate" type="date" autocomplete="bday" required></label>
+          <label>Collector username<input name="whatnotUsername" required maxlength="64" pattern="[A-Za-z0-9_.-]+"></label>
+          <label class="check-line"><input name="consent" type="checkbox" required> I consent to identity and duplicate-account checks and confirm this information is mine.</label>
+          <button class="btn btn-primary" type="submit">Verify identity</button>
+        </form>
+      </section>
+
+      <section class="reward-card" data-device-panel hidden>
+        <p class="eyebrow">Free secure device check</p>
+        <h2>Create a Crack Packs passkey</h2>
+        <p>Confirm this signup with your device screen lock, fingerprint sensor, Face ID, Touch ID, Windows Hello, or security key. Crack Packs receives a public key—not your fingerprint or biometric data.</p>
+        <button class="btn btn-primary" type="button" data-register-passkey>Verify this device</button>
+        <p class="fine-print">Your passkey may sync through your device account or password manager. It is one anti-abuse signal and does not prove a person owns only one device.</p>
+      </section>
+
+      <section data-dashboard hidden>
+        <div class="dashboard-head">
+          <div><p class="eyebrow">Your collector dashboard</p><h2>Welcome, <span data-member-name></span></h2></div>
+          <button class="btn btn-outline btn-small" type="button" data-sign-out>Sign out</button>
+        </div>
+        <div class="choice-grid">
+          <button class="choice-card" type="button" data-view="discount"><span>01</span><strong>Claim discount code</strong><small>Get your available one-time offer.</small></button>
+          <button class="choice-card" type="button" data-view="invite"><span>02</span><strong>Invite a friend</strong><small>Email or share your personal QR code.</small></button>
+        </div>
+        <section class="reward-card action-panel" data-discount-panel hidden>
+          <p class="eyebrow">Member discount</p><h3>Your offer</h3>
+          <p class="code-output" data-discount-code>Claim when ready</p>
+          <button class="btn btn-primary" type="button" data-claim-discount>Claim discount</button>
+          <p class="fine-print">One claim per verified person. Redemption rules and expiration are returned with the code.</p>
+        </section>
+        <section class="reward-card action-panel" data-invite-panel hidden>
+          <div class="invite-layout">
+            <div>
+              <p class="eyebrow">Friend invitation</p><h3>Invite a verified collector</h3>
+              <form data-invite-form><label>Friend's email<input name="email" type="email" autocomplete="email" required placeholder="friend@example.com"></label><button class="btn btn-primary" type="submit">Send verified invite</button></form>
+              <div class="share-row"><input data-invite-url readonly aria-label="Your invitation link"><button class="btn btn-outline btn-small" type="button" data-copy-link>Copy link</button></div>
+            </div>
+            <div class="personal-qr"><img data-personal-qr alt="Personal friend invitation QR code"><strong data-invite-code></strong><small>Your personal invite code</small></div>
+          </div>
+        </section>
+        <section class="reward-card progress-card">
+          <div class="progress-summary"><div><span>Verified friends</span><strong data-referral-count>0</strong></div><div><span>Current tier</span><strong data-tier-name>Starter</strong></div></div>
+          <div class="tier-track" data-tier-track></div>
+          <p data-next-tier></p>
+        </section>
+      </section>
+    </section>
+  </main>
+  <script src="assets/js/config.js?v=1.8.0"></script>
+  <script src="assets/js/app.js?v=1.8.0"></script>
+  <script src="assets/js/referral.js?v=1.8.0"></script>
+</body>
+</html>

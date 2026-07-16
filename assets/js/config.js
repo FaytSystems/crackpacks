@@ -3,6 +3,8 @@
 window.CRACKPACKS_CONFIG = {
   whatnotUrl: "https://www.whatnot.com/user/crack_packs",
   cardApiUrl: "https://api.crackpacks.com/cards",
+  rewardsApiUrl: "https://rewards-api.crackpacks.com",
+  turnstileSiteKey: "0x4AAAAAAD3RxIQixxKxgnzg7sVd2zU9OBQ",
   youtubeLiveStatusUrl: "https://live-api.crackpacks.com/status",
   youtubeChannelUrl: "",
   youtubeManualVideoId: "",
