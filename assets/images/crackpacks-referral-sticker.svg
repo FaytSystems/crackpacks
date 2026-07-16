@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" viewBox="0 0 1200 1200" role="img" aria-labelledby="title desc">
+  <title id="title">Crack Packs referral QR sticker</title>
+  <desc id="desc">Print-ready square Crack Packs sticker with a scannable QR code linking to the referral campaign.</desc>
+  <defs>
+    <linearGradient id="edge" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#f8ff46"/>
+      <stop offset=".45" stop-color="#38e8ff"/>
+      <stop offset="1" stop-color="#ff4edb"/>
+    </linearGradient>
+    <radialGradient id="bg" cx=".5" cy=".2" r=".9">
+      <stop stop-color="#18205b"/>
+      <stop offset=".55" stop-color="#090c29"/>
+      <stop offset="1" stop-color="#040511"/>
+    </radialGradient>
+    <filter id="shadow"><feDropShadow dx="0" dy="22" stdDeviation="24" flood-opacity=".55"/></filter>
+  </defs>
+  <rect width="1200" height="1200" rx="112" fill="url(#edge)"/>
+  <rect x="22" y="22" width="1156" height="1156" rx="92" fill="url(#bg)"/>
+  <path d="M70 250L310 70h580l240 180v700l-240 180H310L70 950z" fill="none" stroke="url(#edge)" stroke-width="5" opacity=".45"/>
+  <image href="logo.svg" x="110" y="68" width="980" height="194"/>
+  <text x="600" y="304" fill="#f8ff46" font-family="Arial Black,Impact,sans-serif" font-size="42" text-anchor="middle" letter-spacing="8">SCAN • JOIN • INVITE</text>
+  <g filter="url(#shadow)">
+    <rect x="276" y="334" width="648" height="648" rx="54" fill="#fff"/>
+    <image href="crackpacks-sticker-qr.svg" x="306" y="364" width="588" height="588"/>
+  </g>
+  <text x="600" y="1040" fill="#fff" font-family="Arial Black,Impact,sans-serif" font-size="51" text-anchor="middle">FREE REWARDS + FRIEND INVITES</text>
+  <text x="600" y="1092" fill="#b7bbd2" font-family="Arial,sans-serif" font-weight="700" font-size="27" text-anchor="middle" letter-spacing="3">CRACKPACKS.COM/REFERRAL</text>
+</svg>
