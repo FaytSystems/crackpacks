@@ -132,9 +132,11 @@
   });
   $("[data-invite-form]").addEventListener("submit", async event => {
     event.preventDefault();
+    const inviteForm = event.currentTarget;
+    const inviteEmail = new FormData(inviteForm).get("email");
     try {
-      await request("/invites", { method: "POST", body: JSON.stringify({ email: new FormData(event.currentTarget).get("email") }) });
-      event.currentTarget.reset();
+      await request("/invites", { method: "POST", body: JSON.stringify({ email: inviteEmail }) });
+      inviteForm.reset();
       $("[data-invite-sent-modal]").hidden = false;
       showStatus("Invitation sent. It counts after your friend verifies and completes signup.", "success");
     }
