@@ -72,18 +72,18 @@ async function route(request, env, cors) {
     if (!await verifyTurnstile(env, data.turnstileToken, request)) return response({ error: "Security check failed. Refresh the page and try again." }, 403, cors);
     const recent = await env.DB.prepare(`SELECT COUNT(*) count FROM login_codes WHERE email=? AND created_at>?`).bind(email, new Date(Date.now() - 15 * 60e3).toISOString()).first();
     if (Number(recent.count) >= 3) return response({ error: "Too many codes requested. Try again later." }, 429, cors);
-    const code = randomString(6, "0123456789"); const created = now();
-    await env.DB.prepare(`INSERT INTO login_codes(id,email,code_hash,expires_at,created_at) VALUES(?,?,?,?,?)`).bind(id(), email, await hash(code, env.AUTH_SECRET), new Date(Date.now() + 10 * 60e3).toISOString(), created).run();
-    await sendEmail(env, email, "Your Crack Packs sign-in code", `<h1>${code}</h1><p>This code expires in 10 minutes. If you did not request it, ignore this email.</p>`);
+    const linkToken = randomString(48); const created = now();
+    await env.DB.prepare(`INSERT INTO login_codes(id,email,code_hash,expires_at,created_at) VALUES(?,?,?,?,?)`).bind(id(), email, await hash(linkToken, env.AUTH_SECRET), new Date(Date.now() + 10 * 60e3).toISOString(), created).run();
+    const ref = clean(data.referralCode, 16).toUpperCase();
+    const verifyUrl = `${env.SITE_URL}/referral.html?verify=${encodeURIComponent(linkToken)}${ref ? `&ref=${encodeURIComponent(ref)}` : ""}`;
+    await sendEmail(env, email, "Verify your Crack Packs email", `<h1>Verify your email</h1><p><a href="${verifyUrl}" style="display:inline-block;padding:14px 22px;background:#f8ff46;color:#070815;text-decoration:none;font-weight:bold;border-radius:10px">Verify email and continue</a></p><p>This secure link expires in 10 minutes and can only be used once. If you did not request it, ignore this message.</p>`);
     await audit(env, request, "login_code_requested", null, email); return response({ ok: true }, 200, cors);
   }
-  if (url.pathname === "/auth/verify" && request.method === "POST") {
-    const data = await body(request); const email = normalizeEmail(data.email); const code = String(data.code || "");
-    const record = await env.DB.prepare(`SELECT * FROM login_codes WHERE email=? AND used_at IS NULL ORDER BY created_at DESC LIMIT 1`).bind(email).first();
-    if (!record || record.expires_at < now() || record.attempts >= 5 || record.code_hash !== await hash(code, env.AUTH_SECRET)) {
-      if (record) await env.DB.prepare(`UPDATE login_codes SET attempts=attempts+1 WHERE id=?`).bind(record.id).run();
-      return response({ error: "That code is invalid or expired." }, 401, cors);
-    }
+  if (url.pathname === "/auth/verify-link" && request.method === "POST") {
+    const data = await body(request); const submittedHash = await hash(String(data.token || ""), env.AUTH_SECRET);
+    const record = await env.DB.prepare(`SELECT * FROM login_codes WHERE code_hash=? AND used_at IS NULL LIMIT 1`).bind(submittedHash).first();
+    if (!record || record.expires_at < now()) return response({ error: "That verification link is invalid or expired. Request a new email." }, 401, cors);
+    const email = record.email;
     let member = await env.DB.prepare(`SELECT * FROM members WHERE email=?`).bind(email).first();
     if (!member) {
       let inviter = null; const ref = clean(data.referralCode, 16).toUpperCase();
@@ -96,7 +96,7 @@ async function route(request, env, cors) {
       env.DB.prepare(`UPDATE login_codes SET used_at=? WHERE id=?`).bind(now(), record.id),
       env.DB.prepare(`INSERT INTO sessions(token_hash,member_id,expires_at,created_at) VALUES(?,?,?,?)`).bind(await hash(token, env.AUTH_SECRET), member.id, new Date(Date.now() + 30 * 86400e3).toISOString(), now())
     ]);
-    await audit(env, request, "login_verified", member.id); return response({ token, account: await accountFor(member, env) }, 200, cors);
+    await audit(env, request, "email_link_verified", member.id); return response({ token, account: await accountFor(member, env) }, 200, cors);
   }
   const member = await memberFromRequest(request, env);
   if (!member) return response({ error: "Sign in is required." }, 401, cors);

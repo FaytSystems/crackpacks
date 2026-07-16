@@ -9,6 +9,7 @@
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/css/styles.css?v=1.8.0">
   <link rel="stylesheet" href="assets/css/referral.css?v=1.8.0">
+  <link rel="stylesheet" href="assets/css/rewards-modal.css?v=1.9.1">
 </head>
 <body data-page="rewards">
   <a class="skip-link" href="#main">Skip to content</a>
@@ -51,15 +52,7 @@
           <form data-request-form>
             <label>Email address<input name="email" type="email" autocomplete="email" required maxlength="254" placeholder="collector@example.com"></label>
             <div data-turnstile></div>
-            <button class="btn btn-primary" type="submit">Email my sign-in code</button>
-          </form>
-        </div>
-        <div data-verify-panel hidden>
-          <p class="eyebrow">Check your inbox</p>
-          <h2>Enter the 6-digit code</h2>
-          <form data-verify-form>
-            <label>Verification code<input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required placeholder="123456"></label>
-            <button class="btn btn-primary" type="submit">Verify and continue</button>
+            <button class="btn btn-primary" type="submit">Send verification link</button>
           </form>
         </div>
       </section>
@@ -121,6 +114,17 @@
       </section>
     </section>
   </main>
+  <div class="rewards-modal" data-email-modal hidden>
+    <button class="rewards-modal-backdrop" type="button" data-email-modal-close aria-label="Close"></button>
+    <section class="rewards-modal-card" role="dialog" aria-modal="true" aria-labelledby="email-modal-title">
+      <button class="rewards-modal-close" type="button" data-email-modal-close aria-label="Close">&times;</button>
+      <div class="email-icon" aria-hidden="true">&#9993;</div>
+      <p class="eyebrow">Email sent</p>
+      <h2 id="email-modal-title">Check inbox for verification link</h2>
+      <p>Open the message from Crack Packs and click the secure link. It expires in 10 minutes and can only be used once.</p>
+      <button class="btn btn-primary" type="button" data-email-modal-close>Got it</button>
+    </section>
+  </div>
   <script src="assets/js/config.js?v=1.8.0"></script>
   <script src="assets/js/app.js?v=1.8.0"></script>
   <script src="assets/js/referral.js?v=1.8.0"></script>

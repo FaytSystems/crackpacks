@@ -1,0 +1,8 @@
+.rewards-modal{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:20px}
+.rewards-modal-backdrop{position:absolute;inset:0;border:0;background:rgba(3,4,16,.82);backdrop-filter:blur(10px)}
+.rewards-modal-card{position:relative;width:min(520px,100%);padding:42px;border:1px solid rgba(248,255,70,.4);border-radius:26px;background:linear-gradient(145deg,#121638,#080a1f);box-shadow:0 35px 100px rgba(0,0,0,.65);text-align:center}
+.rewards-modal-card h2{margin:0 0 12px;font-size:clamp(2rem,6vw,3.2rem);line-height:1}
+.rewards-modal-card p:not(.eyebrow){color:var(--muted)}
+.rewards-modal-card .eyebrow{justify-content:center}
+.rewards-modal-close{position:absolute;right:14px;top:12px;width:42px;height:42px;border:0;background:transparent;font-size:2rem;cursor:pointer}
+.email-icon{display:grid;place-items:center;width:74px;height:74px;margin:0 auto 22px;border-radius:22px;color:#070815;background:linear-gradient(135deg,var(--electric),var(--cyan));font-size:2rem}

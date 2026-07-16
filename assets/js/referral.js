@@ -5,6 +5,7 @@
   const api = String(config.rewardsApiUrl || "").replace(/\/$/, "");
   const qs = new URLSearchParams(location.search);
   const referralCode = (qs.get("ref") || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 16);
+  const verificationToken = String(qs.get("verify") || "");
   const $ = selector => document.querySelector(selector);
   const status = $("[data-app-status]");
   let email = "";
@@ -61,14 +62,10 @@
   $("[data-request-form]").addEventListener("submit", async event => {
     event.preventDefault(); const form = new FormData(event.currentTarget); email = String(form.get("email")).trim().toLowerCase();
     const turnstileToken = String(form.get("cf-turnstile-response") || "");
-    try { await request("/auth/request", { method: "POST", body: JSON.stringify({ email, referralCode, turnstileToken }) }); show("[data-request-panel]", false); show("[data-verify-panel]", true); showStatus("A sign-in code was sent. It expires in 10 minutes.", "success"); }
+    try { await request("/auth/request", { method: "POST", body: JSON.stringify({ email, referralCode, turnstileToken }) }); $("[data-email-modal]").hidden = false; showStatus("Verification email sent.", "success"); }
     catch (error) { showStatus(error.message, "error"); }
   });
-  $("[data-verify-form]").addEventListener("submit", async event => {
-    event.preventDefault();
-    try { const data = await request("/auth/verify", { method: "POST", body: JSON.stringify({ email, code: new FormData(event.currentTarget).get("code"), referralCode }) }); token = data.token; localStorage.setItem("cp_rewards_token", token); showStatus("Email verified.", "success"); renderAccount(data.account); }
-    catch (error) { showStatus(error.message, "error"); }
-  });
+  document.querySelectorAll("[data-email-modal-close]").forEach(button => button.addEventListener("click", () => { $("[data-email-modal]").hidden = true; }));
   $("[data-profile-form]").addEventListener("submit", async event => {
     event.preventDefault(); const form = Object.fromEntries(new FormData(event.currentTarget));
     try { const data = await request("/profile", { method: "POST", body: JSON.stringify(form) }); showStatus("Identity profile verified.", "success"); renderAccount(data.account); }
@@ -101,5 +98,16 @@
   });
   $("[data-copy-link]").addEventListener("click", async () => { await navigator.clipboard.writeText($("[data-invite-url]").value); showStatus("Invitation link copied.", "success"); });
   $("[data-sign-out]").addEventListener("click", () => { localStorage.removeItem("cp_rewards_token"); location.reload(); });
-  loadAccount();
+  async function confirmEmailLink() {
+    if (!verificationToken) return loadAccount();
+    try {
+      const data = await request("/auth/verify-link", { method: "POST", body: JSON.stringify({ token: verificationToken, referralCode }) });
+      token = data.token; localStorage.setItem("cp_rewards_token", token);
+      history.replaceState({}, document.title, `${location.pathname}${referralCode ? `?ref=${encodeURIComponent(referralCode)}` : ""}`);
+      showStatus("Email verified. Continue with secure device verification.", "success"); renderAccount(data.account);
+    } catch (error) {
+      history.replaceState({}, document.title, location.pathname); showStatus(error.message, "error");
+    }
+  }
+  confirmEmailLink();
 })();
