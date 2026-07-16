@@ -62,7 +62,14 @@
   $("[data-request-form]").addEventListener("submit", async event => {
     event.preventDefault(); const form = new FormData(event.currentTarget); email = String(form.get("email")).trim().toLowerCase();
     const turnstileToken = String(form.get("cf-turnstile-response") || "");
-    try { await request("/auth/request", { method: "POST", body: JSON.stringify({ email, referralCode, turnstileToken }) }); $("[data-email-modal]").hidden = false; showStatus("Verification email sent.", "success"); }
+    try {
+      await request("/auth/request", { method: "POST", body: JSON.stringify({ email, referralCode, turnstileToken }) });
+      const sendButton = $("[data-send-verification]");
+      sendButton.textContent = "Check Inbox 10 min code";
+      sendButton.disabled = true;
+      $("[data-email-modal]").hidden = false;
+      showStatus("Verification email sent.", "success");
+    }
     catch (error) { showStatus(error.message, "error"); }
   });
   document.querySelectorAll("[data-email-modal-close]").forEach(button => button.addEventListener("click", () => { $("[data-email-modal]").hidden = true; }));
