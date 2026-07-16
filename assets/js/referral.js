@@ -11,25 +11,32 @@
   const showStatus = (message = "", kind = "") => { status.textContent = message; status.dataset.kind = kind; };
   let email = "";
   let turnstileTokenValue = "";
-  let turnstileWidgetId = null;
-  let submitAfterTurnstile = false;
   const turnstileNode = $("[data-turnstile]");
   if (turnstileNode && config.turnstileSiteKey) {
-    window.cpTurnstileReady = () => { turnstileWidgetId = window.turnstile.render(turnstileNode, {
+    window.cpTurnstileReady = () => { window.turnstile.render(turnstileNode, {
       sitekey: config.turnstileSiteKey,
       theme: "dark",
-      execution: "execute",
-      appearance: "interaction-only",
       callback: tokenValue => {
         turnstileTokenValue = tokenValue;
         showStatus("");
-        if (submitAfterTurnstile) {
-          submitAfterTurnstile = false;
-          $("[data-request-form]").requestSubmit();
-        }
+        const sendButton = $("[data-send-verification]");
+        sendButton.disabled = false;
+        sendButton.textContent = "Send verification link";
       },
-      "expired-callback": () => { turnstileTokenValue = ""; showStatus("Security check expired. Complete it again.", "error"); },
-      "error-callback": () => { turnstileTokenValue = ""; showStatus("Security check could not load. Refresh and try again.", "error"); }
+      "expired-callback": () => {
+        turnstileTokenValue = "";
+        const sendButton = $("[data-send-verification]");
+        sendButton.disabled = true;
+        sendButton.textContent = "Complete security check";
+        showStatus("Security check expired. Complete it again.", "error");
+      },
+      "error-callback": () => {
+        turnstileTokenValue = "";
+        const sendButton = $("[data-send-verification]");
+        sendButton.disabled = true;
+        sendButton.textContent = "Security check unavailable";
+        showStatus("Security check could not load. Refresh and try again.", "error");
+      }
     }); };
     const script = document.createElement("script"); script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?onload=cpTurnstileReady&render=explicit"; script.async = true; script.defer = true; document.head.append(script);
   } else if (turnstileNode) {
@@ -81,13 +88,7 @@
     event.preventDefault(); const form = new FormData(event.currentTarget); email = String(form.get("email")).trim().toLowerCase();
     const turnstileToken = turnstileTokenValue || String(form.get("cf-turnstile-response") || "");
     if (!turnstileToken) {
-      if (turnstileWidgetId !== null && window.turnstile) {
-        submitAfterTurnstile = true;
-        showStatus("Complete the security check to continue.");
-        window.turnstile.execute(turnstileWidgetId);
-      } else {
-        showStatus("Security check is still loading. Wait a moment and try again.", "error");
-      }
+      showStatus("Complete the visible security check above the button.", "error");
       return;
     }
     try {
