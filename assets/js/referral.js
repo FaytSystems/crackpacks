@@ -12,6 +12,7 @@
   let email = "";
   let turnstileTokenValue = "";
   let accountState = null;
+  let welcomeDiscountLoaded = false;
   const turnstileNode = $("[data-turnstile]");
   if (turnstileNode && config.turnstileSiteKey) {
     window.cpTurnstileReady = () => { window.turnstile.render(turnstileNode, {
@@ -45,7 +46,7 @@
   }
   let token = localStorage.getItem("cp_rewards_token") || "";
 
-  const qrUrl = value => `https://api.qrserver.com/v1/create-qr-code/?size=420x420&margin=12&data=${encodeURIComponent(value)}`;
+  const qrUrl = value => `https://api.qrserver.com/v1/create-qr-code/?size=1000x1000&qzone=4&format=png&data=${encodeURIComponent(value)}`;
   const safeHttpUrl = value => {
     try {
       const parsed = new URL(String(value || ""));
@@ -96,6 +97,15 @@
     $("[data-whatnot-username]").value = data.whatnotUsername || "";
     $("[data-next-tier]").textContent = data.nextTier ? `${data.nextTier.remaining} more verified friend${data.nextTier.remaining === 1 ? "" : "s"} to unlock ${data.nextTier.name}: ${data.nextTier.reward}.` : "You have reached the highest published reward tier.";
     $("[data-tier-track]").innerHTML = data.tiers.map(t => `<div class="tier-node ${data.referralCount >= t.threshold ? "is-earned" : ""}"><strong>${t.threshold}</strong><br>${t.name}</div>`).join("");
+    if (data.referredSignup && !welcomeDiscountLoaded) {
+      welcomeDiscountLoaded = true;
+      show("[data-discount-panel]", true);
+      show("[data-invite-panel]", false);
+      claimDiscount({ welcome: true }).catch(error => {
+        welcomeDiscountLoaded = false;
+        showStatus(error.message, "error");
+      });
+    }
   }
 
   $("[data-request-form]").addEventListener("submit", async event => {
@@ -161,24 +171,24 @@
       catch (error) { showStatus(error.message, "error"); }
     }
   }));
-  $("[data-claim-discount]").addEventListener("click", async () => {
-    try {
-      const data = await request("/discount/claim", { method: "POST" });
-      $("[data-discount-code]").textContent = data.code;
-      $("[data-claim-discount]").hidden = true;
-      const redeemButton = $("[data-redeem-discount]");
-      redeemButton.hidden = false;
-      if (data.redeemedAt) {
-        redeemButton.disabled = true;
-        redeemButton.textContent = "Already redeemed";
-      } else if (data.requestedAt) {
-        redeemButton.disabled = true;
-        redeemButton.textContent = "Redemption requested";
-      }
-      showStatus(`${data.description} Expires ${new Date(data.expiresAt).toLocaleDateString()}.`, "success");
+  async function claimDiscount({ welcome = false } = {}) {
+    const data = await request("/discount/claim", { method: "POST" });
+    $("[data-discount-code]").textContent = data.code;
+    $("[data-claim-discount]").hidden = true;
+    const redeemButton = $("[data-redeem-discount]");
+    redeemButton.hidden = false;
+    if (data.redeemedAt) {
+      redeemButton.disabled = true;
+      redeemButton.textContent = "Already redeemed";
+    } else if (data.requestedAt) {
+      redeemButton.disabled = true;
+      redeemButton.textContent = "Redemption requested";
     }
-    catch (error) { showStatus(error.message, "error"); }
-  });
+    const prefix = welcome ? "Your referred-friend 10% welcome code is ready. " : "";
+    showStatus(`${prefix}${data.description} Expires ${new Date(data.expiresAt).toLocaleDateString()}.`, "success");
+    return data;
+  }
+  $("[data-claim-discount]").addEventListener("click", () => claimDiscount().catch(error => showStatus(error.message, "error")));
   $("[data-redeem-discount]").addEventListener("click", async () => {
     try {
       const data = await request("/discount/redeem", { method: "POST" });

@@ -1,4 +1,4 @@
-const VERSION = "2.2.0";
+const VERSION = "2.3.0";
 const TIERS = [
   { threshold: 0, name: "Starter", reward: "Member access" },
   { threshold: 3, name: "Crew", reward: "Bonus discount" },
@@ -75,7 +75,7 @@ function account(member, count, env) {
   const next = TIERS.find(t => t.threshold > count);
   return {
     deviceVerified: Boolean(member.device_verified), profileComplete: member.identity_status === "verified", firstName: member.first_name,
-    whatnotUsername: member.whatnot_username || "", isAdmin: isAdmin(member, env),
+    whatnotUsername: member.whatnot_username || "", referredSignup: Boolean(member.referred_by_member_id), isAdmin: isAdmin(member, env),
     inviteCode: member.invite_code, inviteUrl: `${env.SITE_URL}/referral.html?ref=${member.invite_code}`,
     referralCount: count, tier, tiers: TIERS,
     nextTier: next ? { ...next, remaining: next.threshold - count } : null

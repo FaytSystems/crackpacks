@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" viewBox="0 0 1200 1200" role="img" aria-labelledby="title desc">
   <title id="title">Crack Packs referral QR sticker</title>
-  <desc id="desc">Print-ready square Crack Packs sticker with a scannable QR code linking to the referral campaign.</desc>
+  <desc id="desc">Print-ready Crack Packs owner referral sticker linking to verified signup and a one-time 10 percent discount.</desc>
   <defs>
     <linearGradient id="edge" x1="0" y1="0" x2="1" y2="1">
       <stop stop-color="#f8ff46"/>
@@ -17,12 +17,12 @@
   <rect width="1200" height="1200" rx="112" fill="url(#edge)"/>
   <rect x="22" y="22" width="1156" height="1156" rx="92" fill="url(#bg)"/>
   <path d="M70 250L310 70h580l240 180v700l-240 180H310L70 950z" fill="none" stroke="url(#edge)" stroke-width="5" opacity=".45"/>
-  <image href="logo.svg" x="110" y="68" width="980" height="194"/>
-  <text x="600" y="304" fill="#f8ff46" font-family="Arial Black,Impact,sans-serif" font-size="42" text-anchor="middle" letter-spacing="8">SCAN • JOIN • INVITE</text>
+  <image href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA3NjAgMTUwIiByb2xlPSJpbWciIGFyaWEtbGFiZWxsZWRieT0idGl0bGUgZGVzYyI+Cjx0aXRsZSBpZD0idGl0bGUiPkNyYWNrIFBhY2tzPC90aXRsZT48ZGVzYyBpZD0iZGVzYyI+Q3JhY2sgUGFja3MgbmVvbiB0cmFkaW5nIGNhcmQgbG9nbzwvZGVzYz4KPGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJnIiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+PHN0b3Agc3RvcC1jb2xvcj0iI2Y4ZmY0NiIvPjxzdG9wIG9mZnNldD0iLjQ3IiBzdG9wLWNvbG9yPSIjMzhlOGZmIi8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjZmY0ZWRiIi8+PC9saW5lYXJHcmFkaWVudD48ZmlsdGVyIGlkPSJnbG93Ij48ZmVHYXVzc2lhbkJsdXIgc3RkRGV2aWF0aW9uPSI0IiByZXN1bHQ9ImIiLz48ZmVNZXJnZT48ZmVNZXJnZU5vZGUgaW49ImIiLz48ZmVNZXJnZU5vZGUgaW49IlNvdXJjZUdyYXBoaWMiLz48L2ZlTWVyZ2U+PC9maWx0ZXI+PC9kZWZzPgo8ZyBmaWx0ZXI9InVybCgjZ2xvdykiPjxwYXRoIGQ9Ik0yOCAyOGg5NGwtMjAgMjQgMjAgMTgtMjggMTYgMTcgMzZIMjhMOSA3NnoiIGZpbGw9InVybCgjZykiLz48cGF0aCBkPSJNNTMgNDJsLTEzIDMxIDIyLTgtMTAgMzYgMzktNDctMjQgOSAxNS0yMXoiIGZpbGw9IiMwNjA4MTciLz48L2c+Cjx0ZXh0IHg9IjE0NSIgeT0iOTIiIGZpbGw9IiNmYmZiZmYiIGZvbnQtZmFtaWx5PSJBcmlhbCBCbGFjayxJbXBhY3Qsc2Fucy1zZXJpZiIgZm9udC1zaXplPSI3MiIgbGV0dGVyLXNwYWNpbmc9Ii00Ij5DUkFDSzwvdGV4dD48dGV4dCB4PSI0MjMiIHk9IjkyIiBmaWxsPSJ1cmwoI2cpIiBmb250LWZhbWlseT0iQXJpYWwgQmxhY2ssSW1wYWN0LHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iNzIiIGxldHRlci1zcGFjaW5nPSItNCI+UEFDS1M8L3RleHQ+PHRleHQgeD0iMTQ5IiB5PSIxMjQiIGZpbGw9IiNiN2JiZDIiIGZvbnQtZmFtaWx5PSJBcmlhbCxzYW5zLXNlcmlmIiBmb250LXNpemU9IjE3IiBmb250LXdlaWdodD0iNzAwIiBsZXR0ZXItc3BhY2luZz0iNyI+UklQIOKAoiBDSEFTRSDigKIgSElUPC90ZXh0Pgo8L3N2Zz4=" x="110" y="68" width="980" height="194"/>
+  <text x="600" y="304" fill="#f8ff46" font-family="Arial Black,Impact,sans-serif" font-size="42" text-anchor="middle" letter-spacing="8">SCAN &#8226; JOIN &#8226; SAVE 10%</text>
   <g filter="url(#shadow)">
     <rect x="276" y="334" width="648" height="648" rx="54" fill="#fff"/>
-    <image href="crackpacks-sticker-qr.svg" x="306" y="364" width="588" height="588"/>
+    <image href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA+gAAAPoAQMAAAB3bUanAAAABlBMVEX///8AAABVwtN+AAAACXBIWXMAAA7EAAAOxAGVKw4bAAADpUlEQVR4nO3dMXKjMABAUe2kcOkj+Cg+GhzNR+EILl1kok0CEUgI7OykWCvvN5sgrKctNcIkBEmSJEmSJEmSJEmSJEmSJEmSJElqqWOs15c3lkN/5gvjDS8bMw10Op1Op9PpdDqd3p7+Vl57GYlp6BzjLdPfu476JS1sSJ9arZlOp9PpdDqdTqfTG9XPaeL9eebN2lttqF9uDG90Op1Op9PpdDqd/uv0fJ73TuNv48KmfdwhLk/E6HQ6nU6n0+l0Ov2X62H72OuY9nGH/TXT6XQ6nU6n0+l0ert6Vj7PJW3WTjG+vv/TxUUzMa95EZ1Op9PpdDqdTqe3qVfrl1u8FbE1VItOp9PpdDqdTqfTW9P3m14POBMfdZ/XVudoPx+dTqfT6XQ6nU6n/5/6ah83lDuyS7r3NF7o08IulcOyazlEp9PpdDqdTqfT6Q3qq7OtEO5t1o7lUNbiYcW4v8Wj0+l0Op1Op9Pp9CfVt7qOd0wLG3vJhmZi9anHotPpdDqdTqfT6fQn1i9pnmH8qasQw/KwbNqszcdeW2/JoNPpdDqdTqfT6fRG9VrX9C2tGL8eIMy71OdcfLeLTqfT6XQ6nU6n0xvU85vHn17TwraeElw9WzhUtnirT9HpdDqdTqfT6XR6M3qY5xl/yR8gPKcd2SnNf00vtQhpqPqHrh6LTqfT6XQ6nU6n059RD/VHAXNiqlsubG61+3vg2UI6nU6n0+l0Op1Ob0I/penyfVxGzAvbWnP8t30cnU6n0+l0Op1Opz+Bnr+eIiNWzxZO9eWzhdmaYxqa1jzQ6XQ6nU6n0+l0ent6foC1miekhQ2772B/za6dH93H0el0Op1Op9PpdPoT6/k8XeWrWGH5ovV8zTv/HTqdTqfT6XQ6nU5vV883a/3ntepLLUI5FIs+Jjyn3wY6nU6n0+l0Op1Ob0y/v7D9eQ7l0LFcC51Op9PpdDqdTqe3pq9unuqX+i37SJcOyzJiPiybulU4Op1Op9PpdDqdTm9Dfyuv5SdisXxzRfd5bWuLV5uQTqfT6XQ6nU6n01vUs3mqO7JsKPzsk410Op1Op9PpdDqd3pA+Dd3S7flQKJ8t7OqHZXQ6nU6n0+l0Op3++/SPQnrfRbece9ribbUj0+l0Op1Op9PpdPqT61k7+7gQvjZrYR4aodWb2w90Op1Op9PpdDqd3qxeraafdok7a6bT6XQ6nU6n0+n0ZnRJkiRJkiRJkiRJkiRJkiRJkiRJ0vf6C0ZZVmPk4mQRAAAAAElFTkSuQmCC" x="306" y="364" width="588" height="588"/>
   </g>
-  <text x="600" y="1040" fill="#fff" font-family="Arial Black,Impact,sans-serif" font-size="51" text-anchor="middle">FREE REWARDS + FRIEND INVITES</text>
-  <text x="600" y="1092" fill="#b7bbd2" font-family="Arial,sans-serif" font-weight="700" font-size="27" text-anchor="middle" letter-spacing="3">CRACKPACKS.COM/REFERRAL</text>
+  <text x="600" y="1040" fill="#fff" font-family="Arial Black,Impact,sans-serif" font-size="49" text-anchor="middle">10% WELCOME CODE + FRIEND REWARDS</text>
+  <text x="600" y="1092" fill="#b7bbd2" font-family="Arial,sans-serif" font-weight="700" font-size="25" text-anchor="middle" letter-spacing="3">CRACKPACKS.COM &#8226; REF CPYFT8CMHS</text>
 </svg>
