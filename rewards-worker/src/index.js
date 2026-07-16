@@ -130,7 +130,7 @@ async function route(request, env, cors) {
     const options = await generateRegistrationOptions({
       rpName: env.RP_NAME || "Crack Packs", rpID: env.RP_ID || "crackpacks.com",
       userName: member.email, userDisplayName: member.email.split("@")[0],
-      attestationType: "none", authenticatorSelection: { residentKey: "preferred", userVerification: "required" },
+      attestationType: "none", authenticatorSelection: { authenticatorAttachment: "platform", residentKey: "preferred", userVerification: "required" },
       excludeCredentials: (existing.results || []).map(row => ({ id: row.id, transports: JSON.parse(row.transports || "[]") }))
     });
     await env.DB.prepare(`INSERT INTO security_challenges(id,member_id,purpose,challenge,expires_at,created_at) VALUES(?,?,?,?,?,?)`).bind(id(), member.id, "passkey-registration", options.challenge, new Date(Date.now() + 5 * 60e3).toISOString(), now()).run();
