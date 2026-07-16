@@ -11,22 +11,100 @@
   const showStatus = (message = "", kind = "") => { status.textContent = message; status.dataset.kind = kind; };
   let email = "";
   let turnstileTokenValue = "";
+  let turnstileWidgetId = null;
+  let authRequestSent = false;
+  let authRequestPending = false;
+  let authMode = referralCode || qs.get("mode") === "signup" ? "signup" : "signin";
   let accountState = null;
   let welcomeDiscountLoaded = false;
+  const authModeCopy = {
+    signin: {
+      kicker: "Returning collector",
+      title: "Sign in to your Profile",
+      description: "Enter the email connected to your Crack Packs account. We will send a secure sign-in link.",
+      emailLabel: "Account email",
+      sendLabel: "Email me a sign-in link",
+      modalTitle: "Check inbox for your sign-in link",
+      modalCopy: "If this email belongs to a Crack Packs account, open the secure sign-in link within 10 minutes. If nothing arrives, choose Create Account.",
+      sentStatus: "If that email matches an account, a secure sign-in link is on the way."
+    },
+    signup: {
+      kicker: "New collector",
+      title: "Create your Profile",
+      description: "Use an email you can access. We will send a secure link to begin verified account setup. Already registered? Choose Sign In.",
+      emailLabel: "Signup email",
+      sendLabel: "Send signup link",
+      modalTitle: "Check inbox to create your account",
+      modalCopy: "Open the secure signup link within 10 minutes to continue account and identity verification.",
+      sentStatus: "Signup link sent. Check your inbox to continue."
+    }
+  };
+  function resetTurnstile() {
+    turnstileTokenValue = "";
+    if (turnstileWidgetId !== null && window.turnstile?.reset) {
+      window.turnstile.reset(turnstileWidgetId);
+    }
+  }
+  function setAuthMode(mode, { focus = false } = {}) {
+    if (authRequestPending) return;
+    const nextMode = mode === "signup" ? "signup" : "signin";
+    const changed = nextMode !== authMode;
+    authMode = nextMode;
+    if (changed) {
+      authRequestSent = false;
+      resetTurnstile();
+    }
+    const copy = authModeCopy[authMode];
+    document.querySelectorAll("[data-auth-mode]").forEach(button => {
+      const active = button.dataset.authMode === authMode;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-selected", String(active));
+      button.tabIndex = active ? 0 : -1;
+      if (active && focus) button.focus();
+    });
+    $("[data-request-panel]").setAttribute("aria-labelledby", authMode === "signin" ? "auth-signin-tab" : "auth-signup-tab");
+    $("[data-auth-kicker]").textContent = copy.kicker;
+    $("[data-auth-title]").textContent = copy.title;
+    $("[data-auth-description]").textContent = copy.description;
+    $("[data-auth-email-label]").textContent = copy.emailLabel;
+    const sendButton = $("[data-send-verification]");
+    sendButton.textContent = authRequestSent ? "Check Inbox 10 min code" : turnstileTokenValue ? copy.sendLabel : "Complete security check";
+    sendButton.disabled = authRequestSent || !turnstileTokenValue;
+    showStatus("");
+  }
+  const authModeButtons = [...document.querySelectorAll("[data-auth-mode]")];
+  authModeButtons.forEach((button, index) => {
+    button.addEventListener("click", () => setAuthMode(button.dataset.authMode));
+    button.addEventListener("keydown", event => {
+      if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+      event.preventDefault();
+      const direction = event.key === "ArrowRight" ? 1 : -1;
+      const next = authModeButtons[(index + direction + authModeButtons.length) % authModeButtons.length];
+      setAuthMode(next.dataset.authMode, { focus: true });
+    });
+  });
+  setAuthMode(authMode);
   const turnstileNode = $("[data-turnstile]");
   if (turnstileNode && config.turnstileSiteKey) {
-    window.cpTurnstileReady = () => { window.turnstile.render(turnstileNode, {
+    window.cpTurnstileReady = () => { turnstileWidgetId = window.turnstile.render(turnstileNode, {
       sitekey: config.turnstileSiteKey,
       theme: "dark",
       callback: tokenValue => {
         turnstileTokenValue = tokenValue;
+        if (authRequestSent) {
+          const sendButton = $("[data-send-verification]");
+          sendButton.disabled = true;
+          sendButton.textContent = "Check Inbox 10 min code";
+          return;
+        }
         showStatus("");
         const sendButton = $("[data-send-verification]");
         sendButton.disabled = false;
-        sendButton.textContent = "Send verification link";
+        sendButton.textContent = authModeCopy[authMode].sendLabel;
       },
       "expired-callback": () => {
         turnstileTokenValue = "";
+        if (authRequestSent) return;
         const sendButton = $("[data-send-verification]");
         sendButton.disabled = true;
         sendButton.textContent = "Complete security check";
@@ -34,6 +112,7 @@
       },
       "error-callback": errorCode => {
         turnstileTokenValue = "";
+        if (authRequestSent) return;
         const sendButton = $("[data-send-verification]");
         sendButton.disabled = true;
         sendButton.textContent = "Security check unavailable";
@@ -44,6 +123,15 @@
   } else if (turnstileNode) {
     turnstileNode.textContent = "Security verification is awaiting its Cloudflare site key.";
   }
+  $("[data-request-form] input[name='email']").addEventListener("input", () => {
+    if (!authRequestSent) return;
+    authRequestSent = false;
+    resetTurnstile();
+    const sendButton = $("[data-send-verification]");
+    sendButton.textContent = "Complete security check";
+    sendButton.disabled = true;
+    showStatus("");
+  });
   let token = localStorage.getItem("cp_rewards_token") || "";
 
   const qrUrl = value => `https://api.qrserver.com/v1/create-qr-code/?size=1000x1000&qzone=4&format=png&data=${encodeURIComponent(value)}`;
@@ -109,21 +197,47 @@
   }
 
   $("[data-request-form]").addEventListener("submit", async event => {
-    event.preventDefault(); const form = new FormData(event.currentTarget); email = String(form.get("email")).trim().toLowerCase();
+    event.preventDefault();
+    if (authRequestPending || authRequestSent) return;
+    const requestForm = event.currentTarget;
+    const form = new FormData(requestForm); email = String(form.get("email")).trim().toLowerCase();
     const turnstileToken = turnstileTokenValue || String(form.get("cf-turnstile-response") || "");
     if (!turnstileToken) {
       showStatus("Complete the visible security check above the button.", "error");
       return;
     }
+    const submittedMode = authMode;
+    const submittedReferral = submittedMode === "signup" ? referralCode : "";
+    const sendButton = $("[data-send-verification]");
+    const emailInput = requestForm.querySelector("input[name='email']");
+    authRequestPending = true;
+    sendButton.disabled = true;
+    sendButton.textContent = "Sending secure link...";
+    emailInput.disabled = true;
+    authModeButtons.forEach(button => { button.disabled = true; });
     try {
-      await request("/auth/request", { method: "POST", body: JSON.stringify({ email, referralCode, turnstileToken }) });
-      const sendButton = $("[data-send-verification]");
+      await request("/auth/request", { method: "POST", body: JSON.stringify({ email, referralCode: submittedReferral, authMode: submittedMode, turnstileToken }) });
+      authRequestSent = true;
+      resetTurnstile();
       sendButton.textContent = "Check Inbox 10 min code";
       sendButton.disabled = true;
+      const copy = authModeCopy[submittedMode];
+      $("[data-email-modal-title]").textContent = copy.modalTitle;
+      $("[data-email-modal-copy]").textContent = copy.modalCopy;
       $("[data-email-modal]").hidden = false;
-      showStatus("Verification email sent.", "success");
+      showStatus(copy.sentStatus, "success");
     }
-    catch (error) { showStatus(error.message, "error"); }
+    catch (error) {
+      authRequestSent = false;
+      resetTurnstile();
+      sendButton.textContent = "Complete security check";
+      sendButton.disabled = true;
+      showStatus(error.message, "error");
+    } finally {
+      authRequestPending = false;
+      emailInput.disabled = false;
+      authModeButtons.forEach(button => { button.disabled = false; });
+    }
   });
   document.querySelectorAll("[data-email-modal-close]").forEach(button => button.addEventListener("click", () => { $("[data-email-modal]").hidden = true; }));
   document.querySelectorAll("[data-invite-sent-close]").forEach(button => button.addEventListener("click", () => { $("[data-invite-sent-modal]").hidden = true; }));
@@ -258,12 +372,20 @@
   async function confirmEmailLink() {
     if (!verificationToken) return loadAccount();
     try {
-      const data = await request("/auth/verify-link", { method: "POST", body: JSON.stringify({ token: verificationToken, referralCode }) });
+      const data = await request("/auth/verify-link", { method: "POST", body: JSON.stringify({ token: verificationToken }) });
       token = data.token; localStorage.setItem("cp_rewards_token", token);
       history.replaceState({}, document.title, `${location.pathname}${referralCode ? `?ref=${encodeURIComponent(referralCode)}` : ""}`);
-      showStatus("Email verified. Continue with secure device verification.", "success"); renderAccount(data.account);
+      const accountReady = data.account.deviceVerified && data.account.profileComplete;
+      const signedIn = data.authFlow === "signin" || data.authFlow === "admin" || data.authFlow === "legacy";
+      showStatus(accountReady ? "Signed in to your Profile." : signedIn ? "Signed in. Continue account verification." : "Email verified. Continue secure account verification.", "success");
+      renderAccount(data.account);
     } catch (error) {
-      history.replaceState({}, document.title, location.pathname); showStatus(error.message, "error");
+      const preserved = new URLSearchParams();
+      if (referralCode) preserved.set("ref", referralCode);
+      if (authMode === "signup") preserved.set("mode", "signup");
+      const query = preserved.toString();
+      history.replaceState({}, document.title, `${location.pathname}${query ? `?${query}` : ""}`);
+      showStatus(error.message, "error");
     }
   }
   async function configureSocialLinks() {

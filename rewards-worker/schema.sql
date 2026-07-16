@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS members (
 );
 CREATE TABLE IF NOT EXISTS login_codes (
   id TEXT PRIMARY KEY, email TEXT NOT NULL, code_hash TEXT NOT NULL,
+  auth_flow TEXT NOT NULL DEFAULT 'legacy', referrer_member_id TEXT,
   expires_at TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, used_at TEXT, created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_login_codes_email ON login_codes(email, created_at);

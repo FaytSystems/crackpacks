@@ -8,7 +8,7 @@
   <meta name="theme-color" content="#07091b">
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/css/styles.css?v=1.9.2">
-  <link rel="stylesheet" href="assets/css/referral.css?v=2.2.0">
+  <link rel="stylesheet" href="assets/css/referral.css?v=2.4.0">
   <link rel="stylesheet" href="assets/css/rewards-modal.css?v=2.2.0">
   <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.1.0">
 </head>
@@ -48,12 +48,16 @@
       <div class="rewards-notice" data-app-status aria-live="polite"></div>
 
       <section class="reward-card auth-card" data-auth-panel>
-        <div data-request-panel>
-          <p class="eyebrow">Collector account</p>
-          <h2>Sign in or create your account</h2>
-          <p>Enter an email address you can access. We will send a one-time verification code.</p>
+        <div class="auth-mode-switch" role="tablist" aria-label="Profile access">
+          <button class="auth-mode-button" id="auth-signin-tab" type="button" role="tab" aria-selected="true" aria-controls="collector-access-panel" data-auth-mode="signin">Sign In</button>
+          <button class="auth-mode-button" id="auth-signup-tab" type="button" role="tab" aria-selected="false" aria-controls="collector-access-panel" data-auth-mode="signup" tabindex="-1">Create Account</button>
+        </div>
+        <div id="collector-access-panel" role="tabpanel" aria-labelledby="auth-signin-tab" data-request-panel>
+          <p class="eyebrow" data-auth-kicker>Returning collector</p>
+          <h2 data-auth-title>Sign in to your Profile</h2>
+          <p data-auth-description>Enter the email connected to your Crack Packs account. We will send a secure sign-in link.</p>
           <form data-request-form>
-            <label>Email address<input name="email" type="email" autocomplete="email" required maxlength="254" placeholder="collector@example.com"></label>
+            <label><span data-auth-email-label>Account email</span><input name="email" type="email" autocomplete="email" required maxlength="254" placeholder="collector@example.com"></label>
             <div data-turnstile></div>
             <button class="btn btn-primary" type="submit" data-send-verification disabled>Complete security check</button>
           </form>
@@ -157,9 +161,9 @@
     <section class="rewards-modal-card" role="dialog" aria-modal="true" aria-labelledby="email-modal-title">
       <button class="rewards-modal-close" type="button" data-email-modal-close aria-label="Close">&times;</button>
       <div class="email-icon" aria-hidden="true">&#9993;</div>
-      <p class="eyebrow">Email sent</p>
-      <h2 id="email-modal-title">Check inbox for verification link</h2>
-      <p>Open the message from Crack Packs and click the secure link. It expires in 10 minutes and can only be used once.</p>
+      <p class="eyebrow">Check your email</p>
+      <h2 id="email-modal-title" data-email-modal-title>Check inbox for verification link</h2>
+      <p data-email-modal-copy>Open the message from Crack Packs and click the secure link. It expires in 10 minutes and can only be used once.</p>
       <button class="btn btn-primary" type="button" data-email-modal-close>Got it</button>
     </section>
   </div>
@@ -198,6 +202,6 @@
   <script src="assets/js/config.js?v=2.2.0"></script>
   <script src="assets/js/app.js?v=1.9.2"></script>
   <script src="assets/js/nav-profile.js?v=2.1.0"></script>
-  <script src="assets/js/referral.js?v=2.3.0"></script>
+  <script src="assets/js/referral.js?v=2.4.0"></script>
 </body>
 </html>

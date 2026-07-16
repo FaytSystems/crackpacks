@@ -1,4 +1,4 @@
-const VERSION = "2.3.0";
+const VERSION = "2.4.0";
 const TIERS = [
   { threshold: 0, name: "Starter", reward: "Member access" },
   { threshold: 3, name: "Crew", reward: "Bonus discount" },
@@ -98,48 +98,87 @@ async function verifyTurnstile(env, token, request) {
   if (payload.success !== true) console.warn("Turnstile rejected request", { errorCodes: payload["error-codes"] || [], hostname: payload.hostname || "", action: payload.action || "" });
   return payload.success === true;
 }
-async function route(request, env, cors) {
+async function route(request, env, cors, ctx) {
   const url = new URL(request.url);
   if (url.pathname === "/health") return response({ ok: true, service: "crackpacks-rewards", version: VERSION, identityMode: env.IDENTITY_MODE }, 200, cors);
   if (url.pathname === "/auth/request" && request.method === "POST") {
     const data = await body(request); const email = normalizeEmail(data.email);
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return response({ error: "Enter a valid email address." }, 400, cors);
     const returnTo = data.returnTo === "admin" ? "admin" : "rewards";
+    const authFlow = returnTo === "admin" ? "admin" : data.authMode === "signup" ? "signup" : "signin";
     if (!await verifyTurnstile(env, data.turnstileToken, request)) return response({ error: "Security check failed. Refresh the page and try again." }, 403, cors);
-    if (returnTo === "admin" && email !== normalizeEmail(env.ADMIN_EMAIL)) return response({ ok: true }, 200, cors);
-    const recent = await env.DB.prepare(`SELECT COUNT(*) count FROM login_codes WHERE email=? AND created_at>?`).bind(email, new Date(Date.now() - 15 * 60e3).toISOString()).first();
-    if (Number(recent.count) >= 3) return response({ error: "Too many codes requested. Try again later." }, 429, cors);
+    const existingMember = await env.DB.prepare(`SELECT id FROM members WHERE email=?`).bind(email).first();
+    const emailKey = await hash(email, env.AUTH_SECRET);
+    const rateWindow = new Date(Date.now() - 15 * 60e3).toISOString();
+    const recentCodes = await env.DB.prepare(`SELECT COUNT(*) count FROM login_codes WHERE email=? AND created_at>?`).bind(email, rateWindow).first();
+    if (Number(recentCodes?.count || 0) >= 3) return response({ error: "Too many links requested. Try again later." }, 429, cors);
+    const flowMatches = authFlow === "signup"
+      ? !existingMember
+      : authFlow === "admin"
+        ? Boolean(existingMember) && email === normalizeEmail(env.ADMIN_EMAIL)
+        : Boolean(existingMember);
     const linkToken = randomString(48); const created = now();
-    const ref = clean(data.referralCode, 16).toUpperCase();
-    const destinationPath = returnTo === "admin" ? "/admin.html" : "/referral.html";
-    const verifyUrl = `${env.SITE_URL}${destinationPath}?verify=${encodeURIComponent(linkToken)}${ref ? `&ref=${encodeURIComponent(ref)}` : ""}`;
-    const codeId = id();
-    await env.DB.prepare(`INSERT INTO login_codes(id,email,code_hash,expires_at,created_at) VALUES(?,?,?,?,?)`).bind(codeId, email, await hash(linkToken, env.AUTH_SECRET), new Date(Date.now() + 10 * 60e3).toISOString(), created).run();
-    try {
-      await sendEmail(env, email, "Verify your Crack Packs email", `<h1>Verify your email</h1><p><a href="${escapeHtml(verifyUrl)}" style="display:inline-block;padding:14px 22px;background:#f8ff46;color:#070815;text-decoration:none;font-weight:bold;border-radius:10px">Verify email and continue</a></p><p>This secure link expires in 10 minutes and can only be used once. If you did not request it, ignore this message.</p>`, codeId);
-    } catch (error) {
-      return response({ error: "The verification email could not be sent. Wait a moment and try again." }, 502, cors);
+    const ref = authFlow === "signup" ? clean(data.referralCode, 16).toUpperCase() : "";
+    let referrerMemberId = null;
+    if (ref) {
+      const inviter = await env.DB.prepare(`SELECT id,email FROM members WHERE invite_code=? AND identity_status='verified'`).bind(ref).first();
+      if (inviter && normalizeEmail(inviter.email) !== email) referrerMemberId = inviter.id;
     }
-    await audit(env, request, returnTo === "admin" ? "admin_login_link_requested" : "login_code_requested", null, email); return response({ ok: true }, 200, cors);
+    const destinationPath = returnTo === "admin" ? "/admin.html" : "/referral.html";
+    const verifyParams = new URLSearchParams({ verify: linkToken, mode: authFlow });
+    if (ref) verifyParams.set("ref", ref);
+    const verifyUrl = `${env.SITE_URL}${destinationPath}?${verifyParams}`;
+    const codeId = id();
+    await env.DB.prepare(`INSERT INTO login_codes(id,email,code_hash,auth_flow,referrer_member_id,expires_at,created_at) VALUES(?,?,?,?,?,?,?)`).bind(codeId, email, await hash(linkToken, env.AUTH_SECRET), authFlow, referrerMemberId, new Date(Date.now() + 10 * 60e3).toISOString(), created).run();
+    const emailCopy = authFlow === "signup"
+      ? { subject: "Create your Crack Packs account", heading: "Create your account", button: "Verify email and create account" }
+      : { subject: "Sign in to your Crack Packs account", heading: "Sign in to your account", button: "Verify email and sign in" };
+    const finishAuthRequest = async () => {
+      if (!flowMatches) {
+        await audit(env, request, "auth_flow_mismatch", null, emailKey);
+        return;
+      }
+      try {
+        await sendEmail(env, email, emailCopy.subject, `<h1>${emailCopy.heading}</h1><p><a href="${escapeHtml(verifyUrl)}" style="display:inline-block;padding:14px 22px;background:#f8ff46;color:#070815;text-decoration:none;font-weight:bold;border-radius:10px">${emailCopy.button}</a></p><p>This secure link expires in 10 minutes and can only be used once. If you did not request it, ignore this message.</p>`, codeId);
+        await audit(env, request, `${authFlow}_link_requested`, null, emailKey);
+      } catch (error) {
+        console.error("Authentication email delivery failed", { flow: authFlow, codeId });
+        await audit(env, request, "auth_email_delivery_failed", null, emailKey);
+      }
+    };
+    if (ctx?.waitUntil) ctx.waitUntil(finishAuthRequest());
+    else await finishAuthRequest();
+    return response({ ok: true }, 200, cors);
   }
   if (url.pathname === "/auth/verify-link" && request.method === "POST") {
     const data = await body(request); const submittedHash = await hash(String(data.token || ""), env.AUTH_SECRET);
     const record = await env.DB.prepare(`SELECT * FROM login_codes WHERE code_hash=? AND used_at IS NULL LIMIT 1`).bind(submittedHash).first();
     if (!record || record.expires_at < now()) return response({ error: "That verification link is invalid or expired. Request a new email." }, 401, cors);
+    const consumed = await env.DB.prepare(`UPDATE login_codes SET used_at=? WHERE id=? AND used_at IS NULL AND expires_at>?`).bind(now(), record.id, now()).run();
+    if (Number(consumed.meta?.changes || 0) !== 1) return response({ error: "That verification link has already been used or expired." }, 409, cors);
     const email = record.email;
+    const authFlow = ["signin", "signup", "admin"].includes(record.auth_flow) ? record.auth_flow : "legacy";
     let member = await env.DB.prepare(`SELECT * FROM members WHERE email=?`).bind(email).first();
-    if (!member) {
-      let inviter = null; const ref = clean(data.referralCode, 16).toUpperCase();
-      if (ref) inviter = await env.DB.prepare(`SELECT id,email FROM members WHERE invite_code=? AND identity_status='verified'`).bind(ref).first();
+    if (authFlow === "admin" && email !== normalizeEmail(env.ADMIN_EMAIL)) return response({ error: "Owner access required." }, 403, cors);
+    if (authFlow !== "signup" && !member) return response({ error: "No account was found. Return to Profile and choose Create Account." }, 404, cors);
+    if (authFlow === "signup" && member) return response({ error: "An account already exists for this email. Return to Profile and choose Sign In." }, 409, cors);
+    if (authFlow === "signup") {
+      let referrerMemberId = null;
+      if (record.referrer_member_id) {
+        const inviter = await env.DB.prepare(`SELECT id,email FROM members WHERE id=? AND identity_status='verified'`).bind(record.referrer_member_id).first();
+        if (inviter && normalizeEmail(inviter.email) !== email) referrerMemberId = inviter.id;
+      }
       const memberId = id(); const inviteCode = `CP${randomString(8)}`; const created = now();
-      await env.DB.prepare(`INSERT INTO members(id,email,email_verified_at,invite_code,referred_by_member_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?)`).bind(memberId, email, created, inviteCode, inviter?.email !== email ? inviter?.id || null : null, created, created).run();
+      try {
+        await env.DB.prepare(`INSERT INTO members(id,email,email_verified_at,invite_code,referred_by_member_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?)`).bind(memberId, email, created, inviteCode, referrerMemberId, created, created).run();
+      } catch (error) {
+        return response({ error: "An account already exists for this email. Return to Profile and choose Sign In." }, 409, cors);
+      }
       member = await env.DB.prepare(`SELECT * FROM members WHERE id=?`).bind(memberId).first();
     }
-    const consumed = await env.DB.prepare(`UPDATE login_codes SET used_at=? WHERE id=? AND used_at IS NULL AND expires_at>?`).bind(now(), record.id, now()).run();
-    if (Number(consumed.meta?.changes || 0) !== 1) return response({ error: "That verification link has already been used." }, 409, cors);
     const token = randomString(48);
     await env.DB.prepare(`INSERT INTO sessions(token_hash,member_id,expires_at,created_at) VALUES(?,?,?,?)`).bind(await hash(token, env.AUTH_SECRET), member.id, new Date(Date.now() + 30 * 86400e3).toISOString(), now()).run();
-    await audit(env, request, "email_link_verified", member.id); return response({ token, account: await accountFor(member, env) }, 200, cors);
+    await audit(env, request, "email_link_verified", member.id, authFlow); return response({ token, authFlow, account: await accountFor(member, env) }, 200, cors);
   }
   if (url.pathname === "/auth/logout" && request.method === "POST") {
     const sessionToken = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
@@ -384,10 +423,10 @@ async function route(request, env, cors) {
   }
   return response({ error: "Not found." }, 404, cors);
 }
-export default { async fetch(request, env) {
+export default { async fetch(request, env, ctx) {
   const cors = corsFor(request, env); if (!cors) return response({ error: "Origin not allowed." }, 403);
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
-  try { return await route(request, env, cors); } catch (error) { console.error(error); return response({ error: error.message === "INVALID_JSON" ? "Invalid request body." : "The rewards service encountered an error." }, 500, cors); }
+  try { return await route(request, env, cors, ctx); } catch (error) { console.error(error); return response({ error: error.message === "INVALID_JSON" ? "Invalid request body." : "The rewards service encountered an error." }, 500, cors); }
 }};
 import { generateAuthenticationOptions, generateRegistrationOptions, verifyAuthenticationResponse, verifyRegistrationResponse } from "@simplewebauthn/server";
 import { EmailMessage } from "cloudflare:email";
