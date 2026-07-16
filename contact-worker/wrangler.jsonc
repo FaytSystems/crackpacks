@@ -1,0 +1,33 @@
+{
+  // Full file:
+  // D:\crackpacks\crackpacks-github-ready\contact-worker\wrangler.jsonc
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "crackpacks-contact",
+  "main": "src/index.js",
+  "compatibility_date": "2026-07-16",
+  "workers_dev": true,
+  "preview_urls": true,
+  "routes": [
+    {
+      "pattern": "contact-api.crackpacks.com",
+      "custom_domain": true
+    }
+  ],
+  "send_email": [
+    {
+      "name": "CONTACT_EMAIL",
+      "allowed_sender_addresses": [
+        "support@crackpacks.com"
+      ],
+      "remote": true
+    }
+  ],
+  "vars": {
+    "ALLOWED_ORIGINS": "https://crackpacks.com,https://www.crackpacks.com,http://localhost:8080,http://127.0.0.1:8080",
+    "RATE_LIMIT_SECONDS": "60",
+    "MAX_MESSAGE_LENGTH": "4000"
+  },
+  "observability": {
+    "enabled": true
+  }
+}

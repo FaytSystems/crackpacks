@@ -1,74 +1,74 @@
 {
-  "package": "Crack Packs Automatic YouTube Live Room and Offline Artwork Slideshow \u2014 PowerShell parser hotfix",
-  "version": "1.6.0-hotfix.1",
+  "package": "Crack Packs Contact Form and Cloudflare Email Worker",
+  "version": "1.7.0",
   "created": "2026-07-16",
-  "repository": "FaytSystems/crackpacks",
-  "repoRoot": "D:\\crackpacks\\crackpacks-github-ready",
+  "repository_root": "D:\\crackpacks\\crackpacks-github-ready",
+  "worker": {
+    "name": "crackpacks-contact",
+    "custom_domain": "contact-api.crackpacks.com",
+    "sender": "support@crackpacks.com",
+    "destination_secret": "CONTACT_DESTINATION"
+  },
+  "validation": {
+    "javascript_syntax": "passed",
+    "powershell_installer_ascii_only": true,
+    "powershell_deployer_ascii_only": true,
+    "contact_success_copy_present": true,
+    "worker_destination_is_secret": true,
+    "frontend_contains_no_private_destination": true,
+    "syntax_details": {
+      "assets/js/contact-form.js": {
+        "ok": true,
+        "stderr": ""
+      },
+      "contact-worker/src/index.js": {
+        "ok": true,
+        "stderr": ""
+      }
+    },
+    "powershell_switch_invocation_review": "passed",
+    "git_path_array_review": "passed"
+  },
   "files": [
     {
-      "path": "YOUTUBE-LIVE-SLIDESHOW-README.md",
-      "bytes": 7767,
-      "sha256": "182bbe50694bc3013ec511c20afee737b3fa8c89e07e0038847894d88b3a20f2"
+      "path": "CONTACT-FORM-README.md",
+      "bytes": 3992,
+      "sha256": "0319211bf46a57e540a577c107b63aa6d3864a4288368155f9e60feecccdf63f"
     },
     {
-      "path": "assets/css/youtube-live.css",
-      "bytes": 12097,
-      "sha256": "cdd2d487355381ca7b9915d54ddbcd5ff4625399ec0555a6b1f7b6ea794134c6"
+      "path": "assets/css/contact-form.css",
+      "bytes": 6415,
+      "sha256": "28bea915abeb854dbe25ac1d5a53c01e7bd92992828c284eed39dfd7c98e41b6"
     },
     {
-      "path": "assets/js/config.js",
+      "path": "assets/js/contact-form.js",
+      "bytes": 5141,
+      "sha256": "f646fa982a0f091c602ae82d78dfdced927144084a39b5e80ce7bcd7b937115b"
+    },
+    {
+      "path": "contact-worker/deploy-worker.ps1",
+      "bytes": 2029,
+      "sha256": "d3800c9d87ed80ab23edd086ea2e6f50ba4cdc4be4f8852938d3faa0c25d9ae3"
+    },
+    {
+      "path": "contact-worker/package.json",
+      "bytes": 190,
+      "sha256": "1d2dce7afdd389893a167019cc8e089e5074da865857c7e589248023ae1ab89a"
+    },
+    {
+      "path": "contact-worker/src/index.js",
+      "bytes": 9969,
+      "sha256": "a2a9a2e69ba0c2a050669ae995804c5ec242c368ba145216d942274726d1f43e"
+    },
+    {
+      "path": "contact-worker/wrangler.jsonc",
       "bytes": 811,
-      "sha256": "4907324ea010127e2a0bc02ce9127bae3ab14adcabdc0536e67d0da053e7e1ce"
+      "sha256": "2a563dda24154bf053c19cc7fd759748e07cc25af77e572cb8c9715f02b9bb0c"
     },
     {
-      "path": "assets/js/youtube-live.js",
-      "bytes": 15575,
-      "sha256": "3c152e3fdc249da5d51bd7fa60edfe5521f944907b5563fcd8dd1aed8723cb2d"
-    },
-    {
-      "path": "index.html",
-      "bytes": 17431,
-      "sha256": "e686014a4b6c69899c464e73acf7e92341878a798a84d6508885f5c53779a123"
-    },
-    {
-      "path": "install-crackpacks-youtube-live-v1.6.0.ps1",
-      "bytes": 10138,
-      "sha256": "fa88f107199251a973539590aa39dfa6f1b68244fa6d665354a2aff475a9be3a"
-    },
-    {
-      "path": "youtube-live-worker/deploy-worker.ps1",
-      "bytes": 2467,
-      "sha256": "07c6b7b763e5fc9cfde41a5df2b21229f341e1d020008bba7165197f7e0abb1e"
-    },
-    {
-      "path": "youtube-live-worker/package.json",
-      "bytes": 446,
-      "sha256": "e74256d2dd0b05aa37389f09c00c5c05507d7744bf563ee586d928f861f24bd3"
-    },
-    {
-      "path": "youtube-live-worker/src/index.js",
-      "bytes": 13579,
-      "sha256": "d8d25b2dadf7fbd3f25f5468e601b406896fb4329da1987edf45baf80ea242e2"
-    },
-    {
-      "path": "youtube-live-worker/wrangler.jsonc",
-      "bytes": 497,
-      "sha256": "9835fc87bc62df15698ae41afe34aa70f4ece723a82a1176609a44345222b99c"
+      "path": "install-crackpacks-contact-form-v1.7.0.ps1",
+      "bytes": 14390,
+      "sha256": "0dd7274fe07709118972c57c28e7827cffb1915c5c20c9aae775fbd0086c4269"
     }
-  ],
-  "validation": {
-    "html_parse": "passed",
-    "browser_javascript_syntax": "passed",
-    "worker_javascript_syntax": "passed",
-    "public_youtube_api_key_check": "passed",
-    "card_search_navigation_preserved": "passed",
-    "card_search_worker_isolated": "passed",
-    "powershell_interpolation_hotfix": "passed",
-    "risky_variable_colon_scan": "passed"
-  },
-  "configurationRequired": [
-    "YOUTUBE_API_KEY",
-    "YOUTUBE_CHANNEL_ID",
-    "live-api.crackpacks.com custom domain"
   ]
 }
