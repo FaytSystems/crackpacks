@@ -173,3 +173,4 @@ export default { async fetch(request, env) {
   try { return await route(request, env, cors); } catch (error) { console.error(error); return response({ error: error.message === "INVALID_JSON" ? "Invalid request body." : "The rewards service encountered an error." }, 500, cors); }
 }};
 import { generateRegistrationOptions, verifyRegistrationResponse } from "@simplewebauthn/server";
+import { EmailMessage } from "cloudflare:email";
