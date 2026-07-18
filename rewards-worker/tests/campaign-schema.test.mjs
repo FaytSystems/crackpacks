@@ -16,6 +16,7 @@ const inventoryQuantityGuardMigration = readFileSync(new URL("../migrations/0008
 const productReactivationGuardMigration = readFileSync(new URL("../migrations/0009_guard_product_reactivation.sql", import.meta.url), "utf8");
 const productFulfillmentMigration = readFileSync(new URL("../migrations/0010_decrement_fulfilled_product.sql", import.meta.url), "utf8");
 const channelPricingMigration = readFileSync(new URL("../migrations/0011_add_channel_pricing.sql", import.meta.url), "utf8");
+const memberTrackingMigration = readFileSync(new URL("../migrations/0012_add_member_orders_tracking.sql", import.meta.url), "utf8");
 
 function member(db, id, email, inviteCode) {
   db.prepare(`INSERT INTO members(id,email,email_verified_at,identity_status,device_verified,invite_code,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)`)
@@ -40,6 +41,7 @@ test("campaign schema and sequential campaign migrations are valid", () => {
   migrationDb.exec(productReactivationGuardMigration);
   migrationDb.exec(productFulfillmentMigration);
   migrationDb.exec(channelPricingMigration);
+  migrationDb.exec(memberTrackingMigration);
   assert.ok(migrationDb.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='offer_campaigns'`).get());
   assert.ok(migrationDb.prepare(`SELECT name FROM pragma_table_info('offer_campaigns') WHERE name='reward_variant'`).get());
   assert.ok(migrationDb.prepare(`SELECT name FROM pragma_table_info('offer_campaigns') WHERE name='never_expires'`).get());
@@ -53,6 +55,9 @@ test("campaign schema and sequential campaign migrations are valid", () => {
   assert.ok(migrationDb.prepare(`SELECT name FROM sqlite_master WHERE type='trigger' AND name='trg_product_redemption_decrements_inventory'`).get());
   assert.ok(migrationDb.prepare(`SELECT name FROM pragma_table_info('inventory_items') WHERE name='website_list_price_cents'`).get());
   assert.ok(migrationDb.prepare(`SELECT name FROM pragma_table_info('inventory_items') WHERE name='wholesale_pallet_list_price_cents'`).get());
+  assert.ok(migrationDb.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='member_orders'`).get());
+  assert.ok(migrationDb.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='order_shipments'`).get());
+  assert.ok(migrationDb.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='easypost_webhook_events'`).get());
   migrationDb.close();
 });
 

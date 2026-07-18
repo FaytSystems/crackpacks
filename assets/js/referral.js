@@ -459,6 +459,42 @@
       image.classList.remove("is-loading");
     }
   }
+  const orderStatusLabel = value => String(value || "processing").replace(/_/g, " ");
+  function renderMyOrders(orders) {
+    const container = $("[data-orders-list]"); container.replaceChildren();
+    if (!orders.length) { const empty = document.createElement("div"); empty.className = "member-orders-empty"; empty.textContent = "No purchases have been attached to this member account yet."; container.append(empty); return; }
+    orders.forEach(order => {
+      const card = document.createElement("article"); card.className = "member-order-card";
+      const content = document.createElement("div"); content.className = "member-order-content";
+      const heading = document.createElement("div"); heading.className = "member-order-heading";
+      const number = document.createElement("h4"); number.textContent = order.orderNumber || "Crack Packs order";
+      const status = document.createElement("span"); status.className = `member-order-status ${order.status || "processing"}`; status.textContent = orderStatusLabel(order.status);
+      heading.append(number, status);
+      const meta = document.createElement("p"); meta.className = "member-order-meta"; meta.textContent = `${String(order.channel || "order").replace(/^./, value => value.toUpperCase())} · ${new Date(order.placedAt).toLocaleDateString()}`;
+      const items = document.createElement("ul");
+      (Array.isArray(order.items) ? order.items : []).forEach(item => { const li = document.createElement("li"); li.textContent = `${Number(item.quantity || 1)}× ${item.name}`; items.append(li); });
+      content.append(heading, meta, items);
+      const action = document.createElement("div"); action.className = "member-order-action";
+      if (order.tracking?.url) {
+        const latest = document.createElement("small"); latest.textContent = `${order.tracking.carrier || "Carrier"} · ${orderStatusLabel(order.tracking.status)}`;
+        const link = document.createElement("a"); link.className = "btn btn-primary btn-small"; link.href = order.tracking.url; link.textContent = "Tracking";
+        action.append(latest, link);
+      } else {
+        const pending = document.createElement("small"); pending.textContent = "Tracking will appear after shipment."; action.append(pending);
+      }
+      card.append(content, action); container.append(card);
+    });
+  }
+  async function loadMyOrders() {
+    if (!token || !accountState?.deviceVerified || !accountState?.profileComplete) return;
+    try {
+      const data = await request("/orders/mine");
+      renderMyOrders(Array.isArray(data.orders) ? data.orders : []);
+    } catch (error) {
+      const container = $("[data-orders-list]"); container.replaceChildren();
+      const empty = document.createElement("div"); empty.className = "member-orders-empty"; empty.textContent = error.message; container.append(empty);
+    }
+  }
   function renderAccount(data) {
     accountState = data;
     show("[data-auth-panel]", false);
@@ -493,6 +529,7 @@
     });
     syncOfferClaimAvailability();
     loadMyCampaigns();
+    loadMyOrders();
     if (data.referredSignup && !welcomeDiscountLoaded && !offerToken && !activeOffer) {
       welcomeDiscountLoaded = true;
       show("[data-discount-panel]", true);
@@ -699,6 +736,10 @@
     const inviteView = button.dataset.view === "invite";
     show("[data-discount-panel]", button.dataset.view === "discount");
     show("[data-invite-panel]", inviteView);
+    if (button.dataset.view === "orders") {
+      await loadMyOrders();
+      $("[data-orders-panel]").scrollIntoView({ behavior: "smooth", block: "start" });
+    }
     if (inviteView && !accountState?.ownerReferralDashboardOnly) {
       try { await copyInviteLink(); }
       catch (error) { showStatus(error.message, "error"); }
@@ -851,6 +892,7 @@
   $("[data-offer-claim]").addEventListener("click", () => claimCampaignOffer().catch(error => showStatus(error.message, "error")));
   $("[data-offer-pack-number]").addEventListener("change", syncOfferClaimAvailability);
   $("[data-campaign-mine-refresh]").addEventListener("click", () => loadMyCampaigns());
+  $("[data-orders-refresh]").addEventListener("click", () => loadMyOrders());
   configureSocialLinks();
   loadOfferStatus();
   confirmEmailLink();

@@ -2,8 +2,9 @@ import QRCode from "qrcode";
 import { issueOwnerReferral, ownerReferralSlotAt, verifyOwnerReferral } from "./referral-rotation.js";
 import { campaignWeekAt, parseCampaignExpiryHours } from "./campaign-time.js";
 import { calculateChannelPricing, channelPricingErrors } from "./channel-pricing.js";
+import { sanitizeEasyPostTracker, verifyEasyPostWebhook } from "./easypost-tracking.js";
 
-const VERSION = "3.2.0";
+const VERSION = "3.3.0";
 const CAMPAIGN_REWARD_TYPES = new Set(["percent", "free_shipping", "pick_a_pack", "pack_draft", "free_single", "product"]);
 const MAX_CAMPAIGN_REDEMPTIONS = 500;
 const STORE_CURRENCIES = new Set(["USD", "CAD", "EUR", "GBP", "AUD", "NZD", "JPY", "CHF", "SEK", "NOK", "DKK", "PLN", "CZK", "HUF", "RON"]);
@@ -475,6 +476,67 @@ async function easyPostShipmentQuote(env, item, quantity, address, apiKeyOverrid
   if (!rates.length || !payload.id) throw new Error("NO_SHIPPING_RATES");
   return { shipmentId: String(payload.id), mode: String(payload.mode || ""), rates };
 }
+async function easyPostCreateTracker(env, trackingCode, carrier = "") {
+  const apiKey = env.EASYPOST_API_KEY || env.EASYPOST_TEST_API_KEY || "";
+  if (!apiKey) throw new Error("TRACKING_NOT_CONFIGURED");
+  const tracker = { tracking_code: trackingCode };
+  if (carrier) tracker.carrier = carrier;
+  const result = await fetch("https://api.easypost.com/v2/trackers", {
+    method: "POST",
+    headers: { Authorization: `Basic ${btoa(`${apiKey}:`)}`, "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ tracker })
+  });
+  const payload = await result.json().catch(() => ({}));
+  if (!result.ok) {
+    console.error("EasyPost tracker creation failed", { status: result.status, code: payload?.error?.code || "" });
+    throw new Error("TRACKING_PROVIDER_ERROR");
+  }
+  const sanitized = sanitizeEasyPostTracker(payload);
+  if (!sanitized?.trackingCode || !sanitized.carrier) throw new Error("TRACKING_PROVIDER_ERROR");
+  return sanitized;
+}
+function parseOrderItems(value) {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 50) return null;
+  const items = value.map(item => {
+    const name = clean(item?.name, 160);
+    const quantity = Number(item?.quantity ?? 1);
+    return name && Number.isInteger(quantity) && quantity >= 1 && quantity <= 100 ? { name, quantity } : null;
+  });
+  return items.includes(null) ? null : items;
+}
+function orderView(row, env) {
+  let items = [];
+  let details = [];
+  try { items = JSON.parse(row.items_json || "[]"); } catch {}
+  try { details = JSON.parse(row.tracking_details_json || "[]"); } catch {}
+  const hasTracking = Boolean(row.easypost_tracker_id);
+  return {
+    id: row.id,
+    orderNumber: row.order_number,
+    channel: row.channel,
+    items: Array.isArray(items) ? items : [],
+    status: row.status,
+    placedAt: row.placed_at,
+    updatedAt: row.updated_at,
+    tracking: hasTracking ? {
+      carrier: row.carrier,
+      trackingCode: row.tracking_code,
+      status: row.tracking_status || "unknown",
+      statusDetail: row.status_detail || "",
+      estimatedDeliveryDate: row.estimated_delivery_date || null,
+      carrierPublicUrl: row.carrier_public_url || "",
+      mode: row.tracking_mode || "test",
+      details: Array.isArray(details) ? details : [],
+      url: `${env.SITE_URL}/tracking.html?order=${encodeURIComponent(row.id)}`
+    } : null
+  };
+}
+const orderSelectSql = `
+  SELECT orders.*,shipments.easypost_tracker_id,shipments.mode tracking_mode,shipments.carrier,shipments.tracking_code,
+         shipments.status tracking_status,shipments.status_detail,shipments.estimated_delivery_date,
+         shipments.carrier_public_url,shipments.tracking_details_json
+  FROM member_orders orders LEFT JOIN order_shipments shipments ON shipments.order_id=orders.id
+`;
 const campaignNeverExpires = campaign => Number(campaign.never_expires || 0) === 1;
 const campaignIsActive = campaign => Number(campaign.is_active ?? 1) === 1;
 async function ownerReferralIsActive(env, ownerMemberId, slotId) {
@@ -634,6 +696,53 @@ async function verifyTurnstile(env, token, request) {
 async function route(request, env, cors, ctx) {
   const url = new URL(request.url);
   if (url.pathname === "/health") return response({ ok: true, service: "crackpacks-rewards", version: VERSION, identityMode: env.IDENTITY_MODE, storeMode: String(env.STORE_COMING_SOON || "true") === "false" ? "live" : "coming_soon" }, 200, cors);
+  if (url.pathname === "/webhooks/easypost" && request.method === "POST") {
+    if (!env.EASYPOST_WEBHOOK_SECRET) return response({ error: "Tracking webhook is not configured." }, 503, cors);
+    const contentLength = Number(request.headers.get("Content-Length") || 0);
+    if (Number.isFinite(contentLength) && contentLength > 1_000_000) return response({ error: "Webhook body is too large." }, 413, cors);
+    const rawBody = await request.text();
+    if (rawBody.length > 1_000_000) return response({ error: "Webhook body is too large." }, 413, cors);
+    const signedPath = request.headers.get("x-path") || "";
+    if (signedPath !== url.pathname) return response({ error: "Invalid webhook signature." }, 401, cors);
+    const verification = await verifyEasyPostWebhook({
+      secret: env.EASYPOST_WEBHOOK_SECRET,
+      timestamp: request.headers.get("x-timestamp") || "",
+      path: signedPath,
+      signature: request.headers.get("x-hmac-signature-v2") || "",
+      method: request.method,
+      rawBody
+    });
+    if (!verification.ok) return response({ error: "Invalid webhook signature." }, 401, cors);
+    let event;
+    try { event = JSON.parse(rawBody); } catch { return response({ error: "Invalid webhook event." }, 400, cors); }
+    const eventId = clean(event?.id, 100);
+    const description = clean(event?.description, 100);
+    const mode = event?.mode === "production" ? "production" : "test";
+    if (!eventId || !description || !/^[a-z0-9_]+$/i.test(eventId)) return response({ error: "Invalid webhook event." }, 400, cors);
+    const tracker = ["tracker.created", "tracker.updated"].includes(description) ? sanitizeEasyPostTracker(event?.result) : null;
+    const receivedAt = now();
+    const previous = await env.DB.prepare(`SELECT processed_at FROM easypost_webhook_events WHERE event_id=?`).bind(eventId).first();
+    if (previous?.processed_at) return response({ ok: true, duplicate: true }, 200, cors);
+    await env.DB.prepare(`INSERT OR IGNORE INTO easypost_webhook_events(event_id,description,mode,tracker_id,received_at) VALUES(?,?,?,?,?)`).bind(eventId, description, mode, tracker?.id || null, receivedAt).run();
+    if (tracker) {
+      const updatedAt = now();
+      await env.DB.batch([
+        env.DB.prepare(`
+          UPDATE order_shipments SET mode=?,carrier=?,tracking_code=?,status=?,status_detail=?,estimated_delivery_date=?,carrier_public_url=?,tracking_details_json=?,updated_at=?
+          WHERE easypost_tracker_id=?
+        `).bind(tracker.mode, tracker.carrier, tracker.trackingCode, tracker.status, tracker.statusDetail, tracker.estimatedDeliveryDate, tracker.publicUrl, JSON.stringify(tracker.details), updatedAt, tracker.id),
+        env.DB.prepare(`
+          UPDATE member_orders SET status=CASE
+            WHEN ?='delivered' THEN 'delivered'
+            WHEN ? IN ('pre_transit','unknown','error') THEN status
+            ELSE 'shipped' END,updated_at=?
+          WHERE id=(SELECT order_id FROM order_shipments WHERE easypost_tracker_id=? LIMIT 1)
+        `).bind(tracker.status, tracker.status, updatedAt, tracker.id)
+      ]);
+    }
+    await env.DB.prepare(`UPDATE easypost_webhook_events SET processed_at=? WHERE event_id=?`).bind(now(), eventId).run();
+    return response({ ok: true }, 200, cors);
+  }
   if (url.pathname === "/store/inventory" && request.method === "GET") {
     const market = url.searchParams.get("market") === "international" ? "international" : "us";
     const currency = String(url.searchParams.get("currency") || "USD").trim().toUpperCase();
@@ -980,6 +1089,16 @@ async function route(request, env, cors, ctx) {
     return response({ account: await accountFor(updated, env) }, 200, cors);
   }
   if (member.identity_status !== "verified") return response({ error: "Complete identity verification first." }, 403, cors);
+  if (url.pathname === "/orders/mine" && request.method === "GET") {
+    const rows = await env.DB.prepare(`${orderSelectSql} WHERE orders.member_id=? ORDER BY orders.placed_at DESC LIMIT 100`).bind(member.id).all();
+    return response({ orders: (rows.results || []).map(row => orderView(row, env)), serverNow: now() }, 200, cors);
+  }
+  const memberTrackingMatch = url.pathname.match(/^\/orders\/([0-9a-f-]{36})\/tracking$/i);
+  if (memberTrackingMatch && request.method === "GET") {
+    const row = await env.DB.prepare(`${orderSelectSql} WHERE orders.id=? AND orders.member_id=? LIMIT 1`).bind(memberTrackingMatch[1], member.id).first();
+    if (!row) return response({ error: "Order tracking was not found for this account." }, 404, cors);
+    return response({ order: orderView(row, env), serverNow: now() }, 200, cors);
+  }
   if (url.pathname === "/campaign/claim" && request.method === "POST") {
     const contentLength = Number(request.headers.get("Content-Length") || 0);
     if (Number.isFinite(contentLength) && contentLength > 512) return response({ error: "Campaign claim request is too large." }, 413, cors);
@@ -1557,6 +1676,71 @@ async function route(request, env, cors, ctx) {
       ORDER BY created_at DESC LIMIT 250
     `).bind(normalizeEmail(env.ADMIN_EMAIL), from, from, to, to, query, search, search, search).all();
     return response({ members: (rows.results || []).map(row => ({ id: row.id, email: row.email, firstName: row.first_name || "", lastName: row.last_name || "", whatnotUsername: row.whatnot_username || "", createdAt: row.created_at, qualifiedAt: row.referral_qualified_at || null })) }, 200, cors);
+  }
+  if (url.pathname === "/admin/orders" && request.method === "GET") {
+    if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
+    const query = clean(url.searchParams.get("q"), 100).toLowerCase().replace(/[^a-z0-9@._+ -]/g, "");
+    const search = `%${query}%`;
+    const rows = await env.DB.prepare(`
+      SELECT orders.*,shipments.easypost_tracker_id,shipments.mode tracking_mode,shipments.carrier,shipments.tracking_code,
+             shipments.status tracking_status,shipments.status_detail,shipments.estimated_delivery_date,
+             shipments.carrier_public_url,shipments.tracking_details_json,
+             customer.email,customer.first_name,customer.last_name,customer.whatnot_username
+      FROM member_orders orders
+      LEFT JOIN order_shipments shipments ON shipments.order_id=orders.id
+      JOIN members customer ON customer.id=orders.member_id
+      WHERE orders.owner_member_id=? AND (?='' OR lower(orders.order_number) LIKE ? OR lower(customer.email) LIKE ?
+        OR lower(COALESCE(customer.first_name,'') || ' ' || COALESCE(customer.last_name,'')) LIKE ?
+        OR lower(COALESCE(customer.whatnot_username,'')) LIKE ? OR lower(COALESCE(shipments.tracking_code,'')) LIKE ?)
+      ORDER BY orders.updated_at DESC LIMIT 200
+    `).bind(member.id, query, search, search, search, search, search).all();
+    return response({ orders: (rows.results || []).map(row => ({
+      ...orderView(row, env),
+      member: { id: row.member_id, email: row.email, firstName: row.first_name || "", lastName: row.last_name || "", whatnotUsername: row.whatnot_username || "" }
+    })) }, 200, cors);
+  }
+  if (url.pathname === "/admin/orders" && request.method === "POST") {
+    if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
+    const contentLength = Number(request.headers.get("Content-Length") || 0);
+    if (Number.isFinite(contentLength) && contentLength > 20_000) return response({ error: "Order request is too large." }, 413, cors);
+    const data = await body(request);
+    const memberId = String(data?.memberId || "");
+    const orderNumber = clean(data?.orderNumber, 64);
+    const channel = ["website", "whatnot", "manual"].includes(data?.channel) ? data.channel : "manual";
+    const items = parseOrderItems(data?.items);
+    const trackingCode = clean(data?.trackingCode, 120).replace(/\s+/g, "");
+    const carrier = clean(data?.carrier, 60).replace(/[^a-z0-9]/gi, "");
+    if (!/^[0-9a-f-]{36}$/i.test(memberId)) return response({ error: "Choose a verified member from search results." }, 400, cors);
+    if (!orderNumber || !/^[a-z0-9._-]+$/i.test(orderNumber)) return response({ error: "Order number can use letters, numbers, dots, dashes, and underscores." }, 400, cors);
+    if (!items) return response({ error: "Add 1 to 50 purchased items with valid quantities." }, 400, cors);
+    if (!/^[a-z0-9-]{5,120}$/i.test(trackingCode)) return response({ error: "Enter a valid carrier tracking number." }, 400, cors);
+    const customer = await env.DB.prepare(`SELECT id FROM members WHERE id=? AND email_verified_at IS NOT NULL AND identity_status='verified' AND id<>?`).bind(memberId, member.id).first();
+    if (!customer) return response({ error: "That verified member was not found." }, 404, cors);
+    const duplicate = await env.DB.prepare(`SELECT id FROM member_orders WHERE order_number=?`).bind(orderNumber).first();
+    if (duplicate) return response({ error: "That order number is already in the dashboard." }, 409, cors);
+    let tracker;
+    try { tracker = await easyPostCreateTracker(env, trackingCode, carrier); }
+    catch (error) {
+      if (error.message === "TRACKING_NOT_CONFIGURED") return response({ error: "Add the EasyPost test or production API key before creating tracking." }, 503, cors);
+      return response({ error: "EasyPost could not create that tracker. Check the carrier and tracking number." }, 502, cors);
+    }
+    const trackerDuplicate = await env.DB.prepare(`SELECT order_id FROM order_shipments WHERE easypost_tracker_id=?`).bind(tracker.id).first();
+    if (trackerDuplicate) return response({ error: "That carrier tracking number is already attached to an order." }, 409, cors);
+    const createdAt = now();
+    const orderId = id();
+    const initialOrderStatus = tracker.status === "delivered" ? "delivered" : ["pre_transit", "unknown", "error"].includes(tracker.status) ? "processing" : "shipped";
+    try {
+      await env.DB.batch([
+        env.DB.prepare(`INSERT INTO member_orders(id,member_id,owner_member_id,order_number,channel,items_json,status,placed_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)`).bind(orderId, memberId, member.id, orderNumber, channel, JSON.stringify(items), initialOrderStatus, createdAt, createdAt, createdAt),
+        env.DB.prepare(`INSERT INTO order_shipments(id,order_id,easypost_tracker_id,mode,carrier,tracking_code,status,status_detail,estimated_delivery_date,carrier_public_url,tracking_details_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id(), orderId, tracker.id, tracker.mode, tracker.carrier, tracker.trackingCode, tracker.status, tracker.statusDetail, tracker.estimatedDeliveryDate, tracker.publicUrl, JSON.stringify(tracker.details), createdAt, createdAt)
+      ]);
+    } catch (error) {
+      if (/UNIQUE|constraint/i.test(String(error?.message || ""))) return response({ error: "That order or tracking number is already attached." }, 409, cors);
+      throw error;
+    }
+    await audit(env, request, "member_order_tracking_created", member.id, `${orderId}|member:${memberId}|tracker:${tracker.id}|mode:${tracker.mode}`);
+    const saved = await env.DB.prepare(`${orderSelectSql} WHERE orders.id=? LIMIT 1`).bind(orderId).first();
+    return response({ order: orderView(saved, env) }, 201, cors);
   }
   if (url.pathname === "/admin/email" && request.method === "POST") {
     if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);

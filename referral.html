@@ -8,7 +8,7 @@
   <meta name="theme-color" content="#07091b">
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/css/styles.css?v=1.9.2">
-  <link rel="stylesheet" href="assets/css/referral.css?v=2.6.1">
+  <link rel="stylesheet" href="assets/css/referral.css?v=3.3.0">
   <link rel="stylesheet" href="assets/css/rewards-modal.css?v=2.2.0">
   <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.6.1">
 </head>
@@ -120,6 +120,7 @@
         <div class="choice-grid">
           <button class="choice-card" type="button" data-view="discount"><span>01</span><strong>Rewards</strong><small>Claim and track your available one-time offer.</small></button>
           <button class="choice-card choice-card-invites" type="button" data-view="invite"><span>02</span><strong>Invites</strong><small>Copy your personal invite link and open sharing tools.</small></button>
+          <button class="choice-card choice-card-orders" type="button" data-view="orders"><span>03</span><strong>Orders</strong><small>See purchases and open live carrier tracking.</small></button>
         </div>
         <section class="reward-card action-panel" data-discount-panel hidden>
           <p class="eyebrow">Member discount</p><h3>Your offer</h3>
@@ -135,6 +136,14 @@
           </div>
           <p>Every campaign code you claim or use appears here with its live status and expiration.</p>
           <div class="campaign-claims" data-campaign-claims aria-live="polite"></div>
+        </section>
+        <section class="reward-card member-orders-card" data-orders-panel>
+          <div class="campaign-history-head">
+            <div><p class="eyebrow">Orders</p><h3>Your purchases</h3></div>
+            <button class="btn btn-outline btn-small" type="button" data-orders-refresh>Refresh</button>
+          </div>
+          <p>Every order attached to your member account appears here. Use Tracking to open the private Crack Packs carrier page.</p>
+          <div class="member-orders-list" data-orders-list aria-live="polite"></div>
         </section>
         <section class="reward-card action-panel" data-invite-panel hidden>
           <div class="owner-dashboard-referral" data-owner-dashboard-referral hidden>
@@ -240,6 +249,6 @@
   <script src="assets/js/config.js?v=3.0.0"></script>
   <script src="assets/js/app.js?v=1.9.2"></script>
   <script src="assets/js/nav-profile.js?v=2.6.1"></script>
-  <script src="assets/js/referral.js?v=3.0.0"></script>
+  <script src="assets/js/referral.js?v=3.3.0"></script>
 </body>
 </html>

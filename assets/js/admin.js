@@ -44,6 +44,9 @@
   let campaignInventorySearchTimer = null;
   let campaignInventoryActiveIndex = -1;
   let campaignInventoryRequestSequence = 0;
+  let selectedTrackingMember = null;
+  let trackingMemberSearchTimer = null;
+  let trackingOrderSearchTimer = null;
   const menuButton = $(".menu-toggle");
   const navigation = $("#admin-site-nav");
   menuButton?.addEventListener("click", () => {
@@ -64,6 +67,7 @@
     if (section === "signups") refreshCampaigns().catch(error => showStatus(error.message, "error"));
     if (section === "redeemed") Promise.all([refreshDashboard(), refreshCampaigns()]).catch(error => showStatus(error.message, "error"));
     if (section === "inventory") refreshInventory().catch(error => setInventoryStatus(error.message, "error"));
+    if (section === "tracking") Promise.all([searchTrackingMembers(), refreshAdminOrders()]).catch(error => setTrackingStatus(error.message, "error"));
   }
 
   const request = async (path, options = {}) => {
@@ -1377,6 +1381,66 @@
     emailAudience = ""; selectedEmailMembers.clear(); $("[data-master-email-form]").reset(); setMasterEmailStatus(""); syncEmailComposer();
   }
 
+  function setTrackingStatus(message = "", kind = "") {
+    const node = $("[data-tracking-status]");
+    node.textContent = message;
+    node.dataset.kind = kind;
+  }
+  function selectTrackingMember(member) {
+    selectedTrackingMember = member;
+    $("[data-tracking-member-id]").value = member?.id || "";
+    const selected = $("[data-tracking-member-selected]");
+    selected.textContent = member ? `Selected: ${member.whatnotUsername ? `@${member.whatnotUsername} · ` : ""}${member.email}` : "No member selected.";
+    selected.classList.toggle("is-selected", Boolean(member));
+    $("[data-tracking-member-results]").replaceChildren();
+  }
+  async function searchTrackingMembers() {
+    if (!memberToken || !adminToken) return;
+    const query = encodeURIComponent($("[data-tracking-member-search]").value.trim());
+    const data = await request(`/admin/members?q=${query}`);
+    const container = $("[data-tracking-member-results]"); container.replaceChildren();
+    const members = Array.isArray(data.members) ? data.members.slice(0, 12) : [];
+    if (!members.length) { const empty = document.createElement("div"); empty.className = "campaign-empty"; empty.textContent = "No verified members match that search."; container.append(empty); return; }
+    members.forEach(member => {
+      const button = document.createElement("button"); button.type = "button"; button.className = "tracking-member-option";
+      const name = document.createElement("strong"); name.textContent = `${member.firstName || ""} ${member.lastName || ""}`.trim() || member.email;
+      const detail = document.createElement("span"); detail.textContent = [member.whatnotUsername ? `@${member.whatnotUsername}` : "", member.email].filter(Boolean).join(" · ");
+      button.append(name, detail); button.addEventListener("click", () => selectTrackingMember(member)); container.append(button);
+    });
+  }
+  function adminOrderStatusLabel(value) { return String(value || "unknown").replace(/_/g, " "); }
+  function renderAdminOrders(orders) {
+    const container = $("[data-admin-order-list]"); container.replaceChildren();
+    if (!orders.length) { const empty = document.createElement("div"); empty.className = "campaign-empty"; empty.textContent = "No tracked member orders match this search."; container.append(empty); return; }
+    orders.forEach(order => {
+      const card = document.createElement("article"); card.className = "admin-order-card";
+      const head = document.createElement("div"); head.className = "admin-order-head";
+      const titleWrap = document.createElement("div"); const title = document.createElement("h3"); title.textContent = order.orderNumber;
+      const member = document.createElement("p"); member.textContent = [order.member?.whatnotUsername ? `@${order.member.whatnotUsername}` : "", order.member?.email].filter(Boolean).join(" · "); titleWrap.append(title, member);
+      const badge = document.createElement("span"); badge.className = `order-status-chip ${order.status || "processing"}`; badge.textContent = adminOrderStatusLabel(order.status); head.append(titleWrap, badge);
+      const items = document.createElement("ul"); items.className = "admin-order-items";
+      (Array.isArray(order.items) ? order.items : []).forEach(item => { const li = document.createElement("li"); li.textContent = `${Number(item.quantity || 1)}× ${item.name}`; items.append(li); });
+      const tracking = document.createElement("div"); tracking.className = "admin-order-tracking";
+      const carrier = document.createElement("strong"); carrier.textContent = `${order.tracking?.carrier || "Carrier"} · ${order.tracking?.trackingCode || "No tracking"}`;
+      const state = document.createElement("span"); state.textContent = `Latest: ${adminOrderStatusLabel(order.tracking?.status)}${order.tracking?.mode === "test" ? " · TEST" : ""}`;
+      tracking.append(carrier, state);
+      if (order.tracking?.url) { const link = document.createElement("a"); link.className = "btn btn-outline btn-small"; link.href = order.tracking.url; link.target = "_blank"; link.rel = "noopener"; link.textContent = "Open Tracking"; tracking.append(link); }
+      card.append(head, items, tracking); container.append(card);
+    });
+  }
+  async function refreshAdminOrders() {
+    if (!memberToken || !adminToken) return;
+    const query = encodeURIComponent($("[data-tracking-order-search]").value.trim());
+    const data = await request(`/admin/orders?q=${query}`);
+    renderAdminOrders(Array.isArray(data.orders) ? data.orders : []);
+  }
+  function trackingItemsFromText(value) {
+    return String(value || "").split(/\r?\n/).map(line => line.trim()).filter(Boolean).map(line => {
+      const match = /^(\d{1,3})\s*[x×]\s*(.+)$/i.exec(line);
+      return match ? { quantity: Number(match[1]), name: match[2].trim() } : { quantity: 1, name: line };
+    });
+  }
+
   async function boot() {
     show("[data-admin-login]", false); show("[data-admin-setup]", false); show("[data-admin-step-up]", false); show("[data-admin-denied]", false); show("[data-admin-dashboard]", false);
     if (verificationToken) await confirmMagicLink();
@@ -1424,6 +1488,32 @@
     inventorySearchTimer = setTimeout(() => refreshInventory().catch(error => setInventoryStatus(error.message, "error")), 220);
   });
   $("[data-inventory-status-filter]").addEventListener("change", renderInventory);
+  $("[data-tracking-member-search]").addEventListener("input", () => { clearTimeout(trackingMemberSearchTimer); trackingMemberSearchTimer = setTimeout(() => searchTrackingMembers().catch(error => setTrackingStatus(error.message, "error")), 220); });
+  $("[data-tracking-order-search]").addEventListener("input", () => { clearTimeout(trackingOrderSearchTimer); trackingOrderSearchTimer = setTimeout(() => refreshAdminOrders().catch(error => setTrackingStatus(error.message, "error")), 220); });
+  $("[data-tracking-refresh]").addEventListener("click", () => refreshAdminOrders().then(() => setTrackingStatus("Orders refreshed.", "success")).catch(error => setTrackingStatus(error.message, "error")));
+  $("[data-tracking-form]").addEventListener("submit", async event => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const values = new FormData(form);
+    const payload = {
+      memberId: selectedTrackingMember?.id || "",
+      orderNumber: String(values.get("orderNumber") || "").trim(),
+      channel: String(values.get("channel") || "manual"),
+      items: trackingItemsFromText(values.get("items")),
+      carrier: String(values.get("carrier") || ""),
+      trackingCode: String(values.get("trackingCode") || "").trim()
+    };
+    if (!payload.memberId) { setTrackingStatus("Choose a verified member from the search results first.", "error"); $("[data-tracking-member-search]").focus(); return; }
+    const button = $("[data-tracking-submit]"); button.disabled = true; button.textContent = "Creating Tracker..."; setTrackingStatus("");
+    try {
+      const data = await request("/admin/orders", { method: "POST", body: JSON.stringify(payload) });
+      const savedMember = selectedTrackingMember;
+      form.reset(); selectTrackingMember(null); $("[data-tracking-member-search]").value = "";
+      setTrackingStatus(`${data.order?.orderNumber || payload.orderNumber} is now visible under ${savedMember?.whatnotUsername ? `@${savedMember.whatnotUsername}` : savedMember?.email}'s Orders.`, "success");
+      await refreshAdminOrders();
+    } catch (error) { setTrackingStatus(error.message, "error"); }
+    finally { button.disabled = false; button.textContent = "Create Order + Tracking"; }
+  });
   document.querySelectorAll("[data-inventory-close]").forEach(button => button.addEventListener("click", closeInventoryModal));
   ["cogs", "usShipping", "packaging", "overhead", "retailFixedFee", "wholesaleHandling", "retailListPrice", "websiteListPrice", "internationalListPrice", "whatnotListPrice", "wholesaleSmallListPrice", "wholesaleCaseListPrice", "wholesalePalletListPrice"].forEach(name => $("[data-inventory-form]").elements.namedItem(name).addEventListener("input", updateInventoryPricePreview));
   $("[data-inventory-form]").elements.namedItem("isActive").addEventListener("change", updateInventoryPricePreview);
@@ -1577,7 +1667,7 @@
     else if (!$("[data-campaign-share-modal]").hidden) closeCampaignShare();
     else if (!$("[data-campaign-modal]").hidden) closeCampaignModal();
   });
-  $("[data-admin-refresh]").addEventListener("click", () => Promise.all([refreshDashboard(), refreshCampaigns(), refreshInventory()]).catch(error => showStatus(error.message, "error")));
+  $("[data-admin-refresh]").addEventListener("click", () => Promise.all([refreshDashboard(), refreshCampaigns(), refreshInventory(), refreshAdminOrders()]).catch(error => showStatus(error.message, "error")));
   $("[data-admin-filter]").addEventListener("change", () => refreshDashboard().catch(error => showStatus(error.message, "error")));
   $("[data-admin-search]").addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => refreshDashboard().catch(error => showStatus(error.message, "error")), 250); });
   ["[data-admin-date-from]", "[data-admin-date-to]"].forEach(selector => $(selector).addEventListener("change", () => renderClaims(legacyClaimsState)));
@@ -1594,6 +1684,8 @@
     clearInterval(campaignCountdownTimer);
     clearTimeout(inventorySearchTimer);
     clearTimeout(campaignInventorySearchTimer);
+    clearTimeout(trackingMemberSearchTimer);
+    clearTimeout(trackingOrderSearchTimer);
   });
   setOwnerReferralActionsEnabled(false);
   syncCampaignFields();
