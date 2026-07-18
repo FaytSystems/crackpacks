@@ -11,6 +11,7 @@
   const currencySelect = document.querySelector("[data-store-currency]");
   const inventoryEndpoint = "/store/inventory";
   const quoteEndpoint = "/store/shipping-quote";
+  const checkoutEndpoint = "/store/checkout";
   const fallbackImages = {
     sealed: "assets/images/product-electric.svg",
     packs: "assets/images/product-cosmic.svg",
@@ -23,6 +24,7 @@
   let activeSearch = "";
   let catalogController = null;
   let storeComingSoon = true;
+  let checkoutEnabled = false;
   let shippingTurnstileToken = "";
   let shippingTurnstileWidgetId = null;
   let shippingTurnstileScriptAdded = false;
@@ -154,7 +156,7 @@
       return `<strong class="store-current-price">Price coming soon</strong><span class="store-shipping-label">${market === "us" ? "USA shipping will be included" : "Shipping is quoted separately"}</span>`;
     }
     const shipping = market === "us"
-      ? (item.priceIncludesUsShipping ? "Free USA shipping included" : "USA shipping status pending")
+      ? (item.priceIncludesUsShipping ? "Free USA shipping included" : "Exact shipping calculated by address")
       : "Product price only · shipping quoted separately";
     return `<strong class="store-current-price">${escapeHtml(price)}</strong><span class="store-shipping-label">${escapeHtml(shipping)}</span>`;
   }
@@ -164,8 +166,8 @@
     const sourceLink = item.sourceUrl
       ? `<a class="store-source-link" href="${escapeHtml(item.sourceUrl)}" target="_blank" rel="noopener noreferrer">Product source ↗</a>`
       : "";
-    const quoteButton = market === "international" && item.slug
-      ? `<button class="btn btn-small btn-outline" type="button" data-quote-product="${escapeHtml(item.slug)}">Estimate shipping</button>`
+    const quoteButton = item.slug
+      ? `<button class="btn btn-small btn-outline" type="button" data-quote-product="${escapeHtml(item.slug)}">${market === "international" ? "Estimate shipping" : "Choose shipping + checkout"}</button>`
       : "";
     const image = item.imageUrl
       ? `<img src="${escapeHtml(item.imageUrl)}" alt="${escapeHtml(item.name)}" loading="lazy" data-store-product-image>`
@@ -281,6 +283,9 @@
 
       const normalized = rows.map(item => normalizeApiItem(item, payload));
       storeComingSoon = payload?.comingSoon !== false;
+      checkoutEnabled = payload?.checkoutEnabled === true;
+      const tape = document.querySelector("[data-store-coming-soon]"); if (tape) tape.hidden = !storeComingSoon;
+      const launchNote = document.querySelector("[data-store-launch-note] strong"); if (launchNote && checkoutEnabled) launchNote.textContent = market === "international" ? "International checkout is open" : "Secure checkout is open";
       renderCatalog(normalized);
       if (!storeComingSoon) mountShippingTurnstile();
       const currencyNote = market === "international" && payload?.rate
@@ -371,14 +376,45 @@
       .map(rate => {
         const days = Number(rate?.deliveryDays);
         const delivery = Number.isFinite(days) && days >= 0 ? `${days} estimated business day${days === 1 ? "" : "s"}` : "Delivery estimate unavailable";
-        return `<article class="shipping-rate"><div><strong>${escapeHtml(`${rate?.carrier || "Carrier"} ${rate?.service || "service"}`)}</strong><small>${escapeHtml(delivery)}</small></div><span class="shipping-rate-price">${escapeHtml(formatMoney(rate?.amountCents, currency))}</span><button class="store-checkout-button" type="button" disabled aria-disabled="true">Checkout coming soon</button></article>`;
+        const checkout = checkoutEnabled
+          ? `<button class="store-checkout-button" type="button" data-store-checkout data-quote-id="${escapeHtml(payload?.quoteId || "")}" data-rate-id="${escapeHtml(rate?.id || "")}">Secure checkout</button>`
+          : `<button class="store-checkout-button" type="button" disabled aria-disabled="true">Checkout coming soon</button>`;
+        return `<article class="shipping-rate"><div><strong>${escapeHtml(`${rate?.carrier || "Carrier"} ${rate?.service || "service"}`)}</strong><small>${escapeHtml(delivery)}</small></div><span class="shipping-rate-price">${escapeHtml(formatMoney(rate?.amountCents, currency))}</span>${checkout}</article>`;
       }).join("");
     if (shippingDisclosure) {
       shippingDisclosure.textContent = String(payload?.disclosure || "");
       shippingDisclosure.hidden = !shippingDisclosure.textContent;
     }
-    setShippingStatus(`${rates.length} shipping option${rates.length === 1 ? "" : "s"} found.${expiry} Checkout remains locked during prelaunch.`, "success");
+    setShippingStatus(`${rates.length} shipping option${rates.length === 1 ? "" : "s"} found.${expiry}${checkoutEnabled ? " Choose a service to continue to Stripe." : " Checkout remains locked during prelaunch."}`, "success");
   }
+
+  shippingRates?.addEventListener("click", async event => {
+    const button = event.target.closest("[data-store-checkout]");
+    if (!button) return;
+    const token = localStorage.getItem("cp_rewards_token") || "";
+    if (!token) {
+      setShippingStatus("Sign in or create your verified Profile before checkout. Your shipping quote remains available for 10 minutes.", "error");
+      window.open("referral.html", "_blank", "noopener");
+      return;
+    }
+    button.disabled = true;
+    button.textContent = "Opening Stripe...";
+    setShippingStatus("Reserving this item and opening secure payment...", "loading");
+    try {
+      const response = await fetch(rewardsUrl(checkoutEndpoint), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ quoteId: button.dataset.quoteId, rateId: button.dataset.rateId })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !/^https:\/\/checkout\.stripe\.com\//.test(payload?.checkoutUrl || "")) throw new Error(payload?.error || "Secure checkout could not be opened.");
+      window.location.assign(payload.checkoutUrl);
+    } catch (error) {
+      button.disabled = false;
+      button.textContent = "Secure checkout";
+      setShippingStatus(error.message || "Secure checkout could not be opened.", "error");
+    }
+  });
 
   catalog?.addEventListener("click", event => {
     const button = event.target.closest("[data-quote-product]");

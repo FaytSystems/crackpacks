@@ -39,7 +39,7 @@
     </div>
   </header>
 
-  <div class="store-coming-soon-tape" role="status" aria-label="Crack Packs store is coming soon">
+  <div class="store-coming-soon-tape" data-store-coming-soon role="status" aria-label="Crack Packs store is coming soon">
     <span>Coming soon</span><span>Checkout locked</span><span>Coming soon</span><span aria-hidden="true">Store preview</span>
   </div>
 
@@ -55,16 +55,16 @@
   <main id="main">
     <section class="page-hero shop-hero">
       <div class="container page-hero-grid">
-        <div class="reveal"><p class="eyebrow">USA store preview</p><h1>Find your next <span>chase.</span></h1><p>Preview upcoming inventory with USA shipping included. Displayed prices use a protected website floor or a higher owner-set market price. Checkout stays locked until the store officially opens.</p><div class="actions"><a class="btn btn-primary" href="#inventory">Browse inventory</a><a class="btn btn-glass" href="international-shop.html">International shop</a><a class="btn btn-glass" data-whatnot href="#">Shop live on Whatnot ↗</a></div></div>
+        <div class="reveal"><p class="eyebrow">USA store preview</p><h1>Find your next <span>chase.</span></h1><p>Preview upcoming inventory with exact address-based shipping. Product prices use a protected website floor or a higher owner-set market price; EasyPost postage is added only after the packed item and destination are known.</p><div class="actions"><a class="btn btn-primary" href="#inventory">Browse inventory</a><a class="btn btn-glass" href="international-shop.html">International shop</a><a class="btn btn-glass" data-whatnot href="#">Shop live on Whatnot ↗</a></div></div>
         <div class="shop-orb holo-panel reveal" aria-hidden="true"><span class="shop-orb-ring ring-one"></span><span class="shop-orb-ring ring-two"></span><span class="shop-orb-ring ring-three"></span><strong>SHOP<br>THE<br>CHASE</strong></div>
       </div>
     </section>
 
     <section class="section-tight" id="inventory">
       <div class="container">
-        <div class="store-prelaunch-note holo-panel">
+        <div class="store-prelaunch-note holo-panel" data-store-launch-note>
           <span class="store-lock-icon" aria-hidden="true">&#128274;</span>
-          <div><strong>USA storefront preview</strong><p>Displayed prices include configured USA shipping and never fall below the protected channel floor. Checkout buttons are disabled, so this page cannot create a charge.</p></div>
+          <div><strong>USA storefront preview</strong><p>Displayed product prices exclude postage and never fall below the protected exact-shipping floor. When checkout opens, EasyPost will calculate the selected carrier service from the packed measurements and address.</p></div>
           <nav class="store-market-switch" aria-label="Choose storefront"><a href="shop.html" aria-current="page">USA store</a><a href="international-shop.html">International</a></nav>
         </div>
         <div class="shop-tools store-tools holo-panel" aria-label="Shop filters">
@@ -80,6 +80,37 @@
         <p class="store-catalog-status" data-store-catalog-status aria-live="polite">Preparing the store preview…</p>
         <div class="product-grid shop-grid" data-all-products data-store-catalog></div>
         <div class="empty-state" data-product-empty hidden><strong>No products match that search.</strong><span>Try another keyword or category.</span></div>
+      </div>
+    </section>
+
+    <section class="section" id="shipping-quote">
+      <div class="container">
+        <div class="shipping-quote-panel holo-panel reveal">
+          <p class="eyebrow">Exact address-based shipping</p>
+          <h2>Choose delivery and check out</h2>
+          <p>Rates come from EasyPost using the product's packed weight and dimensions. Select a service to continue to Stripe. Labels remain owner-purchased and are not bought automatically.</p>
+          <form class="shipping-quote-form" data-shipping-quote-form novalidate>
+            <label class="shipping-field shipping-field-wide"><span>Product</span><select name="slug" data-shipping-product required><option value="">Choose a product</option></select></label>
+            <input type="hidden" name="quantity" value="1">
+            <label class="shipping-field"><span>Recipient name</span><input type="text" name="name" autocomplete="name" maxlength="100" required></label>
+            <label class="shipping-field shipping-field-wide"><span>Address line 1</span><input type="text" name="street1" autocomplete="address-line1" maxlength="120" required></label>
+            <label class="shipping-field shipping-field-wide"><span>Address line 2 (optional)</span><input type="text" name="street2" autocomplete="address-line2" maxlength="120"></label>
+            <label class="shipping-field"><span>City</span><input type="text" name="city" autocomplete="address-level2" maxlength="80" required></label>
+            <label class="shipping-field"><span>State</span><input type="text" name="state" autocomplete="address-level1" maxlength="2" pattern="[A-Za-z]{2}" placeholder="FL" required></label>
+            <label class="shipping-field"><span>ZIP code</span><input type="text" name="postalCode" autocomplete="postal-code" maxlength="10" required></label>
+            <input type="hidden" name="country" value="US">
+            <label class="shipping-field"><span>Phone</span><input type="tel" name="phone" autocomplete="tel" maxlength="30" required></label>
+            <label class="shipping-field"><span>Email</span><input type="email" name="email" autocomplete="email" maxlength="254" required></label>
+            <div class="shipping-field shipping-field-wide shipping-security-check"><span>Security check</span><div data-shipping-turnstile></div></div>
+            <div class="shipping-form-actions">
+              <button class="btn btn-primary" type="submit">Get live shipping rates</button>
+              <p class="shipping-quote-status" data-shipping-quote-status aria-live="polite">Enter the destination exactly as it should appear on the package.</p>
+            </div>
+          </form>
+          <div class="shipping-rate-list" data-shipping-rates aria-live="polite"></div>
+          <p class="shipping-provider-disclosure" data-shipping-disclosure hidden></p>
+          <p class="fine-print">By continuing, you agree to the <a href="terms.html">Terms</a>, <a href="shipping-policy.html">Shipping Policy</a>, <a href="returns-policy.html">Returns &amp; Refunds Policy</a>, and <a href="privacy.html">Privacy Policy</a>.</p>
+        </div>
       </div>
     </section>
 

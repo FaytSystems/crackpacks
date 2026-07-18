@@ -179,12 +179,15 @@
           <div class="email-audience-actions">
             <button class="btn btn-primary" type="button" data-email-all>Message All</button>
             <button class="btn btn-outline" type="button" data-email-select-open>Select Few</button>
+            <label>Referral Tier<select data-email-tier><option value="">Choose tier</option><option>Starter</option><option>Crew</option><option>Breaker</option><option>Headliner</option><option>Legend</option></select></label>
+            <button class="btn btn-outline" type="button" data-email-tier-use>Use Tier</button>
           </div>
           <div class="email-recipient-summary" data-email-recipient-summary>No audience selected.</div>
           <div class="email-selected-chips" data-email-selected-chips></div>
           <form class="master-email-form" data-master-email-form>
             <label>Subject<input name="subject" maxlength="120" required placeholder="Crack Packs live-show update"></label>
-            <label>Message<textarea name="message" maxlength="5000" required rows="8" placeholder="Write the member message here..."></textarea></label>
+            <label>Message<textarea name="message" maxlength="5000" required rows="8" placeholder="Write the member message here, then paste a Code Generator reward link..."></textarea></label>
+            <button class="btn btn-outline btn-small" type="button" data-email-paste-reward>Paste Latest Reward Link</button>
             <div class="campaign-form-status" data-master-email-status aria-live="polite"></div>
             <div class="campaign-modal-actions">
               <button class="btn btn-outline" type="button" data-email-cancel>Cancel</button>
@@ -358,8 +361,8 @@
           <p class="inventory-pricing-intro">Leave a list price blank to use its floor. A list price may be above the floor for strong market demand, but the system will reject anything below it.</p>
           <div class="inventory-price-preview" data-inventory-price-preview>
             <div><span>Retail floor</span><strong data-inventory-retail-floor>Needs cost inputs</strong><small>2.7% processing · 25% margin</small></div>
-            <div><span>USA website floor</span><strong data-inventory-website-floor>Needs cost inputs</strong><small>2.9% + $0.30 · 20% margin · postage included</small></div>
-            <div><span>International item floor</span><strong data-inventory-international-floor>Needs cost inputs</strong><small>2.9% + $0.30 · 20% margin · shipping separate</small></div>
+            <div><span>Free-shipping reference floor</span><strong data-inventory-website-floor>Needs cost inputs</strong><small>Not used by exact-rate checkout · postage allowance included</small></div>
+            <div><span>Exact-shipping website floor</span><strong data-inventory-international-floor>Needs cost inputs</strong><small>USA + international checkout · shipping separate</small></div>
             <div><span>Whatnot floor</span><strong data-inventory-whatnot-floor>Needs cost inputs</strong><small>12% fees + $0.30 · 18% margin · buyer-paid shipping</small></div>
             <div><span>Small reseller floor</span><strong data-inventory-wholesale-small-floor>Needs cost inputs</strong><small>15% margin · ACH/wire · freight separate</small></div>
             <div><span>Case floor</span><strong data-inventory-wholesale-case-floor>Needs cost inputs</strong><small>12% margin · ACH/wire · freight separate</small></div>
@@ -367,8 +370,8 @@
           </div>
           <div class="inventory-form-grid inventory-money-grid inventory-list-price-grid">
             <label>Retail list price ($)<input name="retailListPrice" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Optional — blank uses floor"></label>
-            <label>USA website list price ($)<input name="websiteListPrice" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Optional — blank uses floor"></label>
-            <label>International item list price ($)<input name="internationalListPrice" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Optional — shipping separate"></label>
+            <label>Free-shipping reference price ($)<input name="websiteListPrice" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Optional · not used by exact-rate checkout"></label>
+            <label>Exact-shipping website price ($)<input name="internationalListPrice" type="number" min="0" step="0.01" inputmode="decimal" placeholder="USA + international product price"></label>
             <label>Whatnot list price ($)<input name="whatnotListPrice" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Optional — buyer pays shipping"></label>
             <label>Small reseller price ($)<input name="wholesaleSmallListPrice" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Optional — 15% floor"></label>
             <label>Case price ($)<input name="wholesaleCaseListPrice" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Optional — 12% floor"></label>

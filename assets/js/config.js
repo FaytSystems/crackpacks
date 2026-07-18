@@ -15,7 +15,7 @@ window.CRACKPACKS_CONFIG = {
   youtubeSlideshowMs: 6500,
   youtubeRequestTimeoutMs: 8000,
   storeUrl: "shop.html",
-  email: "hello@crackpacks.com",
+  email: "support@crackpacks.com",
   domain: "https://crackpacks.com",
   updated: "July 18, 2026",
   storeNotice: "The Crack Packs storefront is a Coming Soon preview. Checkout is locked until inventory, shipping, and payment settings are verified.",

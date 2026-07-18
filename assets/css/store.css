@@ -20,6 +20,7 @@
   box-shadow: 0 8px 0 rgba(3, 4, 14, .8), 0 0 34px rgba(248, 255, 70, .2);
   transform: rotate(-.7deg);
 }
+.store-coming-soon-tape[hidden]{display:none!important}
 
 .store-coming-soon-tape span {
   flex: 0 0 auto;

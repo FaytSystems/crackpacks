@@ -95,7 +95,7 @@
           </a>
         </nav>
       </div>
-      <p class="crack-social-signoff">Crack Packs <span aria-hidden="true">&bull;</span> Rip loud. Collect proud.</p>
+      <p class="crack-social-signoff">Crack Packs <span aria-hidden="true">&bull;</span> Rip loud. Collect proud.<br><a href="terms.html">Terms</a> &bull; <a href="privacy.html">Privacy</a> &bull; <a href="shipping-policy.html">Shipping</a> &bull; <a href="returns-policy.html">Returns</a> &bull; <a href="mailto:support@crackpacks.com">Support</a></p>
     `;
 
     document.body.append(footer);

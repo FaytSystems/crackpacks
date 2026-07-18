@@ -17,6 +17,7 @@ const productReactivationGuardMigration = readFileSync(new URL("../migrations/00
 const productFulfillmentMigration = readFileSync(new URL("../migrations/0010_decrement_fulfilled_product.sql", import.meta.url), "utf8");
 const channelPricingMigration = readFileSync(new URL("../migrations/0011_add_channel_pricing.sql", import.meta.url), "utf8");
 const memberTrackingMigration = readFileSync(new URL("../migrations/0012_add_member_orders_tracking.sql", import.meta.url), "utf8");
+const stripeCheckoutMigration = readFileSync(new URL("../migrations/0013_add_stripe_checkout.sql", import.meta.url), "utf8");
 
 function member(db, id, email, inviteCode) {
   db.prepare(`INSERT INTO members(id,email,email_verified_at,identity_status,device_verified,invite_code,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)`)
@@ -42,6 +43,7 @@ test("campaign schema and sequential campaign migrations are valid", () => {
   migrationDb.exec(productFulfillmentMigration);
   migrationDb.exec(channelPricingMigration);
   migrationDb.exec(memberTrackingMigration);
+  migrationDb.exec(stripeCheckoutMigration);
   assert.ok(migrationDb.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='offer_campaigns'`).get());
   assert.ok(migrationDb.prepare(`SELECT name FROM pragma_table_info('offer_campaigns') WHERE name='reward_variant'`).get());
   assert.ok(migrationDb.prepare(`SELECT name FROM pragma_table_info('offer_campaigns') WHERE name='never_expires'`).get());
@@ -58,6 +60,9 @@ test("campaign schema and sequential campaign migrations are valid", () => {
   assert.ok(migrationDb.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='member_orders'`).get());
   assert.ok(migrationDb.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='order_shipments'`).get());
   assert.ok(migrationDb.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='easypost_webhook_events'`).get());
+  assert.ok(migrationDb.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='checkout_reservations'`).get());
+  assert.ok(migrationDb.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='stripe_webhook_events'`).get());
+  assert.ok(migrationDb.prepare(`SELECT name FROM pragma_table_info('member_orders') WHERE name='stripe_payment_intent_id'`).get());
   migrationDb.close();
 });
 

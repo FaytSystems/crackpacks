@@ -1,0 +1,163 @@
+CRACK PACKS - STRIPE PRODUCT AND INVENTORY SETUP
+Updated: July 18, 2026
+
+IMPORTANT
+Stripe Checkout is generated from the protected Crack Packs inventory database.
+You do NOT have to create duplicate Stripe Products manually for checkout to work.
+The website sends the inventory name, current protected website price, quantity,
+and selected EasyPost shipping service to Stripe from the server.
+
+If you also want products visible in the Stripe Dashboard Product Catalog, use:
+
+  CRACK PACKS | [SET] | [PRODUCT TYPE] | [PACK COUNT OR VARIANT]
+
+Examples:
+  CRACK PACKS | Mega Evolution - Pitch Black | Booster Box | 36 Packs
+  CRACK PACKS | Mega Evolution - Pitch Black | Elite Trainer Box
+  CRACK PACKS | Mega Evolution - Pitch Black | Booster Bundle | 6 Packs
+
+Use a separate Stripe Product for each physical package size. Do not reuse one
+Stripe price for a booster pack, bundle, ETB, and booster box because EasyPost
+requires the packed weight and dimensions of the exact item being ordered.
+
+Recommended Stripe metadata:
+  crackpacks_inventory_slug = copy the Public Slug from Master Dashboard
+  upc = UPC digits, if known
+  category = Booster Box / ETB / Bundle / Pack / Tin / Case / Single
+  fulfillment = manual_label
+  shipping_rate_source = easypost
+
+Do not enter packed dimensions in Stripe. Enter them in:
+  MASTER DASHBOARD > INVENTORY > Edit Product > Packed shipment details
+
+WEIGHING RULE
+Pack the product exactly as it will be mailed, including the shipping box,
+bubble wrap, padding, inserts, bonuses, and label. Then record:
+  Weight = total packed ounces
+  Length = longest outside box edge in inches
+  Width  = second-longest outside box edge in inches
+  Height = shortest outside box edge in inches
+
+EasyPost uses those four values plus the customer's address to calculate the
+shipping services and prices displayed before Stripe Checkout.
+
+PRODUCTS TO CONFIGURE
+Fill every blank with verified real inventory data. Never estimate a weight,
+dimension, cost, quantity, UPC, or selling price.
+
+1. CRACK PACKS | Mega Evolution - Pitch Black | Booster Box | 36 Packs
+   UPC: 196214157514
+   Quantity on hand: ______
+   Landed COGS: $______
+   Packaging cost: $______
+   Overhead allocation: $______
+   Website product price before exact shipping: $______
+   Packed weight (oz): ______
+   Packed dimensions L x W x H (in): ______ x ______ x ______
+   Origin country / HS code: ______ / ______
+
+2. CRACK PACKS | Mega Evolution - Pitch Black | Elite Trainer Box
+   UPC: 196214157422
+   Quantity / COGS / Packaging / Overhead: ______________________________
+   Website product price before shipping: $______
+   Packed oz / L x W x H: ______ / ______ x ______ x ______
+   Origin country / HS code: ______ / ______
+
+3. CRACK PACKS | Mega Evolution - Pitch Black | Booster Bundle | 6 Packs
+   UPC: 196214157484
+   Quantity / COGS / Packaging / Overhead: ______________________________
+   Website product price before shipping: $______
+   Packed oz / L x W x H: ______ / ______ x ______ x ______
+   Origin country / HS code: ______ / ______
+
+4. CRACK PACKS | Mega Evolution - Pitch Black | 3-Pack Booster
+   UPC: 196214157477
+   Quantity / COGS / Packaging / Overhead: ______________________________
+   Website product price before shipping: $______
+   Packed oz / L x W x H: ______ / ______ x ______ x ______
+   Origin country / HS code: ______ / ______
+
+5. CRACK PACKS | Mega Evolution - Pitch Black | Sleeved Booster
+   UPC: VERIFY BEFORE LISTING
+   Quantity / COGS / Packaging / Overhead: ______________________________
+   Website product price before shipping: $______
+   Packed oz / L x W x H: ______ / ______ x ______ x ______
+   Origin country / HS code: ______ / ______
+
+6. CRACK PACKS | Mega Greninja ex | Premium Collection
+   UPC: 196214155923
+   Quantity / COGS / Packaging / Overhead: ______________________________
+   Website product price before shipping: $______
+   Packed oz / L x W x H: ______ / ______ x ______ x ______
+   Origin country / HS code: ______ / ______
+
+7. CRACK PACKS | Mega Evolution - Pitch Black | Build & Battle Box
+   UPC: VERIFY BEFORE LISTING
+   Quantity / COGS / Packaging / Overhead: ______________________________
+   Website product price before shipping: $______
+   Packed oz / L x W x H: ______ / ______ x ______ x ______
+   Origin country / HS code: ______ / ______
+
+8. CRACK PACKS | Mega Evolution - Chaos Rising | Booster Box | 36 Packs
+   UPC: VERIFY BEFORE LISTING
+   Quantity / COGS / Packaging / Overhead: ______________________________
+   Website product price before shipping: $______
+   Packed oz / L x W x H: ______ / ______ x ______ x ______
+   Origin country / HS code: ______ / ______
+
+9. CRACK PACKS | Mega Evolution - Chaos Rising | Elite Trainer Box
+   UPC: VERIFY BEFORE LISTING
+   Quantity / COGS / Packaging / Overhead: ______________________________
+   Website product price before shipping: $______
+   Packed oz / L x W x H: ______ / ______ x ______ x ______
+   Origin country / HS code: ______ / ______
+
+10. CRACK PACKS | Mega Evolution - Chaos Rising | Booster Bundle | 6 Packs
+    UPC: VERIFY BEFORE LISTING
+    Quantity / COGS / Packaging / Overhead: _____________________________
+    Website product price before shipping: $______
+    Packed oz / L x W x H: ______ / ______ x ______ x ______
+    Origin country / HS code: ______ / ______
+
+11. CRACK PACKS | Mega Evolution - Perfect Order | Booster Box | 36 Packs
+    UPC: 196214150461
+    Quantity / COGS / Packaging / Overhead: _____________________________
+    Website product price before shipping: $______
+    Packed oz / L x W x H: ______ / ______ x ______ x ______
+    Origin country / HS code: ______ / ______
+
+12. CRACK PACKS | Mega Evolution - Perfect Order | Elite Trainer Box
+    UPC: VERIFY BEFORE LISTING
+    Quantity / COGS / Packaging / Overhead: _____________________________
+    Website product price before shipping: $______
+    Packed oz / L x W x H: ______ / ______ x ______ x ______
+    Origin country / HS code: ______ / ______
+
+13. CRACK PACKS | Mega Evolution - Perfect Order | Booster Bundle | 6 Packs
+    UPC: 196214150478
+    Quantity / COGS / Packaging / Overhead: _____________________________
+    Website product price before shipping: $______
+    Packed oz / L x W x H: ______ / ______ x ______ x ______
+    Origin country / HS code: ______ / ______
+
+ADDING ANOTHER PRODUCT
+Product name: __________________________________________________________
+Stripe name: CRACK PACKS | _____________________________________________
+Public slug: ___________________________________________________________
+UPC: ____________________  Category: ___________________________________
+Quantity: ______  COGS: $______  Packaging: $______  Overhead: $______
+Website product price before shipping: $______
+Packed weight: ______ oz   L x W x H: ______ x ______ x ______ inches
+Origin country: ______   HS code: ____________
+Image: ______________________________  Source: _________________________
+
+LAUNCH CHECK FOR EACH PRODUCT
+[ ] Physical inventory counted
+[ ] UPC verified from the actual package
+[ ] Product packed exactly as it will ship
+[ ] Packed weight and outside dimensions measured
+[ ] COGS, packaging, overhead, and price entered
+[ ] Product photo and description verified
+[ ] International origin country and HS code reviewed, if offered
+[ ] Test EasyPost rate looks reasonable for near and far ZIP codes
+[ ] Store Visible and Active switches intentionally enabled

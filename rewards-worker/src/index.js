@@ -3,8 +3,9 @@ import { issueOwnerReferral, ownerReferralSlotAt, verifyOwnerReferral } from "./
 import { campaignWeekAt, parseCampaignExpiryHours } from "./campaign-time.js";
 import { calculateChannelPricing, channelPricingErrors } from "./channel-pricing.js";
 import { sanitizeEasyPostTracker, verifyEasyPostWebhook } from "./easypost-tracking.js";
+import { stripeRequest, verifyStripeWebhook } from "./stripe-commerce.js";
 
-const VERSION = "3.3.3";
+const VERSION = "4.0.0";
 const CAMPAIGN_REWARD_TYPES = new Set(["percent", "free_shipping", "pick_a_pack", "pack_draft", "free_single", "product"]);
 const MAX_CAMPAIGN_REDEMPTIONS = 500;
 const STORE_CURRENCIES = new Set(["USD", "CAD", "EUR", "GBP", "AUD", "NZD", "JPY", "CHF", "SEK", "NOK", "DKK", "PLN", "CZK", "HUF", "RON"]);
@@ -31,6 +32,7 @@ const TIERS = [
   { threshold: 25, name: "Headliner", reward: "Crack Packs prize pack" },
   { threshold: 50, name: "Legend", reward: "VIP campaign grand prize entry" }
 ];
+const referralTierForCount = count => [...TIERS].reverse().find(tier => Number(count || 0) >= tier.threshold) || TIERS[0];
 const encoder = new TextEncoder();
 const now = () => new Date().toISOString();
 const id = () => crypto.randomUUID();
@@ -122,7 +124,9 @@ function corsFor(request, env) {
   return allowed.includes(origin) ? { "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Admin-Token", "Access-Control-Allow-Methods": "GET, POST, OPTIONS", Vary: "Origin" } : null;
 }
 async function body(request) { try { return await request.json(); } catch { throw new Error("INVALID_JSON"); } }
-async function sendEmail(env, to, subject, html, idempotencyKey = id()) {
+async function sendEmail(env, to, subject, html, idempotencyKey = id(), sender = { email: "rewards@crackpacks.com", name: "Crack Packs Rewards" }) {
+  const fromEmail = normalizeEmail(sender?.email || "rewards@crackpacks.com");
+  const fromName = clean(sender?.name || "Crack Packs", 80);
   if (env.RESEND_API_KEY) {
     const result = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -132,7 +136,7 @@ async function sendEmail(env, to, subject, html, idempotencyKey = id()) {
         "Idempotency-Key": idempotencyKey
       },
       body: JSON.stringify({
-        from: "Crack Packs Rewards <rewards@crackpacks.com>",
+        from: `${fromName} <${fromEmail}>`,
         to: [to],
         subject,
         html
@@ -149,17 +153,23 @@ async function sendEmail(env, to, subject, html, idempotencyKey = id()) {
     if (env.ENVIRONMENT === "development") return;
     throw new Error("EMAIL_NOT_CONFIGURED");
   }
-  const message = new EmailMessage("rewards@crackpacks.com", to, `From: Crack Packs Rewards <rewards@crackpacks.com>\r\nTo: ${to}\r\nSubject: ${subject}\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n${html}`);
+  const message = new EmailMessage(fromEmail, to, `From: ${fromName} <${fromEmail}>\r\nTo: ${to}\r\nSubject: ${subject}\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n${html}`);
   await env.REWARDS_EMAIL.send(message);
 }
+const sendOrderEmail = (env, to, subject, html, idempotencyKey) => sendEmail(
+  env, to, subject, html, idempotencyKey,
+  { email: env.ORDER_FROM_EMAIL || "orders@crackpacks.com", name: "Crack Packs Orders" }
+);
 async function sendMemberEmailBatch(env, recipients, subject, message, idempotencyKey) {
   if (!env.RESEND_API_KEY) throw new Error("MEMBER_EMAIL_NOT_CONFIGURED");
+  if (!clean(env.BUSINESS_POSTAL_ADDRESS, 300)) throw new Error("BUSINESS_ADDRESS_NOT_CONFIGURED");
   const messageHtml = escapeHtml(message).replace(/\r?\n/g, "<br>");
+  const postalAddress = escapeHtml(clean(env.BUSINESS_POSTAL_ADDRESS, 300));
   const payload = recipients.map(recipient => ({
     from: "Crack Packs <rewards@crackpacks.com>",
     to: [recipient.email],
     subject,
-    html: `<div style="font-family:Arial,sans-serif;color:#111827"><h1 style="color:#151936">Crack Packs</h1><p>Hi ${escapeHtml(recipient.first_name || recipient.whatnot_username || "collector")},</p><p>${messageHtml}</p><p style="margin-top:28px;color:#5d6475;font-size:12px">This member-account message was sent by Crack Packs. Reply to this email if you no longer want member announcements.</p></div>`,
+    html: `<div style="font-family:Arial,sans-serif;color:#111827"><h1 style="color:#151936">Crack Packs</h1><p>Hi ${escapeHtml(recipient.first_name || recipient.whatnot_username || "collector")},</p><p>${messageHtml}</p><p style="margin-top:28px;color:#5d6475;font-size:12px">Crack Packs · ${postalAddress}<br>Reply with “Unsubscribe” if you no longer want member announcements. Transactional order and security notices will still be sent.</p></div>`,
     headers: { "List-Unsubscribe": "<mailto:rewards@crackpacks.com?subject=Unsubscribe>" }
   }));
   const result = await fetch("https://api.resend.com/emails/batch", {
@@ -272,7 +282,9 @@ const channelPricingInput = row => ({
 });
 const storePriceCents = (row, market) => {
   const pricing = calculateChannelPricing(channelPricingInput(row));
-  return market === "us" ? pricing.prices.websiteUs : pricing.prices.websiteInternational;
+  // Exact EasyPost postage is added at checkout for both markets, so the item
+  // price must use the shipping-exclusive website floor.
+  return pricing.prices.websiteInternational;
 };
 const inventoryItemView = row => {
   const committedUnits = Math.max(0, Number(row.committed_units || 0));
@@ -398,7 +410,7 @@ function publicStoreItem(row, market, currency, fx) {
       usdCents: usdPrice,
       displayCents: convertCents(usdPrice, fx?.value ?? null),
       currency,
-      includesUsShipping: market === "us"
+      includesUsShipping: false
     },
     shippingReady: dimensionsReady && customsReady
   };
@@ -507,8 +519,10 @@ function parseOrderItems(value) {
 function orderView(row, env) {
   let items = [];
   let details = [];
+  let shippingAddress = {};
   try { items = JSON.parse(row.items_json || "[]"); } catch {}
   try { details = JSON.parse(row.tracking_details_json || "[]"); } catch {}
+  try { shippingAddress = JSON.parse(row.shipping_address_json || "{}"); } catch {}
   const hasTracking = Boolean(row.easypost_tracker_id);
   return {
     id: row.id,
@@ -516,6 +530,15 @@ function orderView(row, env) {
     channel: row.channel,
     items: Array.isArray(items) ? items : [],
     status: row.status,
+    paymentStatus: row.payment_status || "not_applicable",
+    subtotalCents: Number(row.subtotal_cents || 0),
+    shippingCents: Number(row.shipping_cents || 0),
+    taxCents: Number(row.tax_cents || 0),
+    totalCents: Number(row.total_cents || 0),
+    currency: row.currency || "USD",
+    shippingService: row.shipping_service || "",
+    shippingAddress: shippingAddress && typeof shippingAddress === "object" ? shippingAddress : {},
+    refundedAt: row.refunded_at || null,
     placedAt: row.placed_at,
     updatedAt: row.updated_at,
     tracking: hasTracking ? {
@@ -537,6 +560,94 @@ const orderSelectSql = `
          shipments.carrier_public_url,shipments.tracking_details_json
   FROM member_orders orders LEFT JOIN order_shipments shipments ON shipments.order_id=orders.id
 `;
+
+function money(centsValue, currency = "USD") {
+  return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(Number(centsValue || 0) / 100);
+}
+function shippingAddressSummary(address) {
+  return [address?.name, address?.street1, address?.street2, `${address?.city || ""}, ${address?.state || ""} ${address?.postalCode || ""}`.trim(), address?.country]
+    .filter(Boolean).map(escapeHtml).join("<br>");
+}
+async function sendOrderNotificationOnce(env, orderId, recipient, eventType, subject, html) {
+  const eventKey = `${orderId}:${eventType}:${normalizeEmail(recipient)}`;
+  const inserted = await env.DB.prepare(`INSERT OR IGNORE INTO order_notification_events(event_key,order_id,recipient,event_type,sent_at) VALUES(?,?,?,?,?)`).bind(eventKey, orderId, normalizeEmail(recipient), eventType, now()).run();
+  if (Number(inserted.meta?.changes || 0) !== 1) return;
+  try { await sendOrderEmail(env, recipient, subject, html, eventKey); }
+  catch (error) {
+    await env.DB.prepare(`DELETE FROM order_notification_events WHERE event_key=?`).bind(eventKey).run();
+    console.error("Order notification failed", { eventType, orderId, message: error?.message || "" });
+  }
+}
+async function notifyPaidOrder(env, order, memberEmail, address) {
+  const trackingUrl = `${env.SITE_URL}/referral.html#member-orders`;
+  const support = normalizeEmail(env.SUPPORT_EMAIL || "support@crackpacks.com");
+  const itemLines = (order.items || []).map(item => `<li>${Number(item.quantity || 1)}&times; ${escapeHtml(item.name)}</li>`).join("");
+  const totals = `<p>Items: ${money(order.subtotalCents, order.currency)}<br>Shipping: ${money(order.shippingCents, order.currency)}<br>Tax: ${money(order.taxCents, order.currency)}<br><strong>Total: ${money(order.totalCents, order.currency)}</strong></p>`;
+  await Promise.all([
+    sendOrderNotificationOnce(env, order.id, memberEmail, "order-confirmation", `Order confirmed: ${order.orderNumber}`, `<h1>Order confirmed</h1><p>Thanks for your Crack Packs order. We will email tracking after the label is purchased and attached.</p><p><strong>${escapeHtml(order.orderNumber)}</strong></p><ul>${itemLines}</ul>${totals}<p><strong>Ship to</strong><br>${shippingAddressSummary(address)}</p><p><a href="${escapeHtml(trackingUrl)}">View your orders</a> &middot; Questions: <a href="mailto:${support}">${support}</a></p>`),
+    sendOrderNotificationOnce(env, order.id, normalizeEmail(env.ORDER_NOTIFICATION_EMAIL || "robertreese@faytsystems.com"), "owner-new-order", `New Crack Packs order: ${order.orderNumber}`, `<h1>New paid website order</h1><p><strong>${escapeHtml(order.orderNumber)}</strong></p><p>Customer: ${escapeHtml(memberEmail)}</p><ul>${itemLines}</ul>${totals}<p><strong>Selected service:</strong> ${escapeHtml(order.shippingService)}</p><p><strong>Ship to</strong><br>${shippingAddressSummary(address)}</p><p>Purchase the label manually, then attach the real tracking number in the Master Dashboard.</p>`)
+  ]);
+}
+async function finalizeStripeCheckout(env, session, ctx) {
+  const sessionId = clean(session?.id, 120);
+  if (!sessionId || session?.payment_status !== "paid") return null;
+  const reservation = await env.DB.prepare(`SELECT * FROM checkout_reservations WHERE stripe_checkout_session_id=? LIMIT 1`).bind(sessionId).first();
+  if (!reservation) throw new Error("CHECKOUT_RESERVATION_NOT_FOUND");
+  if (reservation.status === "paid" && reservation.order_id) return reservation.order_id;
+  if (!['open','creating'].includes(reservation.status)) throw new Error("CHECKOUT_RESERVATION_CLOSED");
+  const expectedSubtotal = Number(reservation.unit_amount_cents) * Number(reservation.quantity) + Number(reservation.shipping_amount_cents);
+  if (Number(session.amount_subtotal) !== expectedSubtotal) throw new Error("CHECKOUT_TOTAL_MISMATCH");
+  const createdAt = now();
+  const orderId = id();
+  const orderNumber = `CP-${createdAt.slice(0, 10).replace(/-/g, "")}-${reservation.id.slice(-8).toUpperCase()}`;
+  const paymentIntent = typeof session.payment_intent === "string" ? session.payment_intent : String(session.payment_intent?.id || "");
+  const taxCents = Number(session?.total_details?.amount_tax || 0);
+  const totalCents = Number(session.amount_total || expectedSubtotal + taxCents);
+  const items = [{ name: reservation.product_name, quantity: Number(reservation.quantity), unitAmountCents: Number(reservation.unit_amount_cents) }];
+  const updated = await env.DB.batch([
+    env.DB.prepare(`INSERT INTO member_orders(id,member_id,owner_member_id,order_number,channel,items_json,status,subtotal_cents,shipping_cents,tax_cents,total_cents,currency,payment_status,stripe_checkout_session_id,stripe_payment_intent_id,shipping_address_json,shipping_service,placed_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
+      orderId, reservation.member_id, reservation.owner_member_id, orderNumber, "website", JSON.stringify(items), "processing",
+      Number(reservation.unit_amount_cents) * Number(reservation.quantity), Number(reservation.shipping_amount_cents), taxCents, totalCents,
+      String(session.currency || reservation.currency || "usd").toUpperCase(), "paid", sessionId, paymentIntent || null,
+      reservation.address_json, `${reservation.carrier} ${reservation.service}`, createdAt, createdAt, createdAt
+    ),
+    env.DB.prepare(`UPDATE checkout_reservations SET status='paid',stripe_payment_intent_id=?,order_id=?,updated_at=? WHERE id=? AND status IN ('open','creating')`).bind(paymentIntent || null, orderId, createdAt, reservation.id)
+  ]);
+  if (Number(updated[1].meta?.changes || 0) !== 1) return reservation.order_id || null;
+  const memberRow = await env.DB.prepare(`SELECT email FROM members WHERE id=?`).bind(reservation.member_id).first();
+  const saved = await env.DB.prepare(`${orderSelectSql} WHERE orders.id=? LIMIT 1`).bind(orderId).first();
+  let address = {}; try { address = JSON.parse(reservation.address_json || "{}"); } catch {}
+  const publicOrder = orderView(saved, env);
+  ctx.waitUntil(notifyPaidOrder(env, publicOrder, memberRow?.email || session?.customer_details?.email || "", address));
+  return orderId;
+}
+async function expireCheckoutReservation(env, sessionId) {
+  const reservation = await env.DB.prepare(`SELECT * FROM checkout_reservations WHERE stripe_checkout_session_id=? AND status IN ('open','creating') LIMIT 1`).bind(sessionId).first();
+  if (!reservation) return;
+  const updatedAt = now();
+  await env.DB.batch([
+    env.DB.prepare(`UPDATE inventory_items SET quantity=quantity+?,updated_at=? WHERE id=?`).bind(Number(reservation.quantity), updatedAt, reservation.inventory_item_id),
+    env.DB.prepare(`UPDATE checkout_reservations SET status='expired',updated_at=? WHERE id=? AND status IN ('open','creating')`).bind(updatedAt, reservation.id)
+  ]);
+}
+async function markOrderRefunded(env, paymentIntentId, refundId, ctx) {
+  if (!paymentIntentId) return null;
+  const row = await env.DB.prepare(`${orderSelectSql} WHERE orders.stripe_payment_intent_id=? LIMIT 1`).bind(paymentIntentId).first();
+  if (!row || row.payment_status === "refunded") return row?.id || null;
+  const updatedAt = now();
+  const reservation = await env.DB.prepare(`SELECT * FROM checkout_reservations WHERE order_id=? LIMIT 1`).bind(row.id).first();
+  const operations = [
+    env.DB.prepare(`UPDATE member_orders SET payment_status='refunded',status=CASE WHEN status='processing' THEN 'cancelled' ELSE status END,stripe_refund_id=COALESCE(?,stripe_refund_id),refunded_at=?,updated_at=? WHERE id=? AND payment_status<>'refunded'`).bind(refundId || null, updatedAt, updatedAt, row.id)
+  ];
+  if (reservation?.status === "paid" && row.status === "processing") {
+    operations.push(env.DB.prepare(`UPDATE inventory_items SET quantity=quantity+?,updated_at=? WHERE id=?`).bind(Number(reservation.quantity), updatedAt, reservation.inventory_item_id));
+    operations.push(env.DB.prepare(`UPDATE checkout_reservations SET status='refunded',updated_at=? WHERE id=? AND status='paid'`).bind(updatedAt, reservation.id));
+  }
+  await env.DB.batch(operations);
+  const memberRow = await env.DB.prepare(`SELECT email FROM members WHERE id=?`).bind(row.member_id).first();
+  if (memberRow?.email) ctx.waitUntil(sendOrderNotificationOnce(env, row.id, memberRow.email, "order-refunded", `Refund issued: ${row.order_number}`, `<h1>Your refund was issued</h1><p>Order <strong>${escapeHtml(row.order_number)}</strong> has been refunded to the original payment method. Your bank may take additional time to display the credit.</p><p>Questions: <a href="mailto:${escapeHtml(env.SUPPORT_EMAIL || "support@crackpacks.com")}">${escapeHtml(env.SUPPORT_EMAIL || "support@crackpacks.com")}</a></p>`));
+  return row.id;
+}
 const campaignNeverExpires = campaign => Number(campaign.never_expires || 0) === 1;
 const campaignIsActive = campaign => Number(campaign.is_active ?? 1) === 1;
 async function ownerReferralIsActive(env, ownerMemberId, slotId) {
@@ -725,6 +836,11 @@ async function route(request, env, cors, ctx) {
     if (previous?.processed_at) return response({ ok: true, duplicate: true }, 200, cors);
     await env.DB.prepare(`INSERT OR IGNORE INTO easypost_webhook_events(event_id,description,mode,tracker_id,received_at) VALUES(?,?,?,?,?)`).bind(eventId, description, mode, tracker?.id || null, receivedAt).run();
     if (tracker) {
+      const linkedOrder = await env.DB.prepare(`
+        SELECT orders.id,orders.order_number,orders.status,customer.email,shipments.status previous_tracking_status
+        FROM order_shipments shipments JOIN member_orders orders ON orders.id=shipments.order_id JOIN members customer ON customer.id=orders.member_id
+        WHERE shipments.easypost_tracker_id=? LIMIT 1
+      `).bind(tracker.id).first();
       const updatedAt = now();
       await env.DB.batch([
         env.DB.prepare(`
@@ -739,8 +855,38 @@ async function route(request, env, cors, ctx) {
           WHERE id=(SELECT order_id FROM order_shipments WHERE easypost_tracker_id=? LIMIT 1)
         `).bind(tracker.status, tracker.status, updatedAt, tracker.id)
       ]);
+      if (linkedOrder && tracker.status === "delivered" && linkedOrder.previous_tracking_status !== "delivered") {
+        const trackingUrl = `${env.SITE_URL}/tracking.html?order=${encodeURIComponent(linkedOrder.id)}`;
+        ctx.waitUntil(sendOrderNotificationOnce(env, linkedOrder.id, linkedOrder.email, "order-delivered", `Delivered: ${linkedOrder.order_number}`, `<h1>Your Crack Packs order was delivered</h1><p>The carrier marked order <strong>${escapeHtml(linkedOrder.order_number)}</strong> delivered.</p><p><a href="${escapeHtml(trackingUrl)}">Review tracking details</a></p><p>If the package is missing or damaged, contact <a href="mailto:${escapeHtml(env.SUPPORT_EMAIL || "support@crackpacks.com")}">${escapeHtml(env.SUPPORT_EMAIL || "support@crackpacks.com")}</a> promptly.</p>`));
+      }
     }
     await env.DB.prepare(`UPDATE easypost_webhook_events SET processed_at=? WHERE event_id=?`).bind(now(), eventId).run();
+    return response({ ok: true }, 200, cors);
+  }
+  if (url.pathname === "/webhooks/stripe" && request.method === "POST") {
+    if (!env.STRIPE_WEBHOOK_SECRET) return response({ error: "Stripe webhook is not configured." }, 503, cors);
+    const contentLength = Number(request.headers.get("Content-Length") || 0);
+    if (Number.isFinite(contentLength) && contentLength > 1_000_000) return response({ error: "Webhook body is too large." }, 413, cors);
+    const rawBody = await request.text();
+    if (rawBody.length > 1_000_000) return response({ error: "Webhook body is too large." }, 413, cors);
+    const verification = await verifyStripeWebhook({ rawBody, signatureHeader: request.headers.get("Stripe-Signature") || "", secret: env.STRIPE_WEBHOOK_SECRET });
+    if (!verification.ok) return response({ error: "Invalid webhook signature." }, 401, cors);
+    let event;
+    try { event = JSON.parse(rawBody); } catch { return response({ error: "Invalid webhook event." }, 400, cors); }
+    const eventId = clean(event?.id, 120);
+    const eventType = clean(event?.type, 100);
+    if (!eventId || !eventType || !/^evt_[a-z0-9_]+$/i.test(eventId)) return response({ error: "Invalid webhook event." }, 400, cors);
+    const existing = await env.DB.prepare(`SELECT processed_at FROM stripe_webhook_events WHERE event_id=?`).bind(eventId).first();
+    if (existing?.processed_at) return response({ ok: true, duplicate: true }, 200, cors);
+    await env.DB.prepare(`INSERT OR IGNORE INTO stripe_webhook_events(event_id,event_type,livemode,received_at) VALUES(?,?,?,?)`).bind(eventId, eventType, event?.livemode === true ? 1 : 0, now()).run();
+    const object = event?.data?.object || {};
+    if (["checkout.session.completed", "checkout.session.async_payment_succeeded"].includes(eventType)) await finalizeStripeCheckout(env, object, ctx);
+    if (eventType === "checkout.session.expired") await expireCheckoutReservation(env, clean(object?.id, 120));
+    if (eventType === "charge.refunded" && object?.refunded === true) {
+      const refundId = Array.isArray(object?.refunds?.data) ? String(object.refunds.data[0]?.id || "") : "";
+      await markOrderRefunded(env, typeof object.payment_intent === "string" ? object.payment_intent : "", refundId, ctx);
+    }
+    await env.DB.prepare(`UPDATE stripe_webhook_events SET processed_at=? WHERE event_id=?`).bind(now(), eventId).run();
     return response({ ok: true }, 200, cors);
   }
   if (url.pathname === "/store/inventory" && request.method === "GET") {
@@ -797,7 +943,7 @@ async function route(request, env, cors, ctx) {
       catalogSource: liveRows.length ? "owner_inventory" : "verified_starter_preview",
       items: storeRows.map(row => publicStoreItem(row, market, currency, fx)),
       pricingDisclosure: market === "us"
-        ? "USA item prices include the configured shipping allowance. Carrier adjustments and payment fees can change the final margin."
+        ? "USA product prices exclude postage. Exact EasyPost shipping is calculated from the packed weight, dimensions, selected service, and delivery address."
         : "International item prices exclude shipping. Converted amounts are estimates from ECB reference rates; checkout and card-issuer conversion may differ.",
       dutiesDisclosure: market === "international" ? "International orders ship DAP (formerly DDU). The recipient pays destination duties, taxes, customs, brokerage, clearance, and carrier collection fees." : ""
     }, 200, cors);
@@ -861,8 +1007,8 @@ async function route(request, env, cors, ctx) {
     const expiresAt = new Date(Date.now() + STORE_QUOTE_TTL_MS).toISOString();
     await env.DB.batch([
       env.DB.prepare(`DELETE FROM shipping_quotes WHERE expires_at<=?`).bind(createdAt),
-      env.DB.prepare(`INSERT INTO shipping_quotes(id,inventory_item_id,quantity,market,destination_country,address_hash,easypost_shipment_id,rates_json,expires_at,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)`).bind(
-        quoteId, item.id, quantity, market, address.country, await hash(JSON.stringify(address), env.AUTH_SECRET), quoted.shipmentId, JSON.stringify(quoted.rates), expiresAt, createdAt
+      env.DB.prepare(`INSERT INTO shipping_quotes(id,inventory_item_id,quantity,market,destination_country,address_hash,address_json,easypost_shipment_id,rates_json,expires_at,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`).bind(
+        quoteId, item.id, quantity, market, address.country, await hash(JSON.stringify(address), env.AUTH_SECRET), JSON.stringify(address), quoted.shipmentId, JSON.stringify(quoted.rates), expiresAt, createdAt
       )
     ]);
     await audit(env, request, "store_shipping_quote", null, `${item.public_slug}|${market}|${quoted.shipmentId}`);
@@ -1027,6 +1173,90 @@ async function route(request, env, cors, ctx) {
   const member = await memberFromRequest(request, env);
   if (!member) return response({ error: "Sign in is required." }, 401, cors);
   if (url.pathname === "/me" && request.method === "GET") return response(await accountFor(member, env), 200, cors);
+  if (url.pathname === "/store/checkout" && request.method === "POST") {
+    if (String(env.STORE_COMING_SOON || "true") !== "false" || String(env.STORE_CHECKOUT_ENABLED || "false") !== "true") return response({ error: "Checkout is not open yet." }, 503, cors);
+    if (!member.email_verified_at || !member.device_verified || member.identity_status !== "verified") return response({ error: "Complete your verified profile before checkout." }, 403, cors);
+    if (!env.STRIPE_SECRET_KEY) return response({ error: "Stripe checkout is not configured." }, 503, cors);
+    const data = await body(request);
+    const quoteId = String(data?.quoteId || "");
+    const rateId = String(data?.rateId || "");
+    if (!/^[0-9a-f-]{36}$/i.test(quoteId) || !/^rate_[a-z0-9]+$/i.test(rateId)) return response({ error: "Choose a current shipping quote and service." }, 400, cors);
+    const checkoutEpoch = now();
+    const quote = await env.DB.prepare(`
+      SELECT q.*,i.name,i.description,i.image_url,i.quantity inventory_quantity,i.is_active,i.is_store_visible,
+             i.website_list_price_cents,i.international_list_price_cents,i.cogs_cents,i.us_shipping_cents,i.profit_cents,i.packaging_cents,i.overhead_cents,
+             owner.id owner_member_id
+      FROM shipping_quotes q JOIN inventory_items i ON i.id=q.inventory_item_id JOIN members owner ON owner.id=i.owner_member_id
+      WHERE q.id=? AND q.expires_at>? AND lower(owner.email)=? LIMIT 1
+    `).bind(quoteId, checkoutEpoch, normalizeEmail(env.ADMIN_EMAIL)).first();
+    if (!quote || !quote.is_active || !quote.is_store_visible) return response({ error: "That shipping quote expired. Request a fresh quote." }, 410, cors);
+    let rates = []; try { rates = JSON.parse(quote.rates_json || "[]"); } catch {}
+    const selectedRate = rates.find(rate => rate?.id === rateId);
+    if (!selectedRate || !Number.isInteger(Number(selectedRate.amountCents)) || Number(selectedRate.amountCents) < 0) return response({ error: "That shipping service is no longer available. Request a fresh quote." }, 409, cors);
+    const market = quote.market === "international" ? "international" : "us";
+    const unitAmountCents = storePriceCents(quote, market);
+    if (!Number.isInteger(unitAmountCents) || unitAmountCents < 1) return response({ error: "This product does not have a checkout-ready price." }, 409, cors);
+    const quantity = Number(quote.quantity);
+    if (quantity !== 1) return response({ error: "This checkout currently supports one packed product per order." }, 409, cors);
+    const reservationId = id();
+    const createdAt = now();
+    const sessionExpiresAt = new Date(Date.now() + 30 * 60e3).toISOString();
+    try {
+      const reserved = await env.DB.batch([
+        env.DB.prepare(`UPDATE inventory_items SET quantity=quantity-?,updated_at=? WHERE id=? AND is_active=1 AND is_store_visible=1 AND quantity>=?`).bind(quantity, createdAt, quote.inventory_item_id, quantity),
+        env.DB.prepare(`INSERT INTO checkout_reservations(id,member_id,owner_member_id,inventory_item_id,shipping_quote_id,quantity,product_name,unit_amount_cents,shipping_amount_cents,currency,easypost_shipment_id,easypost_rate_id,carrier,service,address_json,status,expires_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
+          reservationId, member.id, quote.owner_member_id, quote.inventory_item_id, quote.id, quantity, quote.name, unitAmountCents, Number(selectedRate.amountCents), "USD",
+          quote.easypost_shipment_id, rateId, clean(selectedRate.carrier, 60), clean(selectedRate.service, 80), quote.address_json, "creating", sessionExpiresAt, createdAt, createdAt
+        )
+      ]);
+      if (Number(reserved[0].meta?.changes || 0) !== 1) throw new Error("OUT_OF_STOCK");
+    } catch (error) {
+      if (/UNIQUE|constraint|OUT_OF_STOCK|INVENTORY_COMMITMENT_CONFLICT/i.test(String(error?.message || ""))) return response({ error: "This item was just reserved or sold. Refresh inventory and try again." }, 409, cors);
+      throw error;
+    }
+    let stripeSession;
+    try {
+      const entries = [
+        ["mode", "payment"], ["payment_method_types[]", "card"], ["success_url", `${env.SITE_URL}/checkout-success.html?session_id={CHECKOUT_SESSION_ID}`], ["cancel_url", `${env.SITE_URL}/${market === "international" ? "international-shop.html" : "shop.html"}?checkout=cancelled`],
+        ["client_reference_id", reservationId], ["customer_email", member.email], ["customer_creation", "always"], ["billing_address_collection", "required"],
+        ["phone_number_collection[enabled]", "true"], ["consent_collection[terms_of_service]", "required"],
+        ["custom_text[submit][message]", "Your shipping address and selected carrier service are locked to the quote shown on CrackPacks.com. Orders are subject to the posted shipping, return, privacy, and store policies."],
+        ["expires_at", Math.floor(Date.parse(sessionExpiresAt) / 1000)],
+        ["metadata[checkout_id]", reservationId], ["metadata[member_id]", member.id], ["payment_intent_data[metadata][checkout_id]", reservationId],
+        ["line_items[0][price_data][currency]", "usd"], ["line_items[0][price_data][unit_amount]", unitAmountCents],
+        ["line_items[0][price_data][product_data][name]", quote.name], ["line_items[0][price_data][product_data][description]", clean(quote.description, 500) || "Crack Packs collectible product"],
+        ["line_items[0][quantity]", quantity],
+        ["line_items[1][price_data][currency]", "usd"], ["line_items[1][price_data][unit_amount]", Number(selectedRate.amountCents)],
+        ["line_items[1][price_data][product_data][name]", `Shipping - ${clean(selectedRate.carrier, 60)} ${clean(selectedRate.service, 80)}`], ["line_items[1][quantity]", 1]
+      ];
+      if (String(env.STRIPE_AUTOMATIC_TAX || "true") === "true") entries.push(["automatic_tax[enabled]", "true"]);
+      stripeSession = await stripeRequest(env.STRIPE_SECRET_KEY, "/checkout/sessions", entries, `checkout-${reservationId}`);
+    } catch (error) {
+      await env.DB.batch([
+        env.DB.prepare(`UPDATE inventory_items SET quantity=quantity+?,updated_at=? WHERE id=?`).bind(quantity, now(), quote.inventory_item_id),
+        env.DB.prepare(`UPDATE checkout_reservations SET status='failed',updated_at=? WHERE id=?`).bind(now(), reservationId)
+      ]);
+      return response({ error: error.message === "STRIPE_NOT_CONFIGURED" ? "Stripe checkout is not configured." : "Stripe could not open checkout. No payment was created; try again." }, 502, cors);
+    }
+    if (!stripeSession?.id || !/^https:\/\/checkout\.stripe\.com\//.test(stripeSession?.url || "")) {
+      await env.DB.batch([
+        env.DB.prepare(`UPDATE inventory_items SET quantity=quantity+?,updated_at=? WHERE id=?`).bind(quantity, now(), quote.inventory_item_id),
+        env.DB.prepare(`UPDATE checkout_reservations SET status='failed',updated_at=? WHERE id=?`).bind(now(), reservationId)
+      ]);
+      return response({ error: "Stripe returned an invalid checkout session." }, 502, cors);
+    }
+    await env.DB.prepare(`UPDATE checkout_reservations SET status='open',stripe_checkout_session_id=?,expires_at=?,updated_at=? WHERE id=?`).bind(stripeSession.id, new Date(Number(stripeSession.expires_at || 0) * 1000).toISOString(), now(), reservationId).run();
+    await audit(env, request, "stripe_checkout_created", member.id, `${reservationId}|${quote.inventory_item_id}|${rateId}`);
+    return response({ ok: true, checkoutUrl: stripeSession.url, sessionId: stripeSession.id, expiresAt: new Date(Number(stripeSession.expires_at || 0) * 1000).toISOString() }, 201, cors);
+  }
+  if (url.pathname === "/store/checkout/status" && request.method === "GET") {
+    const sessionId = clean(url.searchParams.get("session"), 120);
+    if (!/^cs_[a-z0-9_]+$/i.test(sessionId)) return response({ error: "Invalid checkout session." }, 400, cors);
+    const reservation = await env.DB.prepare(`SELECT * FROM checkout_reservations WHERE stripe_checkout_session_id=? AND member_id=? LIMIT 1`).bind(sessionId, member.id).first();
+    if (!reservation) return response({ error: "Checkout session not found for this account." }, 404, cors);
+    const order = reservation.order_id ? await env.DB.prepare(`${orderSelectSql} WHERE orders.id=? AND orders.member_id=? LIMIT 1`).bind(reservation.order_id, member.id).first() : null;
+    return response({ status: reservation.status, order: order ? orderView(order, env) : null }, 200, cors);
+  }
   if (url.pathname === "/profile/referral/qr" && request.method === "POST") {
     if (!member.device_verified || member.identity_status !== "verified") return response({ error: "Complete account verification before generating a referral QR." }, 403, cors);
     if (isOwnerEmail(member, env)) return response({ error: "Owner referral links and QR codes are generated only in the protected Owner Dashboard." }, 403, cors);
@@ -1743,36 +1973,85 @@ async function route(request, env, cors, ctx) {
     const saved = await env.DB.prepare(`${orderSelectSql} WHERE orders.id=? LIMIT 1`).bind(orderId).first();
     return response({ order: orderView(saved, env) }, 201, cors);
   }
+  const adminOrderTrackingMatch = url.pathname.match(/^\/admin\/orders\/([0-9a-f-]{36})\/tracking$/i);
+  if (adminOrderTrackingMatch && request.method === "POST") {
+    if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
+    const data = await body(request);
+    const trackingCode = clean(data?.trackingCode, 120).replace(/\s+/g, "");
+    const carrier = clean(data?.carrier, 60).replace(/[^a-z0-9]/gi, "");
+    if (!/^[a-z0-9-]{5,120}$/i.test(trackingCode)) return response({ error: "Enter a valid carrier tracking number." }, 400, cors);
+    const order = await env.DB.prepare(`SELECT orders.*,customer.email FROM member_orders orders JOIN members customer ON customer.id=orders.member_id WHERE orders.id=? AND orders.owner_member_id=? LIMIT 1`).bind(adminOrderTrackingMatch[1], member.id).first();
+    if (!order) return response({ error: "Order not found." }, 404, cors);
+    if (order.status === "cancelled" || order.payment_status === "refunded") return response({ error: "Tracking cannot be attached to a cancelled or refunded order." }, 409, cors);
+    const existing = await env.DB.prepare(`SELECT id FROM order_shipments WHERE order_id=?`).bind(order.id).first();
+    if (existing) return response({ error: "This order already has tracking." }, 409, cors);
+    let tracker;
+    try { tracker = await easyPostCreateTracker(env, trackingCode, carrier); }
+    catch { return response({ error: "EasyPost could not create that tracker. Check the carrier and tracking number." }, 502, cors); }
+    const createdAt = now();
+    const initialOrderStatus = tracker.status === "delivered" ? "delivered" : "shipped";
+    await env.DB.batch([
+      env.DB.prepare(`INSERT INTO order_shipments(id,order_id,easypost_tracker_id,mode,carrier,tracking_code,status,status_detail,estimated_delivery_date,carrier_public_url,tracking_details_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id(), order.id, tracker.id, tracker.mode, tracker.carrier, tracker.trackingCode, tracker.status, tracker.statusDetail, tracker.estimatedDeliveryDate, tracker.publicUrl, JSON.stringify(tracker.details), createdAt, createdAt),
+      env.DB.prepare(`UPDATE member_orders SET status=?,updated_at=? WHERE id=?`).bind(initialOrderStatus, createdAt, order.id)
+    ]);
+    const trackingUrl = `${env.SITE_URL}/tracking.html?order=${encodeURIComponent(order.id)}`;
+    ctx.waitUntil(sendOrderNotificationOnce(env, order.id, order.email, "order-shipped", `Your order shipped: ${order.order_number}`, `<h1>Your Crack Packs order shipped</h1><p>Order <strong>${escapeHtml(order.order_number)}</strong> is now with ${escapeHtml(tracker.carrier)}.</p><p><strong>Tracking:</strong> ${escapeHtml(tracker.trackingCode)}</p><p><a href="${escapeHtml(trackingUrl)}">Open private tracking</a></p><p>Questions: <a href="mailto:${escapeHtml(env.SUPPORT_EMAIL || "support@crackpacks.com")}">${escapeHtml(env.SUPPORT_EMAIL || "support@crackpacks.com")}</a></p>`));
+    await audit(env, request, "website_order_tracking_attached", member.id, `${order.id}|${tracker.id}`);
+    const saved = await env.DB.prepare(`${orderSelectSql} WHERE orders.id=? LIMIT 1`).bind(order.id).first();
+    return response({ order: orderView(saved, env) }, 201, cors);
+  }
+  const adminOrderRefundMatch = url.pathname.match(/^\/admin\/orders\/([0-9a-f-]{36})\/refund$/i);
+  if (adminOrderRefundMatch && request.method === "POST") {
+    if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
+    const order = await env.DB.prepare(`SELECT * FROM member_orders WHERE id=? AND owner_member_id=? LIMIT 1`).bind(adminOrderRefundMatch[1], member.id).first();
+    if (!order) return response({ error: "Order not found." }, 404, cors);
+    if (order.channel !== "website" || !order.stripe_payment_intent_id) return response({ error: "Only Stripe website orders can be refunded here." }, 409, cors);
+    if (order.payment_status === "refunded") return response({ error: "This order was already refunded." }, 409, cors);
+    if (order.status !== "processing") return response({ error: "Shipped orders require a return review before refunding. Contact the customer and use Stripe Dashboard after the return is received." }, 409, cors);
+    let refund;
+    try { refund = await stripeRequest(env.STRIPE_SECRET_KEY, "/refunds", [["payment_intent", order.stripe_payment_intent_id], ["metadata[order_id]", order.id]], `refund-${order.id}`); }
+    catch { return response({ error: "Stripe could not issue the refund. No order status was changed." }, 502, cors); }
+    await markOrderRefunded(env, order.stripe_payment_intent_id, String(refund?.id || ""), ctx);
+    await audit(env, request, "website_order_refunded", member.id, `${order.id}|${refund?.id || ""}`);
+    const saved = await env.DB.prepare(`${orderSelectSql} WHERE orders.id=? LIMIT 1`).bind(order.id).first();
+    return response({ order: orderView(saved, env) }, 200, cors);
+  }
   if (url.pathname === "/admin/email" && request.method === "POST") {
     if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
     const contentLength = Number(request.headers.get("Content-Length") || 0);
     if (Number.isFinite(contentLength) && contentLength > 20000) return response({ error: "Email request is too large." }, 413, cors);
     const data = await body(request);
-    const audience = data?.audience === "all" ? "all" : data?.audience === "selected" ? "selected" : "";
+    const audience = data?.audience === "all" ? "all" : data?.audience === "selected" ? "selected" : data?.audience === "tier" ? "tier" : "";
+    const requestedTier = clean(data?.tier, 20);
     const rawSubject = boundedString(data?.subject, 120);
     const rawMessage = boundedString(data?.message, 5000);
     const subject = rawSubject === null ? "" : clean(rawSubject, 120);
     const message = rawMessage === null ? "" : String(rawMessage).trim();
-    if (!audience) return response({ error: "Choose Message All or Select Few." }, 400, cors);
+    if (!audience) return response({ error: "Choose All Members, Select Members, or Referral Tier." }, 400, cors);
+    if (audience === "tier" && !TIERS.some(tier => tier.name === requestedTier)) return response({ error: "Choose a valid referral tier." }, 400, cors);
     if (!subject || subject.length < 3) return response({ error: "Enter an email subject from 3 to 120 characters." }, 400, cors);
     if (!message || message.length < 3) return response({ error: "Enter an email message from 3 to 5,000 characters." }, 400, cors);
     let rows;
-    if (audience === "all") {
-      rows = await env.DB.prepare(`SELECT id,email,first_name,whatnot_username FROM members WHERE email_verified_at IS NOT NULL AND identity_status='verified' AND email<>? ORDER BY created_at LIMIT 101`).bind(normalizeEmail(env.ADMIN_EMAIL)).all();
+    if (audience === "all" || audience === "tier") {
+      rows = await env.DB.prepare(`
+        SELECT member.id,member.email,member.first_name,member.whatnot_username,
+          (SELECT COUNT(*) FROM members invited WHERE invited.referred_by_member_id=member.id AND invited.referral_qualified_at IS NOT NULL AND invited.identity_status='verified') referral_count
+        FROM members member WHERE member.email_verified_at IS NOT NULL AND member.identity_status='verified' AND member.email<>? ORDER BY member.created_at LIMIT 2000
+      `).bind(normalizeEmail(env.ADMIN_EMAIL)).all();
     } else {
       const memberIds = Array.isArray(data?.memberIds) ? [...new Set(data.memberIds.filter(value => typeof value === "string" && /^[0-9a-f-]{36}$/i.test(value)))].slice(0, 101) : [];
       if (!memberIds.length) return response({ error: "Add at least one member before sending." }, 400, cors);
       const placeholders = memberIds.map(() => "?").join(",");
       rows = await env.DB.prepare(`SELECT id,email,first_name,whatnot_username FROM members WHERE id IN (${placeholders}) AND email_verified_at IS NOT NULL AND identity_status='verified' AND email<>?`).bind(...memberIds, normalizeEmail(env.ADMIN_EMAIL)).all();
     }
-    const recipients = rows.results || [];
+    const recipients = (rows.results || []).filter(recipient => audience !== "tier" || referralTierForCount(recipient.referral_count).name === requestedTier);
     if (!recipients.length) return response({ error: "No verified member recipients matched this message." }, 400, cors);
-    if (recipients.length > 100) return response({ error: "Message All currently supports up to 100 verified members per send. Use Select Few for a smaller group." }, 400, cors);
     const sendId = id();
     try {
-      await sendMemberEmailBatch(env, recipients, subject, message, sendId);
+      for (let index = 0; index < recipients.length; index += 100) await sendMemberEmailBatch(env, recipients.slice(index, index + 100), subject, message, `${sendId}-${Math.floor(index / 100)}`);
     } catch (error) {
       if (error.message === "MEMBER_EMAIL_NOT_CONFIGURED") return response({ error: "Member email is not configured. Add the existing RESEND_API_KEY Worker secret." }, 503, cors);
+      if (error.message === "BUSINESS_ADDRESS_NOT_CONFIGURED") return response({ error: "Add BUSINESS_POSTAL_ADDRESS before sending member announcements." }, 503, cors);
       return response({ error: "The member email batch could not be queued. No send was confirmed; try again." }, 502, cors);
     }
     await audit(env, request, "member_email_sent", member.id, `${sendId}|audience:${audience}|count:${recipients.length}|subject:${subject.slice(0, 80)}`);

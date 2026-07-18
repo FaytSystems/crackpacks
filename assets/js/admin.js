@@ -30,6 +30,7 @@
   let legacyClaimsState = [];
   let legacySummaryState = { total: 0, issued: 0, requested: 0, redeemed: 0, expired: 0 };
   let emailAudience = "";
+  let emailTier = "";
   const selectedEmailMembers = new Map();
   let emailMemberSearchTimer = null;
   let campaignShareState = null;
@@ -1343,7 +1344,7 @@
   function syncEmailComposer() {
     const count = selectedEmailMembers.size;
     const summary = $("[data-email-recipient-summary]");
-    summary.textContent = emailAudience === "all" ? "Audience: every verified Crack Packs member (up to 100 per send)." : emailAudience === "selected" ? `Audience: ${count} selected member${count === 1 ? "" : "s"}.` : "No audience selected.";
+    summary.textContent = emailAudience === "all" ? "Audience: every verified Crack Packs member." : emailAudience === "selected" ? `Audience: ${count} selected member${count === 1 ? "" : "s"}.` : emailAudience === "tier" ? `Audience: verified members currently in the ${emailTier} referral tier.` : "No audience selected.";
     const chips = $("[data-email-selected-chips]"); chips.replaceChildren();
     if (emailAudience === "selected") selectedEmailMembers.forEach(member => {
       const chip = document.createElement("button"); chip.type = "button"; chip.className = "email-recipient-chip"; chip.textContent = `${member.whatnotUsername ? `@${member.whatnotUsername}` : member.email} ×`;
@@ -1351,7 +1352,7 @@
       chip.addEventListener("click", () => { selectedEmailMembers.delete(member.id); syncEmailComposer(); });
       chips.append(chip);
     });
-    $("[data-email-send]").disabled = !emailAudience || (emailAudience === "selected" && !count);
+    $("[data-email-send]").disabled = !emailAudience || (emailAudience === "selected" && !count) || (emailAudience === "tier" && !emailTier);
     $("[data-email-selection-count]").textContent = `${count} selected`;
   }
   async function searchEmailMembers() {
@@ -1381,7 +1382,7 @@
   }
   function closeEmailMemberSelection() { $("[data-email-select-modal]").hidden = true; }
   function resetMasterEmail() {
-    emailAudience = ""; selectedEmailMembers.clear(); $("[data-master-email-form]").reset(); setMasterEmailStatus(""); syncEmailComposer();
+    emailAudience = ""; emailTier = ""; selectedEmailMembers.clear(); $("[data-master-email-form]").reset(); $("[data-email-tier]").value = ""; setMasterEmailStatus(""); syncEmailComposer();
   }
 
   function setTrackingStatus(message = "", kind = "") {
@@ -1431,10 +1432,37 @@
       const items = document.createElement("ul"); items.className = "admin-order-items";
       (Array.isArray(order.items) ? order.items : []).forEach(item => { const li = document.createElement("li"); li.textContent = `${Number(item.quantity || 1)}× ${item.name}`; items.append(li); });
       const tracking = document.createElement("div"); tracking.className = "admin-order-tracking";
+      if (order.shippingAddress?.street1) {
+        const destination = document.createElement("address"); destination.className = "admin-order-address";
+        destination.textContent = [order.shippingAddress.name, order.shippingAddress.street1, order.shippingAddress.street2, `${order.shippingAddress.city || ""}, ${order.shippingAddress.state || ""} ${order.shippingAddress.postalCode || ""}`.trim(), order.shippingAddress.country].filter(Boolean).join("\n");
+        tracking.append(destination);
+      }
       const carrier = document.createElement("strong"); carrier.textContent = `${order.tracking?.carrier || "Carrier"} · ${order.tracking?.trackingCode || "No tracking"}`;
       const state = document.createElement("span"); state.textContent = `Latest: ${adminOrderStatusLabel(order.tracking?.status)}${order.tracking?.mode === "test" ? " · TEST" : ""}`;
       tracking.append(carrier, state);
       if (order.tracking?.url) { const link = document.createElement("a"); link.className = "btn btn-outline btn-small"; link.href = order.tracking.url; link.target = "_blank"; link.rel = "noopener"; link.textContent = "Open Tracking"; tracking.append(link); }
+      if (!order.tracking && order.status === "processing") {
+        carrier.textContent = "Manual label pending";
+        state.textContent = order.shippingService || "Shipping service selected at checkout";
+        const attach = document.createElement("form"); attach.className = "admin-order-attach-tracking";
+        attach.innerHTML = `<label>Carrier <input name="carrier" maxlength="60" placeholder="USPS, UPS, FedEx"></label><label>Tracking number <input name="trackingCode" maxlength="120" required></label><button class="btn btn-primary btn-small" type="submit">Attach Tracking</button>`;
+        attach.addEventListener("submit", async event => {
+          event.preventDefault(); const values = new FormData(attach); const button = attach.querySelector("button"); button.disabled = true; button.textContent = "Attaching...";
+          try { await request(`/admin/orders/${encodeURIComponent(order.id)}/tracking`, { method: "POST", body: JSON.stringify({ carrier: String(values.get("carrier") || ""), trackingCode: String(values.get("trackingCode") || "") }) }); setTrackingStatus(`${order.orderNumber} tracking attached and the member was emailed from orders@crackpacks.com.`, "success"); await refreshAdminOrders(); }
+          catch (error) { setTrackingStatus(error.message, "error"); button.disabled = false; button.textContent = "Attach Tracking"; }
+        });
+        tracking.append(attach);
+      }
+      if (order.channel === "website" && order.paymentStatus === "paid" && order.status === "processing") {
+        const refund = document.createElement("button"); refund.type = "button"; refund.className = "btn btn-outline btn-small admin-order-refund"; refund.textContent = "Cancel + Full Refund";
+        refund.addEventListener("click", async () => {
+          if (!confirm(`Issue a full Stripe refund for ${order.orderNumber}? This cannot be undone.`)) return;
+          refund.disabled = true; refund.textContent = "Refunding...";
+          try { await request(`/admin/orders/${encodeURIComponent(order.id)}/refund`, { method: "POST", body: "{}" }); setTrackingStatus(`${order.orderNumber} was refunded and the member was notified.`, "success"); await refreshAdminOrders(); }
+          catch (error) { setTrackingStatus(error.message, "error"); refund.disabled = false; refund.textContent = "Cancel + Full Refund"; }
+        });
+        tracking.append(refund);
+      }
       card.append(head, items, tracking); container.append(card);
     });
   }
@@ -1555,6 +1583,19 @@
   });
   $("[data-email-all]").addEventListener("click", () => { emailAudience = "all"; selectedEmailMembers.clear(); syncEmailComposer(); setMasterEmailStatus("Message All selected. Review your subject and message before sending.", "success"); });
   $("[data-email-select-open]").addEventListener("click", openEmailMemberSelection);
+  $("[data-email-tier-use]").addEventListener("click", () => {
+    emailTier = String($("[data-email-tier]").value || "");
+    if (!emailTier) { setMasterEmailStatus("Choose a referral tier first.", "error"); return; }
+    emailAudience = "tier"; selectedEmailMembers.clear(); syncEmailComposer(); setMasterEmailStatus(`${emailTier} tier selected.`, "success");
+  });
+  $("[data-email-paste-reward]").addEventListener("click", () => {
+    const campaign = generatedCampaign || campaignListState.find(item => pick(item, "isActive", "is_active") !== false) || campaignListState[0];
+    const rewardUrl = String(pick(campaign, "url") || "");
+    if (!rewardUrl) { setMasterEmailStatus("Generate a reward in Create Code first.", "error"); return; }
+    const textarea = $("[data-master-email-form] textarea[name='message']");
+    const prefix = textarea.value.trim() ? `${textarea.value.trim()}\n\n` : "Thank you for being part of the Crack Packs crew. Here is a reward made for our collectors:\n\n";
+    textarea.value = `${prefix}${rewardUrl}`.slice(0, 5000); textarea.focus(); setMasterEmailStatus("Latest Code Generator reward link pasted. Review the message before sending.", "success");
+  });
   document.querySelectorAll("[data-email-select-close]").forEach(button => button.addEventListener("click", closeEmailMemberSelection));
   $("[data-email-select-finished]").addEventListener("click", () => { closeEmailMemberSelection(); syncEmailComposer(); $("[data-master-email-form] input[name='subject']").focus(); });
   $("[data-email-member-search]").addEventListener("input", () => { clearTimeout(emailMemberSearchTimer); emailMemberSearchTimer = setTimeout(() => searchEmailMembers().catch(error => showStatus(error.message, "error")), 220); });
@@ -1562,16 +1603,16 @@
   $("[data-master-email-form]").addEventListener("submit", async event => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const payload = { audience: emailAudience, subject: String(form.get("subject") || "").trim(), message: String(form.get("message") || "").trim() };
+    const payload = { audience: emailAudience, tier: emailTier, subject: String(form.get("subject") || "").trim(), message: String(form.get("message") || "").trim() };
     if (emailAudience === "selected") payload.memberIds = [...selectedEmailMembers.keys()];
-    const audienceLabel = emailAudience === "all" ? "every verified member" : `${selectedEmailMembers.size} selected member${selectedEmailMembers.size === 1 ? "" : "s"}`;
-    if (!emailAudience || (emailAudience === "selected" && !selectedEmailMembers.size)) { setMasterEmailStatus("Choose Message All or Select Few first.", "error"); return; }
+    const audienceLabel = emailAudience === "all" ? "every verified member" : emailAudience === "tier" ? `the ${emailTier} referral tier` : `${selectedEmailMembers.size} selected member${selectedEmailMembers.size === 1 ? "" : "s"}`;
+    if (!emailAudience || (emailAudience === "selected" && !selectedEmailMembers.size) || (emailAudience === "tier" && !emailTier)) { setMasterEmailStatus("Choose All Members, Select Members, or a Referral Tier first.", "error"); return; }
     if (!confirm(`Send \"${payload.subject}\" to ${audienceLabel}?`)) return;
     const button = $("[data-email-send]"); button.disabled = true; button.textContent = "Sending..."; setMasterEmailStatus("");
     try {
       const data = await request("/admin/email", { method: "POST", body: JSON.stringify(payload) });
       setMasterEmailStatus(`Email queued for ${Number(data.recipientCount || 0)} member${Number(data.recipientCount || 0) === 1 ? "" : "s"}.`, "success");
-      event.currentTarget.reset(); emailAudience = ""; selectedEmailMembers.clear(); syncEmailComposer();
+      event.currentTarget.reset(); emailAudience = ""; emailTier = ""; selectedEmailMembers.clear(); $("[data-email-tier]").value = ""; syncEmailComposer();
     } catch (error) { setMasterEmailStatus(error.message, "error"); }
     finally { button.textContent = "Send"; syncEmailComposer(); }
   });

@@ -1,5 +1,42 @@
 # Crack Packs Rewards setup
 
+## Store checkout v4 production requirements
+
+The store remains fail-closed until both `STORE_COMING_SOON=false` and
+`STORE_CHECKOUT_ENABLED=true` are deployed. Keep both disabled until every
+sale item has a verified quantity, product price, packed weight, packed
+dimensions, and (for international sale) origin country and HS code.
+
+Required Worker secrets:
+
+- `STRIPE_SECRET_KEY` — Stripe production secret key.
+- `STRIPE_WEBHOOK_SECRET` — signing secret for `https://rewards-api.crackpacks.com/webhooks/stripe`.
+- `EASYPOST_API_KEY` and `EASYPOST_WEBHOOK_SECRET` — live rates and tracking.
+- `SHIP_FROM_ADDRESS_JSON` — real ship-from name, address, phone, and email.
+- `RESEND_API_KEY` — verified `crackpacks.com` sending domain.
+- `BUSINESS_POSTAL_ADDRESS` — valid postal address shown in member announcements.
+
+Subscribe the Stripe webhook to `checkout.session.completed`,
+`checkout.session.async_payment_succeeded`, `checkout.session.expired`, and
+`charge.refunded`.
+
+Stripe public business links:
+
+- Terms: `https://crackpacks.com/terms.html`
+- Privacy: `https://crackpacks.com/privacy.html`
+- Shipping: `https://crackpacks.com/shipping-policy.html`
+- Returns: `https://crackpacks.com/returns-policy.html`
+- Support: `support@crackpacks.com`
+
+Order, shipping, delivery, and refund mail is sent from
+`orders@crackpacks.com`. Code Generator rewards and selected-member messages
+use `rewards@crackpacks.com`. New paid-order notices go to
+`robertreese@faytsystems.com`.
+
+Label purchase remains manual. Payment creates the order and preserves the
+EasyPost shipment/rate choice; the owner buys the label separately and attaches
+its tracking number in the Master Dashboard.
+
 The website UI and Worker backend are implemented, but the backend must be configured before real customers use it.
 
 ## Security boundary
