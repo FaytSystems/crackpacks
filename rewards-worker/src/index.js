@@ -4,7 +4,7 @@ import { campaignWeekAt, parseCampaignExpiryHours } from "./campaign-time.js";
 import { calculateChannelPricing, channelPricingErrors } from "./channel-pricing.js";
 import { sanitizeEasyPostTracker, verifyEasyPostWebhook } from "./easypost-tracking.js";
 
-const VERSION = "3.3.1";
+const VERSION = "3.3.3";
 const CAMPAIGN_REWARD_TYPES = new Set(["percent", "free_shipping", "pick_a_pack", "pack_draft", "free_single", "product"]);
 const MAX_CAMPAIGN_REDEMPTIONS = 500;
 const STORE_CURRENCIES = new Set(["USD", "CAD", "EUR", "GBP", "AUD", "NZD", "JPY", "CHF", "SEK", "NOK", "DKK", "PLN", "CZK", "HUF", "RON"]);
@@ -1664,7 +1664,7 @@ async function route(request, env, cors, ctx) {
   if (url.pathname === "/admin/members" && request.method === "GET") {
     if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
     const query = clean(url.searchParams.get("q"), 80).toLowerCase().replace(/^@+/, "").replace(/[^a-z0-9@._+ -]/g, "");
-    const includeOwner = url.searchParams.get("includeOwner") === "1";
+    const includeOwner = url.searchParams.get("excludeOwner") !== "1";
     const from = /^\d{4}-\d{2}-\d{2}$/.test(url.searchParams.get("from") || "") ? `${url.searchParams.get("from")}T00:00:00.000Z` : "";
     const to = /^\d{4}-\d{2}-\d{2}$/.test(url.searchParams.get("to") || "") ? `${url.searchParams.get("to")}T23:59:59.999Z` : "";
     const search = `%${query}%`;
@@ -1715,7 +1715,7 @@ async function route(request, env, cors, ctx) {
     if (!orderNumber || !/^[a-z0-9._-]+$/i.test(orderNumber)) return response({ error: "Order number can use letters, numbers, dots, dashes, and underscores." }, 400, cors);
     if (!items) return response({ error: "Add 1 to 50 purchased items with valid quantities." }, 400, cors);
     if (!/^[a-z0-9-]{5,120}$/i.test(trackingCode)) return response({ error: "Enter a valid carrier tracking number." }, 400, cors);
-    const customer = await env.DB.prepare(`SELECT id FROM members WHERE id=? AND email_verified_at IS NOT NULL AND identity_status='verified' AND id<>?`).bind(memberId, member.id).first();
+    const customer = await env.DB.prepare(`SELECT id FROM members WHERE id=? AND email_verified_at IS NOT NULL AND identity_status='verified'`).bind(memberId).first();
     if (!customer) return response({ error: "That verified member was not found." }, 404, cors);
     const duplicate = await env.DB.prepare(`SELECT id FROM member_orders WHERE order_number=?`).bind(orderNumber).first();
     if (duplicate) return response({ error: "That order number is already in the dashboard." }, 409, cors);

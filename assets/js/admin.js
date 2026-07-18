@@ -1356,7 +1356,7 @@
   }
   async function searchEmailMembers() {
     const query = encodeURIComponent($("[data-email-member-search]").value.trim());
-    const data = await request(`/admin/members?q=${query}`);
+    const data = await request(`/admin/members?q=${query}&excludeOwner=1`);
     const container = $("[data-email-member-results]"); container.replaceChildren();
     const members = Array.isArray(data.members) ? data.members : [];
     if (!members.length) { const empty = document.createElement("div"); empty.className = "campaign-empty"; empty.textContent = "No verified members match that search."; container.append(empty); return; }
