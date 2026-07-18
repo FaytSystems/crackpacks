@@ -4,6 +4,7 @@
   const config = window.CRACKPACKS_CONFIG || {};
   const api = String(config.rewardsApiUrl || "").replace(/\/$/, "");
   const qs = new URLSearchParams(location.search);
+  const requestedEmail = String(qs.get("email") || "").trim().slice(0, 254);
   const referralCode = (qs.get("ref") || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 16);
   const ownerReferralToken = String(qs.get("owner_ref") || "").slice(0, 80);
   const hasAttachedReferral = Boolean(referralCode || ownerReferralToken);
@@ -105,6 +106,10 @@
     });
   });
   setAuthMode(authMode);
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(requestedEmail)) {
+    const emailInput = $("[data-request-panel] input[name='email']");
+    if (emailInput) emailInput.value = requestedEmail;
+  }
   const turnstileNode = $("[data-turnstile]");
   if (turnstileNode && config.turnstileSiteKey) {
     window.cpTurnstileReady = () => { turnstileWidgetId = window.turnstile.render(turnstileNode, {

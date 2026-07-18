@@ -404,8 +404,12 @@
 
   document.querySelector("[data-newsletter]")?.addEventListener("submit", event => {
     event.preventDefault();
-    const message = event.currentTarget.querySelector("[data-form-message]");
-    if (message) message.textContent = config.newsletterMessage || "Signup form is ready to connect.";
+    const form = event.currentTarget;
+    const email = form.querySelector('input[type="email"]')?.value.trim() || "";
+    const target = new URL("referral.html", window.location.href);
+    target.searchParams.set("mode", "signup");
+    if (email) target.searchParams.set("email", email);
+    window.location.assign(target.href);
   });
 
   const revealItems = [...document.querySelectorAll(".reveal")];
