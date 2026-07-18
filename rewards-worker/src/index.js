@@ -4,7 +4,7 @@ import { campaignWeekAt, parseCampaignExpiryHours } from "./campaign-time.js";
 import { calculateChannelPricing, channelPricingErrors } from "./channel-pricing.js";
 import { sanitizeEasyPostTracker, verifyEasyPostWebhook } from "./easypost-tracking.js";
 
-const VERSION = "3.3.0";
+const VERSION = "3.3.1";
 const CAMPAIGN_REWARD_TYPES = new Set(["percent", "free_shipping", "pick_a_pack", "pack_draft", "free_single", "product"]);
 const MAX_CAMPAIGN_REDEMPTIONS = 500;
 const STORE_CURRENCIES = new Set(["USD", "CAD", "EUR", "GBP", "AUD", "NZD", "JPY", "CHF", "SEK", "NOK", "DKK", "PLN", "CZK", "HUF", "RON"]);
@@ -1664,18 +1664,19 @@ async function route(request, env, cors, ctx) {
   if (url.pathname === "/admin/members" && request.method === "GET") {
     if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
     const query = clean(url.searchParams.get("q"), 80).toLowerCase().replace(/^@+/, "").replace(/[^a-z0-9@._+ -]/g, "");
+    const includeOwner = url.searchParams.get("includeOwner") === "1";
     const from = /^\d{4}-\d{2}-\d{2}$/.test(url.searchParams.get("from") || "") ? `${url.searchParams.get("from")}T00:00:00.000Z` : "";
     const to = /^\d{4}-\d{2}-\d{2}$/.test(url.searchParams.get("to") || "") ? `${url.searchParams.get("to")}T23:59:59.999Z` : "";
     const search = `%${query}%`;
     const rows = await env.DB.prepare(`
       SELECT id,email,first_name,last_name,whatnot_username,created_at,referral_qualified_at
       FROM members
-      WHERE email_verified_at IS NOT NULL AND identity_status='verified' AND email<>?
+      WHERE email_verified_at IS NOT NULL AND identity_status='verified' AND (?=1 OR email<>?)
         AND (?='' OR created_at>=?) AND (?='' OR created_at<=?)
         AND (?='' OR lower(email) LIKE ? OR lower(COALESCE(first_name,'') || ' ' || COALESCE(last_name,'')) LIKE ? OR lower(COALESCE(whatnot_username,'')) LIKE ?)
       ORDER BY created_at DESC LIMIT 250
-    `).bind(normalizeEmail(env.ADMIN_EMAIL), from, from, to, to, query, search, search, search).all();
-    return response({ members: (rows.results || []).map(row => ({ id: row.id, email: row.email, firstName: row.first_name || "", lastName: row.last_name || "", whatnotUsername: row.whatnot_username || "", createdAt: row.created_at, qualifiedAt: row.referral_qualified_at || null })) }, 200, cors);
+    `).bind(includeOwner ? 1 : 0, normalizeEmail(env.ADMIN_EMAIL), from, from, to, to, query, search, search, search).all();
+    return response({ members: (rows.results || []).map(row => ({ id: row.id, email: row.email, firstName: row.first_name || "", lastName: row.last_name || "", whatnotUsername: row.whatnot_username || "", createdAt: row.created_at, qualifiedAt: row.referral_qualified_at || null, isOwner: normalizeEmail(row.email) === normalizeEmail(env.ADMIN_EMAIL) })) }, 200, cors);
   }
   if (url.pathname === "/admin/orders" && request.method === "GET") {
     if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);

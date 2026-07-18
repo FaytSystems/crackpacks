@@ -84,6 +84,9 @@
     if (!response.ok) {
       const error = new Error(payload.error || "The owner dashboard request failed.");
       error.status = response.status;
+      if (adminToken && path.startsWith("/admin/") && !path.startsWith("/admin/auth/") && (response.status === 401 || response.status === 403)) {
+        requireFreshOwnerVerification();
+      }
       throw error;
     }
     return payload;
@@ -1386,6 +1389,11 @@
     node.textContent = message;
     node.dataset.kind = kind;
   }
+  function showTrackingListError(selector, error) {
+    const container = $(selector); container.replaceChildren();
+    const message = document.createElement("div"); message.className = "campaign-empty"; message.textContent = error.message; container.append(message);
+    setTrackingStatus(error.message, "error");
+  }
   function selectTrackingMember(member) {
     selectedTrackingMember = member;
     $("[data-tracking-member-id]").value = member?.id || "";
@@ -1397,21 +1405,23 @@
   async function searchTrackingMembers() {
     if (!memberToken || !adminToken) return;
     const query = encodeURIComponent($("[data-tracking-member-search]").value.trim());
-    const data = await request(`/admin/members?q=${query}`);
     const container = $("[data-tracking-member-results]"); container.replaceChildren();
+    const loading = document.createElement("div"); loading.className = "campaign-empty"; loading.textContent = "Searching verified members..."; container.append(loading);
+    const data = await request(`/admin/members?q=${query}&includeOwner=1`);
+    container.replaceChildren();
     const members = Array.isArray(data.members) ? data.members.slice(0, 12) : [];
     if (!members.length) { const empty = document.createElement("div"); empty.className = "campaign-empty"; empty.textContent = "No verified members match that search."; container.append(empty); return; }
     members.forEach(member => {
       const button = document.createElement("button"); button.type = "button"; button.className = "tracking-member-option";
       const name = document.createElement("strong"); name.textContent = `${member.firstName || ""} ${member.lastName || ""}`.trim() || member.email;
-      const detail = document.createElement("span"); detail.textContent = [member.whatnotUsername ? `@${member.whatnotUsername}` : "", member.email].filter(Boolean).join(" · ");
+      const detail = document.createElement("span"); detail.textContent = [member.isOwner ? "OWNER / TEST ACCOUNT" : "", member.whatnotUsername ? `@${member.whatnotUsername}` : "", member.email].filter(Boolean).join(" · ");
       button.append(name, detail); button.addEventListener("click", () => selectTrackingMember(member)); container.append(button);
     });
   }
   function adminOrderStatusLabel(value) { return String(value || "unknown").replace(/_/g, " "); }
   function renderAdminOrders(orders) {
     const container = $("[data-admin-order-list]"); container.replaceChildren();
-    if (!orders.length) { const empty = document.createElement("div"); empty.className = "campaign-empty"; empty.textContent = "No tracked member orders match this search."; container.append(empty); return; }
+    if (!orders.length) { const empty = document.createElement("div"); empty.className = "campaign-empty"; empty.textContent = $("[data-tracking-order-search]").value.trim() ? "No tracked member orders match this search." : "No orders exist yet. Create the first order with the form on the left, then it will appear here."; container.append(empty); return; }
     orders.forEach(order => {
       const card = document.createElement("article"); card.className = "admin-order-card";
       const head = document.createElement("div"); head.className = "admin-order-head";
@@ -1431,6 +1441,8 @@
   async function refreshAdminOrders() {
     if (!memberToken || !adminToken) return;
     const query = encodeURIComponent($("[data-tracking-order-search]").value.trim());
+    const container = $("[data-admin-order-list]"); container.replaceChildren();
+    const loading = document.createElement("div"); loading.className = "campaign-empty"; loading.textContent = "Searching orders..."; container.append(loading);
     const data = await request(`/admin/orders?q=${query}`);
     renderAdminOrders(Array.isArray(data.orders) ? data.orders : []);
   }
@@ -1488,8 +1500,12 @@
     inventorySearchTimer = setTimeout(() => refreshInventory().catch(error => setInventoryStatus(error.message, "error")), 220);
   });
   $("[data-inventory-status-filter]").addEventListener("change", renderInventory);
-  $("[data-tracking-member-search]").addEventListener("input", () => { clearTimeout(trackingMemberSearchTimer); trackingMemberSearchTimer = setTimeout(() => searchTrackingMembers().catch(error => setTrackingStatus(error.message, "error")), 220); });
-  $("[data-tracking-order-search]").addEventListener("input", () => { clearTimeout(trackingOrderSearchTimer); trackingOrderSearchTimer = setTimeout(() => refreshAdminOrders().catch(error => setTrackingStatus(error.message, "error")), 220); });
+  $("[data-tracking-member-search]").addEventListener("input", () => { clearTimeout(trackingMemberSearchTimer); trackingMemberSearchTimer = setTimeout(() => searchTrackingMembers().catch(error => showTrackingListError("[data-tracking-member-results]", error)), 220); });
+  $("[data-tracking-member-search]").addEventListener("keydown", event => { if (event.key !== "Enter") return; event.preventDefault(); clearTimeout(trackingMemberSearchTimer); searchTrackingMembers().catch(error => showTrackingListError("[data-tracking-member-results]", error)); });
+  $("[data-tracking-member-search-button]").addEventListener("click", () => searchTrackingMembers().catch(error => showTrackingListError("[data-tracking-member-results]", error)));
+  $("[data-tracking-order-search]").addEventListener("input", () => { clearTimeout(trackingOrderSearchTimer); trackingOrderSearchTimer = setTimeout(() => refreshAdminOrders().catch(error => showTrackingListError("[data-admin-order-list]", error)), 220); });
+  $("[data-tracking-order-search]").addEventListener("keydown", event => { if (event.key !== "Enter") return; event.preventDefault(); clearTimeout(trackingOrderSearchTimer); refreshAdminOrders().catch(error => showTrackingListError("[data-admin-order-list]", error)); });
+  $("[data-tracking-order-search-button]").addEventListener("click", () => refreshAdminOrders().catch(error => showTrackingListError("[data-admin-order-list]", error)));
   $("[data-tracking-refresh]").addEventListener("click", () => refreshAdminOrders().then(() => setTrackingStatus("Orders refreshed.", "success")).catch(error => setTrackingStatus(error.message, "error")));
   $("[data-tracking-form]").addEventListener("submit", async event => {
     event.preventDefault();

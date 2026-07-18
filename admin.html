@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.6.1">
   <link rel="stylesheet" href="assets/css/referral.css?v=2.6.0">
   <link rel="stylesheet" href="assets/css/rewards-modal.css?v=2.1.0">
-  <link rel="stylesheet" href="assets/css/admin.css?v=3.3.0">
+  <link rel="stylesheet" href="assets/css/admin.css?v=3.3.1">
 </head>
 <body>
   <header class="site-header">
@@ -228,7 +228,7 @@
           </div>
           <div class="tracking-workspace-grid">
             <form class="reward-card admin-tracking-form" data-tracking-form>
-              <label>Find member<input type="search" data-tracking-member-search placeholder="Guess email, name, or Whatnot username" autocomplete="off"></label>
+              <label>Find member<span class="tracking-search-row"><input type="search" data-tracking-member-search placeholder="Guess email, name, or Whatnot username" autocomplete="off"><button class="btn btn-outline btn-small" type="button" data-tracking-member-search-button>Search</button></span></label>
               <div class="tracking-member-results" data-tracking-member-results aria-live="polite"></div>
               <div class="tracking-member-selected" data-tracking-member-selected>No member selected.</div>
               <input type="hidden" name="memberId" data-tracking-member-id>
@@ -246,7 +246,7 @@
               <p class="fine-print">Test mode examples: EZ1000000001 (pre-transit), EZ2000000002 (in transit), or EZ4000000004 (delivered). Test trackers do not buy labels.</p>
             </form>
             <div>
-              <label class="tracking-order-search">Search Orders<input type="search" data-tracking-order-search placeholder="Order, member, username, or tracking number" autocomplete="off"></label>
+              <label class="tracking-order-search">Search Orders<span class="tracking-search-row"><input type="search" data-tracking-order-search placeholder="Order, member, username, or tracking number" autocomplete="off"><button class="btn btn-outline btn-small" type="button" data-tracking-order-search-button>Search</button></span></label>
               <div class="admin-order-list" data-admin-order-list aria-live="polite"></div>
             </div>
           </div>
@@ -458,6 +458,6 @@
 
   <script src="assets/js/config.js?v=3.0.0"></script>
   <script src="assets/js/nav-profile.js?v=2.6.1"></script>
-  <script src="assets/js/admin.js?v=3.3.0"></script>
+  <script src="assets/js/admin.js?v=3.3.1"></script>
 </body>
 </html>
