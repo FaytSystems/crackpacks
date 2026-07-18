@@ -35,7 +35,7 @@ Set these non-secret values in `wrangler.jsonc`:
 
 - `FACEBOOK_PAGE_ID`: the Page `id` returned by `/me/accounts`
 - `FACEBOOK_GRAPH_VERSION`: currently `v25.0`
-- `WHATNOT_LIVE_URL`: `https://www.whatnot.com/user/crack_packs`
+- `WHATNOT_LIVE_URL`: `https://whatnot.com/invite/crackpacksdotcom`
 - `FACEBOOK_AUTO_POST_ENABLED`: change to `"true"` only after setup
 
 Also put the public Facebook Page URL in `assets/js/config.js` as

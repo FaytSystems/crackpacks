@@ -8,6 +8,17 @@
   const ownerReferralToken = String(qs.get("owner_ref") || "").slice(0, 80);
   const hasAttachedReferral = Boolean(referralCode || ownerReferralToken);
   const verificationToken = String(qs.get("verify") || "");
+  const normalizeOfferToken = value => {
+    const candidate = String(value || "").trim().toUpperCase().slice(0, 64);
+    return /^OFR[A-HJ-NP-Z2-9]{32}$/.test(candidate) ? candidate : "";
+  };
+  const queryOfferToken = normalizeOfferToken(qs.get("offer"));
+  const malformedOfferToken = qs.has("offer") && !queryOfferToken;
+  const storedOfferToken = normalizeOfferToken(localStorage.getItem("cp_campaign_offer_token"));
+  if (!storedOfferToken && localStorage.getItem("cp_campaign_offer_token")) localStorage.removeItem("cp_campaign_offer_token");
+  if (qs.has("offer") && !queryOfferToken) localStorage.removeItem("cp_campaign_offer_token");
+  let offerToken = qs.has("offer") ? queryOfferToken : storedOfferToken;
+  if (queryOfferToken) localStorage.setItem("cp_campaign_offer_token", queryOfferToken);
   const $ = selector => document.querySelector(selector);
   const status = $("[data-app-status]");
   const showStatus = (message = "", kind = "") => { status.textContent = message; status.dataset.kind = kind; };
@@ -23,6 +34,10 @@
   let referralValidationPromise = null;
   let personalQrObjectUrl = "";
   let personalQrInviteUrl = "";
+  let activeOffer = null;
+  let offerClaimBlocked = false;
+  let campaignClockOffset = 0;
+  let campaignCountdownTimer = null;
   const authModeCopy = {
     signin: {
       kicker: "Returning collector",
@@ -162,7 +177,12 @@
       headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(options.headers || {}) }
     });
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || "The rewards service could not complete that request.");
+    if (!response.ok) {
+      const error = new Error(payload.error || "The rewards service could not complete that request.");
+      error.status = response.status;
+      error.payload = payload;
+      throw error;
+    }
     return payload;
   };
   const requestBlob = async (path, inviteUrl) => {
@@ -178,6 +198,159 @@
     }
     return response.blob();
   };
+
+  const pick = (object, ...keys) => {
+    for (const key of keys) if (object?.[key] !== undefined && object?.[key] !== null) return object[key];
+    return null;
+  };
+  const campaignRewardDescription = campaign => {
+    const supplied = pick(campaign, "rewardDescription", "reward_description", "description");
+    if (supplied) return String(supplied);
+    const type = String(pick(campaign, "rewardType", "reward_type") || "");
+    if (type === "percent") return `${Number(pick(campaign, "percent") || 0)}% off`;
+    if (type === "free_shipping") return "Free shipping";
+    if (type === "pick_a_pack") return "Pick a Pack";
+    if (type === "pack_draft") return "Choose a Pack #";
+    return "Campaign reward";
+  };
+  const campaignCountdownLabel = milliseconds => {
+    const totalMinutes = Math.max(0, Math.ceil(milliseconds / 60000));
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    return hours ? `${hours}h ${minutes}m remaining` : `${minutes}m remaining`;
+  };
+  function clearStoredOffer() {
+    localStorage.removeItem("cp_campaign_offer_token");
+    offerToken = "";
+  }
+  function updateCampaignCountdowns() {
+    const serverTime = Date.now() + campaignClockOffset;
+    document.querySelectorAll("[data-live-campaign-expiry]").forEach(node => {
+      const expiresAt = node.dataset.liveCampaignExpiry;
+      const remaining = Date.parse(expiresAt) - serverTime;
+      node.textContent = remaining <= 0 ? "Expired" : campaignCountdownLabel(remaining);
+    });
+    if (activeOffer) {
+      const expiresAt = String(pick(activeOffer, "expiresAt", "expires_at") || "");
+      if (expiresAt && Date.parse(expiresAt) <= serverTime) {
+        $("[data-campaign-offer]").dataset.state = "expired";
+        $("[data-offer-state]").textContent = "EXPIRED";
+        $("[data-offer-claim]").disabled = true;
+        $("[data-offer-guidance]").textContent = "This campaign has expired and can no longer be claimed.";
+        $("[data-offer-guidance]").dataset.kind = "error";
+        offerClaimBlocked = true;
+        clearStoredOffer();
+      }
+    }
+  }
+  function startCampaignCountdowns() {
+    clearInterval(campaignCountdownTimer);
+    updateCampaignCountdowns();
+    campaignCountdownTimer = setInterval(updateCampaignCountdowns, 30000);
+  }
+  function availablePackNumbers(campaign) {
+    const supplied = pick(campaign, "availablePacks", "available_packs", "availablePackNumbers", "available_pack_numbers");
+    if (Array.isArray(supplied)) return supplied.map(Number).filter(number => Number.isInteger(number) && number > 0);
+    const count = Math.min(500, Math.max(0, Number(pick(campaign, "packCount", "pack_count") || 0)));
+    return Array.from({ length: count }, (_, index) => index + 1);
+  }
+  function syncOfferClaimAvailability() {
+    if (!activeOffer || offerClaimBlocked) return;
+    const button = $("[data-offer-claim]");
+    const guidance = $("[data-offer-guidance]");
+    if (!accountState) {
+      button.disabled = true;
+      guidance.textContent = "Sign in or create your verified Profile below to claim this offer.";
+      return;
+    }
+    if (accountState.isAdmin) {
+      button.disabled = true;
+      guidance.textContent = "Owner accounts create and manage campaigns in the Owner Dashboard; they cannot claim their own campaign offers.";
+      guidance.dataset.kind = "error";
+      return;
+    }
+    if (!accountState.deviceVerified || !accountState.profileComplete) {
+      button.disabled = true;
+      guidance.textContent = "Finish identity and passkey verification to claim this campaign reward.";
+      return;
+    }
+    const type = String(pick(activeOffer, "rewardType", "reward_type") || "");
+    if (type === "pack_draft" && !$("[data-offer-pack-number]").value) {
+      button.disabled = true;
+      guidance.textContent = "No pack numbers remain in this campaign.";
+      guidance.dataset.kind = "error";
+      return;
+    }
+    button.disabled = false;
+    guidance.textContent = type === "pack_draft" ? "Choose an available pack number, then claim it explicitly." : "Your verified Profile is ready. Claim only when you want this weekly reward.";
+    guidance.dataset.kind = "";
+  }
+  function renderOfferCampaign(campaign) {
+    activeOffer = campaign;
+    offerClaimBlocked = false;
+    const panel = $("[data-campaign-offer]");
+    panel.hidden = false;
+    panel.dataset.state = "active";
+    $("[data-offer-title]").textContent = String(pick(campaign, "title") || "Crack Packs campaign");
+    $("[data-offer-state]").textContent = "ACTIVE";
+    $("[data-offer-description]").textContent = campaignRewardDescription(campaign);
+    show("[data-offer-meta]", true);
+    const claimed = Number(pick(campaign, "claimedCount", "claimed_count") || 0);
+    const cap = Number(pick(campaign, "maxRedemptions", "max_redemptions") || 0);
+    const remaining = pick(campaign, "remaining");
+    $("[data-offer-remaining]").textContent = String(remaining === null ? Math.max(0, cap - claimed) : remaining);
+    const expiresAt = String(pick(campaign, "expiresAt", "expires_at") || "");
+    const expiry = $("[data-offer-expiry]"); expiry.dateTime = expiresAt; expiry.dataset.liveCampaignExpiry = expiresAt;
+    const isPackDraft = String(pick(campaign, "rewardType", "reward_type") || "") === "pack_draft";
+    show("[data-offer-pack-choice]", isPackDraft);
+    const select = $("[data-offer-pack-number]"); select.replaceChildren();
+    if (isPackDraft) {
+      availablePackNumbers(campaign).forEach(number => { const option = document.createElement("option"); option.value = String(number); option.textContent = `Pack #${number}`; select.append(option); });
+    }
+    $("[data-offer-result]").hidden = true;
+    syncOfferClaimAvailability();
+    startCampaignCountdowns();
+  }
+  function renderInvalidOffer(message, state = "invalid") {
+    activeOffer = null;
+    offerClaimBlocked = true;
+    const panel = $("[data-campaign-offer]"); panel.hidden = false; panel.dataset.state = state;
+    $("[data-offer-title]").textContent = state === "expired" ? "This campaign offer expired" : "This campaign offer is unavailable";
+    $("[data-offer-state]").textContent = state.toUpperCase();
+    $("[data-offer-description]").textContent = message;
+    show("[data-offer-meta]", false); show("[data-offer-pack-choice]", false);
+    $("[data-offer-guidance]").textContent = "You can still sign in and view rewards already saved to your campaign wallet.";
+    $("[data-offer-guidance]").dataset.kind = "error";
+    $("[data-offer-claim]").disabled = true;
+    clearStoredOffer();
+    if (accountState?.deviceVerified && accountState?.profileComplete && accountState?.referredSignup && !welcomeDiscountLoaded) queueMicrotask(() => renderAccount(accountState));
+  }
+  async function loadOfferStatus() {
+    if (!offerToken) {
+      if (malformedOfferToken) renderInvalidOffer("The campaign token format is invalid. Ask for a new campaign link.");
+      return;
+    }
+    $("[data-campaign-offer]").hidden = false;
+    try {
+      const data = await request("/campaign/status", { method: "POST", body: JSON.stringify({ offerToken }) });
+      if (data.serverNow) campaignClockOffset = Date.parse(data.serverNow) - Date.now();
+      if (!data.valid || !data.campaign) {
+        const offerStatus = String(data.status || "").toLowerCase();
+        const expired = offerStatus === "expired";
+        const message = expired ? "The claim window has ended." : offerStatus === "full" ? "Every available claim in this campaign has been taken." : "The link was not found or is no longer active.";
+        renderInvalidOffer(message, expired ? "expired" : "invalid");
+        return;
+      }
+      renderOfferCampaign(data.campaign);
+    } catch (error) {
+      $("[data-campaign-offer]").hidden = false;
+      $("[data-campaign-offer]").dataset.state = "invalid";
+      $("[data-offer-title]").textContent = "Offer check unavailable";
+      $("[data-offer-state]").textContent = "RETRY";
+      $("[data-offer-description]").textContent = "Refresh the page to check this campaign securely.";
+      $("[data-offer-claim]").disabled = true;
+    }
+  }
 
   async function validateAttachedReferral() {
     if (!hasAttachedReferral) return true;
@@ -303,16 +476,117 @@
     }
     $("[data-whatnot-username]").value = data.whatnotUsername || "";
     $("[data-next-tier]").textContent = data.nextTier ? `${data.nextTier.remaining} more verified friend${data.nextTier.remaining === 1 ? "" : "s"} to unlock ${data.nextTier.name}: ${data.nextTier.reward}.` : "You have reached the highest published reward tier.";
-    $("[data-tier-track]").innerHTML = data.tiers.map(t => `<div class="tier-node ${data.referralCount >= t.threshold ? "is-earned" : ""}"><strong>${t.threshold}</strong><br>${t.name}</div>`).join("");
-    if (data.referredSignup && !welcomeDiscountLoaded) {
+    const tierTrack = $("[data-tier-track]"); tierTrack.replaceChildren();
+    (Array.isArray(data.tiers) ? data.tiers : []).forEach(tier => {
+      const node = document.createElement("div"); node.className = `tier-node ${data.referralCount >= Number(tier.threshold) ? "is-earned" : ""}`;
+      const threshold = document.createElement("strong"); threshold.textContent = String(tier.threshold); node.append(threshold, document.createElement("br"), document.createTextNode(String(tier.name || "Tier"))); tierTrack.append(node);
+    });
+    syncOfferClaimAvailability();
+    loadMyCampaigns();
+    if (data.referredSignup && !welcomeDiscountLoaded && !offerToken && !activeOffer) {
       welcomeDiscountLoaded = true;
       show("[data-discount-panel]", true);
       show("[data-invite-panel]", false);
       claimDiscount({ welcome: true }).catch(error => {
-        welcomeDiscountLoaded = false;
-        showStatus(error.message, "error");
+        const weekly = error.status === 429 || /weekly|thursday/i.test(String(error.message || ""));
+        welcomeDiscountLoaded = weekly;
+        showStatus(weekly ? "Weekly reward limit reached. Review your campaign wallet; eligibility resets Thursday." : error.message, "error");
+        if (weekly) loadMyCampaigns();
       });
     }
+  }
+
+  function memberCampaignStatus(claim) {
+    if (pick(claim, "redeemedAt", "redeemed_at", "usedAt", "used_at")) return "used";
+    const expiresAt = String(pick(claim, "expiresAt", "expires_at") || "");
+    if (expiresAt && Date.parse(expiresAt) <= Date.now() + campaignClockOffset) return "expired";
+    return "claimed";
+  }
+  function renderMemberCampaignClaim(claim) {
+    const card = document.createElement("article"); card.className = "campaign-member-claim";
+    const main = document.createElement("div");
+    const title = document.createElement("h4"); title.textContent = String(pick(claim, "campaignTitle", "campaign_title", "title") || "Campaign reward");
+    const reward = document.createElement("p"); reward.textContent = campaignRewardDescription(claim);
+    const code = document.createElement("p"); code.className = "campaign-member-code"; code.textContent = String(pick(claim, "code") || "No code required");
+    const details = document.createElement("p");
+    const rank = pick(claim, "rank", "claimRank", "claim_rank"); const pack = pick(claim, "packNumber", "pack_number");
+    details.textContent = [rank ? `Claim rank #${rank}` : "", pack ? `Pack #${pack}` : ""].filter(Boolean).join(" - ");
+    main.append(title, reward, code); if (details.textContent) main.append(details);
+    const side = document.createElement("div");
+    const state = memberCampaignStatus(claim); const badge = document.createElement("span"); badge.className = `campaign-member-status ${state}`; badge.textContent = state;
+    side.append(badge);
+    const expiresAt = String(pick(claim, "expiresAt", "expires_at") || "");
+    if (expiresAt) {
+      const expiry = document.createElement("div"); expiry.className = "campaign-member-expiry";
+      const label = document.createElement("span"); label.textContent = "Expires: ";
+      const time = document.createElement("time"); time.dateTime = expiresAt; time.dataset.liveCampaignExpiry = expiresAt;
+      expiry.append(label, time); side.append(expiry);
+    }
+    card.append(main, side);
+    return card;
+  }
+  function renderMyCampaigns(claims) {
+    const container = $("[data-campaign-claims]"); container.replaceChildren();
+    if (!claims.length) { const empty = document.createElement("div"); empty.className = "campaign-wallet-empty"; empty.textContent = "No campaign rewards claimed yet."; container.append(empty); return; }
+    claims.forEach(claim => container.append(renderMemberCampaignClaim(claim)));
+    startCampaignCountdowns();
+  }
+  async function loadMyCampaigns() {
+    if (!token || !accountState?.deviceVerified || !accountState?.profileComplete) return;
+    try {
+      const data = await request("/campaigns/mine");
+      if (data.serverNow) campaignClockOffset = Date.parse(data.serverNow) - Date.now();
+      renderMyCampaigns(Array.isArray(data.claims) ? data.claims : []);
+    } catch (error) {
+      const container = $("[data-campaign-claims]"); container.replaceChildren();
+      const message = document.createElement("div"); message.className = "campaign-wallet-empty"; message.textContent = error.message; container.append(message);
+    }
+  }
+  function renderOfferRedemption(redemption, alreadyClaimed = false) {
+    const result = $("[data-offer-result]"); result.replaceChildren(); result.hidden = false;
+    const heading = document.createElement("strong"); heading.textContent = String(pick(redemption, "code") || "Reward claimed");
+    const description = document.createElement("span");
+    const rank = pick(redemption, "rank", "claimRank", "claim_rank"); const pack = pick(redemption, "packNumber", "pack_number");
+    description.textContent = [alreadyClaimed ? "You already claimed this campaign." : "Campaign reward claimed.", rank ? `Rank #${rank}.` : "", pack ? `Pack #${pack}.` : ""].filter(Boolean).join(" ");
+    result.append(heading, description);
+    $("[data-campaign-offer]").dataset.state = "claimed";
+    $("[data-offer-state]").textContent = alreadyClaimed ? "SAVED" : "CLAIMED";
+    $("[data-offer-claim]").disabled = true;
+    $("[data-offer-guidance]").textContent = "This reward is saved in your campaign wallet below.";
+  }
+  async function claimCampaignOffer() {
+    if (!offerToken || !activeOffer) throw new Error("This campaign offer is not ready to claim.");
+    if (!accountState?.deviceVerified || !accountState?.profileComplete) throw new Error("Complete Profile verification before claiming this offer.");
+    if (accountState.isAdmin) throw new Error("Owner accounts cannot claim their own campaign offers.");
+    const button = $("[data-offer-claim]"); button.disabled = true; const original = button.textContent; button.textContent = "Claiming...";
+    const body = { offerToken };
+    if (String(pick(activeOffer, "rewardType", "reward_type") || "") === "pack_draft") body.packNumber = Number($("[data-offer-pack-number]").value);
+    try {
+      const data = await request("/campaign/claim", { method: "POST", body: JSON.stringify(body) });
+      if (data.serverNow) campaignClockOffset = Date.parse(data.serverNow) - Date.now();
+      if (!data.redemption) throw new Error("The campaign claim response was incomplete.");
+      renderOfferRedemption(data.redemption, Boolean(data.alreadyClaimed));
+      offerClaimBlocked = true;
+      clearStoredOffer();
+      activeOffer = null;
+      await loadMyCampaigns();
+      showStatus(data.alreadyClaimed ? "This campaign was already saved to your wallet." : "Campaign reward claimed and saved to your wallet.", "success");
+    } catch (error) {
+      const weekly = error.status === 429 || /weekly|thursday/i.test(String(error.message || ""));
+      if (weekly) {
+        offerClaimBlocked = true;
+        clearStoredOffer();
+        $("[data-offer-guidance]").textContent = "Your weekly reward has already been claimed. Eligibility resets Thursday; use the existing code in your campaign wallet below.";
+        $("[data-offer-guidance]").dataset.kind = "error";
+        await loadMyCampaigns();
+      } else if (error.status === 409 && String(pick(activeOffer, "rewardType", "reward_type") || "") === "pack_draft") {
+        await loadOfferStatus();
+        showStatus("That pack number was just claimed. Available pack choices have been refreshed.", "error");
+        return;
+      }
+      showStatus(weekly ? "Weekly reward limit reached. Review your existing campaign wallet; eligibility resets Thursday." : error.message, "error");
+      if (!weekly) syncOfferClaimAvailability();
+    } finally { button.textContent = original; if (offerClaimBlocked) button.disabled = true; }
   }
 
   $("[data-request-form]").addEventListener("submit", async event => {
@@ -349,7 +623,7 @@
     }
     sendButton.textContent = "Sending secure link...";
     try {
-      await request("/auth/request", { method: "POST", body: JSON.stringify({ email, referralCode: submittedReferral, ownerReferralToken: submittedOwnerReferral, authMode: submittedMode, turnstileToken }) });
+      await request("/auth/request", { method: "POST", body: JSON.stringify({ email, referralCode: submittedReferral, ownerReferralToken: submittedOwnerReferral, offerToken, authMode: submittedMode, turnstileToken }) });
       authRequestSent = true;
       resetTurnstile();
       sendButton.textContent = "Check Inbox 10 min code";
@@ -520,6 +794,7 @@
     try {
       const data = await request("/auth/verify-link", { method: "POST", body: JSON.stringify({ token: verificationToken }) });
       token = data.token; localStorage.setItem("cp_rewards_token", token);
+      if (offerToken) localStorage.setItem("cp_campaign_offer_token", offerToken);
       history.replaceState({}, document.title, location.pathname);
       const accountReady = data.account.deviceVerified && data.account.profileComplete;
       const signedIn = data.authFlow === "signin" || data.authFlow === "admin" || data.authFlow === "legacy";
@@ -529,6 +804,7 @@
       const preserved = new URLSearchParams();
       if (ownerReferralToken) preserved.set("owner_ref", ownerReferralToken);
       else if (referralCode) preserved.set("ref", referralCode);
+      if (offerToken) preserved.set("offer", offerToken);
       if (authMode === "signup") preserved.set("mode", "signup");
       const query = preserved.toString();
       history.replaceState({}, document.title, `${location.pathname}${query ? `?${query}` : ""}`);
@@ -559,7 +835,12 @@
   }
   window.addEventListener("beforeunload", () => {
     clearPersonalQr();
+    clearInterval(campaignCountdownTimer);
   });
+  $("[data-offer-claim]").addEventListener("click", () => claimCampaignOffer().catch(error => showStatus(error.message, "error")));
+  $("[data-offer-pack-number]").addEventListener("change", syncOfferClaimAvailability);
+  $("[data-campaign-mine-refresh]").addEventListener("click", () => loadMyCampaigns());
   configureSocialLinks();
+  loadOfferStatus();
   confirmEmailLink();
 })();

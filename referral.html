@@ -8,9 +8,9 @@
   <meta name="theme-color" content="#07091b">
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/css/styles.css?v=1.9.2">
-  <link rel="stylesheet" href="assets/css/referral.css?v=2.5.1">
+  <link rel="stylesheet" href="assets/css/referral.css?v=2.6.0">
   <link rel="stylesheet" href="assets/css/rewards-modal.css?v=2.2.0">
-  <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.1.0">
+  <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.6.0">
 </head>
 <body data-page="rewards">
   <a class="skip-link" href="#main">Skip to content</a>
@@ -46,6 +46,27 @@
         <span data-referral-banner-copy>Confirming that this is the current, valid referral link.</span>
       </div>
       <div class="rewards-notice" data-app-status aria-live="polite"></div>
+
+      <section class="reward-card campaign-offer-card" data-campaign-offer hidden aria-labelledby="campaign-offer-title">
+        <div class="campaign-offer-head">
+          <div>
+            <p class="eyebrow">Limited campaign offer</p>
+            <h2 id="campaign-offer-title" data-offer-title>Checking this offer...</h2>
+          </div>
+          <span class="campaign-offer-state" data-offer-state>CHECKING</span>
+        </div>
+        <p class="campaign-offer-reward" data-offer-description></p>
+        <div class="campaign-offer-meta" data-offer-meta hidden>
+          <div><span>Remaining</span><strong data-offer-remaining>-</strong></div>
+          <div><span>Expires</span><strong><time data-offer-expiry></time></strong></div>
+        </div>
+        <div class="campaign-pack-choice" data-offer-pack-choice hidden>
+          <label>Choose an available pack number<select data-offer-pack-number aria-label="Choose an available pack number"></select></label>
+        </div>
+        <div class="campaign-offer-guidance" data-offer-guidance aria-live="polite">Sign in or create your verified Profile below to claim this offer.</div>
+        <button class="btn btn-primary" type="button" data-offer-claim disabled>Claim this campaign reward</button>
+        <div class="campaign-claim-result" data-offer-result hidden></div>
+      </section>
 
       <section class="reward-card auth-card" data-auth-panel>
         <div class="auth-mode-switch" role="tablist" aria-label="Profile access">
@@ -106,6 +127,14 @@
           <button class="btn btn-primary" type="button" data-claim-discount>Claim discount</button>
           <button class="btn btn-primary" type="button" data-redeem-discount hidden>Request Whatnot redemption</button>
           <p class="fine-print">Use the code during an eligible Whatnot show. Crack Packs marks it redeemed in the owner dashboard after the purchase.</p>
+        </section>
+        <section class="reward-card campaign-history-card" data-campaign-history>
+          <div class="campaign-history-head">
+            <div><p class="eyebrow">Campaign wallet</p><h3>Your claimed rewards</h3></div>
+            <button class="btn btn-outline btn-small" type="button" data-campaign-mine-refresh>Refresh</button>
+          </div>
+          <p>Every campaign code you claim or use appears here with its live status and expiration.</p>
+          <div class="campaign-claims" data-campaign-claims aria-live="polite"></div>
         </section>
         <section class="reward-card action-panel" data-invite-panel hidden>
           <div class="owner-dashboard-referral" data-owner-dashboard-referral hidden>
@@ -209,7 +238,7 @@
   </div>
   <script src="assets/js/config.js?v=2.2.0"></script>
   <script src="assets/js/app.js?v=1.9.2"></script>
-  <script src="assets/js/nav-profile.js?v=2.1.0"></script>
-  <script src="assets/js/referral.js?v=2.5.1"></script>
+  <script src="assets/js/nav-profile.js?v=2.6.0"></script>
+  <script src="assets/js/referral.js?v=2.6.0"></script>
 </body>
 </html>

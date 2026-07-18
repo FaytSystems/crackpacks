@@ -1,7 +1,7 @@
 // D:\crackpacks\crackpacks-github-ready\assets\js\config.js
 
 window.CRACKPACKS_CONFIG = {
-  whatnotUrl: "https://www.whatnot.com/user/crack_packs",
+  whatnotUrl: "https://whatnot.com/invite/crackpacksdotcom",
   cardApiUrl: "https://api.crackpacks.com/cards",
   rewardsApiUrl: "https://rewards-api.crackpacks.com",
   turnstileSiteKey: "0x4AAAAAAD3RxD5Wyh6r4B_p",

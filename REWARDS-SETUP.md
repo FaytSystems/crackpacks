@@ -43,3 +43,30 @@ Print the durable campaign URL:
 Do not print a discount code directly. The page requires verified sign-in before issuing a one-time code.
 
 The owner dashboard generates an additional signed digital referral QR that changes at 7:00 AM and 7:00 PM Eastern. Downloaded copies expire at the next boundary. A physically printed QR cannot rotate, so use the durable campaign URL above for permanent sticker inventory and the owner dashboard QR for time-limited digital posts.
+
+## Public offer campaigns
+
+Rewards Worker 2.6.0 adds owner-created, time-limited offer campaigns. Apply `rewards-worker/migrations/0003_add_offer_campaigns.sql` with `npm run db:remote` before deploying Worker 2.6.0. The migration is additive and creates campaign, redemption, and weekly reward-ledger tables.
+
+Only the verified owner account with a fresh passkey step-up may create campaigns, list campaign members, generate campaign QR codes, or mark rewards redeemed. Supported reward types are:
+
+- `percent` with a required whole-number `percent` from 1 through 100.
+- `free_shipping`.
+- `pick_a_pack`.
+- `pack_draft` with a required numbered pack choice. `packCount` must be at least `maxRedemptions`.
+
+Campaigns may last from 1 hour through 7 days (168 hours) and may allow up to 500 redemptions. The owner dashboard accepts hours or days; day values support thousandth-day precision, such as `3.05`. Offer URLs use an unguessable public token at `https://crackpacks.com/referral.html?offer=TOKEN`. The token identifies a public offer; it never authenticates the owner or grants dashboard access. Campaign QR images are rendered inside the Worker and do not send offer URLs to a third-party QR service.
+
+Members must finish email, passkey, and identity verification before claiming. The owner cannot claim their own campaign. Each campaign code and claim rank is unique, and pack draft numbers can be selected only once. A member may receive only one newly issued reward code per Thursday-to-Wednesday week, resetting Thursday at 12:00 AM in `America/New_York`. This weekly rule covers both campaign claims and the legacy one-time discount code. Reopening the same already-claimed campaign or legacy discount remains idempotent and returns the existing code.
+
+Campaign API routes:
+
+- `POST /admin/campaigns` creates a campaign after fresh owner verification.
+- `GET /admin/campaigns` returns campaigns and their member redemption records.
+- `POST /admin/campaigns/:id/qr` returns a first-party SVG QR.
+- `POST /admin/campaign-redemptions/:id/redeem` permanently marks one campaign reward used.
+- `POST /campaign/status` accepts `{ "offerToken": "..." }` and returns public-safe availability.
+- `POST /campaign/claim` accepts `{ "offerToken": "...", "packNumber": 1 }`; `packNumber` is used only for pack drafts.
+- `GET /campaigns/mine` returns the signed-in member's campaign history and legacy discount, if any.
+
+The email sign-in request may include a bounded public `offerToken`. When it resolves to a campaign, the email verification link carries the same `offer` query parameter back to the site so a scanned offer is not lost during sign-in.

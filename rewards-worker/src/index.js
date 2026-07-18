@@ -1,7 +1,10 @@
 import QRCode from "qrcode";
 import { issueOwnerReferral, ownerReferralSlotAt, verifyOwnerReferral } from "./referral-rotation.js";
+import { campaignWeekAt, parseCampaignExpiryHours } from "./campaign-time.js";
 
-const VERSION = "2.5.0";
+const VERSION = "2.6.0";
+const CAMPAIGN_REWARD_TYPES = new Set(["percent", "free_shipping", "pick_a_pack", "pack_draft"]);
+const MAX_CAMPAIGN_REDEMPTIONS = 500;
 const TIERS = [
   { threshold: 0, name: "Starter", reward: "Member access" },
   { threshold: 3, name: "Crew", reward: "Bonus discount" },
@@ -128,6 +131,121 @@ async function referralQrSvg(inviteUrl) {
     color: { dark: "#070815FF", light: "#FFFFFFFF" }
   });
 }
+const offerTokenValue = value => {
+  const raw = boundedString(value, 64);
+  if (!raw) return "";
+  const normalized = raw.trim().toUpperCase();
+  return /^OFR[A-HJ-NP-Z2-9]{32}$/.test(normalized) ? normalized : "";
+};
+const campaignUrl = (campaign, env) => `${env.SITE_URL}/referral.html?offer=${encodeURIComponent(campaign.offer_token)}`;
+const campaignState = (campaign, redemptionCount, epochMs = Date.now()) => {
+  if (Date.parse(campaign.expires_at) <= epochMs) return "expired";
+  if (redemptionCount >= Number(campaign.max_redemptions)) return "full";
+  return "active";
+};
+const availablePackNumbers = (campaign, redemptions) => {
+  if (campaign.reward_type !== "pack_draft") return [];
+  const taken = new Set(redemptions.map(row => Number(row.pack_number)).filter(Number.isInteger));
+  return Array.from({ length: Number(campaign.pack_count) }, (_, index) => index + 1).filter(pack => !taken.has(pack));
+};
+function campaignRedemptionView(row) {
+  return {
+    id: row.id,
+    campaignId: row.campaign_id,
+    title: row.title,
+    rewardType: row.reward_type,
+    percent: row.percent === null || row.percent === undefined ? null : Number(row.percent),
+    maxRedemptions: Number(row.max_redemptions),
+    packCount: row.pack_count === null || row.pack_count === undefined ? null : Number(row.pack_count),
+    campaignExpiresAt: row.expires_at,
+    expiresAt: row.expires_at,
+    code: row.code,
+    rank: Number(row.claim_rank),
+    claimRank: Number(row.claim_rank),
+    packNumber: row.pack_number === null || row.pack_number === undefined ? null : Number(row.pack_number),
+    pack: row.pack_number === null || row.pack_number === undefined ? null : Number(row.pack_number),
+    claimedAt: row.claimed_at,
+    redeemedAt: row.redeemed_at || null
+  };
+}
+function campaignClaimPayload(row, alreadyClaimed, serverNow, week) {
+  const redemption = campaignRedemptionView(row);
+  return { alreadyClaimed, existing: alreadyClaimed, serverNow, week, redemption, claim: redemption };
+}
+function adminRedemptionView(row) {
+  return {
+    ...campaignRedemptionView(row),
+    memberId: row.member_id,
+    email: row.email,
+    whatnotUsername: row.whatnot_username || ""
+  };
+}
+function adminCampaignView(campaign, redemptions, env, epochMs = Date.now()) {
+  const redemptionCount = redemptions.length;
+  return {
+    id: campaign.id,
+    title: campaign.title,
+    rewardType: campaign.reward_type,
+    percent: campaign.percent === null || campaign.percent === undefined ? null : Number(campaign.percent),
+    maxRedemptions: Number(campaign.max_redemptions),
+    packCount: campaign.pack_count === null || campaign.pack_count === undefined ? null : Number(campaign.pack_count),
+    offerToken: campaign.offer_token,
+    url: campaignUrl(campaign, env),
+    createdAt: campaign.created_at,
+    expiresAt: campaign.expires_at,
+    status: campaignState(campaign, redemptionCount, epochMs),
+    claimedCount: redemptionCount,
+    remaining: Math.max(0, Number(campaign.max_redemptions) - redemptionCount),
+    redemptionCount,
+    remainingRedemptions: Math.max(0, Number(campaign.max_redemptions) - redemptionCount),
+    availablePackNumbers: availablePackNumbers(campaign, redemptions),
+    redemptions: redemptions.map(adminRedemptionView)
+  };
+}
+async function publicCampaignStatus(env, offerToken, epochMs = Date.now()) {
+  const campaign = await env.DB.prepare(`SELECT * FROM offer_campaigns WHERE offer_token=?`).bind(offerToken).first();
+  if (!campaign) return { valid: false, status: "not_found", serverNow: new Date(epochMs).toISOString(), campaign: null };
+  const rows = await env.DB.prepare(`SELECT pack_number FROM campaign_redemptions WHERE campaign_id=? ORDER BY claim_rank`).bind(campaign.id).all();
+  const redemptions = rows.results || [];
+  const redemptionCount = redemptions.length;
+  const status = campaignState(campaign, redemptionCount, epochMs);
+  return {
+    valid: status === "active",
+    status,
+    serverNow: new Date(epochMs).toISOString(),
+    campaign: {
+      title: campaign.title,
+      rewardType: campaign.reward_type,
+      percent: campaign.percent === null || campaign.percent === undefined ? null : Number(campaign.percent),
+      maxRedemptions: Number(campaign.max_redemptions),
+      packCount: campaign.pack_count === null || campaign.pack_count === undefined ? null : Number(campaign.pack_count),
+      expiresAt: campaign.expires_at,
+      claimedCount: redemptionCount,
+      remaining: Math.max(0, Number(campaign.max_redemptions) - redemptionCount),
+      redemptionCount,
+      remainingRedemptions: Math.max(0, Number(campaign.max_redemptions) - redemptionCount),
+      availablePackNumbers: availablePackNumbers(campaign, redemptions)
+    }
+  };
+}
+async function weeklyReservation(env, memberId, week, sourceType, sourceId, createdAt) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const inserted = await env.DB.prepare(`INSERT OR IGNORE INTO weekly_reward_claims(id,member_id,week_key,source_type,source_id,created_at) VALUES(?,?,?,?,?,?)`).bind(id(), memberId, week.key, sourceType, sourceId, createdAt).run();
+    if (Number(inserted.meta?.changes || 0) === 1) return { reserved: true };
+    const existing = await env.DB.prepare(`SELECT * FROM weekly_reward_claims WHERE member_id=? AND week_key=?`).bind(memberId, week.key).first();
+    if (!existing) continue;
+    if (existing.source_type === sourceType && existing.source_id === sourceId) return { reserved: true };
+    const linked = existing.source_type === "campaign"
+      ? await env.DB.prepare(`SELECT id FROM campaign_redemptions WHERE id=?`).bind(existing.source_id).first()
+      : await env.DB.prepare(`SELECT id FROM discount_claims WHERE id=?`).bind(existing.source_id).first();
+    if (linked || Date.parse(existing.created_at) > Date.now() - 5 * 60e3) return { reserved: false, existing };
+    await env.DB.prepare(`DELETE FROM weekly_reward_claims WHERE id=? AND source_id=?`).bind(existing.id, existing.source_id).run();
+  }
+  return { reserved: false };
+}
+async function releaseWeeklyReservation(env, memberId, weekKey, sourceType, sourceId) {
+  await env.DB.prepare(`DELETE FROM weekly_reward_claims WHERE member_id=? AND week_key=? AND source_type=? AND source_id=?`).bind(memberId, weekKey, sourceType, sourceId).run();
+}
 async function account(member, count, env) {
   const tier = [...TIERS].reverse().find(t => count >= t.threshold);
   const next = TIERS.find(t => t.threshold > count);
@@ -192,6 +310,14 @@ async function route(request, env, cors, ctx) {
     }
     return response({ valid: false, rotating: false, expiresAt: null, serverNow, reason: "missing" }, 200, cors);
   }
+  if (url.pathname === "/campaign/status" && request.method === "POST") {
+    const contentLength = Number(request.headers.get("Content-Length") || 0);
+    if (Number.isFinite(contentLength) && contentLength > 512) return response({ error: "Campaign status request is too large." }, 413, cors);
+    const data = await body(request);
+    const offerToken = offerTokenValue(data?.offerToken);
+    if (!offerToken) return response({ error: "Enter a valid offer token." }, 400, cors);
+    return response(await publicCampaignStatus(env, offerToken, Date.now()), 200, cors);
+  }
   if (url.pathname === "/auth/request" && request.method === "POST") {
     const data = await body(request); const email = normalizeEmail(data.email);
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return response({ error: "Enter a valid email address." }, 400, cors);
@@ -229,6 +355,13 @@ async function route(request, env, cors, ctx) {
     if (ownerReferralRejected) return response({ error: "This owner referral window has expired. Ask for the current QR or referral link." }, 410, cors);
     const destinationPath = returnTo === "admin" ? "/admin.html" : "/referral.html";
     const verifyParams = new URLSearchParams({ verify: linkToken, mode: authFlow });
+    if (authFlow !== "admin" && email !== normalizeEmail(env.ADMIN_EMAIL)) {
+      const offerToken = offerTokenValue(data.offerToken);
+      if (offerToken) {
+        const offer = await env.DB.prepare(`SELECT id FROM offer_campaigns WHERE offer_token=?`).bind(offerToken).first();
+        if (offer) verifyParams.set("offer", offerToken);
+      }
+    }
     const verifyUrl = `${env.SITE_URL}${destinationPath}?${verifyParams}`;
     const codeId = id();
     await env.DB.prepare(`INSERT INTO login_codes(id,email,code_hash,auth_flow,referrer_member_id,expires_at,created_at) VALUES(?,?,?,?,?,?,?)`).bind(codeId, email, await hash(linkToken, env.AUTH_SECRET), authFlow, referrerMemberId, new Date(Date.now() + 10 * 60e3).toISOString(), created).run();
@@ -361,6 +494,129 @@ async function route(request, env, cors, ctx) {
     return response({ account: await accountFor(updated, env) }, 200, cors);
   }
   if (member.identity_status !== "verified") return response({ error: "Complete identity verification first." }, 403, cors);
+  if (url.pathname === "/campaign/claim" && request.method === "POST") {
+    const contentLength = Number(request.headers.get("Content-Length") || 0);
+    if (Number.isFinite(contentLength) && contentLength > 512) return response({ error: "Campaign claim request is too large." }, 413, cors);
+    const data = await body(request);
+    const offerToken = offerTokenValue(data?.offerToken);
+    if (!offerToken) return response({ error: "Enter a valid offer token." }, 400, cors);
+    const epochMs = Date.now();
+    const claimedAt = new Date(epochMs).toISOString();
+    const week = campaignWeekAt(epochMs);
+    const campaign = await env.DB.prepare(`SELECT * FROM offer_campaigns WHERE offer_token=?`).bind(offerToken).first();
+    if (!campaign) return response({ error: "Campaign offer not found." }, 404, cors);
+    if (isOwnerEmail(member, env) || campaign.owner_member_id === member.id) return response({ error: "The owner account cannot claim its own public campaign rewards." }, 403, cors);
+    const loadMemberClaim = () => env.DB.prepare(`
+      SELECT cr.*,c.title,c.reward_type,c.percent,c.max_redemptions,c.pack_count,c.expires_at
+      FROM campaign_redemptions cr JOIN offer_campaigns c ON c.id=cr.campaign_id
+      WHERE cr.campaign_id=? AND cr.member_id=?
+    `).bind(campaign.id, member.id).first();
+    let existingClaim = await loadMemberClaim();
+    if (existingClaim) return response(campaignClaimPayload(existingClaim, true, claimedAt, week), 200, cors);
+    if (campaign.expires_at <= claimedAt) return response({ error: "This campaign has expired." }, 410, cors);
+    let packNumber = null;
+    if (campaign.reward_type === "pack_draft") {
+      if (!Number.isInteger(data.packNumber) || data.packNumber < 1 || data.packNumber > Number(campaign.pack_count)) return response({ error: `Choose an available pack number from 1 to ${Number(campaign.pack_count)}.` }, 400, cors);
+      packNumber = data.packNumber;
+    } else if (data.packNumber !== undefined && data.packNumber !== null && data.packNumber !== "") {
+      return response({ error: "Pack number is only used for pack draft campaigns." }, 400, cors);
+    }
+    const legacyThisWeek = await env.DB.prepare(`SELECT id FROM discount_claims WHERE member_id=? AND created_at>=? AND created_at<?`).bind(member.id, week.startsAt, week.expiresAt).first();
+    if (legacyThisWeek) return response({ error: "A reward code was already issued to this account during the current Thursday-to-Wednesday week." }, 409, cors);
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      existingClaim = await loadMemberClaim();
+      if (existingClaim) return response(campaignClaimPayload(existingClaim, true, new Date().toISOString(), week), 200, cors);
+      const otherCampaign = await env.DB.prepare(`SELECT id,campaign_id FROM campaign_redemptions WHERE member_id=? AND week_key=?`).bind(member.id, week.key).first();
+      if (otherCampaign) return response({ error: "Another campaign reward was already claimed during the current Thursday-to-Wednesday week." }, 409, cors);
+      if (packNumber !== null) {
+        const chosenPack = await env.DB.prepare(`SELECT id FROM campaign_redemptions WHERE campaign_id=? AND pack_number=?`).bind(campaign.id, packNumber).first();
+        if (chosenPack) return response({ error: "That pack number was already selected. Choose another available pack." }, 409, cors);
+      }
+      const redemptionId = id();
+      const code = `CPR${randomString(12)}`;
+      const reservation = await weeklyReservation(env, member.id, week, "campaign", redemptionId, claimedAt);
+      if (!reservation.reserved) {
+        existingClaim = await loadMemberClaim();
+        if (existingClaim) return response(campaignClaimPayload(existingClaim, true, new Date().toISOString(), week), 200, cors);
+        return response({ error: "A reward code was already issued to this account during the current Thursday-to-Wednesday week." }, 409, cors);
+      }
+      const inserted = await env.DB.prepare(`
+        INSERT OR IGNORE INTO campaign_redemptions(id,campaign_id,member_id,week_key,code,claim_rank,pack_number,claimed_at,redeemed_at,redeemed_by_member_id)
+        SELECT ?,c.id,?,?,?,COALESCE((SELECT MAX(existing.claim_rank) FROM campaign_redemptions existing WHERE existing.campaign_id=c.id),0)+1,?,?,NULL,NULL
+        FROM offer_campaigns c
+        WHERE c.id=? AND c.owner_member_id<>? AND c.expires_at>?
+          AND (SELECT COUNT(*) FROM campaign_redemptions capacity WHERE capacity.campaign_id=c.id) < c.max_redemptions
+          AND (? IS NULL OR (c.reward_type='pack_draft' AND ? BETWEEN 1 AND c.pack_count AND NOT EXISTS (SELECT 1 FROM campaign_redemptions packs WHERE packs.campaign_id=c.id AND packs.pack_number=?)))
+      `).bind(redemptionId, member.id, week.key, code, packNumber, claimedAt, campaign.id, member.id, claimedAt, packNumber, packNumber, packNumber).run();
+      if (Number(inserted.meta?.changes || 0) === 1) {
+        const claim = await env.DB.prepare(`
+          SELECT cr.*,c.title,c.reward_type,c.percent,c.max_redemptions,c.pack_count,c.expires_at
+          FROM campaign_redemptions cr JOIN offer_campaigns c ON c.id=cr.campaign_id WHERE cr.id=?
+        `).bind(redemptionId).first();
+        await audit(env, request, "campaign_reward_claimed", member.id, `${campaign.id}|${redemptionId}|rank:${claim.claim_rank}${packNumber === null ? "" : `|pack:${packNumber}`}`);
+        return response(campaignClaimPayload(claim, false, new Date().toISOString(), week), 201, cors);
+      }
+      await releaseWeeklyReservation(env, member.id, week.key, "campaign", redemptionId);
+      existingClaim = await loadMemberClaim();
+      if (existingClaim) return response(campaignClaimPayload(existingClaim, true, new Date().toISOString(), week), 200, cors);
+      const currentCount = await env.DB.prepare(`SELECT COUNT(*) count FROM campaign_redemptions WHERE campaign_id=?`).bind(campaign.id).first();
+      if (Number(currentCount?.count || 0) >= Number(campaign.max_redemptions)) return response({ error: "This campaign has reached its redemption limit." }, 409, cors);
+      if (campaign.expires_at <= now()) return response({ error: "This campaign has expired." }, 410, cors);
+      if (packNumber !== null) {
+        const chosenPack = await env.DB.prepare(`SELECT id FROM campaign_redemptions WHERE campaign_id=? AND pack_number=?`).bind(campaign.id, packNumber).first();
+        if (chosenPack) return response({ error: "That pack number was already selected. Choose another available pack." }, 409, cors);
+      }
+    }
+    return response({ error: "The campaign claim changed while it was being saved. Try again." }, 409, cors);
+  }
+  if (url.pathname === "/campaigns/mine" && request.method === "GET") {
+    const [claimRows, legacyDiscount] = await Promise.all([
+      env.DB.prepare(`
+        SELECT cr.*,c.title,c.reward_type,c.percent,c.max_redemptions,c.pack_count,c.expires_at
+        FROM campaign_redemptions cr JOIN offer_campaigns c ON c.id=cr.campaign_id
+        WHERE cr.member_id=? ORDER BY cr.claimed_at DESC
+      `).bind(member.id).all(),
+      env.DB.prepare(`SELECT * FROM discount_claims WHERE member_id=?`).bind(member.id).first()
+    ]);
+    const epochMs = Date.now();
+    const campaignClaims = (claimRows.results || []).map(campaignRedemptionView);
+    const legacyDiscountView = legacyDiscount ? {
+      id: legacyDiscount.id,
+      code: legacyDiscount.code,
+      percent: Number(legacyDiscount.percent),
+      expiresAt: legacyDiscount.expires_at,
+      requestedAt: legacyDiscount.redemption_requested_at || null,
+      redeemedAt: legacyDiscount.redeemed_at || null,
+      createdAt: legacyDiscount.created_at
+    } : null;
+    const claims = campaignClaims.map(claim => ({ source: "campaign", ...claim }));
+    if (legacyDiscountView) claims.push({
+      source: "legacy_discount",
+      id: legacyDiscountView.id,
+      campaignId: null,
+      title: "One-time member discount",
+      rewardType: "percent",
+      percent: legacyDiscountView.percent,
+      maxRedemptions: null,
+      packCount: null,
+      campaignExpiresAt: legacyDiscountView.expiresAt,
+      expiresAt: legacyDiscountView.expiresAt,
+      code: legacyDiscountView.code,
+      rank: null,
+      packNumber: null,
+      claimedAt: legacyDiscountView.createdAt,
+      requestedAt: legacyDiscountView.requestedAt,
+      redeemedAt: legacyDiscountView.redeemedAt
+    });
+    claims.sort((left, right) => Date.parse(right.claimedAt) - Date.parse(left.claimedAt));
+    return response({
+      serverNow: new Date(epochMs).toISOString(),
+      week: campaignWeekAt(epochMs),
+      claims,
+      campaignClaims,
+      legacyDiscount: legacyDiscountView
+    }, 200, cors);
+  }
   if (url.pathname === "/profile/username" && request.method === "POST") {
     const data = await body(request);
     const username = clean(data.whatnotUsername, 64).toLowerCase();
@@ -437,6 +693,99 @@ async function route(request, env, cors, ctx) {
     const invite = await inviteDetailsFor(member, env, Date.now(), true);
     if (String(data.inviteUrl || "") !== invite.url) return response({ error: "That referral window changed. Refresh the current link before generating its QR." }, 409, cors);
     return svgResponse(await referralQrSvg(invite.url), cors);
+  }
+  if (url.pathname === "/admin/campaigns" && request.method === "POST") {
+    if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
+    const contentLength = Number(request.headers.get("Content-Length") || 0);
+    if (Number.isFinite(contentLength) && contentLength > 2048) return response({ error: "Campaign request is too large." }, 413, cors);
+    const data = await body(request);
+    const rawTitle = boundedString(data?.title, 100);
+    const rawRewardType = boundedString(data?.rewardType, 32);
+    const title = rawTitle === null ? "" : clean(rawTitle, 100);
+    const rewardType = rawRewardType || "";
+    const expiresInHours = parseCampaignExpiryHours(data?.expiresInHours);
+    const maxRedemptions = data?.maxRedemptions;
+    if (!title) return response({ error: "Enter a campaign title up to 100 characters." }, 400, cors);
+    if (!CAMPAIGN_REWARD_TYPES.has(rewardType)) return response({ error: "Choose a valid campaign reward type." }, 400, cors);
+    if (expiresInHours === null) return response({ error: "Campaign expiration must be between 1 hour and 7 days." }, 400, cors);
+    if (!Number.isInteger(maxRedemptions) || maxRedemptions < 1 || maxRedemptions > MAX_CAMPAIGN_REDEMPTIONS) return response({ error: `Maximum redemptions must be from 1 to ${MAX_CAMPAIGN_REDEMPTIONS}.` }, 400, cors);
+    let percent = null;
+    let packCount = null;
+    if (rewardType === "percent") {
+      if (!Number.isInteger(data.percent) || data.percent < 1 || data.percent > 100) return response({ error: "Percent rewards require a whole number from 1 to 100." }, 400, cors);
+      if (data.packCount !== undefined && data.packCount !== null && data.packCount !== "") return response({ error: "Pack count is only used for pack draft campaigns." }, 400, cors);
+      percent = data.percent;
+    } else {
+      if (data.percent !== undefined && data.percent !== null && data.percent !== "") return response({ error: "Percent is only used for percent campaigns." }, 400, cors);
+      if (rewardType === "pack_draft") {
+        if (!Number.isInteger(data.packCount) || data.packCount < maxRedemptions || data.packCount > MAX_CAMPAIGN_REDEMPTIONS) return response({ error: `Pack draft count must be at least the redemption limit and no more than ${MAX_CAMPAIGN_REDEMPTIONS}.` }, 400, cors);
+        packCount = data.packCount;
+      } else if (data.packCount !== undefined && data.packCount !== null && data.packCount !== "") {
+        return response({ error: "Pack count is only used for pack draft campaigns." }, 400, cors);
+      }
+    }
+    const epochMs = Date.now();
+    const createdAt = new Date(epochMs).toISOString();
+    const expiresAt = new Date(epochMs + Math.round(expiresInHours * 3600e3)).toISOString();
+    let campaign = null;
+    for (let attempt = 0; attempt < 5 && !campaign; attempt += 1) {
+      const campaignId = id();
+      const offerToken = `OFR${randomString(32)}`;
+      const inserted = await env.DB.prepare(`INSERT OR IGNORE INTO offer_campaigns(id,owner_member_id,title,reward_type,percent,max_redemptions,pack_count,offer_token,expires_at,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)`).bind(campaignId, member.id, title, rewardType, percent, maxRedemptions, packCount, offerToken, expiresAt, createdAt).run();
+      if (Number(inserted.meta?.changes || 0) === 1) campaign = await env.DB.prepare(`SELECT * FROM offer_campaigns WHERE id=?`).bind(campaignId).first();
+    }
+    if (!campaign) return response({ error: "The campaign could not be created. Try again." }, 503, cors);
+    await audit(env, request, "campaign_created", member.id, `${campaign.id}|${rewardType}|max:${maxRedemptions}`);
+    return response({ serverNow: createdAt, campaign: adminCampaignView(campaign, [], env, epochMs) }, 201, cors);
+  }
+  if (url.pathname === "/admin/campaigns" && request.method === "GET") {
+    if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
+    const [campaignRows, redemptionRows] = await Promise.all([
+      env.DB.prepare(`SELECT * FROM offer_campaigns WHERE owner_member_id=? ORDER BY created_at DESC`).bind(member.id).all(),
+      env.DB.prepare(`
+        SELECT cr.*,c.title,c.reward_type,c.percent,c.max_redemptions,c.pack_count,c.expires_at,m.email,m.whatnot_username
+        FROM campaign_redemptions cr
+        JOIN offer_campaigns c ON c.id=cr.campaign_id
+        JOIN members m ON m.id=cr.member_id
+        WHERE c.owner_member_id=?
+        ORDER BY c.created_at DESC,cr.claim_rank
+      `).bind(member.id).all()
+    ]);
+    const byCampaign = new Map();
+    for (const redemption of redemptionRows.results || []) {
+      if (!byCampaign.has(redemption.campaign_id)) byCampaign.set(redemption.campaign_id, []);
+      byCampaign.get(redemption.campaign_id).push(redemption);
+    }
+    const epochMs = Date.now();
+    return response({ serverNow: new Date(epochMs).toISOString(), campaigns: (campaignRows.results || []).map(campaign => adminCampaignView(campaign, byCampaign.get(campaign.id) || [], env, epochMs)) }, 200, cors);
+  }
+  const adminCampaignQrMatch = url.pathname.match(/^\/admin\/campaigns\/([0-9a-f-]{36})\/qr$/i);
+  if (adminCampaignQrMatch && request.method === "POST") {
+    if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
+    const campaign = await env.DB.prepare(`SELECT * FROM offer_campaigns WHERE id=? AND owner_member_id=?`).bind(adminCampaignQrMatch[1], member.id).first();
+    if (!campaign) return response({ error: "Campaign not found." }, 404, cors);
+    await audit(env, request, "campaign_qr_generated", member.id, campaign.id);
+    return svgResponse(await referralQrSvg(campaignUrl(campaign, env)), cors);
+  }
+  const adminCampaignRedeemMatch = url.pathname.match(/^\/admin\/campaign-redemptions\/([0-9a-f-]{36})\/redeem$/i);
+  if (adminCampaignRedeemMatch && request.method === "POST") {
+    if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
+    const redemption = await env.DB.prepare(`
+      SELECT cr.*,c.title,c.reward_type,c.percent,c.max_redemptions,c.pack_count,c.expires_at,m.email,m.whatnot_username
+      FROM campaign_redemptions cr
+      JOIN offer_campaigns c ON c.id=cr.campaign_id
+      JOIN members m ON m.id=cr.member_id
+      WHERE cr.id=? AND c.owner_member_id=?
+    `).bind(adminCampaignRedeemMatch[1], member.id).first();
+    if (!redemption) return response({ error: "Campaign redemption not found." }, 404, cors);
+    if (redemption.redeemed_at) return response({ error: "This campaign reward was already marked redeemed." }, 409, cors);
+    if (redemption.expires_at <= now()) return response({ error: "This campaign reward has expired and cannot be redeemed." }, 410, cors);
+    const redeemedAt = now();
+    const updated = await env.DB.prepare(`UPDATE campaign_redemptions SET redeemed_at=?,redeemed_by_member_id=? WHERE id=? AND redeemed_at IS NULL`).bind(redeemedAt, member.id, redemption.id).run();
+    if (Number(updated.meta?.changes || 0) !== 1) return response({ error: "This campaign reward was already marked redeemed." }, 409, cors);
+    redemption.redeemed_at = redeemedAt;
+    await audit(env, request, "campaign_redemption_redeemed", member.id, `${redemption.id}|member:${redemption.member_id}|code:${redemption.code}`);
+    return response({ redemption: adminRedemptionView(redemption) }, 200, cors);
   }
   if (url.pathname === "/admin/summary" && request.method === "GET") {
     if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
@@ -515,9 +864,31 @@ async function route(request, env, cors, ctx) {
   if (url.pathname === "/discount/claim" && request.method === "POST") {
     let claim = await env.DB.prepare(`SELECT * FROM discount_claims WHERE member_id=?`).bind(member.id).first();
     if (!claim) {
-      const code = `CP${randomString(10)}`, expires = new Date(Date.now() + 30 * 86400e3).toISOString();
-      await env.DB.prepare(`INSERT INTO discount_claims(id,member_id,code,percent,expires_at,created_at) VALUES(?,?,?,?,?,?)`).bind(id(), member.id, code, Number(env.DISCOUNT_PERCENT || 10), expires, now()).run();
-      claim = { code, percent: Number(env.DISCOUNT_PERCENT || 10), expires_at: expires };
+      const epochMs = Date.now();
+      const week = campaignWeekAt(epochMs);
+      const campaignThisWeek = await env.DB.prepare(`SELECT id FROM campaign_redemptions WHERE member_id=? AND week_key=?`).bind(member.id, week.key).first();
+      if (campaignThisWeek) return response({ error: "A campaign reward was already claimed during the current Thursday-to-Wednesday week." }, 409, cors);
+      for (let attempt = 0; attempt < 5 && !claim; attempt += 1) {
+        const claimId = id();
+        const createdAt = new Date().toISOString();
+        const code = `CP${randomString(10)}`;
+        const expires = new Date(Date.parse(createdAt) + 30 * 86400e3).toISOString();
+        const reservation = await weeklyReservation(env, member.id, week, "legacy_discount", claimId, createdAt);
+        if (!reservation.reserved) {
+          claim = await env.DB.prepare(`SELECT * FROM discount_claims WHERE member_id=?`).bind(member.id).first();
+          if (claim) break;
+          return response({ error: "A reward code was already issued to this account during the current Thursday-to-Wednesday week." }, 409, cors);
+        }
+        const inserted = await env.DB.prepare(`INSERT OR IGNORE INTO discount_claims(id,member_id,code,percent,expires_at,created_at) VALUES(?,?,?,?,?,?)`).bind(claimId, member.id, code, Number(env.DISCOUNT_PERCENT || 10), expires, createdAt).run();
+        if (Number(inserted.meta?.changes || 0) === 1) {
+          claim = await env.DB.prepare(`SELECT * FROM discount_claims WHERE id=?`).bind(claimId).first();
+          await audit(env, request, "legacy_discount_claimed", member.id, `${claim.id}|week:${week.key}`);
+          break;
+        }
+        await releaseWeeklyReservation(env, member.id, week.key, "legacy_discount", claimId);
+        claim = await env.DB.prepare(`SELECT * FROM discount_claims WHERE member_id=?`).bind(member.id).first();
+      }
+      if (!claim) return response({ error: "The discount code could not be issued. Try again." }, 409, cors);
     }
     return response({ code: claim.code, expiresAt: claim.expires_at, requestedAt: claim.redemption_requested_at || null, redeemedAt: claim.redeemed_at || null, description: `${claim.percent}% off one eligible order.` }, 200, cors);
   }

@@ -10,7 +10,7 @@ window.CRACKPACKS_PRODUCTS = [
     badge: "Box fresh",
     image: "assets/images/product-electric.svg",
     description: "Factory-sealed booster displays selected for collectors, pack lots, and live opening nights.",
-    url: "https://www.whatnot.com/user/crack_packs",
+    url: "https://whatnot.com/invite/crackpacksdotcom",
     featured: true,
     enabled: true
   },
@@ -25,7 +25,7 @@ window.CRACKPACKS_PRODUCTS = [
     badge: "Collector favorite",
     image: "assets/images/product-flame.svg",
     description: "ETBs, premium collections, and specialty sealed products with current availability shown on the linked store page.",
-    url: "https://www.whatnot.com/user/crack_packs",
+    url: "https://whatnot.com/invite/crackpacksdotcom",
     featured: true,
     enabled: true
   },
@@ -40,7 +40,7 @@ window.CRACKPACKS_PRODUCTS = [
     badge: "Rip ready",
     image: "assets/images/product-cosmic.svg",
     description: "Choose sealed delivery when permitted, or join a live show to watch your packs open in real time.",
-    url: "https://www.whatnot.com/user/crack_packs",
+    url: "https://whatnot.com/invite/crackpacksdotcom",
     featured: true,
     enabled: true
   },
@@ -55,7 +55,7 @@ window.CRACKPACKS_PRODUCTS = [
     badge: "Import chase",
     image: "assets/images/product-aurora.svg",
     description: "Japanese-language packs and sealed products with clear set, condition, and opening details.",
-    url: "https://www.whatnot.com/user/crack_packs",
+    url: "https://whatnot.com/invite/crackpacksdotcom",
     featured: true,
     enabled: true
   },
@@ -70,7 +70,7 @@ window.CRACKPACKS_PRODUCTS = [
     badge: "Condition shown",
     image: "assets/images/product-vintage.svg",
     description: "Card condition should be shown clearly in the listing and on camera before a live purchase.",
-    url: "https://www.whatnot.com/user/crack_packs",
+    url: "https://whatnot.com/invite/crackpacksdotcom",
     featured: false,
     enabled: true
   },
@@ -85,7 +85,7 @@ window.CRACKPACKS_PRODUCTS = [
     badge: "Slab vault",
     image: "assets/images/product-slab.svg",
     description: "Graded modern, Japanese, and vintage cards ready for claim sales, fixed-price listings, or premium auctions.",
-    url: "https://www.whatnot.com/user/crack_packs",
+    url: "https://whatnot.com/invite/crackpacksdotcom",
     featured: false,
     enabled: true
   }
