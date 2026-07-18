@@ -82,6 +82,17 @@
             <span class="crack-social-copy"><strong>Facebook</strong><small>Join the crew</small></span>
             <span class="crack-social-arrow" aria-hidden="true">&#8599;</span>
           </a>
+
+          <a class="crack-social-link crack-social-x" href="https://x.com/CRACKPACKS_com" target="_blank" rel="noopener noreferrer" aria-label="Follow Crack Packs on X at CRACKPACKS underscore com (opens in a new tab)">
+            <svg class="crack-social-icon" viewBox="0 0 72 72" aria-hidden="true" focusable="false">
+              <path class="crack-social-icon-shadow" d="m18 11 38 3 7 37-30 13L9 48Z"/>
+              <path class="crack-social-icon-panel" d="m15 7 38 3 7 37-30 13L6 44Z"/>
+              <path class="crack-social-icon-mark crack-social-x-mark" d="m23 20 27 32M50 19 22 52"/>
+              <path class="crack-social-icon-spark" d="m59 4 2 6 6 2-6 2-2 6-2-6-6-2 6-2Z"/>
+            </svg>
+            <span class="crack-social-copy"><strong>X</strong><small>@CRACKPACKS_com</small></span>
+            <span class="crack-social-arrow" aria-hidden="true">&#8599;</span>
+          </a>
         </nav>
       </div>
       <p class="crack-social-signoff">Crack Packs <span aria-hidden="true">&bull;</span> Rip loud. Collect proud.</p>
