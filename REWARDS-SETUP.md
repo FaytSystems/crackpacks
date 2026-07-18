@@ -48,7 +48,7 @@ The owner dashboard generates an additional signed digital referral QR that chan
 
 ## Public offer campaigns
 
-Rewards Worker 3.1.0 provides owner-created offer campaigns, inventory-linked product rewards, and protected channel price floors. Apply the pending versioned migrations with `npm run db:remote` before deploying the Worker. Migration `0003` creates campaign, redemption, and weekly reward-ledger tables; additive migration `0004` enables free-single campaigns, additive migration `0005` enables explicit indefinite campaigns, additive migration `0006` adds server-side kill switches for every master referral and campaign QR, additive migration `0007` adds owner inventory, product campaign snapshots, and short-lived shipping quote records, migrations `0008` through `0010` add one atomic inventory-safety trigger apiece, and additive migration `0011` adds channel cost inputs plus owner list-price overrides.
+Rewards Worker 3.2.0 provides owner-created offer campaigns, inventory-linked product rewards, protected channel price floors, and an owner-only EasyPost test-mode probe. Apply the pending versioned migrations with `npm run db:remote` before deploying the Worker. Migration `0003` creates campaign, redemption, and weekly reward-ledger tables; additive migration `0004` enables free-single campaigns, additive migration `0005` enables explicit indefinite campaigns, additive migration `0006` adds server-side kill switches for every master referral and campaign QR, additive migration `0007` adds owner inventory, product campaign snapshots, and short-lived shipping quote records, migrations `0008` through `0010` add one atomic inventory-safety trigger apiece, and additive migration `0011` adds channel cost inputs plus owner list-price overrides.
 
 Only the verified owner account with a fresh passkey step-up may create campaigns, list campaign members, generate campaign QR codes, or mark rewards redeemed. Supported reward types are:
 
@@ -111,6 +111,8 @@ npx.cmd wrangler secret put SHIP_FROM_ADDRESS_JSON
 ```json
 {"name":"Crack Packs","street1":"YOUR STREET","street2":"","city":"YOUR CITY","state":"YOUR STATE","postalCode":"YOUR ZIP","country":"US","phone":"YOUR PHONE","email":"shipping@crackpacks.com"}
 ```
+
+After both secrets are stored, open **Master Dashboard → Inventory → Test EasyPost**. The protected action requires a fresh owner passkey session and uses only `EASYPOST_TEST_API_KEY`. It creates an 8 oz, 6 × 4 × 2 inch test-mode shipment to EasyPost's published sample address, returns up to six carrier rates, and never purchases a label. The ship-from secret is sent to EasyPost for rating but is never returned to the browser or stored in the database.
 
 Get the test/production API keys from the EasyPost dashboard under **Account Settings → API Keys**. Never place an EasyPost or Stripe secret in `assets/js/config.js`. Keep `STORE_COMING_SOON` set to `"true"` and `STORE_CHECKOUT_ENABLED` set to `"false"` until test quotes, stock reservation, Stripe webhook verification, fulfillment, returns, and legal policies have been end-to-end tested. When live checkout is implemented, add `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` using `wrangler secret put`; do not add them yet merely to render the Coming Soon store.
 

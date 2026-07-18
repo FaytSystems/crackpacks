@@ -3,7 +3,7 @@ import { issueOwnerReferral, ownerReferralSlotAt, verifyOwnerReferral } from "./
 import { campaignWeekAt, parseCampaignExpiryHours } from "./campaign-time.js";
 import { calculateChannelPricing, channelPricingErrors } from "./channel-pricing.js";
 
-const VERSION = "3.1.0";
+const VERSION = "3.2.0";
 const CAMPAIGN_REWARD_TYPES = new Set(["percent", "free_shipping", "pick_a_pack", "pack_draft", "free_single", "product"]);
 const MAX_CAMPAIGN_REDEMPTIONS = 500;
 const STORE_CURRENCIES = new Set(["USD", "CAD", "EUR", "GBP", "AUD", "NZD", "JPY", "CHF", "SEK", "NOK", "DKK", "PLN", "CZK", "HUF", "RON"]);
@@ -420,9 +420,9 @@ const easyPostAddress = address => ({
   state: address.state || undefined, zip: address.postalCode, country: address.country,
   phone: address.phone || undefined, email: address.email || undefined
 });
-async function easyPostShipmentQuote(env, item, quantity, address) {
+async function easyPostShipmentQuote(env, item, quantity, address, apiKeyOverride = "") {
   if (quantity !== 1) throw new Error("MULTI_ITEM_PACKING_NOT_READY");
-  const apiKey = env.EASYPOST_API_KEY || env.EASYPOST_TEST_API_KEY || "";
+  const apiKey = apiKeyOverride || env.EASYPOST_API_KEY || env.EASYPOST_TEST_API_KEY || "";
   if (!apiKey) throw new Error("SHIPPING_NOT_CONFIGURED");
   let from;
   try { from = JSON.parse(env.SHIP_FROM_ADDRESS_JSON || ""); } catch { throw new Error("SHIP_FROM_NOT_CONFIGURED"); }
@@ -473,7 +473,7 @@ async function easyPostShipmentQuote(env, item, quantity, address) {
     amountCents: Math.round(Number(rate.rate) * 100), deliveryDays: Number.isInteger(rate.delivery_days) ? rate.delivery_days : null
   })).filter(rate => rate.id && Number.isInteger(rate.amountCents) && rate.amountCents >= 0).sort((left, right) => left.amountCents - right.amountCents).slice(0, 12);
   if (!rates.length || !payload.id) throw new Error("NO_SHIPPING_RATES");
-  return { shipmentId: String(payload.id), rates };
+  return { shipmentId: String(payload.id), mode: String(payload.mode || ""), rates };
 }
 const campaignNeverExpires = campaign => Number(campaign.never_expires || 0) === 1;
 const campaignIsActive = campaign => Number(campaign.is_active ?? 1) === 1;
@@ -1200,6 +1200,45 @@ async function route(request, env, cors, ctx) {
     const invite = await inviteDetailsFor(member, env, Date.now(), true);
     if (String(data.inviteUrl || "") !== invite.url) return response({ error: "That referral window changed. Refresh the current link before generating its QR." }, 409, cors);
     return svgResponse(await referralQrSvg(invite.url), cors);
+  }
+  if (url.pathname === "/admin/shipping/test" && request.method === "POST") {
+    if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
+    if (!env.EASYPOST_TEST_API_KEY) return response({ error: "The EasyPost test API key is not configured." }, 503, cors);
+    const sampleItem = { weight_oz: 8, length_in: 6, width_in: 4, height_in: 2 };
+    const sampleDestination = {
+      name: "EasyPost Test",
+      street1: "417 Montgomery Street",
+      street2: "5th Floor",
+      city: "San Francisco",
+      state: "CA",
+      postalCode: "94104",
+      country: "US",
+      phone: "4153334445",
+      email: "support@easypost.com"
+    };
+    let quoted;
+    try { quoted = await easyPostShipmentQuote(env, sampleItem, 1, sampleDestination, env.EASYPOST_TEST_API_KEY); }
+    catch (error) {
+      const messages = {
+        SHIP_FROM_NOT_CONFIGURED: "The stored ship-from address is missing or invalid JSON.",
+        NO_SHIPPING_RATES: "EasyPost accepted the request but returned no test carrier rates.",
+        SHIPPING_PROVIDER_ERROR: "EasyPost rejected the test request. Recheck the test API key, wallet, ship-from address, and enabled carriers."
+      };
+      await audit(env, request, "easypost_test_failed", member.id, error.message);
+      return response({ error: messages[error.message] || "The EasyPost test could not be completed.", code: error.message }, 503, cors);
+    }
+    if (quoted.mode !== "test") {
+      await audit(env, request, "easypost_test_failed", member.id, "unexpected-mode");
+      return response({ error: "EasyPost did not return a test-mode shipment. No label was purchased." }, 503, cors);
+    }
+    await audit(env, request, "easypost_test_passed", member.id, `${quoted.shipmentId}|rates:${quoted.rates.length}`);
+    return response({
+      ok: true,
+      mode: "test",
+      labelPurchased: false,
+      sampleParcel: "8 oz · 6 × 4 × 2 in",
+      rates: quoted.rates.slice(0, 6)
+    }, 200, cors);
   }
   if (url.pathname === "/admin/inventory" && request.method === "GET") {
     if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);

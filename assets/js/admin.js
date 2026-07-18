@@ -616,6 +616,24 @@
     } catch (error) { setInventoryStatus(error.message, "error"); }
     finally { button.disabled = false; button.textContent = original; }
   }
+  async function testEasyPost(button) {
+    const original = button.textContent;
+    button.disabled = true;
+    button.textContent = "Testing...";
+    setInventoryStatus("Requesting test-mode carrier rates. No label will be purchased.");
+    try {
+      const data = await request("/admin/shipping/test", { method: "POST", body: "{}" });
+      const rates = Array.isArray(data.rates) ? data.rates : [];
+      const cheapest = rates[0];
+      const summary = cheapest ? ` Cheapest sample rate: ${cheapest.carrier} ${cheapest.service} at ${formatMoney(cheapest.amountCents)}.` : "";
+      setInventoryStatus(`EasyPost test passed in TEST mode. ${rates.length} carrier rate${rates.length === 1 ? "" : "s"} returned.${summary} No label was purchased.`, "success");
+    } catch (error) {
+      setInventoryStatus(error.message, "error");
+    } finally {
+      button.disabled = false;
+      button.textContent = original;
+    }
+  }
 
   const campaignProduct = campaign => pick(campaign, "product") || null;
   const campaignRewardDescription = campaign => {
@@ -1398,6 +1416,7 @@
   document.querySelectorAll("[data-admin-email-close]").forEach(button => button.addEventListener("click", () => { $("[data-admin-email-modal]").hidden = true; }));
   document.querySelectorAll("[data-master-section-button]").forEach(button => button.addEventListener("click", () => openMasterSection(button.dataset.masterSectionButton)));
   $("[data-inventory-new]").addEventListener("click", () => openInventoryModal());
+  $("[data-inventory-shipping-test]").addEventListener("click", event => testEasyPost(event.currentTarget));
   $("[data-inventory-import]").addEventListener("click", importStarterInventory);
   $("[data-inventory-refresh]").addEventListener("click", () => refreshInventory({ announce: true }).catch(error => setInventoryStatus(error.message, "error")));
   $("[data-inventory-search]").addEventListener("input", () => {
