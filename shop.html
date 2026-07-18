@@ -10,12 +10,13 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="stylesheet" href="assets/css/styles.css?v=1.5.0">
   <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.6.1">
+  <link rel="stylesheet" href="assets/css/store.css?v=3.0.0">
   
   <!-- CRACK PACKS CONTACT ASSETS:START -->
   <link rel="stylesheet" href="assets/css/contact-form.css?v=1.7.1">
   <!-- CRACK PACKS CONTACT ASSETS:END -->
 </head>
-<body data-page="shop">
+<body data-page="shop" data-store-market="us">
   <a class="skip-link" href="#main">Skip to content</a>
   <div class="ambient-layer" aria-hidden="true"><span class="ambient-orb orb-a"></span><span class="ambient-orb orb-b"></span><span class="ambient-orb orb-c"></span><span class="grain"></span></div>
 
@@ -38,11 +39,15 @@
     </div>
   </header>
 
+  <div class="store-coming-soon-tape" role="status" aria-label="Crack Packs store is coming soon">
+    <span>Coming soon</span><span>Checkout locked</span><span>Coming soon</span><span aria-hidden="true">Store preview</span>
+  </div>
+
   <section class="visual-marquee visual-marquee-top" aria-label="Crack Packs shop showcase">
     <div class="marquee-slides" data-marquee>
-      <a class="marquee-slide is-active" href="#inventory" style="--slide-image:url('assets/images/banner-flame.svg')"><span class="marquee-kicker">Shop the heat</span><strong>Sealed, singles, slabs and packs.</strong><em>Browse below</em></a>
-      <a class="marquee-slide" href="card-lookup.html" style="--slide-image:url('assets/images/banner-electric.svg')"><span class="marquee-kicker">Before you buy or bid</span><strong>Search the card. Check the value.</strong><em>Open price check</em></a>
-      <a class="marquee-slide" data-whatnot href="#" style="--slide-image:url('assets/images/banner-vintage.svg')"><span class="marquee-kicker">Live inventory</span><strong>New claims can land during every stream.</strong><em>Join Whatnot</em></a>
+      <a class="marquee-slide is-active" href="#inventory" style="--slide-image:url('/assets/images/banner-flame.svg')"><span class="marquee-kicker">Shop the heat</span><strong>Sealed, singles, slabs and packs.</strong><em>Browse below</em></a>
+      <a class="marquee-slide" href="card-lookup.html" style="--slide-image:url('/assets/images/banner-electric.svg')"><span class="marquee-kicker">Before you buy or bid</span><strong>Search the card. Check the value.</strong><em>Open price check</em></a>
+      <a class="marquee-slide" data-whatnot href="#" style="--slide-image:url('/assets/images/banner-vintage.svg')"><span class="marquee-kicker">Live inventory</span><strong>New claims can land during every stream.</strong><em>Join Whatnot</em></a>
       <div class="marquee-dots" aria-label="Choose showcase slide"></div>
     </div>
   </section>
@@ -50,15 +55,19 @@
   <main id="main">
     <section class="page-hero shop-hero">
       <div class="container page-hero-grid">
-        <div class="reveal"><p class="eyebrow">Crack Packs shop</p><h1>Find your next <span>chase.</span></h1><p>Browse product categories here, then open the current checkout or Whatnot listing. Inventory, pricing, and availability can change quickly.</p><div class="actions"><a class="btn btn-primary" href="#inventory">Browse inventory</a><a class="btn btn-glass" href="card-lookup.html">Search card prices</a><a class="btn btn-glass" data-whatnot href="#">Shop live on Whatnot ↗</a></div></div>
+        <div class="reveal"><p class="eyebrow">USA store preview</p><h1>Find your next <span>chase.</span></h1><p>Preview upcoming inventory with USA shipping included in the displayed store price. Checkout stays locked until the store officially opens.</p><div class="actions"><a class="btn btn-primary" href="#inventory">Browse inventory</a><a class="btn btn-glass" href="international-shop.html">International shop</a><a class="btn btn-glass" data-whatnot href="#">Shop live on Whatnot ↗</a></div></div>
         <div class="shop-orb holo-panel reveal" aria-hidden="true"><span class="shop-orb-ring ring-one"></span><span class="shop-orb-ring ring-two"></span><span class="shop-orb-ring ring-three"></span><strong>SHOP<br>THE<br>CHASE</strong></div>
       </div>
     </section>
 
     <section class="section-tight" id="inventory">
       <div class="container">
-        <div class="store-notice holo-panel"><span class="notice-dot"></span><strong>Store status:</strong><span data-store-notice></span></div>
-        <div class="shop-tools holo-panel" aria-label="Shop filters">
+        <div class="store-prelaunch-note holo-panel">
+          <span class="store-lock-icon" aria-hidden="true">&#128274;</span>
+          <div><strong>USA storefront preview</strong><p>Displayed launch prices include configured USA shipping. Checkout buttons are disabled, so this page cannot create a charge.</p></div>
+          <nav class="store-market-switch" aria-label="Choose storefront"><a href="shop.html" aria-current="page">USA store</a><a href="international-shop.html">International</a></nav>
+        </div>
+        <div class="shop-tools store-tools holo-panel" aria-label="Shop filters">
           <label class="search-box"><span class="sr-only">Search products</span><input type="search" placeholder="Search sealed, packs, Japanese, singles…" data-product-search></label>
           <div class="filter-list" role="group" aria-label="Product category">
             <button class="filter-btn is-active" type="button" data-product-filter="all">All</button>
@@ -68,7 +77,8 @@
             <button class="filter-btn" type="button" data-product-filter="singles">Singles &amp; slabs</button>
           </div>
         </div>
-        <div class="product-grid shop-grid" data-all-products></div>
+        <p class="store-catalog-status" data-store-catalog-status aria-live="polite">Preparing the store preview…</p>
+        <div class="product-grid shop-grid" data-all-products data-store-catalog></div>
         <div class="empty-state" data-product-empty hidden><strong>No products match that search.</strong><span>Try another keyword or category.</span></div>
       </div>
     </section>
@@ -103,8 +113,9 @@
         <h3>Explore</h3>
         <a href="index.html">Home</a>
         <a href="shop.html">Shop</a>
-        <a href="releases.html">Release Radar</a>
-        <a href="card-lookup.html">Card Search &amp; Price Check</a>
+        <a href="international-shop.html">International Shop</a>
+        <a href="releases.html">Releases</a>
+        <a href="card-lookup.html">Card Search ($)</a>
         <a data-whatnot href="#">Whatnot</a>
       </div>
       <div class="footer-links"><h3>Contact</h3><a data-email href="#">hello@crackpacks.com</a><a href="https://github.com/FaytSystems/crackpacks" target="_blank" rel="noopener noreferrer">GitHub repository ↗</a></div>
@@ -119,9 +130,10 @@
   <!-- CRACK PACKS CONTACT FOOTER:END -->
 </footer>
 
-  <script src="assets/js/config.js?v=1.5.0"></script>
+  <script src="assets/js/config.js?v=3.0.0"></script>
   <script src="assets/js/data.js?v=1.5.0"></script>
   <script src="assets/js/app.js?v=1.5.0"></script>
+  <script src="assets/js/store.js?v=3.0.0"></script>
 
 
 <!-- CRACK PACKS CONTACT MODAL:START -->

@@ -21,6 +21,8 @@ The included internal checker accepts any valid verified email address and enfor
    - `npx wrangler secret put ADMIN_EMAIL`
    - `npx wrangler secret put DISCOUNT_NOTIFY_EMAIL`
    - `npx wrangler secret put OWNER_REFERRAL_SECRET`
+   - `npx wrangler secret put EASYPOST_TEST_API_KEY`
+   - `npx wrangler secret put SHIP_FROM_ADDRESS_JSON`
 5. Run `npm run db:remote`.
 6. Configure Cloudflare Email Routing so `rewards@crackpacks.com` may send.
 7. Run `npm run deploy`.
@@ -46,7 +48,7 @@ The owner dashboard generates an additional signed digital referral QR that chan
 
 ## Public offer campaigns
 
-Rewards Worker 2.9.0 provides owner-created offer campaigns. Apply the pending versioned migrations with `npm run db:remote` before deploying the Worker. Migration `0003` creates campaign, redemption, and weekly reward-ledger tables; additive migration `0004` enables free-single campaigns, additive migration `0005` enables explicit indefinite campaigns, and additive migration `0006` adds server-side kill switches for every master referral and campaign QR.
+Rewards Worker 3.0.0 provides owner-created offer campaigns and inventory-linked product rewards. Apply the pending versioned migrations with `npm run db:remote` before deploying the Worker. Migration `0003` creates campaign, redemption, and weekly reward-ledger tables; additive migration `0004` enables free-single campaigns, additive migration `0005` enables explicit indefinite campaigns, additive migration `0006` adds server-side kill switches for every master referral and campaign QR, additive migration `0007` adds owner inventory, product campaign snapshots, and short-lived shipping quote records, and migrations `0008` through `0010` add one atomic inventory-safety trigger apiece.
 
 Only the verified owner account with a fresh passkey step-up may create campaigns, list campaign members, generate campaign QR codes, or mark rewards redeemed. Supported reward types are:
 
@@ -55,6 +57,7 @@ Only the verified owner account with a fresh passkey step-up may create campaign
 - `pick_a_pack`.
 - `pack_draft` with a required numbered pack choice. `packCount` must be at least `maxRedemptions`.
 - `free_single` for a free holographic single. Use `maxRedemptions` to cap the shipment giveaway, such as the first 50 verified claims.
+- `product` for a current active inventory item selected by name or UPC. Product campaigns snapshot the name and UPC at creation so old claims remain auditable after an inventory edit.
 
 Campaigns may last from 1 hour through 7 days (168 hours), or may be explicitly Indefinite, and may allow up to 500 redemptions. The owner dashboard accepts hours or days; day values support thousandth-day precision, such as `3.05`. Indefinite campaigns remain claimable until their redemption cap is reached and should be manually retired by controlling distribution of their link. Offer URLs use an unguessable public token at `https://crackpacks.com/referral.html?offer=TOKEN`. The token identifies a public offer; it never authenticates the owner or grants dashboard access. Campaign QR images are rendered inside the Worker and do not send offer URLs to a third-party QR service.
 
@@ -71,3 +74,40 @@ Campaign API routes:
 - `GET /campaigns/mine` returns the signed-in member's campaign history and legacy discount, if any.
 
 The email sign-in request may include a bounded public `offerToken`. When it resolves to a campaign, the email verification link carries the same `offer` query parameter back to the site so a scanned offer is not lost during sign-in.
+
+## Inventory, storefront, and shipping
+
+The protected Inventory tab is the source of truth for campaign products and the public USA/international store previews. The starter-catalog importer adds verified product references with zero stock. It never invents COGS or availability. Before enabling a product, enter actual on-hand quantity, landed COGS, packed weight and all three packed dimensions, the documented reference-price source/date, and for international shipping the origin country and HS tariff code.
+
+USA preview price is calculated as `COGS + configured USA shipping allowance + target profit`. International preview price is `COGS + target profit`; shipping is quoted separately. The default profit target is $10, but Stripe fees, packaging, remote-area surcharges, address corrections, and carrier adjustments can reduce the final margin. `STORE_COMING_SOON` and `STORE_CHECKOUT_ENABLED` therefore both remain locked down until every product and checkout flow is verified.
+
+Public inventory never returns owner IDs, inventory IDs, UPCs, COGS, private packing notes, or exact on-hand counts. Owner routes require the normal member bearer token plus a fresh passkey-backed `X-Admin-Token`:
+
+- `GET /admin/inventory?q=QUERY&available=1`
+- `POST /admin/inventory`
+- `POST /admin/inventory/:id`
+- `POST /admin/inventory/catalog/import`
+- `GET /store/inventory?market=us&currency=USD`
+- `POST /store/shipping-quote` (disabled while Coming Soon)
+
+EasyPost is the rate-shopping adapter. Postage is not free even when the API/platform tier is free. Start with its test key:
+
+```powershell
+cd "D:\crackpacks\crackpacks-github-ready\rewards-worker"
+npx.cmd wrangler secret put EASYPOST_TEST_API_KEY
+npx.cmd wrangler secret put SHIP_FROM_ADDRESS_JSON
+```
+
+`SHIP_FROM_ADDRESS_JSON` is a single-line JSON secret, for example:
+
+```json
+{"name":"Crack Packs","street1":"YOUR STREET","street2":"","city":"YOUR CITY","state":"YOUR STATE","postalCode":"YOUR ZIP","country":"US","phone":"YOUR PHONE","email":"shipping@crackpacks.com"}
+```
+
+Get the test/production API keys from the EasyPost dashboard under **Account Settings → API Keys**. Never place an EasyPost or Stripe secret in `assets/js/config.js`. Keep `STORE_COMING_SOON` set to `"true"` and `STORE_CHECKOUT_ENABLED` set to `"false"` until test quotes, stock reservation, Stripe webhook verification, fulfillment, returns, and legal policies have been end-to-end tested. When live checkout is implemented, add `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` using `wrangler secret put`; do not add them yet merely to render the Coming Soon store.
+
+International parcels below US$2,500 use EasyPost's standard `NOEEI 30.37(a)` export exemption automatically. If a shipment can reach US$2,500 or more, first obtain the correct AES proof-of-filing citation and store it with `npx.cmd wrangler secret put EASYPOST_EEL_PFC`; the quote adapter deliberately refuses a high-value customs quote without that configuration.
+
+Product campaigns reserve inventory while active. Turning a campaign off releases only its unclaimed slots; already-claimed rewards stay reserved. Turning it back on is rejected if another campaign used the released capacity. Marking a product reward redeemed removes one physical unit from on-hand inventory, and inventory quantity cannot be lowered below outstanding campaign commitments.
+
+International UI uses DAP (formerly DDU) language: the recipient/importer pays destination duties, taxes, customs/brokerage, clearance, and carrier collection fees. ECB reference rates are used only for approximate display conversion. Actual checkout amounts must be locked by Stripe, and the card issuer's conversion can differ.

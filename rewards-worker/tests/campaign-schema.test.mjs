@@ -8,6 +8,10 @@ const campaignMigration = readFileSync(new URL("../migrations/0003_add_offer_cam
 const singleMigration = readFileSync(new URL("../migrations/0004_add_free_single_campaigns.sql", import.meta.url), "utf8");
 const indefiniteMigration = readFileSync(new URL("../migrations/0005_add_indefinite_campaigns.sql", import.meta.url), "utf8");
 const qrControlsMigration = readFileSync(new URL("../migrations/0006_add_qr_kill_switches.sql", import.meta.url), "utf8");
+const inventoryMigration = readFileSync(new URL("../migrations/0007_add_inventory_products.sql", import.meta.url), "utf8");
+const inventoryQuantityGuardMigration = readFileSync(new URL("../migrations/0008_guard_inventory_quantity.sql", import.meta.url), "utf8");
+const productReactivationGuardMigration = readFileSync(new URL("../migrations/0009_guard_product_reactivation.sql", import.meta.url), "utf8");
+const productFulfillmentMigration = readFileSync(new URL("../migrations/0010_decrement_fulfilled_product.sql", import.meta.url), "utf8");
 
 function member(db, id, email, inviteCode) {
   db.prepare(`INSERT INTO members(id,email,email_verified_at,identity_status,device_verified,invite_code,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)`)
@@ -25,11 +29,21 @@ test("campaign schema and sequential campaign migrations are valid", () => {
   migrationDb.exec(singleMigration);
   migrationDb.exec(indefiniteMigration);
   migrationDb.exec(qrControlsMigration);
+  migrationDb.exec(inventoryMigration);
+  migrationDb.exec(inventoryQuantityGuardMigration);
+  migrationDb.exec(productReactivationGuardMigration);
+  migrationDb.exec(productFulfillmentMigration);
   assert.ok(migrationDb.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='offer_campaigns'`).get());
   assert.ok(migrationDb.prepare(`SELECT name FROM pragma_table_info('offer_campaigns') WHERE name='reward_variant'`).get());
   assert.ok(migrationDb.prepare(`SELECT name FROM pragma_table_info('offer_campaigns') WHERE name='never_expires'`).get());
   assert.ok(migrationDb.prepare(`SELECT name FROM pragma_table_info('offer_campaigns') WHERE name='is_active'`).get());
   assert.ok(migrationDb.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='owner_referral_controls'`).get());
+  assert.ok(migrationDb.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='inventory_items'`).get());
+  assert.ok(migrationDb.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='shipping_quotes'`).get());
+  assert.ok(migrationDb.prepare(`SELECT name FROM pragma_table_info('offer_campaigns') WHERE name='inventory_item_id'`).get());
+  assert.ok(migrationDb.prepare(`SELECT name FROM sqlite_master WHERE type='trigger' AND name='trg_inventory_quantity_commitment_guard'`).get());
+  assert.ok(migrationDb.prepare(`SELECT name FROM sqlite_master WHERE type='trigger' AND name='trg_product_campaign_reactivation_guard'`).get());
+  assert.ok(migrationDb.prepare(`SELECT name FROM sqlite_master WHERE type='trigger' AND name='trg_product_redemption_decrements_inventory'`).get());
   migrationDb.close();
 });
 
@@ -54,9 +68,45 @@ test("campaign constraints reject missing reward data and duplicate claims", () 
   db.prepare(`UPDATE offer_campaigns SET is_active=0 WHERE id='campaign-single'`).run();
   assert.equal(db.prepare(`SELECT is_active FROM offer_campaigns WHERE id='campaign-single'`).get().is_active, 0);
   assert.throws(() => db.prepare(`UPDATE offer_campaigns SET is_active=2 WHERE id='campaign-single'`).run());
+  db.prepare(`INSERT INTO inventory_items(id,owner_member_id,public_slug,name,upc,quantity,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)`)
+    .run("inventory-a", "owner", "test-booster-box", "Test Booster Box", "012345678901", 10, "2026-07-16T00:00:00.000Z", "2026-07-16T00:00:00.000Z");
+  insertCampaign.run("campaign-product", "owner", "Product reward", "pick_a_pack", null, 5, null, "OFRPRODUCTTOKEN123456789012345", "2026-07-17T00:00:00.000Z", "2026-07-16T00:00:00.000Z");
+  db.prepare(`UPDATE offer_campaigns SET inventory_item_id='inventory-a',product_name_snapshot='Test Booster Box',product_upc_snapshot='012345678901' WHERE id='campaign-product'`).run();
+  assert.equal(db.prepare(`SELECT inventory_item_id FROM offer_campaigns WHERE id='campaign-product'`).get().inventory_item_id, "inventory-a");
   const insertClaim = db.prepare(`INSERT INTO campaign_redemptions(id,campaign_id,member_id,week_key,code,claim_rank,pack_number,claimed_at) VALUES(?,?,?,?,?,?,?,?)`);
   insertClaim.run("claim-a", "campaign-a", "member-a", "2026-07-16", "CODE-A", 1, 1, "2026-07-16T12:00:00.000Z");
   assert.throws(() => insertClaim.run("claim-pack", "campaign-a", "member-b", "2026-07-16", "CODE-B", 2, 1, "2026-07-16T12:01:00.000Z"));
   assert.throws(() => insertClaim.run("claim-week", "campaign-b", "member-a", "2026-07-16", "CODE-C", 1, null, "2026-07-16T12:02:00.000Z"));
+  db.close();
+});
+
+test("product campaigns reserve stock and fulfillment decrements inventory", () => {
+  const db = new DatabaseSync(":memory:");
+  db.exec(schema);
+  member(db, "owner", "owner@example.com", "CPOWNER002");
+  member(db, "collector", "collector@example.com", "CPCOLLECT1");
+  db.prepare(`INSERT INTO inventory_items(id,owner_member_id,public_slug,name,upc,quantity,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)`)
+    .run("inventory-product", "owner", "reserved-product", "Reserved Product", "012345678902", 5, "2026-07-18T00:00:00.000Z", "2026-07-18T00:00:00.000Z");
+  db.prepare(`
+    INSERT INTO offer_campaigns(
+      id,owner_member_id,title,reward_type,max_redemptions,offer_token,expires_at,inventory_item_id,product_name_snapshot,product_upc_snapshot,created_at
+    ) VALUES(?,?,?,?,?,?,?,?,?,?,?)
+  `).run(
+    "product-campaign", "owner", "Reserved reward", "pick_a_pack", 4,
+    "OFRRESERVEDPRODUCTTOKEN1234567890", "9999-12-31T23:59:59.999Z",
+    "inventory-product", "Reserved Product", "012345678902", "2026-07-18T00:00:00.000Z"
+  );
+  db.prepare(`INSERT INTO campaign_redemptions(id,campaign_id,member_id,week_key,code,claim_rank,claimed_at) VALUES(?,?,?,?,?,?,?)`)
+    .run("product-claim", "product-campaign", "collector", "2026-07-17", "PRODUCT-CODE", 1, "2026-07-18T01:00:00.000Z");
+
+  assert.throws(() => db.prepare(`UPDATE inventory_items SET quantity=3 WHERE id='inventory-product'`).run(), /INVENTORY_COMMITMENT_CONFLICT/);
+  db.prepare(`UPDATE offer_campaigns SET is_active=0 WHERE id='product-campaign'`).run();
+  db.prepare(`UPDATE inventory_items SET quantity=1 WHERE id='inventory-product'`).run();
+  assert.throws(() => db.prepare(`UPDATE offer_campaigns SET is_active=1 WHERE id='product-campaign'`).run(), /INVENTORY_COMMITMENT_CONFLICT/);
+  db.prepare(`UPDATE inventory_items SET quantity=4 WHERE id='inventory-product'`).run();
+  db.prepare(`UPDATE offer_campaigns SET is_active=1 WHERE id='product-campaign'`).run();
+  db.prepare(`UPDATE campaign_redemptions SET redeemed_at='2026-07-18T02:00:00.000Z',redeemed_by_member_id='owner' WHERE id='product-claim'`).run();
+  assert.equal(db.prepare(`SELECT quantity FROM inventory_items WHERE id='inventory-product'`).get().quantity, 3);
+  assert.equal(db.prepare(`SELECT redeemed_at FROM campaign_redemptions WHERE id='product-claim'`).get().redeemed_at, "2026-07-18T02:00:00.000Z");
   db.close();
 });

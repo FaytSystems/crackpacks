@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.6.1">
   <link rel="stylesheet" href="assets/css/referral.css?v=2.6.0">
   <link rel="stylesheet" href="assets/css/rewards-modal.css?v=2.1.0">
-  <link rel="stylesheet" href="assets/css/admin.css?v=2.9.0">
+  <link rel="stylesheet" href="assets/css/admin.css?v=3.0.0">
 </head>
 <body>
   <header class="site-header">
@@ -76,6 +76,7 @@
           <button type="button" data-master-section-button="signups"><span>03</span><strong>Sign Ups</strong><small>Members by campaign</small></button>
           <button type="button" data-master-section-button="redeemed"><span>04</span><strong>Redeemed</strong><small>Verify promo rewards</small></button>
           <button type="button" data-master-section-button="email"><span>05</span><strong>Email</strong><small>Message members</small></button>
+          <button type="button" data-master-section-button="inventory"><span>06</span><strong>Inventory</strong><small>Products &amp; store pricing</small></button>
         </nav>
         <section class="reward-card owner-referral-card" data-owner-referral data-master-section="create_link">
           <div class="owner-referral-grid">
@@ -141,7 +142,7 @@
           </div>
           <label class="campaign-claim-search">Find a campaign or claimant<input type="search" data-campaign-search placeholder="Search campaign, reward, code, email, or WhatNot username" autocomplete="off"></label>
           <div class="campaign-library-filters">
-            <label>Reward type<select data-campaign-type-filter><option value="all">All reward types</option><option value="percent">Percentage off</option><option value="free_shipping">Free shipping</option><option value="pick_a_pack">Free Pack / Pick a Pack</option><option value="pack_draft">Choose a Pack #</option><option value="free_single">Free Holographic Single</option></select></label>
+            <label>Reward type<select data-campaign-type-filter><option value="all">All reward types</option><option value="percent">Percentage off</option><option value="free_shipping">Free shipping</option><option value="pick_a_pack">Free Pack / Pick a Pack</option><option value="pack_draft">Choose a Pack #</option><option value="free_single">Free Holographic Single</option><option value="product">Products (Inventory)</option></select></label>
             <label>Signup / claim from<input type="date" data-campaign-date-from></label>
             <label>Signup / claim through<input type="date" data-campaign-date-to></label>
             <button class="btn btn-outline btn-small" type="button" data-campaign-filters-clear>Clear filters</button>
@@ -190,6 +191,30 @@
             </div>
           </form>
         </section>
+        <section class="inventory-workspace" data-master-section="inventory" hidden>
+          <div class="dashboard-head inventory-workspace-head">
+            <div>
+              <p class="eyebrow">Stock &amp; campaign products</p>
+              <h2>Inventory control room</h2>
+              <p>Keep products, stock, store pricing, and package details in one place. Active products with stock appear automatically in the campaign generator.</p>
+            </div>
+            <div class="inventory-head-actions">
+              <button class="btn btn-outline btn-small" type="button" data-inventory-import>Import starter catalog</button>
+              <button class="btn btn-primary btn-small" type="button" data-inventory-new>Add Product</button>
+            </div>
+          </div>
+          <div class="inventory-pricing-note">
+            <strong>Pricing guardrail</strong>
+            <span>USA price = COGS + USA shipping allowance + target profit. International product price = COGS + target profit; shipping is quoted separately. Payment-processing, insurance, packaging, carrier surcharges, duties, taxes, and refunds can reduce actual profit.</span>
+          </div>
+          <div class="inventory-toolbar">
+            <label>Search inventory<input type="search" data-inventory-search placeholder="Guess a name, UPC, or category" autocomplete="off"></label>
+            <label>Show<select data-inventory-status-filter><option value="all">All products</option><option value="active">Active only</option><option value="inactive">Deactivated only</option><option value="in_stock">In stock</option><option value="needs_pricing">Needs pricing</option></select></label>
+            <button class="btn btn-outline btn-small" type="button" data-inventory-refresh>Refresh</button>
+          </div>
+          <div class="campaign-form-status inventory-status" data-inventory-status aria-live="polite"></div>
+          <div class="inventory-grid" data-inventory-list aria-live="polite"></div>
+        </section>
       </section>
     </section>
   </main>
@@ -210,11 +235,21 @@
             <option value="pick_a_pack">Free Pack / Pick a Pack</option>
             <option value="pack_draft">Choose a Pack #</option>
             <option value="free_single">Free Holographic Single</option>
+            <option value="product">Products (Inventory)</option>
           </select>
         </label>
         <p class="fine-print" data-campaign-single-help hidden>First-show setup: leave Maximum people at 50. Each verified claim receives one unique rank and code for a free holographic single.</p>
         <label data-campaign-percent-field>Percentage<input name="percent" type="number" min="1" max="100" value="10" inputmode="numeric" required></label>
         <label data-campaign-pack-field hidden>Number of packs<input name="packCount" type="number" min="1" max="500" value="10" inputmode="numeric"></label>
+        <div class="campaign-product-field" data-campaign-product-field hidden>
+          <label for="campaign-inventory-search">Inventory product</label>
+          <div class="inventory-combobox">
+            <input id="campaign-inventory-search" type="search" data-campaign-inventory-search role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="campaign-inventory-options" autocomplete="off" placeholder="Search by product name or UPC">
+            <input name="inventoryItemId" type="hidden" data-campaign-inventory-id>
+            <div class="inventory-combobox-options" id="campaign-inventory-options" data-campaign-inventory-options role="listbox" hidden></div>
+          </div>
+          <small data-campaign-inventory-selection>Choose an active product with available stock.</small>
+        </div>
         <div class="field-grid">
           <div class="campaign-expiry-field">
             <span>Time to Expire</span>
@@ -235,6 +270,70 @@
         <div class="campaign-modal-actions">
           <button class="btn btn-outline" type="button" data-campaign-close>Cancel</button>
           <button class="btn btn-primary" type="submit" data-campaign-submit>Generate Discount + QR</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <div class="rewards-modal" data-inventory-modal hidden>
+    <button class="rewards-modal-backdrop" type="button" data-inventory-close aria-label="Close inventory editor"></button>
+    <section class="rewards-modal-card inventory-modal-card" role="dialog" aria-modal="true" aria-labelledby="inventory-modal-title">
+      <button class="rewards-modal-close" type="button" data-inventory-close aria-label="Close">&times;</button>
+      <p class="eyebrow">Protected inventory editor</p>
+      <h2 id="inventory-modal-title" data-inventory-modal-title>Add an inventory product</h2>
+      <p>Use actual landed costs and packed measurements. Leave any unknown price blank; the storefront will not invent a selling price.</p>
+      <form class="inventory-form" data-inventory-form>
+        <input name="id" type="hidden">
+        <fieldset>
+          <legend>Product identity</legend>
+          <div class="inventory-form-grid">
+            <label class="inventory-span-2">Product name<input name="name" required maxlength="120" placeholder="Mega Evolution Booster Box"></label>
+            <label>UPC<input name="upc" inputmode="numeric" maxlength="32" placeholder="Preserves leading zeros"></label>
+            <label>Category<input name="category" maxlength="64" placeholder="Booster Box"></label>
+            <label>Quantity on hand<input name="quantity" type="number" min="0" max="100000" step="1" value="0" required inputmode="numeric"></label>
+            <label class="inventory-span-2">Image or local asset URL<input name="imageUrl" maxlength="500" placeholder="https://... or assets/images/product.svg"></label>
+            <label class="inventory-span-2">Description<textarea name="description" maxlength="1000" rows="3" placeholder="Collector-facing product description"></textarea></label>
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend>Reference &amp; selling price</legend>
+          <div class="inventory-form-grid inventory-money-grid">
+            <label>Reference price ($)<input name="averageMsrp" type="number" min="0" step="0.01" inputmode="decimal" placeholder="161.64"></label>
+            <label>Reference label<input name="referencePriceLabel" maxlength="80" value="Retail reference price" placeholder="Average MSRP"></label>
+            <label>Price observed on<input name="referencePriceObservedAt" type="date"></label>
+            <label>Reference source URL<input name="sourceUrl" maxlength="500" placeholder="https://retailer.example/product"></label>
+            <label>COGS ($)<input name="cogs" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Your landed product cost"></label>
+            <label>USA shipping allowance ($)<input name="usShipping" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Packed shipping budget"></label>
+            <label>Target profit ($)<input name="profit" type="number" min="0" step="0.01" value="10.00" inputmode="decimal"></label>
+          </div>
+          <div class="inventory-price-preview" data-inventory-price-preview>
+            <div><span>Calculated USA price</span><strong data-inventory-us-price>Needs COGS + shipping</strong><small>Free-USA-shipping display price</small></div>
+            <div><span>International product price</span><strong data-inventory-international-price>Needs COGS</strong><small>Shipping quoted separately</small></div>
+          </div>
+          <p class="fine-print">These are planning prices, not guaranteed net proceeds. Stripe/payment fees, packing materials, insurance, address adjustments, carrier surcharges, returns, and taxes are not automatically included.</p>
+        </fieldset>
+        <fieldset>
+          <legend>Packed shipment details</legend>
+          <div class="inventory-form-grid inventory-package-grid">
+            <label>Weight (oz)<input name="weightOz" type="number" min="0.01" max="2400" step="0.01" inputmode="decimal"></label>
+            <label>Length (in)<input name="lengthIn" type="number" min="0.01" max="120" step="0.01" inputmode="decimal"></label>
+            <label>Width (in)<input name="widthIn" type="number" min="0.01" max="120" step="0.01" inputmode="decimal"></label>
+            <label>Height (in)<input name="heightIn" type="number" min="0.01" max="120" step="0.01" inputmode="decimal"></label>
+            <label>Origin country<input name="originCountry" maxlength="2" placeholder="US" aria-describedby="origin-country-help"></label>
+            <label>HS code<input name="hsCode" maxlength="12" inputmode="numeric" placeholder="9504.40"></label>
+            <label class="inventory-span-2">Packing notes<textarea name="packingNotes" maxlength="500" rows="3" placeholder="Internal-only packing instructions"></textarea></label>
+          </div>
+          <p class="fine-print" id="origin-country-help">Country of origin means where the product was manufactured, not where it ships from. Use the two-letter country code and confirm customs details before international sales.</p>
+        </fieldset>
+        <div class="inventory-switches">
+          <label><input name="isStoreVisible" type="checkbox" checked> Show in Coming Soon store</label>
+          <label><input name="isActive" type="checkbox" checked> Active inventory item</label>
+        </div>
+        <p class="inventory-deactivate-note" data-inventory-deactivate-note hidden>Turning Active off safely removes this product from new product campaigns and the public catalog. Existing campaign snapshots stay intact.</p>
+        <div class="campaign-form-status" data-inventory-form-status aria-live="polite"></div>
+        <div class="campaign-modal-actions">
+          <button class="btn btn-outline" type="button" data-inventory-close>Cancel</button>
+          <button class="btn btn-primary" type="submit" data-inventory-save>Save Product</button>
         </div>
       </form>
     </section>
@@ -293,8 +392,8 @@
     </section>
   </div>
 
-  <script src="assets/js/config.js?v=1.9.6"></script>
+  <script src="assets/js/config.js?v=3.0.0"></script>
   <script src="assets/js/nav-profile.js?v=2.6.1"></script>
-  <script src="assets/js/admin.js?v=2.9.0"></script>
+  <script src="assets/js/admin.js?v=3.0.0"></script>
 </body>
 </html>

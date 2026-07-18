@@ -13,7 +13,11 @@
     "RP_ID": "crackpacks.com",
     "RP_NAME": "Crack Packs",
     "DISCOUNT_PREFIX": "CRACK",
-    "DISCOUNT_PERCENT": "10"
+    "DISCOUNT_PERCENT": "10",
+    "STORE_BASE_CURRENCY": "USD",
+    "STORE_COMING_SOON": "true",
+    "STORE_CHECKOUT_ENABLED": "false",
+    "INTERNATIONAL_INCOTERM": "DAP"
   },
   "observability": { "enabled": true }
 }

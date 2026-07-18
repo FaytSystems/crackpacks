@@ -212,6 +212,7 @@
     if (type === "pick_a_pack") return "Free Pack / Pick a Pack";
     if (type === "pack_draft") return "Choose a Pack #";
     if (type === "free_single") return "Free Holographic Single";
+    if (type === "product") return `Product: ${String(pick(campaign, "product")?.name || "Inventory reward")}`;
     return "Campaign reward";
   };
   const campaignNeverExpires = campaign => pick(campaign, "neverExpires", "never_expires") === true || Number(pick(campaign, "neverExpires", "never_expires") || 0) === 1;

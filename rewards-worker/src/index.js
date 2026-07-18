@@ -2,9 +2,26 @@ import QRCode from "qrcode";
 import { issueOwnerReferral, ownerReferralSlotAt, verifyOwnerReferral } from "./referral-rotation.js";
 import { campaignWeekAt, parseCampaignExpiryHours } from "./campaign-time.js";
 
-const VERSION = "2.9.0";
-const CAMPAIGN_REWARD_TYPES = new Set(["percent", "free_shipping", "pick_a_pack", "pack_draft", "free_single"]);
+const VERSION = "3.0.0";
+const CAMPAIGN_REWARD_TYPES = new Set(["percent", "free_shipping", "pick_a_pack", "pack_draft", "free_single", "product"]);
 const MAX_CAMPAIGN_REDEMPTIONS = 500;
+const STORE_CURRENCIES = new Set(["USD", "CAD", "EUR", "GBP", "AUD", "NZD", "JPY", "CHF", "SEK", "NOK", "DKK", "PLN", "CZK", "HUF", "RON"]);
+const STORE_QUOTE_TTL_MS = 10 * 60e3;
+const STARTER_INVENTORY = [
+  { publicSlug: "pitch-black-booster-box-36", name: "Mega Evolution—Pitch Black Booster Box (36 Packs)", upc: "196214157514", category: "Booster Box", averageMsrpCents: 16099, imageUrl: "assets/images/release-pitch-black-box.svg", sourceUrl: "https://www.bestbuy.com/product/pokemon-trading-card-game-mega-evolution-pitch-black-booster-box-36-packs/JJG2TL8C7R/sku/6678362" },
+  { publicSlug: "pitch-black-elite-trainer-box", name: "Mega Evolution—Pitch Black Elite Trainer Box", upc: "196214157422", category: "Elite Trainer Box", averageMsrpCents: 4999, imageUrl: "assets/images/release-pitch-black-etb.svg", sourceUrl: "https://www.bestbuy.com/product/pokemon-trading-card-game-mega-evolution-pitch-black-elite-trainer-box/JJG2TL8J45/sku/6678361" },
+  { publicSlug: "pitch-black-booster-bundle-6", name: "Mega Evolution—Pitch Black Booster Bundle (6 Packs)", upc: "196214157484", category: "Booster Bundle", averageMsrpCents: 2694, imageUrl: "assets/images/release-pitch-black-bundle.svg", sourceUrl: "https://www.bestbuy.com/product/pokemon-trading-card-game-mega-evolution-pitch-black-booster-bundle/JJG2TL8JVY/sku/6678359" },
+  { publicSlug: "pitch-black-three-pack-booster", name: "Mega Evolution—Pitch Black 3-Pack Booster", upc: "196214157477", category: "Blister", averageMsrpCents: 1399, imageUrl: "assets/images/release-pitch-black-three.svg", sourceUrl: "https://www.bestbuy.com/product/pokemon-trading-card-game-mega-evolution-pitch-black-3pk-booster/JJG2TL8JVC/sku/6678388" },
+  { publicSlug: "pitch-black-sleeved-booster", name: "Mega Evolution—Pitch Black Sleeved Booster", upc: null, category: "Booster Pack", averageMsrpCents: 449, imageUrl: "assets/images/product-cosmic.svg", sourceUrl: "https://www.bestbuy.com/product/pokemon-mega-evolution-pitch-black-sleeved-booster-styles-may-vary/JJG2TL32P8/sku/6678360" },
+  { publicSlug: "mega-greninja-ex-premium-collection", name: "Mega Greninja ex Premium Collection", upc: "196214155923", category: "Premium Collection", averageMsrpCents: 4499, imageUrl: "assets/images/product-aurora.svg", sourceUrl: "https://www.target.com/p/-/A-1011209273" },
+  { publicSlug: "pitch-black-build-and-battle", name: "Mega Evolution—Pitch Black Build & Battle Box", upc: null, category: "Build & Battle", averageMsrpCents: null, imageUrl: "assets/images/product-electric.svg", sourceUrl: "https://www.pokemon.com/us/news/check-out-every-pokemon-tcg-product-release-in-july-2026" },
+  { publicSlug: "chaos-rising-booster-box-36", name: "Mega Evolution—Chaos Rising Booster Box (36 Packs)", upc: null, category: "Booster Box", averageMsrpCents: 16099, imageUrl: "assets/images/product-flame.svg", sourceUrl: "https://www.bestbuy.com/product/pokemon-trading-card-game-mega-evolution-chaos-rising-booster-box-36-packs/JJG2TL34TS" },
+  { publicSlug: "chaos-rising-elite-trainer-box", name: "Mega Evolution—Chaos Rising Elite Trainer Box", upc: null, category: "Elite Trainer Box", averageMsrpCents: 4999, imageUrl: "assets/images/product-flame.svg", sourceUrl: "https://www.bestbuy.com/product/pokemon-trading-card-game-mega-evolution-chaos-rising-elite-trainer-box/JJG2TL34RT/sku/6673725" },
+  { publicSlug: "chaos-rising-booster-bundle-6", name: "Mega Evolution—Chaos Rising Booster Bundle (6 Packs)", upc: null, category: "Booster Bundle", averageMsrpCents: 2694, imageUrl: "assets/images/product-flame.svg", sourceUrl: "https://www.bestbuy.com/product/pokemon-trading-card-game-mega-evolution-chaos-rising-booster-bundle/JJG2TL34H9/sku/6673721" },
+  { publicSlug: "perfect-order-booster-box-36", name: "Mega Evolution—Perfect Order Booster Box (36 Packs)", upc: "196214150461", category: "Booster Box", averageMsrpCents: 16099, imageUrl: "assets/images/product-electric.svg", sourceUrl: "https://www.bestbuy.com/product/pokemon-trading-card-game-mega-evolution-perfect-order-booster-box-36-packs/JJG2TL3QWX/sku/6668619" },
+  { publicSlug: "perfect-order-elite-trainer-box", name: "Mega Evolution—Perfect Order Elite Trainer Box", upc: null, category: "Elite Trainer Box", averageMsrpCents: 4999, imageUrl: "assets/images/product-electric.svg", sourceUrl: "https://www.bestbuy.com/product/pokemon-trading-card-game-mega-evolution-perfect-order-elite-trainer-box/JJG2TL3W86/sku/6668618" },
+  { publicSlug: "perfect-order-booster-bundle-6", name: "Mega Evolution—Perfect Order Booster Bundle (6 Packs)", upc: "196214150478", category: "Booster Bundle", averageMsrpCents: 2694, imageUrl: "assets/images/product-electric.svg", sourceUrl: "https://www.bestbuy.com/product/pokemon-trading-card-game-mega-evolution-perfect-order-booster-bundle/JJG2TL3QK2/sku/6668627" }
+];
 const TIERS = [
   { threshold: 0, name: "Starter", reward: "Member access" },
   { threshold: 3, name: "Crew", reward: "Bonus discount" },
@@ -17,10 +34,62 @@ const now = () => new Date().toISOString();
 const id = () => crypto.randomUUID();
 const normalizeEmail = value => String(value || "").trim().toLowerCase().slice(0, 254);
 const clean = (value, max = 64) => String(value || "").trim().replace(/\s+/g, " ").slice(0, max);
+const optionalInteger = (value, min, max) => value === "" || value === null || value === undefined ? null : Number.isInteger(value) && value >= min && value <= max ? value : NaN;
+const optionalNumber = (value, min, max) => value === "" || value === null || value === undefined ? null : Number.isFinite(Number(value)) && Number(value) >= min && Number(value) <= max ? Number(value) : NaN;
+function parseInventoryItemInput(data) {
+  const rawName = boundedString(data?.name, 120);
+  const rawUpc = boundedString(data?.upc, 32);
+  const rawCategory = boundedString(data?.category, 64);
+  const rawDescription = boundedString(data?.description, 1000);
+  const rawImageUrl = boundedString(data?.imageUrl, 500);
+  const rawSourceUrl = boundedString(data?.sourceUrl, 500);
+  const rawPackingNotes = boundedString(data?.packingNotes, 500);
+  const rawOriginCountry = boundedString(data?.originCountry, 2);
+  const rawHsCode = boundedString(data?.hsCode, 12);
+  const rawReferenceLabel = boundedString(data?.referencePriceLabel, 80);
+  if ([rawName, rawUpc, rawCategory, rawDescription, rawImageUrl, rawSourceUrl, rawPackingNotes, rawOriginCountry, rawHsCode, rawReferenceLabel].includes(null)) return { error: "Inventory text is too long." };
+  const name = clean(rawName, 120);
+  const upcInput = String(rawUpc || "").trim();
+  if (upcInput && !/^[0-9\s-]+$/.test(upcInput)) return { error: "UPC must contain digits only." };
+  const upc = upcInput.replace(/[\s-]/g, "");
+  if (!name || name.length < 2) return { error: "Enter an inventory product name from 2 to 120 characters." };
+  if (upc && !/^\d{6,18}$/.test(upc)) return { error: "UPC must contain 6 to 18 digits." };
+  const imageUrl = String(rawImageUrl || "").trim();
+  const sourceUrl = String(rawSourceUrl || "").trim();
+  for (const [label, value] of [["Image URL", imageUrl], ["Source URL", sourceUrl]]) {
+    if (value && !/^https:\/\//i.test(value) && !/^assets\/images\/[a-z0-9._/-]+$/i.test(value)) return { error: `${label} must use HTTPS or a local assets/images path.` };
+  }
+  const quantity = optionalInteger(data?.quantity ?? 0, 0, 100000);
+  const averageMsrpCents = optionalInteger(data?.averageMsrpCents, 0, 100000000);
+  const cogsCents = optionalInteger(data?.cogsCents, 0, 100000000);
+  const usShippingCents = optionalInteger(data?.usShippingCents, 0, 10000000);
+  const profitCents = optionalInteger(data?.profitCents ?? 1000, 0, 10000000);
+  const weightOz = optionalNumber(data?.weightOz, 0.01, 2400);
+  const lengthIn = optionalNumber(data?.lengthIn, 0.01, 120);
+  const widthIn = optionalNumber(data?.widthIn, 0.01, 120);
+  const heightIn = optionalNumber(data?.heightIn, 0.01, 120);
+  if ([quantity, averageMsrpCents, cogsCents, usShippingCents, profitCents, weightOz, lengthIn, widthIn, heightIn].some(Number.isNaN)) return { error: "Check the inventory quantity, pricing, weight, and package dimensions." };
+  const originCountry = String(rawOriginCountry || "").trim().toUpperCase();
+  if (originCountry && !/^[A-Z]{2}$/.test(originCountry)) return { error: "Country of origin must be a two-letter code." };
+  const hsCode = String(rawHsCode || "").trim();
+  if (hsCode && !/^[0-9.]{4,12}$/.test(hsCode)) return { error: "HS code must contain 4 to 12 digits or periods." };
+  const referencePriceObservedAt = String(data?.referencePriceObservedAt || "").trim();
+  if (referencePriceObservedAt && !/^\d{4}-\d{2}-\d{2}$/.test(referencePriceObservedAt)) return { error: "Reference-price date must use YYYY-MM-DD." };
+  return {
+    item: {
+      name, upc: upc || null, category: clean(rawCategory, 64), description: String(rawDescription || "").trim(), imageUrl, sourceUrl,
+      quantity, averageMsrpCents, referencePriceLabel: clean(rawReferenceLabel || "Retail reference price", 80), referencePriceObservedAt: referencePriceObservedAt || null,
+      cogsCents, usShippingCents, profitCents, weightOz, lengthIn, widthIn, heightIn,
+      originCountry, hsCode, packingNotes: String(rawPackingNotes || "").trim(),
+      isStoreVisible: data?.isStoreVisible !== false, isActive: data?.isActive !== false
+    }
+  };
+}
 const boundedString = (value, max) => {
   if (value === undefined || value === null) return "";
   return typeof value === "string" && value.length <= max ? value : null;
 };
+const slugify = value => clean(value, 120).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 120) || "product";
 const escapeHtml = value => String(value || "").replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
 const randomString = (length, alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789") => Array.from(crypto.getRandomValues(new Uint8Array(length)), n => alphabet[n % alphabet.length]).join("");
 async function hash(value, secret = "") {
@@ -162,7 +231,209 @@ const offerTokenValue = value => {
   return /^OFR[A-HJ-NP-Z2-9]{32}$/.test(normalized) ? normalized : "";
 };
 const campaignUrl = (campaign, env) => `${env.SITE_URL}/referral.html?offer=${encodeURIComponent(campaign.offer_token)}`;
-const campaignRewardType = campaign => campaign.reward_variant || campaign.reward_type;
+const campaignRewardType = campaign => campaign.inventory_item_id ? "product" : campaign.reward_variant || campaign.reward_type;
+const campaignProduct = (campaign, ownerView = false) => campaign.inventory_item_id ? {
+  name: campaign.product_name_snapshot || "Inventory product",
+  ...(ownerView ? { inventoryItemId: campaign.inventory_item_id, upc: campaign.product_upc_snapshot || "" } : {})
+} : null;
+const cents = value => value === null || value === undefined ? null : Number(value);
+const storePriceCents = (row, market) => {
+  const productCost = cents(row.cogs_cents);
+  const profit = cents(row.profit_cents);
+  const shipping = cents(row.us_shipping_cents);
+  if (productCost === null || profit === null) return null;
+  if (market === "us") return shipping === null ? null : productCost + shipping + profit;
+  return productCost + profit;
+};
+const inventoryItemView = row => {
+  const committedUnits = Math.max(0, Number(row.committed_units || 0));
+  const quantity = Number(row.quantity || 0);
+  const availableQuantity = Math.max(0, quantity - committedUnits);
+  return ({
+  id: row.id,
+  publicSlug: row.public_slug,
+  name: row.name,
+  upc: row.upc || "",
+  category: row.category || "",
+  description: row.description || "",
+  imageUrl: row.image_url || "",
+  sourceUrl: row.source_url || "",
+  quantity,
+  committedUnits,
+  availableQuantity,
+  averageMsrpCents: cents(row.average_msrp_cents),
+  referencePriceLabel: row.reference_price_label || "Retail reference price",
+  referencePriceObservedAt: row.reference_price_observed_at || null,
+  cogsCents: cents(row.cogs_cents),
+  usShippingCents: cents(row.us_shipping_cents),
+  profitCents: cents(row.profit_cents),
+  usStorePriceCents: storePriceCents(row, "us"),
+  internationalStorePriceCents: storePriceCents(row, "international"),
+  weightOz: row.weight_oz === null || row.weight_oz === undefined ? null : Number(row.weight_oz),
+  lengthIn: row.length_in === null || row.length_in === undefined ? null : Number(row.length_in),
+  widthIn: row.width_in === null || row.width_in === undefined ? null : Number(row.width_in),
+  heightIn: row.height_in === null || row.height_in === undefined ? null : Number(row.height_in),
+  originCountry: row.origin_country || "",
+  hsCode: row.hs_code || "",
+  packingNotes: row.packing_notes || "",
+  isStoreVisible: Number(row.is_store_visible) === 1,
+  isActive: Number(row.is_active) === 1,
+  campaignReady: Number(row.is_active) === 1 && availableQuantity > 0,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at
+  });
+};
+async function inventoryCommittedUnits(env, inventoryItemId, ownerMemberId, epochIso = now(), excludedCampaignId = "") {
+  const row = await env.DB.prepare(`
+    SELECT COALESCE(SUM(
+      CASE
+        WHEN campaign.is_active=1 AND campaign.expires_at>? THEN
+          MAX(campaign.max_redemptions - (
+            SELECT COUNT(*) FROM campaign_redemptions fulfilled
+            WHERE fulfilled.campaign_id=campaign.id AND fulfilled.redeemed_at IS NOT NULL
+          ),0)
+        ELSE (
+          SELECT COUNT(*) FROM campaign_redemptions promised
+          WHERE promised.campaign_id=campaign.id AND promised.redeemed_at IS NULL
+        )
+      END
+    ),0) total
+    FROM offer_campaigns campaign
+    WHERE campaign.inventory_item_id=? AND campaign.owner_member_id=?
+      AND (?='' OR campaign.id<>?)
+  `).bind(epochIso, inventoryItemId, ownerMemberId, excludedCampaignId, excludedCampaignId).first();
+  return Math.max(0, Number(row?.total || 0));
+}
+const convertCents = (usdCents, rate) => usdCents === null || rate === null ? null : Math.round(usdCents * rate);
+async function ecbFxQuote(currency) {
+  if (currency === "USD") return { value: 1, source: "USD", asOf: new Date().toISOString().slice(0, 10) };
+  const cache = globalThis.caches?.default;
+  const cacheKey = new Request("https://rewards-api.crackpacks.com/.well-known/ecb-daily-rates-v1");
+  let xml = "";
+  let asOf = "";
+  if (cache) {
+    const cached = await cache.match(cacheKey);
+    if (cached) {
+      const payload = await cached.json().catch(() => null);
+      if (payload?.xml) { xml = payload.xml; asOf = payload.asOf || ""; }
+    }
+  }
+  if (!xml) {
+    const result = await fetch("https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml", { headers: { Accept: "application/xml,text/xml" } });
+    if (!result.ok) throw new Error("FX_UNAVAILABLE");
+    xml = await result.text();
+    asOf = xml.match(/time=['\"](\d{4}-\d{2}-\d{2})['\"]/)?.[1] || new Date().toISOString().slice(0, 10);
+    if (cache) await cache.put(cacheKey, new Response(JSON.stringify({ xml, asOf }), { headers: { "Content-Type": "application/json", "Cache-Control": "public, max-age=21600" } }));
+  }
+  const perEuro = { EUR: 1 };
+  for (const match of xml.matchAll(/currency=['\"]([A-Z]{3})['\"]\s+rate=['\"]([0-9.]+)['\"]/g)) perEuro[match[1]] = Number(match[2]);
+  if (!Number.isFinite(perEuro.USD) || !Number.isFinite(perEuro[currency])) throw new Error("FX_UNAVAILABLE");
+  return { value: perEuro[currency] / perEuro.USD, source: "European Central Bank reference rate", asOf };
+}
+function publicStoreItem(row, market, currency, fx) {
+  const usdPrice = storePriceCents(row, market);
+  const msrpUsd = cents(row.average_msrp_cents);
+  const availableQuantity = Math.max(0, Number(row.quantity || 0) - Number(row.committed_units || 0));
+  const dimensionsReady = [row.weight_oz, row.length_in, row.width_in, row.height_in].every(value => Number(value) > 0);
+  const customsReady = market === "us" || (String(row.origin_country || "").length === 2 && String(row.hs_code || "").length >= 4);
+  return {
+    slug: row.public_slug,
+    name: row.name,
+    category: row.category || "Trading Card Product",
+    description: row.description || "",
+    imageUrl: row.image_url || "assets/images/product-cosmic.svg",
+    sourceUrl: row.source_url || "",
+    available: availableQuantity > 0,
+    quantityLabel: availableQuantity > 0 ? "Available" : "Coming Soon",
+    msrp: msrpUsd === null ? null : {
+      usdCents: msrpUsd,
+      displayCents: convertCents(msrpUsd, fx?.value ?? null),
+      currency,
+      label: row.reference_price_label || "Retail reference price",
+      observedAt: row.reference_price_observed_at || null
+    },
+    price: usdPrice === null ? null : {
+      usdCents: usdPrice,
+      displayCents: convertCents(usdPrice, fx?.value ?? null),
+      currency,
+      includesUsShipping: market === "us"
+    },
+    shippingReady: dimensionsReady && customsReady
+  };
+}
+function parseShippingAddress(input) {
+  const fields = {
+    name: boundedString(input?.name, 100), street1: boundedString(input?.street1, 120), street2: boundedString(input?.street2, 120),
+    city: boundedString(input?.city, 80), state: boundedString(input?.state, 80), postalCode: boundedString(input?.postalCode, 24),
+    country: boundedString(input?.country, 2), phone: boundedString(input?.phone, 32), email: boundedString(input?.email, 254)
+  };
+  if (Object.values(fields).includes(null)) return { error: "Shipping address fields are too long." };
+  const address = Object.fromEntries(Object.entries(fields).map(([key, value]) => [key, String(value || "").trim()]));
+  address.country = address.country.toUpperCase();
+  if (!address.name || !address.street1 || !address.city || !address.postalCode || !/^[A-Z]{2}$/.test(address.country)) return { error: "Enter a complete shipping name, street, city, postal code, and two-letter country." };
+  if (address.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address.email)) return { error: "Enter a valid shipping email address." };
+  return { address };
+}
+const easyPostAddress = address => ({
+  name: address.name, street1: address.street1, street2: address.street2 || undefined, city: address.city,
+  state: address.state || undefined, zip: address.postalCode, country: address.country,
+  phone: address.phone || undefined, email: address.email || undefined
+});
+async function easyPostShipmentQuote(env, item, quantity, address) {
+  if (quantity !== 1) throw new Error("MULTI_ITEM_PACKING_NOT_READY");
+  const apiKey = env.EASYPOST_API_KEY || env.EASYPOST_TEST_API_KEY || "";
+  if (!apiKey) throw new Error("SHIPPING_NOT_CONFIGURED");
+  let from;
+  try { from = JSON.parse(env.SHIP_FROM_ADDRESS_JSON || ""); } catch { throw new Error("SHIP_FROM_NOT_CONFIGURED"); }
+  const parsedFrom = parseShippingAddress({
+    name: from.name, street1: from.street1, street2: from.street2, city: from.city, state: from.state,
+    postalCode: from.postalCode || from.zip, country: from.country || "US", phone: from.phone, email: from.email
+  });
+  if (parsedFrom.error) throw new Error("SHIP_FROM_NOT_CONFIGURED");
+  if (![item.weight_oz, item.length_in, item.width_in, item.height_in].every(value => Number(value) > 0)) throw new Error("PACKAGE_NOT_CONFIGURED");
+  const shipment = {
+    to_address: easyPostAddress(address),
+    from_address: easyPostAddress(parsedFrom.address),
+    parcel: { weight: Number(item.weight_oz), length: Number(item.length_in), width: Number(item.width_in), height: Number(item.height_in) }
+  };
+  if (address.country !== "US") {
+    const declaredValue = storePriceCents(item, "international");
+    if (!item.origin_country || !item.hs_code || declaredValue === null || declaredValue < 1) throw new Error("CUSTOMS_NOT_CONFIGURED");
+    const configuredIncoterm = clean(env.INTERNATIONAL_INCOTERM || "DAP", 8).toUpperCase();
+    if (configuredIncoterm !== "DAP") throw new Error("CUSTOMS_NOT_CONFIGURED");
+    const eelPfc = clean(env.EASYPOST_EEL_PFC || "NOEEI 30.37(a)", 64);
+    if (declaredValue >= 250000 && !env.EASYPOST_EEL_PFC) throw new Error("CUSTOMS_NOT_CONFIGURED");
+    shipment.customs_info = {
+      customs_certify: true,
+      customs_signer: parsedFrom.address.name,
+      contents_type: "merchandise",
+      eel_pfc: eelPfc,
+      incoterm: "DAP",
+      non_delivery_option: "return",
+      restriction_type: "none",
+      customs_items: [{
+        description: clean(item.description || item.name, 255), quantity: 1, weight: Number(item.weight_oz),
+        value: (declaredValue / 100).toFixed(2), hs_tariff_number: item.hs_code, origin_country: item.origin_country
+      }]
+    };
+  }
+  const result = await fetch("https://api.easypost.com/v2/shipments", {
+    method: "POST",
+    headers: { Authorization: `Basic ${btoa(`${apiKey}:`)}`, "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ shipment })
+  });
+  const payload = await result.json().catch(() => ({}));
+  if (!result.ok) {
+    console.error("EasyPost rating failed", { status: result.status, code: payload?.error?.code || "" });
+    throw new Error("SHIPPING_PROVIDER_ERROR");
+  }
+  const rates = (Array.isArray(payload.rates) ? payload.rates : []).map(rate => ({
+    id: String(rate.id || ""), carrier: clean(rate.carrier, 60), service: clean(rate.service, 80),
+    amountCents: Math.round(Number(rate.rate) * 100), deliveryDays: Number.isInteger(rate.delivery_days) ? rate.delivery_days : null
+  })).filter(rate => rate.id && Number.isInteger(rate.amountCents) && rate.amountCents >= 0).sort((left, right) => left.amountCents - right.amountCents).slice(0, 12);
+  if (!rates.length || !payload.id) throw new Error("NO_SHIPPING_RATES");
+  return { shipmentId: String(payload.id), rates };
+}
 const campaignNeverExpires = campaign => Number(campaign.never_expires || 0) === 1;
 const campaignIsActive = campaign => Number(campaign.is_active ?? 1) === 1;
 async function ownerReferralIsActive(env, ownerMemberId, slotId) {
@@ -192,6 +463,7 @@ function campaignRedemptionView(row) {
     campaignExpiresAt: campaignNeverExpires(row) ? null : row.expires_at,
     expiresAt: campaignNeverExpires(row) ? null : row.expires_at,
     neverExpires: campaignNeverExpires(row),
+    product: campaignProduct(row),
     code: row.code,
     rank: Number(row.claim_rank),
     claimRank: Number(row.claim_rank),
@@ -208,6 +480,7 @@ function campaignClaimPayload(row, alreadyClaimed, serverNow, week) {
 function adminRedemptionView(row) {
   return {
     ...campaignRedemptionView(row),
+    product: campaignProduct(row, true),
     memberId: row.member_id,
     email: row.email,
     whatnotUsername: row.whatnot_username || ""
@@ -227,6 +500,7 @@ function adminCampaignView(campaign, redemptions, env, epochMs = Date.now()) {
     createdAt: campaign.created_at,
     expiresAt: campaignNeverExpires(campaign) ? null : campaign.expires_at,
     neverExpires: campaignNeverExpires(campaign),
+    product: campaignProduct(campaign, true),
     isActive: campaignIsActive(campaign),
     status: campaignState(campaign, redemptionCount, epochMs),
     claimedCount: redemptionCount,
@@ -256,6 +530,7 @@ async function publicCampaignStatus(env, offerToken, epochMs = Date.now()) {
       packCount: campaign.pack_count === null || campaign.pack_count === undefined ? null : Number(campaign.pack_count),
       expiresAt: campaignNeverExpires(campaign) ? null : campaign.expires_at,
       neverExpires: campaignNeverExpires(campaign),
+      product: campaignProduct(campaign),
       isActive: campaignIsActive(campaign),
       claimedCount: redemptionCount,
       remaining: Math.max(0, Number(campaign.max_redemptions) - redemptionCount),
@@ -317,7 +592,137 @@ async function verifyTurnstile(env, token, request) {
 }
 async function route(request, env, cors, ctx) {
   const url = new URL(request.url);
-  if (url.pathname === "/health") return response({ ok: true, service: "crackpacks-rewards", version: VERSION, identityMode: env.IDENTITY_MODE }, 200, cors);
+  if (url.pathname === "/health") return response({ ok: true, service: "crackpacks-rewards", version: VERSION, identityMode: env.IDENTITY_MODE, storeMode: String(env.STORE_COMING_SOON || "true") === "false" ? "live" : "coming_soon" }, 200, cors);
+  if (url.pathname === "/store/inventory" && request.method === "GET") {
+    const market = url.searchParams.get("market") === "international" ? "international" : "us";
+    const currency = String(url.searchParams.get("currency") || "USD").trim().toUpperCase();
+    if (!STORE_CURRENCIES.has(currency)) return response({ error: "Choose a supported display currency." }, 400, cors);
+    const inventoryEpoch = now();
+    const rows = await env.DB.prepare(`
+      SELECT i.*,COALESCE((
+        SELECT SUM(
+          CASE
+            WHEN campaign.is_active=1 AND campaign.expires_at>? THEN
+              MAX(campaign.max_redemptions - (
+                SELECT COUNT(*) FROM campaign_redemptions fulfilled
+                WHERE fulfilled.campaign_id=campaign.id AND fulfilled.redeemed_at IS NOT NULL
+              ),0)
+            ELSE (
+              SELECT COUNT(*) FROM campaign_redemptions promised
+              WHERE promised.campaign_id=campaign.id AND promised.redeemed_at IS NULL
+            )
+          END
+        )
+        FROM offer_campaigns campaign WHERE campaign.inventory_item_id=i.id
+      ),0) committed_units
+      FROM inventory_items i
+      JOIN members owner ON owner.id=i.owner_member_id
+      WHERE lower(owner.email)=? AND i.is_store_visible=1 AND i.is_active=1
+      ORDER BY CASE WHEN i.quantity>0 THEN 0 ELSE 1 END,i.created_at DESC,i.name COLLATE NOCASE
+      LIMIT 200
+    `).bind(inventoryEpoch, normalizeEmail(env.ADMIN_EMAIL)).all();
+    let fx = null;
+    let currencyWarning = "";
+    try { fx = await ecbFxQuote(currency); }
+    catch { currencyWarning = "Display conversion is temporarily unavailable; USD remains the source price."; }
+    const liveRows = rows.results || [];
+    const storeRows = liveRows.length ? liveRows : STARTER_INVENTORY.map(item => ({
+      public_slug: item.publicSlug, name: item.name, category: item.category,
+      description: "Verified current-product preview. Availability, COGS, packed shipping details, and sale price have not been configured yet.",
+      image_url: item.imageUrl, source_url: item.sourceUrl, quantity: 0, average_msrp_cents: item.averageMsrpCents,
+      reference_price_label: "Retailer list price", reference_price_observed_at: "2026-07-18",
+      cogs_cents: null, us_shipping_cents: null, profit_cents: 1000, weight_oz: null, length_in: null, width_in: null, height_in: null,
+      origin_country: "", hs_code: ""
+    }));
+    const comingSoon = String(env.STORE_COMING_SOON || "true") !== "false";
+    return response({
+      ok: true,
+      market,
+      baseCurrency: "USD",
+      displayCurrency: currency,
+      rate: fx,
+      currencyWarning,
+      comingSoon,
+      checkoutEnabled: !comingSoon && String(env.STORE_CHECKOUT_ENABLED || "false") === "true",
+      catalogSource: liveRows.length ? "owner_inventory" : "verified_starter_preview",
+      items: storeRows.map(row => publicStoreItem(row, market, currency, fx)),
+      pricingDisclosure: market === "us"
+        ? "USA item prices include the configured shipping allowance. Carrier adjustments and payment fees can change the final margin."
+        : "International item prices exclude shipping. Converted amounts are estimates from ECB reference rates; checkout and card-issuer conversion may differ.",
+      dutiesDisclosure: market === "international" ? "International orders ship DAP (formerly DDU). The recipient pays destination duties, taxes, customs, brokerage, clearance, and carrier collection fees." : ""
+    }, 200, cors);
+  }
+  if (url.pathname === "/store/shipping-quote" && request.method === "POST") {
+    if (String(env.STORE_COMING_SOON || "true") !== "false" || String(env.STORE_CHECKOUT_ENABLED || "false") !== "true") {
+      return response({ error: "Live carrier quotes are not enabled while the store is marked Coming Soon.", code: "SHIPPING_NOT_CONFIGURED" }, 503, cors);
+    }
+    const contentLength = Number(request.headers.get("Content-Length") || 0);
+    if (Number.isFinite(contentLength) && contentLength > 8000) return response({ error: "Shipping quote request is too large." }, 413, cors);
+    const data = await body(request);
+    if (!await verifyTurnstile(env, data?.turnstileToken, request)) return response({ error: "Complete the security check before requesting a shipping quote." }, 403, cors);
+    const slug = String(boundedString(data?.slug, 160) || "").trim().toLowerCase();
+    const quantity = data?.quantity;
+    if (!/^[a-z0-9][a-z0-9-]{2,159}$/.test(slug)) return response({ error: "Choose a valid store product." }, 400, cors);
+    if (!Number.isInteger(quantity) || quantity !== 1) return response({ error: "Phase-one carrier quotes support one packed item at a time." }, 400, cors);
+    const parsedAddress = parseShippingAddress(data?.address);
+    if (parsedAddress.error) return response({ error: parsedAddress.error }, 400, cors);
+    const address = parsedAddress.address;
+    const quoteEpoch = now();
+    const item = await env.DB.prepare(`
+      SELECT i.*,COALESCE((
+        SELECT SUM(
+          CASE
+            WHEN campaign.is_active=1 AND campaign.expires_at>? THEN
+              MAX(campaign.max_redemptions - (
+                SELECT COUNT(*) FROM campaign_redemptions fulfilled
+                WHERE fulfilled.campaign_id=campaign.id AND fulfilled.redeemed_at IS NOT NULL
+              ),0)
+            ELSE (
+              SELECT COUNT(*) FROM campaign_redemptions promised
+              WHERE promised.campaign_id=campaign.id AND promised.redeemed_at IS NULL
+            )
+          END
+        ) FROM offer_campaigns campaign WHERE campaign.inventory_item_id=i.id
+      ),0) committed_units
+      FROM inventory_items i JOIN members owner ON owner.id=i.owner_member_id
+      WHERE i.public_slug=? AND i.is_store_visible=1 AND i.is_active=1 AND lower(owner.email)=?
+    `).bind(quoteEpoch, slug, normalizeEmail(env.ADMIN_EMAIL)).first();
+    if (!item) return response({ error: "Store product not found." }, 404, cors);
+    if (Number(item.quantity || 0) - Number(item.committed_units || 0) < quantity) return response({ error: "This product is not currently available." }, 409, cors);
+    const market = address.country === "US" ? "us" : "international";
+    const ipHash = await hash(request.headers.get("CF-Connecting-IP") || "", env.AUTH_SECRET);
+    const rateWindow = new Date(Date.now() - 10 * 60e3).toISOString();
+    await audit(env, request, "store_shipping_quote_attempt", null, `${item.public_slug}|${market}`);
+    const recent = await env.DB.prepare(`SELECT COUNT(*) count FROM audit_events WHERE type='store_shipping_quote_attempt' AND ip_hash=? AND created_at>?`).bind(ipHash, rateWindow).first();
+    if (Number(recent?.count || 0) > 10) return response({ error: "Too many shipping quotes were requested. Wait a few minutes and try again." }, 429, cors);
+    let quoted;
+    try { quoted = await easyPostShipmentQuote(env, item, quantity, address); }
+    catch (error) {
+      const messages = {
+        SHIPPING_NOT_CONFIGURED: "Live carrier quotes are not configured yet.", SHIP_FROM_NOT_CONFIGURED: "The store ship-from address is not configured yet.",
+        PACKAGE_NOT_CONFIGURED: "This product still needs packed weight and dimensions.", CUSTOMS_NOT_CONFIGURED: "This product still needs origin-country and customs information.",
+        MULTI_ITEM_PACKING_NOT_READY: "Multi-item packing is not enabled yet.", NO_SHIPPING_RATES: "No carrier rates were returned for that address.",
+        SHIPPING_PROVIDER_ERROR: "The carrier rating service could not prepare a quote. Check the address and try again."
+      };
+      return response({ error: messages[error.message] || "The shipping quote could not be prepared.", code: error.message }, error.message === "NO_SHIPPING_RATES" ? 422 : 503, cors);
+    }
+    const quoteId = id();
+    const createdAt = now();
+    const expiresAt = new Date(Date.now() + STORE_QUOTE_TTL_MS).toISOString();
+    await env.DB.batch([
+      env.DB.prepare(`DELETE FROM shipping_quotes WHERE expires_at<=?`).bind(createdAt),
+      env.DB.prepare(`INSERT INTO shipping_quotes(id,inventory_item_id,quantity,market,destination_country,address_hash,easypost_shipment_id,rates_json,expires_at,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)`).bind(
+        quoteId, item.id, quantity, market, address.country, await hash(JSON.stringify(address), env.AUTH_SECRET), quoted.shipmentId, JSON.stringify(quoted.rates), expiresAt, createdAt
+      )
+    ]);
+    await audit(env, request, "store_shipping_quote", null, `${item.public_slug}|${market}|${quoted.shipmentId}`);
+    return response({
+      ok: true, quoteId, expiresAt, currency: "USD", rates: quoted.rates,
+      disclosure: market === "international"
+        ? "Live carrier quote for transportation only. International orders ship DAP (formerly DDU); the recipient pays destination duties, taxes, customs, brokerage, clearance, and carrier collection fees. Carrier adjustments can apply if the final parcel differs."
+        : "Live carrier quote based on the configured packed size and destination. Carrier adjustments can apply if the final parcel differs."
+    }, 200, cors);
+  }
   if (url.pathname === "/referral/status" && request.method === "POST") {
     const contentLength = Number(request.headers.get("Content-Length") || 0);
     if (Number.isFinite(contentLength) && contentLength > 512) return response({ error: "Referral validation request is too large." }, 413, cors);
@@ -548,7 +953,7 @@ async function route(request, env, cors, ctx) {
     if (isOwnerEmail(member, env) || campaign.owner_member_id === member.id) return response({ error: "The owner account cannot claim its own public campaign rewards." }, 403, cors);
     if (!campaignIsActive(campaign)) return response({ error: "This campaign QR has been turned off by Crack Packs." }, 410, cors);
     const loadMemberClaim = () => env.DB.prepare(`
-      SELECT cr.*,c.title,c.reward_type,c.reward_variant,c.percent,c.max_redemptions,c.pack_count,c.expires_at,c.never_expires
+      SELECT cr.*,c.title,c.reward_type,c.reward_variant,c.percent,c.max_redemptions,c.pack_count,c.expires_at,c.never_expires,c.inventory_item_id,c.product_name_snapshot,c.product_upc_snapshot
       FROM campaign_redemptions cr JOIN offer_campaigns c ON c.id=cr.campaign_id
       WHERE cr.campaign_id=? AND cr.member_id=?
     `).bind(campaign.id, member.id).first();
@@ -591,7 +996,7 @@ async function route(request, env, cors, ctx) {
       `).bind(redemptionId, member.id, week.key, code, packNumber, claimedAt, campaign.id, member.id, claimedAt, packNumber, packNumber, packNumber).run();
       if (Number(inserted.meta?.changes || 0) === 1) {
         const claim = await env.DB.prepare(`
-          SELECT cr.*,c.title,c.reward_type,c.reward_variant,c.percent,c.max_redemptions,c.pack_count,c.expires_at,c.never_expires
+          SELECT cr.*,c.title,c.reward_type,c.reward_variant,c.percent,c.max_redemptions,c.pack_count,c.expires_at,c.never_expires,c.inventory_item_id,c.product_name_snapshot,c.product_upc_snapshot
           FROM campaign_redemptions cr JOIN offer_campaigns c ON c.id=cr.campaign_id WHERE cr.id=?
         `).bind(redemptionId).first();
         await audit(env, request, "campaign_reward_claimed", member.id, `${campaign.id}|${redemptionId}|rank:${claim.claim_rank}${packNumber === null ? "" : `|pack:${packNumber}`}`);
@@ -615,7 +1020,7 @@ async function route(request, env, cors, ctx) {
   if (url.pathname === "/campaigns/mine" && request.method === "GET") {
     const [claimRows, legacyDiscount] = await Promise.all([
       env.DB.prepare(`
-        SELECT cr.*,c.title,c.reward_type,c.reward_variant,c.percent,c.max_redemptions,c.pack_count,c.expires_at,c.never_expires
+        SELECT cr.*,c.title,c.reward_type,c.reward_variant,c.percent,c.max_redemptions,c.pack_count,c.expires_at,c.never_expires,c.inventory_item_id,c.product_name_snapshot,c.product_upc_snapshot
         FROM campaign_redemptions cr JOIN offer_campaigns c ON c.id=cr.campaign_id
         WHERE cr.member_id=? ORDER BY cr.claimed_at DESC
       `).bind(member.id).all(),
@@ -755,6 +1160,120 @@ async function route(request, env, cors, ctx) {
     if (String(data.inviteUrl || "") !== invite.url) return response({ error: "That referral window changed. Refresh the current link before generating its QR." }, 409, cors);
     return svgResponse(await referralQrSvg(invite.url), cors);
   }
+  if (url.pathname === "/admin/inventory" && request.method === "GET") {
+    if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
+    const query = clean(url.searchParams.get("q"), 100).toLowerCase().replace(/[^a-z0-9._+&' -]/g, "");
+    const search = `%${query}%`;
+    const availableOnly = url.searchParams.get("available") === "1";
+    const inventoryEpoch = now();
+    const rows = await env.DB.prepare(`
+      SELECT inventory.*,COALESCE((
+        SELECT SUM(
+          CASE
+            WHEN campaign.is_active=1 AND campaign.expires_at>? THEN
+              MAX(campaign.max_redemptions - (
+                SELECT COUNT(*) FROM campaign_redemptions fulfilled
+                WHERE fulfilled.campaign_id=campaign.id AND fulfilled.redeemed_at IS NOT NULL
+              ),0)
+            ELSE (
+              SELECT COUNT(*) FROM campaign_redemptions promised
+              WHERE promised.campaign_id=campaign.id AND promised.redeemed_at IS NULL
+            )
+          END
+        ) FROM offer_campaigns campaign WHERE campaign.inventory_item_id=inventory.id
+      ),0) committed_units
+      FROM inventory_items inventory
+      WHERE owner_member_id=? AND (?=0 OR (is_active=1 AND quantity>0))
+        AND (?='' OR lower(name) LIKE ? OR lower(COALESCE(upc,'')) LIKE ? OR lower(category) LIKE ?)
+      ORDER BY is_active DESC,CASE WHEN quantity>0 THEN 0 ELSE 1 END,updated_at DESC,name COLLATE NOCASE
+      LIMIT 150
+    `).bind(inventoryEpoch, member.id, availableOnly ? 1 : 0, query, search, search, search).all();
+    let inventory = (rows.results || []).map(inventoryItemView);
+    if (availableOnly) inventory = inventory.filter(item => item.campaignReady);
+    return response({ inventory }, 200, cors);
+  }
+  if (url.pathname === "/admin/inventory/catalog/import" && request.method === "POST") {
+    if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
+    const createdAt = now();
+    const statements = STARTER_INVENTORY.map(item => env.DB.prepare(`
+      INSERT OR IGNORE INTO inventory_items(
+        id,owner_member_id,public_slug,name,upc,category,description,image_url,source_url,quantity,average_msrp_cents,
+        reference_price_label,reference_price_observed_at,cogs_cents,us_shipping_cents,profit_cents,weight_oz,length_in,width_in,height_in,
+        origin_country,hs_code,packing_notes,is_store_visible,is_active,created_at,updated_at
+      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `).bind(
+      id(), member.id, item.publicSlug, item.name, item.upc, item.category,
+      "Verified current product starter entry. Add actual stock, landed COGS, packed dimensions, and your own or licensed product photo before selling.",
+      item.imageUrl, item.sourceUrl, 0, item.averageMsrpCents, "Retailer list price", "2026-07-18", null, null, 1000,
+      null, null, null, null, "", "", "", 1, 1, createdAt, createdAt
+    ));
+    const results = await env.DB.batch(statements);
+    const imported = results.reduce((total, result) => total + Number(result.meta?.changes || 0), 0);
+    await audit(env, request, "inventory_catalog_imported", member.id, `imported:${imported}`);
+    const rows = await env.DB.prepare(`SELECT * FROM inventory_items WHERE owner_member_id=? ORDER BY updated_at DESC,name COLLATE NOCASE`).bind(member.id).all();
+    return response({ imported, inventory: (rows.results || []).map(inventoryItemView) }, imported ? 201 : 200, cors);
+  }
+  if (url.pathname === "/admin/inventory" && request.method === "POST") {
+    if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
+    const contentLength = Number(request.headers.get("Content-Length") || 0);
+    if (Number.isFinite(contentLength) && contentLength > 16000) return response({ error: "Inventory request is too large." }, 413, cors);
+    const parsed = parseInventoryItemInput(await body(request));
+    if (parsed.error) return response({ error: parsed.error }, 400, cors);
+    const item = parsed.item;
+    const inventoryId = id();
+    const publicSlug = `${slugify(item.name)}-${randomString(6).toLowerCase()}`;
+    const createdAt = now();
+    try {
+      await env.DB.prepare(`
+        INSERT INTO inventory_items(
+          id,owner_member_id,public_slug,name,upc,category,description,image_url,source_url,quantity,average_msrp_cents,
+          reference_price_label,reference_price_observed_at,cogs_cents,us_shipping_cents,profit_cents,weight_oz,length_in,width_in,height_in,
+          origin_country,hs_code,packing_notes,is_store_visible,is_active,created_at,updated_at
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      `).bind(
+        inventoryId, member.id, publicSlug, item.name, item.upc, item.category, item.description, item.imageUrl, item.sourceUrl, item.quantity,
+        item.averageMsrpCents, item.referencePriceLabel, item.referencePriceObservedAt, item.cogsCents, item.usShippingCents, item.profitCents,
+        item.weightOz, item.lengthIn, item.widthIn, item.heightIn, item.originCountry, item.hsCode, item.packingNotes,
+        item.isStoreVisible ? 1 : 0, item.isActive ? 1 : 0, createdAt, createdAt
+      ).run();
+    } catch (error) {
+      if (/unique|constraint/i.test(String(error?.message || ""))) return response({ error: "That UPC, source listing, or public product address is already in inventory." }, 409, cors);
+      throw error;
+    }
+    const saved = await env.DB.prepare(`SELECT * FROM inventory_items WHERE id=? AND owner_member_id=?`).bind(inventoryId, member.id).first();
+    await audit(env, request, "inventory_created", member.id, `${inventoryId}|${item.upc || "no-upc"}`);
+    return response({ item: inventoryItemView(saved) }, 201, cors);
+  }
+  const adminInventoryMatch = url.pathname.match(/^\/admin\/inventory\/([0-9a-f-]{36})$/i);
+  if (adminInventoryMatch && request.method === "POST") {
+    if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
+    const parsed = parseInventoryItemInput(await body(request));
+    if (parsed.error) return response({ error: parsed.error }, 400, cors);
+    const item = parsed.item;
+    const updatedAt = now();
+    try {
+      const updated = await env.DB.prepare(`
+        UPDATE inventory_items SET
+          name=?,upc=?,category=?,description=?,image_url=?,source_url=?,quantity=?,average_msrp_cents=?,reference_price_label=?,reference_price_observed_at=?,
+          cogs_cents=?,us_shipping_cents=?,profit_cents=?,weight_oz=?,length_in=?,width_in=?,height_in=?,origin_country=?,hs_code=?,packing_notes=?,
+          is_store_visible=?,is_active=?,updated_at=?
+        WHERE id=? AND owner_member_id=?
+      `).bind(
+        item.name, item.upc, item.category, item.description, item.imageUrl, item.sourceUrl, item.quantity, item.averageMsrpCents,
+        item.referencePriceLabel, item.referencePriceObservedAt, item.cogsCents, item.usShippingCents, item.profitCents,
+        item.weightOz, item.lengthIn, item.widthIn, item.heightIn, item.originCountry, item.hsCode, item.packingNotes,
+        item.isStoreVisible ? 1 : 0, item.isActive ? 1 : 0, updatedAt, adminInventoryMatch[1], member.id
+      ).run();
+      if (Number(updated.meta?.changes || 0) !== 1) return response({ error: "Inventory item not found." }, 404, cors);
+    } catch (error) {
+      if (/INVENTORY_COMMITMENT_CONFLICT/i.test(String(error?.message || ""))) return response({ error: "Quantity cannot be lower than the product units already reserved by active campaigns or unfulfilled claims." }, 409, cors);
+      if (/unique|constraint/i.test(String(error?.message || ""))) return response({ error: "That UPC or source listing is already connected to another inventory item." }, 409, cors);
+      throw error;
+    }
+    const saved = await env.DB.prepare(`SELECT * FROM inventory_items WHERE id=? AND owner_member_id=?`).bind(adminInventoryMatch[1], member.id).first();
+    await audit(env, request, "inventory_updated", member.id, `${saved.id}|qty:${saved.quantity}|active:${saved.is_active}`);
+    return response({ item: inventoryItemView(saved) }, 200, cors);
+  }
   if (url.pathname === "/admin/campaigns" && request.method === "POST") {
     if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
     const contentLength = Number(request.headers.get("Content-Length") || 0);
@@ -771,10 +1290,22 @@ async function route(request, env, cors, ctx) {
     if (!CAMPAIGN_REWARD_TYPES.has(rewardType)) return response({ error: "Choose a valid campaign reward type." }, 400, cors);
     if (!neverExpires && expiresInHours === null) return response({ error: "Campaign expiration must be between 1 hour and 7 days, or choose Indefinite." }, 400, cors);
     if (!Number.isInteger(maxRedemptions) || maxRedemptions < 1 || maxRedemptions > MAX_CAMPAIGN_REDEMPTIONS) return response({ error: `Maximum redemptions must be from 1 to ${MAX_CAMPAIGN_REDEMPTIONS}.` }, 400, cors);
-    const storageRewardType = rewardType === "free_single" ? "pick_a_pack" : rewardType;
+    const storageRewardType = rewardType === "free_single" || rewardType === "product" ? "pick_a_pack" : rewardType;
     const rewardVariant = rewardType === "free_single" ? "free_single" : null;
     let percent = null;
     let packCount = null;
+    let inventoryItem = null;
+    if (rewardType === "product") {
+      const inventoryItemId = String(data?.inventoryItemId || "");
+      if (!/^[0-9a-f-]{36}$/i.test(inventoryItemId)) return response({ error: "Choose a product from current inventory." }, 400, cors);
+      inventoryItem = await env.DB.prepare(`SELECT * FROM inventory_items WHERE id=? AND owner_member_id=? AND is_active=1`).bind(inventoryItemId, member.id).first();
+      if (!inventoryItem || Number(inventoryItem.quantity || 0) < 1) return response({ error: "That inventory product is inactive or has no available quantity." }, 409, cors);
+      const committedUnits = await inventoryCommittedUnits(env, inventoryItem.id, member.id);
+      const remainingCapacity = Math.max(0, Number(inventoryItem.quantity || 0) - committedUnits);
+      if (maxRedemptions > remainingCapacity) return response({ error: `Only ${remainingCapacity} unallocated unit${remainingCapacity === 1 ? " is" : "s are"} available for active product campaigns.` }, 409, cors);
+    } else if (data?.inventoryItemId !== undefined && data?.inventoryItemId !== null && data?.inventoryItemId !== "") {
+      return response({ error: "Inventory selection is only used for Products campaigns." }, 400, cors);
+    }
     if (rewardType === "percent") {
       if (!Number.isInteger(data.percent) || data.percent < 1 || data.percent > 100) return response({ error: "Percent rewards require a whole number from 1 to 100." }, 400, cors);
       if (data.packCount !== undefined && data.packCount !== null && data.packCount !== "") return response({ error: "Pack count is only used for pack draft campaigns." }, 400, cors);
@@ -795,11 +1326,49 @@ async function route(request, env, cors, ctx) {
     for (let attempt = 0; attempt < 5 && !campaign; attempt += 1) {
       const campaignId = id();
       const offerToken = `OFR${randomString(32)}`;
-      const inserted = await env.DB.prepare(`INSERT OR IGNORE INTO offer_campaigns(id,owner_member_id,title,reward_type,reward_variant,percent,max_redemptions,pack_count,offer_token,expires_at,never_expires,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`).bind(campaignId, member.id, title, storageRewardType, rewardVariant, percent, maxRedemptions, packCount, offerToken, expiresAt, neverExpires ? 1 : 0, createdAt).run();
+      const inserted = inventoryItem
+        ? await env.DB.prepare(`
+          INSERT OR IGNORE INTO offer_campaigns(
+            id,owner_member_id,title,reward_type,reward_variant,percent,max_redemptions,pack_count,offer_token,expires_at,never_expires,
+            inventory_item_id,product_name_snapshot,product_upc_snapshot,created_at
+          )
+          SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
+          FROM inventory_items inventory
+          WHERE inventory.id=? AND inventory.owner_member_id=? AND inventory.is_active=1
+            AND inventory.quantity >= ? + COALESCE((
+              SELECT SUM(
+                CASE
+                  WHEN active.is_active=1 AND active.expires_at>? THEN
+                    MAX(active.max_redemptions - (
+                      SELECT COUNT(*) FROM campaign_redemptions fulfilled
+                      WHERE fulfilled.campaign_id=active.id AND fulfilled.redeemed_at IS NOT NULL
+                    ),0)
+                  ELSE (
+                    SELECT COUNT(*) FROM campaign_redemptions promised
+                    WHERE promised.campaign_id=active.id AND promised.redeemed_at IS NULL
+                  )
+                END
+              ) FROM offer_campaigns active
+              WHERE active.inventory_item_id=inventory.id AND active.owner_member_id=?
+            ),0)
+        `).bind(
+          campaignId, member.id, title, storageRewardType, rewardVariant, percent, maxRedemptions, packCount, offerToken, expiresAt, neverExpires ? 1 : 0,
+          inventoryItem.id, inventoryItem.name, inventoryItem.upc || null, createdAt,
+          inventoryItem.id, member.id, maxRedemptions, createdAt, member.id
+        ).run()
+        : await env.DB.prepare(`
+          INSERT OR IGNORE INTO offer_campaigns(
+            id,owner_member_id,title,reward_type,reward_variant,percent,max_redemptions,pack_count,offer_token,expires_at,never_expires,
+            inventory_item_id,product_name_snapshot,product_upc_snapshot,created_at
+          ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        `).bind(
+          campaignId, member.id, title, storageRewardType, rewardVariant, percent, maxRedemptions, packCount, offerToken, expiresAt, neverExpires ? 1 : 0,
+          null, null, null, createdAt
+        ).run();
       if (Number(inserted.meta?.changes || 0) === 1) campaign = await env.DB.prepare(`SELECT * FROM offer_campaigns WHERE id=?`).bind(campaignId).first();
     }
-    if (!campaign) return response({ error: "The campaign could not be created. Try again." }, 503, cors);
-    await audit(env, request, "campaign_created", member.id, `${campaign.id}|${rewardType}|max:${maxRedemptions}`);
+    if (!campaign) return response({ error: inventoryItem ? "Inventory capacity changed while the campaign was being created. Refresh inventory and try again." : "The campaign could not be created. Try again." }, inventoryItem ? 409 : 503, cors);
+    await audit(env, request, "campaign_created", member.id, `${campaign.id}|${rewardType}|max:${maxRedemptions}${inventoryItem ? `|inventory:${inventoryItem.id}` : ""}`);
     return response({ serverNow: createdAt, campaign: adminCampaignView(campaign, [], env, epochMs) }, 201, cors);
   }
   if (url.pathname === "/admin/campaigns" && request.method === "GET") {
@@ -807,7 +1376,7 @@ async function route(request, env, cors, ctx) {
     const [campaignRows, redemptionRows] = await Promise.all([
       env.DB.prepare(`SELECT * FROM offer_campaigns WHERE owner_member_id=? ORDER BY created_at DESC`).bind(member.id).all(),
       env.DB.prepare(`
-        SELECT cr.*,c.title,c.reward_type,c.reward_variant,c.percent,c.max_redemptions,c.pack_count,c.expires_at,c.never_expires,m.email,m.whatnot_username
+        SELECT cr.*,c.title,c.reward_type,c.reward_variant,c.percent,c.max_redemptions,c.pack_count,c.expires_at,c.never_expires,c.inventory_item_id,c.product_name_snapshot,c.product_upc_snapshot,m.email,m.whatnot_username
         FROM campaign_redemptions cr
         JOIN offer_campaigns c ON c.id=cr.campaign_id
         JOIN members m ON m.id=cr.member_id
@@ -837,11 +1406,17 @@ async function route(request, env, cors, ctx) {
     if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
     const data = await body(request);
     if (typeof data?.active !== "boolean") return response({ error: "Choose whether this campaign QR is active." }, 400, cors);
-    const updated = await env.DB.prepare(`UPDATE offer_campaigns SET is_active=? WHERE id=? AND owner_member_id=?`).bind(data.active ? 1 : 0, adminCampaignStatusMatch[1], member.id).run();
+    let updated;
+    try {
+      updated = await env.DB.prepare(`UPDATE offer_campaigns SET is_active=? WHERE id=? AND owner_member_id=?`).bind(data.active ? 1 : 0, adminCampaignStatusMatch[1], member.id).run();
+    } catch (error) {
+      if (/INVENTORY_COMMITMENT_CONFLICT/i.test(String(error?.message || ""))) return response({ error: "This product campaign cannot be turned back on because its inventory is inactive or the units are now reserved elsewhere." }, 409, cors);
+      throw error;
+    }
     if (Number(updated.meta?.changes || 0) !== 1) return response({ error: "Campaign not found." }, 404, cors);
     const campaign = await env.DB.prepare(`SELECT * FROM offer_campaigns WHERE id=? AND owner_member_id=?`).bind(adminCampaignStatusMatch[1], member.id).first();
     const redemptions = await env.DB.prepare(`
-      SELECT cr.*,c.title,c.reward_type,c.reward_variant,c.percent,c.max_redemptions,c.pack_count,c.expires_at,c.never_expires,m.email,m.whatnot_username
+      SELECT cr.*,c.title,c.reward_type,c.reward_variant,c.percent,c.max_redemptions,c.pack_count,c.expires_at,c.never_expires,c.inventory_item_id,c.product_name_snapshot,c.product_upc_snapshot,m.email,m.whatnot_username
       FROM campaign_redemptions cr JOIN offer_campaigns c ON c.id=cr.campaign_id JOIN members m ON m.id=cr.member_id
       WHERE cr.campaign_id=? ORDER BY cr.claim_rank
     `).bind(campaign.id).all();
@@ -852,7 +1427,7 @@ async function route(request, env, cors, ctx) {
   if (adminCampaignRedeemMatch && request.method === "POST") {
     if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
     const redemption = await env.DB.prepare(`
-      SELECT cr.*,c.title,c.reward_type,c.reward_variant,c.percent,c.max_redemptions,c.pack_count,c.expires_at,c.never_expires,m.email,m.whatnot_username
+      SELECT cr.*,c.title,c.reward_type,c.reward_variant,c.percent,c.max_redemptions,c.pack_count,c.expires_at,c.never_expires,c.inventory_item_id,c.product_name_snapshot,c.product_upc_snapshot,m.email,m.whatnot_username
       FROM campaign_redemptions cr
       JOIN offer_campaigns c ON c.id=cr.campaign_id
       JOIN members m ON m.id=cr.member_id
@@ -862,7 +1437,13 @@ async function route(request, env, cors, ctx) {
     if (redemption.redeemed_at) return response({ error: "This campaign reward was already marked redeemed." }, 409, cors);
     if (!campaignNeverExpires(redemption) && redemption.expires_at <= now()) return response({ error: "This campaign reward has expired and cannot be redeemed." }, 410, cors);
     const redeemedAt = now();
-    const updated = await env.DB.prepare(`UPDATE campaign_redemptions SET redeemed_at=?,redeemed_by_member_id=? WHERE id=? AND redeemed_at IS NULL`).bind(redeemedAt, member.id, redemption.id).run();
+    let updated;
+    try {
+      updated = await env.DB.prepare(`UPDATE campaign_redemptions SET redeemed_at=?,redeemed_by_member_id=? WHERE id=? AND redeemed_at IS NULL`).bind(redeemedAt, member.id, redemption.id).run();
+    } catch (error) {
+      if (/PRODUCT_STOCK_UNAVAILABLE|INVENTORY_COMMITMENT_CONFLICT/i.test(String(error?.message || ""))) return response({ error: "This product reward cannot be fulfilled because its inventory quantity is no longer available. Correct inventory before marking it redeemed." }, 409, cors);
+      throw error;
+    }
     if (Number(updated.meta?.changes || 0) !== 1) return response({ error: "This campaign reward was already marked redeemed." }, 409, cors);
     redemption.redeemed_at = redeemedAt;
     await audit(env, request, "campaign_redemption_redeemed", member.id, `${redemption.id}|member:${redemption.member_id}|code:${redemption.code}`);

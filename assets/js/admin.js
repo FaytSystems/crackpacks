@@ -35,6 +35,15 @@
   let campaignShareState = null;
   let campaignShareLastFocus = null;
   let campaignShareRenderPromise = null;
+  let inventoryItems = [];
+  let inventorySearchTimer = null;
+  let inventoryRequestSequence = 0;
+  let inventoryModalLastFocus = null;
+  let editingInventoryId = "";
+  let campaignInventoryOptions = [];
+  let campaignInventorySearchTimer = null;
+  let campaignInventoryActiveIndex = -1;
+  let campaignInventoryRequestSequence = 0;
   const menuButton = $(".menu-toggle");
   const navigation = $("#admin-site-nav");
   menuButton?.addEventListener("click", () => {
@@ -54,6 +63,7 @@
     });
     if (section === "signups") refreshCampaigns().catch(error => showStatus(error.message, "error"));
     if (section === "redeemed") Promise.all([refreshDashboard(), refreshCampaigns()]).catch(error => showStatus(error.message, "error"));
+    if (section === "inventory") refreshInventory().catch(error => setInventoryStatus(error.message, "error"));
   }
 
   const request = async (path, options = {}) => {
@@ -309,7 +319,243 @@
     for (const key of keys) if (object?.[key] !== undefined && object?.[key] !== null) return object[key];
     return null;
   };
+  const formatMoney = centsValue => centsValue === null || centsValue === undefined || !Number.isFinite(Number(centsValue)) ? "Not configured" : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(centsValue) / 100);
+  const moneyInputValue = centsValue => centsValue === null || centsValue === undefined || !Number.isFinite(Number(centsValue)) ? "" : (Number(centsValue) / 100).toFixed(2);
+  const optionalInputNumber = value => value === null || value === undefined || value === "" ? "" : String(value);
+  function setInventoryStatus(message = "", kind = "") {
+    const node = $("[data-inventory-status]");
+    if (!node) return;
+    node.textContent = message;
+    node.dataset.kind = kind;
+  }
+  function setInventoryFormStatus(message = "", kind = "") {
+    const node = $("[data-inventory-form-status]");
+    node.textContent = message;
+    node.dataset.kind = kind;
+  }
+  function renderInventory() {
+    const container = $("[data-inventory-list]");
+    container.replaceChildren();
+    const filter = $("[data-inventory-status-filter]").value;
+    const visible = inventoryItems.filter(item => {
+      if (filter === "active") return item.isActive;
+      if (filter === "inactive") return !item.isActive;
+      if (filter === "in_stock") return item.isActive && Number(item.quantity || 0) > 0;
+      if (filter === "needs_pricing") return item.cogsCents === null || item.cogsCents === undefined || item.usShippingCents === null || item.usShippingCents === undefined;
+      return true;
+    });
+    if (!visible.length) {
+      const empty = document.createElement("div");
+      empty.className = "inventory-empty";
+      const heading = document.createElement("strong");
+      heading.textContent = inventoryItems.length ? "No products match this view." : "Inventory is empty.";
+      const detail = document.createElement("span");
+      detail.textContent = inventoryItems.length ? "Change the filter or search for another name or UPC." : "Add a product or import the researched starter catalog. Imported items begin with zero stock until you enter your actual quantity and costs.";
+      empty.append(heading, detail);
+      container.append(empty);
+      return;
+    }
+    visible.forEach(item => {
+      const card = document.createElement("article");
+      card.className = `inventory-card${item.isActive ? "" : " is-inactive"}`;
+      const head = document.createElement("div");
+      head.className = "inventory-card-head";
+      const identity = document.createElement("div");
+      const category = document.createElement("span");
+      category.className = "inventory-category";
+      category.textContent = item.category || "Uncategorized";
+      const title = document.createElement("h3");
+      title.textContent = item.name || "Unnamed product";
+      const code = document.createElement("p");
+      code.textContent = item.upc ? `UPC ${item.upc}` : "UPC not entered";
+      identity.append(category, title, code);
+      const state = document.createElement("span");
+      state.className = `inventory-state ${item.isActive ? item.campaignReady ? "ready" : "empty" : "inactive"}`;
+      state.textContent = item.isActive ? item.campaignReady ? "Campaign ready" : Number(item.quantity || 0) > 0 ? "Fully reserved" : "No stock" : "Deactivated";
+      head.append(identity, state);
+
+      const metrics = document.createElement("div");
+      metrics.className = "inventory-card-metrics";
+      [["On hand", String(Number(item.quantity || 0))], ["Campaign reserved", String(Number(item.committedUnits || 0))], ["Campaign available", String(Number(item.availableQuantity ?? item.quantity ?? 0))], ["Reference", formatMoney(item.averageMsrpCents)], ["USA price", formatMoney(item.usStorePriceCents)], ["International", formatMoney(item.internationalStorePriceCents)]].forEach(([labelText, valueText]) => {
+        const metric = document.createElement("div");
+        const label = document.createElement("span"); label.textContent = labelText;
+        const value = document.createElement("strong"); value.textContent = valueText;
+        metric.append(label, value); metrics.append(metric);
+      });
+
+      const details = document.createElement("p");
+      details.className = "inventory-card-detail";
+      const packageParts = [item.weightOz ? `${item.weightOz} oz` : "", item.lengthIn && item.widthIn && item.heightIn ? `${item.lengthIn} × ${item.widthIn} × ${item.heightIn} in` : ""].filter(Boolean);
+      details.textContent = [item.isStoreVisible ? "Store visible" : "Hidden from store", packageParts.length ? packageParts.join(" · ") : "Package details incomplete", item.updatedAt ? `Updated ${new Date(item.updatedAt).toLocaleDateString()}` : ""].filter(Boolean).join(" · ");
+
+      const actions = document.createElement("div");
+      actions.className = "inventory-card-actions";
+      if (item.sourceUrl) {
+        const source = document.createElement("a");
+        source.className = "btn btn-outline btn-small";
+        source.href = item.sourceUrl;
+        source.target = "_blank";
+        source.rel = "noopener noreferrer";
+        source.textContent = "View price source";
+        actions.append(source);
+      }
+      const edit = document.createElement("button");
+      edit.className = "btn btn-primary btn-small"; edit.type = "button"; edit.textContent = "Edit Product";
+      edit.addEventListener("click", () => openInventoryModal(item));
+      const toggle = document.createElement("button");
+      toggle.className = `btn ${item.isActive ? "btn-danger" : "btn-outline"} btn-small`; toggle.type = "button"; toggle.textContent = item.isActive ? "Deactivate" : "Reactivate";
+      toggle.addEventListener("click", () => toggleInventoryItem(item, toggle));
+      actions.append(edit, toggle);
+      card.append(head, metrics, details, actions);
+      container.append(card);
+    });
+  }
+  async function refreshInventory({ announce = false } = {}) {
+    if (!memberToken || !adminToken) return;
+    const sequence = ++inventoryRequestSequence;
+    const query = encodeURIComponent($("[data-inventory-search]").value.trim());
+    const data = await request(`/admin/inventory?q=${query}`);
+    if (sequence !== inventoryRequestSequence) return;
+    inventoryItems = Array.isArray(data.inventory) ? data.inventory : [];
+    renderInventory();
+    if (announce) setInventoryStatus(`${inventoryItems.length} inventory product${inventoryItems.length === 1 ? "" : "s"} loaded.`, "success");
+  }
+  const setInventoryField = (form, name, value) => { const input = form.elements.namedItem(name); if (input) input.value = value ?? ""; };
+  function updateInventoryPricePreview() {
+    const form = $("[data-inventory-form]");
+    const readMoney = name => {
+      const raw = String(form.elements.namedItem(name)?.value || "").trim();
+      return raw === "" || !Number.isFinite(Number(raw)) ? null : Math.round(Number(raw) * 100);
+    };
+    const cogs = readMoney("cogs");
+    const shipping = readMoney("usShipping");
+    const profit = readMoney("profit");
+    $("[data-inventory-us-price]").textContent = cogs === null || shipping === null || profit === null ? "Needs COGS + shipping" : formatMoney(cogs + shipping + profit);
+    $("[data-inventory-international-price]").textContent = cogs === null || profit === null ? "Needs COGS" : formatMoney(cogs + profit);
+    $("[data-inventory-deactivate-note]").hidden = form.elements.namedItem("isActive").checked;
+  }
+  function openInventoryModal(item = null) {
+    inventoryModalLastFocus = document.activeElement;
+    editingInventoryId = String(item?.id || "");
+    const form = $("[data-inventory-form]");
+    form.reset();
+    setInventoryFormStatus("");
+    setInventoryField(form, "id", editingInventoryId);
+    setInventoryField(form, "name", item?.name || "");
+    setInventoryField(form, "upc", item?.upc || "");
+    setInventoryField(form, "category", item?.category || "");
+    setInventoryField(form, "quantity", item ? Number(item.quantity || 0) : 0);
+    setInventoryField(form, "imageUrl", item?.imageUrl || "");
+    setInventoryField(form, "description", item?.description || "");
+    setInventoryField(form, "averageMsrp", moneyInputValue(item?.averageMsrpCents));
+    setInventoryField(form, "referencePriceLabel", item?.referencePriceLabel || "Retail reference price");
+    setInventoryField(form, "referencePriceObservedAt", item?.referencePriceObservedAt || "");
+    setInventoryField(form, "sourceUrl", item?.sourceUrl || "");
+    setInventoryField(form, "cogs", moneyInputValue(item?.cogsCents));
+    setInventoryField(form, "usShipping", moneyInputValue(item?.usShippingCents));
+    setInventoryField(form, "profit", item ? moneyInputValue(item.profitCents) : "10.00");
+    setInventoryField(form, "weightOz", optionalInputNumber(item?.weightOz));
+    setInventoryField(form, "lengthIn", optionalInputNumber(item?.lengthIn));
+    setInventoryField(form, "widthIn", optionalInputNumber(item?.widthIn));
+    setInventoryField(form, "heightIn", optionalInputNumber(item?.heightIn));
+    setInventoryField(form, "originCountry", item?.originCountry || "");
+    setInventoryField(form, "hsCode", item?.hsCode || "");
+    setInventoryField(form, "packingNotes", item?.packingNotes || "");
+    form.elements.namedItem("isStoreVisible").checked = item ? item.isStoreVisible !== false : true;
+    form.elements.namedItem("isActive").checked = item ? item.isActive !== false : true;
+    $("[data-inventory-modal-title]").textContent = item ? "Edit inventory product" : "Add an inventory product";
+    $("[data-inventory-save]").textContent = item ? "Save Changes" : "Save Product";
+    $("[data-inventory-modal]").hidden = false;
+    updateInventoryPricePreview();
+    form.elements.namedItem("name").focus();
+  }
+  function closeInventoryModal() {
+    $("[data-inventory-modal]").hidden = true;
+    setInventoryFormStatus("");
+    inventoryModalLastFocus?.focus?.();
+  }
+  const inventoryNumber = (form, name) => {
+    const raw = String(form.elements.namedItem(name)?.value || "").trim();
+    return raw === "" ? null : Number(raw);
+  };
+  const inventoryMoneyCents = (form, name) => {
+    const value = inventoryNumber(form, name);
+    return value === null ? null : Math.round(value * 100);
+  };
+  function inventoryPayloadFromForm(form) {
+    return {
+      name: String(form.elements.namedItem("name").value || "").trim(),
+      upc: String(form.elements.namedItem("upc").value || "").trim(),
+      category: String(form.elements.namedItem("category").value || "").trim(),
+      quantity: Number(form.elements.namedItem("quantity").value || 0),
+      imageUrl: String(form.elements.namedItem("imageUrl").value || "").trim(),
+      description: String(form.elements.namedItem("description").value || "").trim(),
+      averageMsrpCents: inventoryMoneyCents(form, "averageMsrp"),
+      referencePriceLabel: String(form.elements.namedItem("referencePriceLabel").value || "").trim(),
+      referencePriceObservedAt: String(form.elements.namedItem("referencePriceObservedAt").value || ""),
+      sourceUrl: String(form.elements.namedItem("sourceUrl").value || "").trim(),
+      cogsCents: inventoryMoneyCents(form, "cogs"),
+      usShippingCents: inventoryMoneyCents(form, "usShipping"),
+      profitCents: inventoryMoneyCents(form, "profit"),
+      weightOz: inventoryNumber(form, "weightOz"),
+      lengthIn: inventoryNumber(form, "lengthIn"),
+      widthIn: inventoryNumber(form, "widthIn"),
+      heightIn: inventoryNumber(form, "heightIn"),
+      originCountry: String(form.elements.namedItem("originCountry").value || "").trim().toUpperCase(),
+      hsCode: String(form.elements.namedItem("hsCode").value || "").trim(),
+      packingNotes: String(form.elements.namedItem("packingNotes").value || "").trim(),
+      isStoreVisible: form.elements.namedItem("isStoreVisible").checked,
+      isActive: form.elements.namedItem("isActive").checked
+    };
+  }
+  const inventoryPayloadFromItem = (item, overrides = {}) => ({
+    name: item.name, upc: item.upc || "", category: item.category || "", quantity: Number(item.quantity || 0), imageUrl: item.imageUrl || "", description: item.description || "",
+    averageMsrpCents: item.averageMsrpCents ?? null, referencePriceLabel: item.referencePriceLabel || "Retail reference price", referencePriceObservedAt: item.referencePriceObservedAt || "", sourceUrl: item.sourceUrl || "",
+    cogsCents: item.cogsCents ?? null, usShippingCents: item.usShippingCents ?? null, profitCents: item.profitCents ?? 1000,
+    weightOz: item.weightOz ?? null, lengthIn: item.lengthIn ?? null, widthIn: item.widthIn ?? null, heightIn: item.heightIn ?? null,
+    originCountry: item.originCountry || "", hsCode: item.hsCode || "", packingNotes: item.packingNotes || "", isStoreVisible: item.isStoreVisible !== false, isActive: item.isActive !== false,
+    ...overrides
+  });
+  async function toggleInventoryItem(item, button) {
+    const activate = !item.isActive;
+    if (!activate && !confirm(`Deactivate “${item.name}”? It will be removed from new product campaigns and the public catalog, while existing campaign records remain intact.`)) return;
+    button.disabled = true;
+    button.textContent = activate ? "Reactivating..." : "Deactivating...";
+    try {
+      await request(`/admin/inventory/${encodeURIComponent(item.id)}`, { method: "POST", body: JSON.stringify(inventoryPayloadFromItem(item, { isActive: activate })) });
+      await refreshInventory();
+      await refreshCampaignInventory("").catch(() => {});
+      closeCampaignInventoryOptions();
+      setInventoryStatus(`${item.name} ${activate ? "reactivated" : "deactivated"}.`, "success");
+    } catch (error) {
+      setInventoryStatus(error.message, "error");
+      button.disabled = false;
+      button.textContent = activate ? "Reactivate" : "Deactivate";
+    }
+  }
+  async function importStarterInventory() {
+    const button = $("[data-inventory-import]");
+    button.disabled = true;
+    const original = button.textContent;
+    button.textContent = "Importing...";
+    setInventoryStatus("");
+    try {
+      const data = await request("/admin/inventory/catalog/import", { method: "POST", body: "{}" });
+      inventoryRequestSequence += 1;
+      inventoryItems = Array.isArray(data.inventory) ? data.inventory : [];
+      renderInventory();
+      await refreshCampaignInventory("").catch(() => {});
+      closeCampaignInventoryOptions();
+      const imported = Number(data.imported || 0);
+      setInventoryStatus(imported ? `${imported} starter product${imported === 1 ? "" : "s"} imported. Enter your actual stock, COGS, and packed dimensions before selling.` : "The starter catalog is already imported. No duplicates were added.", "success");
+    } catch (error) { setInventoryStatus(error.message, "error"); }
+    finally { button.disabled = false; button.textContent = original; }
+  }
+
+  const campaignProduct = campaign => pick(campaign, "product") || null;
   const campaignRewardDescription = campaign => {
+    const product = campaignProduct(campaign);
+    if (product?.name) return `Product — ${String(product.name)}`;
     const supplied = pick(campaign, "rewardDescription", "reward_description", "description");
     if (supplied) return String(supplied);
     const type = String(pick(campaign, "rewardType", "reward_type") || "");
@@ -318,6 +564,7 @@
     if (type === "pick_a_pack") return "Free Pack / Pick a Pack";
     if (type === "pack_draft") return "Choose a Pack #";
     if (type === "free_single") return "Free Holographic Single";
+    if (type === "product") return "Inventory product";
     return "Campaign reward";
   };
   const campaignIsActive = campaign => pick(campaign, "isActive", "is_active") !== false && Number(pick(campaign, "isActive", "is_active") ?? 1) !== 0;
@@ -360,18 +607,111 @@
     node.textContent = message;
     node.dataset.kind = kind;
   }
+  function closeCampaignInventoryOptions() {
+    const input = $("[data-campaign-inventory-search]");
+    const list = $("[data-campaign-inventory-options]");
+    list.hidden = true;
+    input.setAttribute("aria-expanded", "false");
+    input.removeAttribute("aria-activedescendant");
+    campaignInventoryActiveIndex = -1;
+  }
+  function activateCampaignInventoryOption(index) {
+    const buttons = [...$("[data-campaign-inventory-options]").querySelectorAll("[role='option']")];
+    if (!buttons.length) return;
+    campaignInventoryActiveIndex = Math.max(0, Math.min(index, buttons.length - 1));
+    buttons.forEach((button, optionIndex) => {
+      const active = optionIndex === campaignInventoryActiveIndex;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-selected", String(active));
+    });
+    const active = buttons[campaignInventoryActiveIndex];
+    $("[data-campaign-inventory-search]").setAttribute("aria-activedescendant", active.id);
+    active.scrollIntoView({ block: "nearest" });
+  }
+  function selectCampaignInventory(item) {
+    const input = $("[data-campaign-inventory-search]");
+    const hidden = $("[data-campaign-inventory-id]");
+    input.value = item.name;
+    hidden.value = item.id;
+    const available = Number(item.availableQuantity ?? item.quantity ?? 0);
+    $("[data-campaign-inventory-selection]").textContent = `${item.name}${item.upc ? ` · UPC ${item.upc}` : ""} · ${available} on hand`;
+    const maxInput = $("[data-campaign-form] input[name='maxRedemptions']");
+    maxInput.max = String(Math.min(500, Math.max(1, available)));
+    if (Number(maxInput.value) > available) maxInput.value = String(available);
+    closeCampaignInventoryOptions();
+  }
+  function clearCampaignInventorySelection(message = "Choose an active product with available stock.") {
+    $("[data-campaign-inventory-id]").value = "";
+    $("[data-campaign-inventory-selection]").textContent = message;
+    $("[data-campaign-form] input[name='maxRedemptions']").max = "500";
+  }
+  function renderCampaignInventoryOptions({ open = true } = {}) {
+    const list = $("[data-campaign-inventory-options]");
+    const input = $("[data-campaign-inventory-search]");
+    list.replaceChildren();
+    campaignInventoryActiveIndex = -1;
+    if (!campaignInventoryOptions.length) {
+      const empty = document.createElement("div");
+      empty.className = "inventory-combobox-empty";
+      empty.textContent = "No active in-stock products match. Add stock in Inventory first.";
+      list.append(empty);
+    } else {
+      campaignInventoryOptions.forEach((item, index) => {
+        const option = document.createElement("button");
+        option.type = "button";
+        option.id = `campaign-inventory-option-${index}`;
+        option.setAttribute("role", "option");
+        option.setAttribute("aria-selected", "false");
+        const identity = document.createElement("span");
+        const name = document.createElement("strong"); name.textContent = item.name;
+        const meta = document.createElement("small"); meta.textContent = [item.upc ? `UPC ${item.upc}` : "No UPC", item.category || "Uncategorized"].join(" · ");
+        identity.append(name, meta);
+        const stock = document.createElement("b"); stock.textContent = `${Number(item.availableQuantity ?? item.quantity ?? 0)} available`;
+        option.append(identity, stock);
+        option.addEventListener("pointerdown", event => event.preventDefault());
+        option.addEventListener("click", () => selectCampaignInventory(item));
+        list.append(option);
+      });
+    }
+    list.hidden = !open;
+    input.setAttribute("aria-expanded", String(open));
+  }
+  async function refreshCampaignInventory(query = null) {
+    if (!memberToken || !adminToken) return;
+    const sequence = ++campaignInventoryRequestSequence;
+    const input = $("[data-campaign-inventory-search]");
+    const search = query === null ? input.value.trim() : String(query || "").trim();
+    const data = await request(`/admin/inventory?available=1&q=${encodeURIComponent(search)}`);
+    if (sequence !== campaignInventoryRequestSequence) return;
+    campaignInventoryOptions = Array.isArray(data.inventory) ? data.inventory : [];
+    const selectedId = $("[data-campaign-inventory-id]").value;
+    if (selectedId && !campaignInventoryOptions.some(item => String(item.id) === selectedId)) clearCampaignInventorySelection("That product is no longer active with stock. Choose another inventory result.");
+    const shouldOpen = !$("[data-campaign-modal]").hidden && !$("[data-campaign-product-field]").hidden && document.activeElement === input;
+    renderCampaignInventoryOptions({ open: shouldOpen });
+  }
   function syncCampaignFields() {
     const type = $("[data-campaign-reward-type]").value;
     const percentField = $("[data-campaign-percent-field]");
     const packField = $("[data-campaign-pack-field]");
+    const productField = $("[data-campaign-product-field]");
     const percentInput = percentField.querySelector("input");
     const packInput = packField.querySelector("input");
     const needsPacks = type === "pack_draft";
+    const needsProduct = type === "product";
     $("[data-campaign-single-help]").hidden = type !== "free_single";
     percentField.hidden = type !== "percent";
     percentInput.required = type === "percent";
     packField.hidden = !needsPacks;
     packInput.required = needsPacks;
+    productField.hidden = !needsProduct;
+    $("[data-campaign-inventory-search]").required = needsProduct;
+    if (!needsProduct) {
+      closeCampaignInventoryOptions();
+      if ($("[data-campaign-inventory-id]").value) {
+        $("[data-campaign-inventory-search]").value = "";
+        clearCampaignInventorySelection();
+      }
+    }
     if (type === "pack_draft") {
       const maxInput = $("[data-campaign-form] input[name='maxRedemptions']");
       if (Number(maxInput.value) > Number(packInput.value)) maxInput.value = packInput.value;
@@ -381,6 +721,9 @@
       if (!maxInput.value || Number(maxInput.value) === 25) maxInput.value = "50";
       const titleInput = $("[data-campaign-form] input[name='title']");
       if (!titleInput.value) titleInput.placeholder = "First Show Holographic Singles";
+    } else if (type === "product") {
+      const titleInput = $("[data-campaign-form] input[name='title']");
+      if (!titleInput.value) titleInput.placeholder = "Featured Product Giveaway";
     } else {
       const titleInput = $("[data-campaign-form] input[name='title']");
       if (!titleInput.value) titleInput.placeholder = "Friday Night Rip Bonus";
@@ -410,9 +753,11 @@
     setCampaignFormStatus("");
     syncCampaignFields();
     syncCampaignExpiryUnit();
+    refreshCampaignInventory("").catch(error => setCampaignFormStatus(error.message, "error"));
     $("[data-campaign-form] input[name='title']").focus();
   }
   function closeCampaignModal() {
+    closeCampaignInventoryOptions();
     $("[data-campaign-modal]").hidden = true;
     campaignModalLastFocus?.focus?.();
   }
@@ -772,7 +1117,8 @@
       const dateFilteredRedemptions = hasDateFilter ? allRedemptions.filter(redemption => dateMatches(pick(redemption, "claimedAt", "claimed_at"))) : allRedemptions;
       const campaignCreatedMatches = hasDateFilter && dateMatches(pick(campaign, "createdAt", "created_at"));
       if (hasDateFilter && !campaignCreatedMatches && !dateFilteredRedemptions.length) return;
-      const campaignMatches = query && [pick(campaign, "title"), campaignRewardDescription(campaign), rewardType, pick(campaign, "url")].some(value => String(value || "").toLowerCase().includes(query));
+      const product = campaignProduct(campaign);
+      const campaignMatches = query && [pick(campaign, "title"), campaignRewardDescription(campaign), rewardType, pick(campaign, "url"), product?.name, product?.upc].some(value => String(value || "").toLowerCase().includes(query));
       const visible = !query || campaignMatches ? dateFilteredRedemptions : dateFilteredRedemptions.filter(redemption => [pick(redemption, "code"), pick(redemption, "email"), pick(redemption, "whatnotUsername", "whatnot_username")].some(value => String(value || "").toLowerCase().includes(query)));
       if (query && !campaignMatches && !visible.length) return;
       matches += 1;
@@ -846,7 +1192,7 @@
         const codeValue = String(pick(redemption, "code") || "");
         const emailValue = String(pick(redemption, "email") || "");
         const usernameValue = String(pick(redemption, "whatnotUsername", "whatnot_username") || "");
-        if (query && ![codeValue, emailValue, usernameValue, pick(campaign, "title"), campaignRewardDescription(campaign)].some(value => String(value || "").toLowerCase().includes(query))) return;
+        if (query && ![codeValue, emailValue, usernameValue, pick(campaign, "title"), campaignRewardDescription(campaign), campaignProduct(campaign)?.upc].some(value => String(value || "").toLowerCase().includes(query))) return;
         const card = document.createElement("article"); card.className = "admin-claim";
         const identity = document.createElement("div");
         const code = document.createElement("h3"); code.textContent = codeValue;
@@ -986,6 +1332,37 @@
   }));
   document.querySelectorAll("[data-admin-email-close]").forEach(button => button.addEventListener("click", () => { $("[data-admin-email-modal]").hidden = true; }));
   document.querySelectorAll("[data-master-section-button]").forEach(button => button.addEventListener("click", () => openMasterSection(button.dataset.masterSectionButton)));
+  $("[data-inventory-new]").addEventListener("click", () => openInventoryModal());
+  $("[data-inventory-import]").addEventListener("click", importStarterInventory);
+  $("[data-inventory-refresh]").addEventListener("click", () => refreshInventory({ announce: true }).catch(error => setInventoryStatus(error.message, "error")));
+  $("[data-inventory-search]").addEventListener("input", () => {
+    clearTimeout(inventorySearchTimer);
+    inventorySearchTimer = setTimeout(() => refreshInventory().catch(error => setInventoryStatus(error.message, "error")), 220);
+  });
+  $("[data-inventory-status-filter]").addEventListener("change", renderInventory);
+  document.querySelectorAll("[data-inventory-close]").forEach(button => button.addEventListener("click", closeInventoryModal));
+  ["cogs", "usShipping", "profit"].forEach(name => $("[data-inventory-form]").elements.namedItem(name).addEventListener("input", updateInventoryPricePreview));
+  $("[data-inventory-form]").elements.namedItem("isActive").addEventListener("change", updateInventoryPricePreview);
+  $("[data-inventory-form]").addEventListener("submit", async event => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const payload = inventoryPayloadFromForm(form);
+    const previous = inventoryItems.find(item => String(item.id) === editingInventoryId);
+    if (previous?.isActive && !payload.isActive && !confirm(`Deactivate “${previous.name}”? It will stop appearing in new product campaigns and the public catalog.`)) return;
+    const button = $("[data-inventory-save]");
+    button.disabled = true; button.textContent = "Saving..."; setInventoryFormStatus("");
+    try {
+      const path = editingInventoryId ? `/admin/inventory/${encodeURIComponent(editingInventoryId)}` : "/admin/inventory";
+      const data = await request(path, { method: "POST", body: JSON.stringify(payload) });
+      const savedName = String(data.item?.name || payload.name || "Product");
+      closeInventoryModal();
+      await refreshInventory();
+      await refreshCampaignInventory("").catch(() => {});
+      closeCampaignInventoryOptions();
+      setInventoryStatus(`${savedName} saved. Product campaign search is now up to date.`, "success");
+    } catch (error) { setInventoryFormStatus(error.message, "error"); }
+    finally { button.disabled = false; button.textContent = editingInventoryId ? "Save Changes" : "Save Product"; }
+  });
   $("[data-email-all]").addEventListener("click", () => { emailAudience = "all"; selectedEmailMembers.clear(); syncEmailComposer(); setMasterEmailStatus("Message All selected. Review your subject and message before sending.", "success"); });
   $("[data-email-select-open]").addEventListener("click", openEmailMemberSelection);
   document.querySelectorAll("[data-email-select-close]").forEach(button => button.addEventListener("click", closeEmailMemberSelection));
@@ -1010,7 +1387,30 @@
   });
   $("[data-campaign-open]").addEventListener("click", openCampaignModal);
   document.querySelectorAll("[data-campaign-close]").forEach(button => button.addEventListener("click", closeCampaignModal));
-  $("[data-campaign-reward-type]").addEventListener("change", syncCampaignFields);
+  $("[data-campaign-reward-type]").addEventListener("change", () => {
+    syncCampaignFields();
+    if ($("[data-campaign-reward-type]").value === "product") refreshCampaignInventory("").catch(error => setCampaignFormStatus(error.message, "error"));
+  });
+  $("[data-campaign-inventory-search]").addEventListener("focus", () => refreshCampaignInventory().catch(error => setCampaignFormStatus(error.message, "error")));
+  $("[data-campaign-inventory-search]").addEventListener("input", event => {
+    clearCampaignInventorySelection("Select a matching inventory result; typed text alone cannot attach a product.");
+    clearTimeout(campaignInventorySearchTimer);
+    campaignInventorySearchTimer = setTimeout(() => refreshCampaignInventory(event.currentTarget.value).catch(error => setCampaignFormStatus(error.message, "error")), 180);
+  });
+  $("[data-campaign-inventory-search]").addEventListener("blur", () => setTimeout(closeCampaignInventoryOptions, 140));
+  $("[data-campaign-inventory-search]").addEventListener("keydown", event => {
+    const list = $("[data-campaign-inventory-options]");
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      if (list.hidden) { refreshCampaignInventory().catch(error => setCampaignFormStatus(error.message, "error")); return; }
+      activateCampaignInventoryOption(campaignInventoryActiveIndex + (event.key === "ArrowDown" ? 1 : -1));
+    } else if (event.key === "Enter" && campaignInventoryActiveIndex >= 0) {
+      event.preventDefault();
+      selectCampaignInventory(campaignInventoryOptions[campaignInventoryActiveIndex]);
+    } else if (event.key === "Escape") {
+      event.preventDefault(); closeCampaignInventoryOptions();
+    }
+  });
   $("[data-campaign-expiry-unit]").addEventListener("change", () => syncCampaignExpiryUnit({ convert: true }));
   $("[data-campaign-pack-field] input").addEventListener("input", event => {
     if ($("[data-campaign-reward-type]").value !== "pack_draft") return;
@@ -1028,6 +1428,7 @@
     const expiresInUnit = String(form.get("expiresInUnit") || "hours");
     const neverExpires = expiresInUnit === "indefinite";
     const expiresInHours = expiresInUnit === "days" ? expiresInValue * 24 : expiresInValue;
+    const inventoryItemId = String(form.get("inventoryItemId") || "");
     if (rewardType === "pack_draft" && packCount < maxRedemptions) {
       setCampaignFormStatus("Choose a Pack # needs at least one unique pack number per person. Increase packs or lower maximum people.", "error");
       $("[data-campaign-pack-field] input").focus();
@@ -1036,6 +1437,11 @@
     if (!neverExpires && (!Number.isFinite(expiresInHours) || expiresInHours < 1 || expiresInHours > 168 || (expiresInUnit === "days" && (expiresInValue < 1 || expiresInValue > 7)))) {
       setCampaignFormStatus("Time to Expire must be 1–168 hours or 1–7 days.", "error");
       $("[data-campaign-form] input[name='expiresInValue']").focus();
+      return;
+    }
+    if (rewardType === "product" && !inventoryItemId) {
+      setCampaignFormStatus("Choose a product from the inventory search results before generating this campaign.", "error");
+      $("[data-campaign-inventory-search]").focus();
       return;
     }
     const payload = {
@@ -1047,12 +1453,13 @@
     if (!neverExpires) payload.expiresInHours = Number(expiresInHours.toFixed(6));
     if (rewardType === "percent") payload.percent = Number(form.get("percent"));
     if (rewardType === "pack_draft") payload.packCount = packCount;
+    if (rewardType === "product") payload.inventoryItemId = inventoryItemId;
     const submit = $("[data-campaign-submit]"); submit.disabled = true; submit.textContent = "Generating..."; setCampaignFormStatus("");
     try {
       const data = await request("/admin/campaigns", { method: "POST", body: JSON.stringify(payload) });
       if (data.serverNow) campaignClockOffset = Date.parse(data.serverNow) - Date.now();
       if (!data.campaign) throw new Error("The campaign response was incomplete.");
-      formElement.reset(); syncCampaignFields(); syncCampaignExpiryUnit(); closeCampaignModal();
+      formElement.reset(); clearCampaignInventorySelection(); syncCampaignFields(); syncCampaignExpiryUnit(); closeCampaignModal();
       try { await renderGeneratedCampaign(data.campaign); }
       catch (qrError) { showStatus(`Campaign created, but its QR could not load: ${qrError.message}`, "error"); }
       await refreshCampaigns();
@@ -1081,11 +1488,12 @@
   document.querySelectorAll("[data-campaign-share-social]").forEach(button => button.addEventListener("click", () => shareCampaignToSocial(button.dataset.campaignShareSocial).catch(error => showStatus(error.message, "error"))));
   document.addEventListener("keydown", event => {
     if (event.key !== "Escape") return;
-    if (!$("[data-email-select-modal]").hidden) closeEmailMemberSelection();
+    if (!$("[data-inventory-modal]").hidden) closeInventoryModal();
+    else if (!$("[data-email-select-modal]").hidden) closeEmailMemberSelection();
     else if (!$("[data-campaign-share-modal]").hidden) closeCampaignShare();
     else if (!$("[data-campaign-modal]").hidden) closeCampaignModal();
   });
-  $("[data-admin-refresh]").addEventListener("click", () => Promise.all([refreshDashboard(), refreshCampaigns()]).catch(error => showStatus(error.message, "error")));
+  $("[data-admin-refresh]").addEventListener("click", () => Promise.all([refreshDashboard(), refreshCampaigns(), refreshInventory()]).catch(error => showStatus(error.message, "error")));
   $("[data-admin-filter]").addEventListener("change", () => refreshDashboard().catch(error => showStatus(error.message, "error")));
   $("[data-admin-search]").addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => refreshDashboard().catch(error => showStatus(error.message, "error")), 250); });
   ["[data-admin-date-from]", "[data-admin-date-to]"].forEach(selector => $(selector).addEventListener("change", () => renderClaims(legacyClaimsState)));
@@ -1100,6 +1508,8 @@
     if (ownerReferralQrUrl) URL.revokeObjectURL(ownerReferralQrUrl);
     if (campaignQrObjectUrl) URL.revokeObjectURL(campaignQrObjectUrl);
     clearInterval(campaignCountdownTimer);
+    clearTimeout(inventorySearchTimer);
+    clearTimeout(campaignInventorySearchTimer);
   });
   setOwnerReferralActionsEnabled(false);
   syncCampaignFields();
