@@ -4,6 +4,9 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
 const schema = readFileSync(new URL("../schema.sql", import.meta.url), "utf8");
+const initialMigration = readFileSync(new URL("../migrations/0000_initial.sql", import.meta.url), "utf8");
+const redemptionRequestMigration = readFileSync(new URL("../migrations/0001_add_redemption_requested_at.sql", import.meta.url), "utf8");
+const loginFlowMigration = readFileSync(new URL("../migrations/0002_add_login_code_auth_flow.sql", import.meta.url), "utf8");
 const campaignMigration = readFileSync(new URL("../migrations/0003_add_offer_campaigns.sql", import.meta.url), "utf8");
 const singleMigration = readFileSync(new URL("../migrations/0004_add_free_single_campaigns.sql", import.meta.url), "utf8");
 const indefiniteMigration = readFileSync(new URL("../migrations/0005_add_indefinite_campaigns.sql", import.meta.url), "utf8");
@@ -12,6 +15,7 @@ const inventoryMigration = readFileSync(new URL("../migrations/0007_add_inventor
 const inventoryQuantityGuardMigration = readFileSync(new URL("../migrations/0008_guard_inventory_quantity.sql", import.meta.url), "utf8");
 const productReactivationGuardMigration = readFileSync(new URL("../migrations/0009_guard_product_reactivation.sql", import.meta.url), "utf8");
 const productFulfillmentMigration = readFileSync(new URL("../migrations/0010_decrement_fulfilled_product.sql", import.meta.url), "utf8");
+const channelPricingMigration = readFileSync(new URL("../migrations/0011_add_channel_pricing.sql", import.meta.url), "utf8");
 
 function member(db, id, email, inviteCode) {
   db.prepare(`INSERT INTO members(id,email,email_verified_at,identity_status,device_verified,invite_code,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)`)
@@ -24,7 +28,9 @@ test("campaign schema and sequential campaign migrations are valid", () => {
   schemaDb.close();
 
   const migrationDb = new DatabaseSync(":memory:");
-  migrationDb.exec(schema.split("CREATE TABLE IF NOT EXISTS offer_campaigns")[0]);
+  migrationDb.exec(initialMigration);
+  migrationDb.exec(redemptionRequestMigration);
+  migrationDb.exec(loginFlowMigration);
   migrationDb.exec(campaignMigration);
   migrationDb.exec(singleMigration);
   migrationDb.exec(indefiniteMigration);
@@ -33,6 +39,7 @@ test("campaign schema and sequential campaign migrations are valid", () => {
   migrationDb.exec(inventoryQuantityGuardMigration);
   migrationDb.exec(productReactivationGuardMigration);
   migrationDb.exec(productFulfillmentMigration);
+  migrationDb.exec(channelPricingMigration);
   assert.ok(migrationDb.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='offer_campaigns'`).get());
   assert.ok(migrationDb.prepare(`SELECT name FROM pragma_table_info('offer_campaigns') WHERE name='reward_variant'`).get());
   assert.ok(migrationDb.prepare(`SELECT name FROM pragma_table_info('offer_campaigns') WHERE name='never_expires'`).get());
@@ -44,6 +51,8 @@ test("campaign schema and sequential campaign migrations are valid", () => {
   assert.ok(migrationDb.prepare(`SELECT name FROM sqlite_master WHERE type='trigger' AND name='trg_inventory_quantity_commitment_guard'`).get());
   assert.ok(migrationDb.prepare(`SELECT name FROM sqlite_master WHERE type='trigger' AND name='trg_product_campaign_reactivation_guard'`).get());
   assert.ok(migrationDb.prepare(`SELECT name FROM sqlite_master WHERE type='trigger' AND name='trg_product_redemption_decrements_inventory'`).get());
+  assert.ok(migrationDb.prepare(`SELECT name FROM pragma_table_info('inventory_items') WHERE name='website_list_price_cents'`).get());
+  assert.ok(migrationDb.prepare(`SELECT name FROM pragma_table_info('inventory_items') WHERE name='wholesale_pallet_list_price_cents'`).get());
   migrationDb.close();
 });
 

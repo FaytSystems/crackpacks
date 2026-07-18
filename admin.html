@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.6.1">
   <link rel="stylesheet" href="assets/css/referral.css?v=2.6.0">
   <link rel="stylesheet" href="assets/css/rewards-modal.css?v=2.1.0">
-  <link rel="stylesheet" href="assets/css/admin.css?v=3.0.0">
+  <link rel="stylesheet" href="assets/css/admin.css?v=3.1.0">
 </head>
 <body>
   <header class="site-header">
@@ -204,8 +204,8 @@
             </div>
           </div>
           <div class="inventory-pricing-note">
-            <strong>Pricing guardrail</strong>
-            <span>USA price = COGS + USA shipping allowance + target profit. International product price = COGS + target profit; shipping is quoted separately. Payment-processing, insurance, packaging, carrier surcharges, duties, taxes, and refunds can reduce actual profit.</span>
+            <strong>Safe price floors</strong>
+            <span>Every channel price is the higher of its calculated minimum floor or your market/list price. Floors protect the selected contribution margin; they never cap a hot product's selling price. Review platform rates whenever a channel changes its fees.</span>
           </div>
           <div class="inventory-toolbar">
             <label>Search inventory<input type="search" data-inventory-search placeholder="Guess a name, UPC, or category" autocomplete="off"></label>
@@ -296,21 +296,49 @@
           </div>
         </fieldset>
         <fieldset>
-          <legend>Reference &amp; selling price</legend>
+          <legend>Market reference</legend>
           <div class="inventory-form-grid inventory-money-grid">
             <label>Reference price ($)<input name="averageMsrp" type="number" min="0" step="0.01" inputmode="decimal" placeholder="161.64"></label>
             <label>Reference label<input name="referencePriceLabel" maxlength="80" value="Retail reference price" placeholder="Average MSRP"></label>
             <label>Price observed on<input name="referencePriceObservedAt" type="date"></label>
             <label>Reference source URL<input name="sourceUrl" maxlength="500" placeholder="https://retailer.example/product"></label>
-            <label>COGS ($)<input name="cogs" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Your landed product cost"></label>
-            <label>USA shipping allowance ($)<input name="usShipping" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Packed shipping budget"></label>
-            <label>Target profit ($)<input name="profit" type="number" min="0" step="0.01" value="10.00" inputmode="decimal"></label>
           </div>
+          <p class="fine-print">The reference price is comparison information only. It is not used as a floor or a cap.</p>
+        </fieldset>
+        <fieldset>
+          <legend>Channel cost inputs</legend>
+          <p class="inventory-pricing-intro">Enter actual per-item costs. Leave an unknown cost blank; dependent channels will remain unpriced instead of guessing.</p>
+          <div class="inventory-form-grid inventory-money-grid">
+            <label>Landed COGS ($)<input name="cogs" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Product + inbound freight"></label>
+            <label>USA postage allowance ($)<input name="usShipping" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Free-shipping postage"></label>
+            <label>Packaging ($)<input name="packaging" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Mailers, boxes, fill, labels"></label>
+            <label>Overhead allocation ($)<input name="overhead" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Typically $2–$5 sealed"></label>
+            <label>Retail fixed fee ($)<input name="retailFixedFee" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Per-sale fixed fee"></label>
+            <label>Wholesale handling ($)<input name="wholesaleHandling" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Per-order/item handling"></label>
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend>Safe floors &amp; market list prices</legend>
+          <p class="inventory-pricing-intro">Leave a list price blank to use its floor. A list price may be above the floor for strong market demand, but the system will reject anything below it.</p>
           <div class="inventory-price-preview" data-inventory-price-preview>
-            <div><span>Calculated USA price</span><strong data-inventory-us-price>Needs COGS + shipping</strong><small>Free-USA-shipping display price</small></div>
-            <div><span>International product price</span><strong data-inventory-international-price>Needs COGS</strong><small>Shipping quoted separately</small></div>
+            <div><span>Retail floor</span><strong data-inventory-retail-floor>Needs cost inputs</strong><small>2.7% processing · 25% margin</small></div>
+            <div><span>USA website floor</span><strong data-inventory-website-floor>Needs cost inputs</strong><small>2.9% + $0.30 · 20% margin · postage included</small></div>
+            <div><span>International item floor</span><strong data-inventory-international-floor>Needs cost inputs</strong><small>2.9% + $0.30 · 20% margin · shipping separate</small></div>
+            <div><span>Whatnot floor</span><strong data-inventory-whatnot-floor>Needs cost inputs</strong><small>12% fees + $0.30 · 18% margin · buyer-paid shipping</small></div>
+            <div><span>Small reseller floor</span><strong data-inventory-wholesale-small-floor>Needs cost inputs</strong><small>15% margin · ACH/wire · freight separate</small></div>
+            <div><span>Case floor</span><strong data-inventory-wholesale-case-floor>Needs cost inputs</strong><small>12% margin · ACH/wire · freight separate</small></div>
+            <div><span>Pallet / large floor</span><strong data-inventory-wholesale-pallet-floor>Needs cost inputs</strong><small>10% margin · ACH/wire · freight separate</small></div>
           </div>
-          <p class="fine-print">These are planning prices, not guaranteed net proceeds. Stripe/payment fees, packing materials, insurance, address adjustments, carrier surcharges, returns, and taxes are not automatically included.</p>
+          <div class="inventory-form-grid inventory-money-grid inventory-list-price-grid">
+            <label>Retail list price ($)<input name="retailListPrice" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Optional — blank uses floor"></label>
+            <label>USA website list price ($)<input name="websiteListPrice" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Optional — blank uses floor"></label>
+            <label>International item list price ($)<input name="internationalListPrice" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Optional — shipping separate"></label>
+            <label>Whatnot list price ($)<input name="whatnotListPrice" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Optional — buyer pays shipping"></label>
+            <label>Small reseller price ($)<input name="wholesaleSmallListPrice" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Optional — 15% floor"></label>
+            <label>Case price ($)<input name="wholesaleCaseListPrice" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Optional — 12% floor"></label>
+            <label>Pallet / large price ($)<input name="wholesalePalletListPrice" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Optional — 10% floor"></label>
+          </div>
+          <p class="fine-print">Wholesale floors assume ACH or wire (0% payment fee) and buyer-paid freight unless your minimum-order policy says otherwise. Insurance, taxes, refunds, and unusual carrier adjustments still require owner review.</p>
         </fieldset>
         <fieldset>
           <legend>Packed shipment details</legend>
@@ -394,6 +422,6 @@
 
   <script src="assets/js/config.js?v=3.0.0"></script>
   <script src="assets/js/nav-profile.js?v=2.6.1"></script>
-  <script src="assets/js/admin.js?v=3.0.0"></script>
+  <script src="assets/js/admin.js?v=3.1.0"></script>
 </body>
 </html>

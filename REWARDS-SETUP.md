@@ -48,7 +48,7 @@ The owner dashboard generates an additional signed digital referral QR that chan
 
 ## Public offer campaigns
 
-Rewards Worker 3.0.0 provides owner-created offer campaigns and inventory-linked product rewards. Apply the pending versioned migrations with `npm run db:remote` before deploying the Worker. Migration `0003` creates campaign, redemption, and weekly reward-ledger tables; additive migration `0004` enables free-single campaigns, additive migration `0005` enables explicit indefinite campaigns, additive migration `0006` adds server-side kill switches for every master referral and campaign QR, additive migration `0007` adds owner inventory, product campaign snapshots, and short-lived shipping quote records, and migrations `0008` through `0010` add one atomic inventory-safety trigger apiece.
+Rewards Worker 3.1.0 provides owner-created offer campaigns, inventory-linked product rewards, and protected channel price floors. Apply the pending versioned migrations with `npm run db:remote` before deploying the Worker. Migration `0003` creates campaign, redemption, and weekly reward-ledger tables; additive migration `0004` enables free-single campaigns, additive migration `0005` enables explicit indefinite campaigns, additive migration `0006` adds server-side kill switches for every master referral and campaign QR, additive migration `0007` adds owner inventory, product campaign snapshots, and short-lived shipping quote records, migrations `0008` through `0010` add one atomic inventory-safety trigger apiece, and additive migration `0011` adds channel cost inputs plus owner list-price overrides.
 
 Only the verified owner account with a fresh passkey step-up may create campaigns, list campaign members, generate campaign QR codes, or mark rewards redeemed. Supported reward types are:
 
@@ -79,7 +79,15 @@ The email sign-in request may include a bounded public `offerToken`. When it res
 
 The protected Inventory tab is the source of truth for campaign products and the public USA/international store previews. The starter-catalog importer adds verified product references with zero stock. It never invents COGS or availability. Before enabling a product, enter actual on-hand quantity, landed COGS, packed weight and all three packed dimensions, the documented reference-price source/date, and for international shipping the origin country and HS tariff code.
 
-USA preview price is calculated as `COGS + configured USA shipping allowance + target profit`. International preview price is `COGS + target profit`; shipping is quoted separately. The default profit target is $10, but Stripe fees, packaging, remote-area surcharges, address corrections, and carrier adjustments can reduce the final margin. `STORE_COMING_SOON` and `STORE_CHECKOUT_ENABLED` therefore both remain locked down until every product and checkout flow is verified.
+The pricing engine treats every result as a minimum floor, never a market-price cap. The saved channel price is the higher of the calculated floor or the owner's optional market/list price:
+
+- Retail: `(landed COGS + overhead + retail fixed fee) ÷ (1 - 2.7% - 25%)`.
+- USA website: `(landed COGS + postage + packaging + overhead + $0.30) ÷ (1 - 2.9% - 20%)`.
+- International website item price: the website formula without postage; shipping is quoted separately.
+- Whatnot: `(landed COGS + packaging + overhead + $0.30) ÷ (1 - 12% - 18%)`; buyer-paid shipping is assumed.
+- Wholesale: `(landed COGS + handling) ÷ (1 - margin)`, using 15% for small reseller orders, 12% for cases, and 10% for pallet/very large orders. ACH or wire (0% payment fee) and buyer-paid freight are assumed unless a documented minimum-order policy says otherwise.
+
+The API rejects owner list-price overrides below their applicable floor and does not expose COGS or floor components publicly. `STORE_COMING_SOON` and `STORE_CHECKOUT_ENABLED` remain locked down until every product, fee assumption, and checkout flow is verified.
 
 Public inventory never returns owner IDs, inventory IDs, UPCs, COGS, private packing notes, or exact on-hand counts. Owner routes require the normal member bearer token plus a fresh passkey-backed `X-Admin-Token`:
 

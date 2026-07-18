@@ -1,8 +1,9 @@
 import QRCode from "qrcode";
 import { issueOwnerReferral, ownerReferralSlotAt, verifyOwnerReferral } from "./referral-rotation.js";
 import { campaignWeekAt, parseCampaignExpiryHours } from "./campaign-time.js";
+import { calculateChannelPricing, channelPricingErrors } from "./channel-pricing.js";
 
-const VERSION = "3.0.0";
+const VERSION = "3.1.0";
 const CAMPAIGN_REWARD_TYPES = new Set(["percent", "free_shipping", "pick_a_pack", "pack_draft", "free_single", "product"]);
 const MAX_CAMPAIGN_REDEMPTIONS = 500;
 const STORE_CURRENCIES = new Set(["USD", "CAD", "EUR", "GBP", "AUD", "NZD", "JPY", "CHF", "SEK", "NOK", "DKK", "PLN", "CZK", "HUF", "RON"]);
@@ -64,26 +65,42 @@ function parseInventoryItemInput(data) {
   const cogsCents = optionalInteger(data?.cogsCents, 0, 100000000);
   const usShippingCents = optionalInteger(data?.usShippingCents, 0, 10000000);
   const profitCents = optionalInteger(data?.profitCents ?? 1000, 0, 10000000);
+  const packagingCents = optionalInteger(data?.packagingCents, 0, 10000000);
+  const overheadCents = optionalInteger(data?.overheadCents, 0, 10000000);
+  const retailFixedFeeCents = optionalInteger(data?.retailFixedFeeCents, 0, 10000000);
+  const wholesaleHandlingCents = optionalInteger(data?.wholesaleHandlingCents, 0, 10000000);
+  const retailListPriceCents = optionalInteger(data?.retailListPriceCents, 0, 100000000);
+  const websiteListPriceCents = optionalInteger(data?.websiteListPriceCents, 0, 100000000);
+  const internationalListPriceCents = optionalInteger(data?.internationalListPriceCents, 0, 100000000);
+  const whatnotListPriceCents = optionalInteger(data?.whatnotListPriceCents, 0, 100000000);
+  const wholesaleSmallListPriceCents = optionalInteger(data?.wholesaleSmallListPriceCents, 0, 100000000);
+  const wholesaleCaseListPriceCents = optionalInteger(data?.wholesaleCaseListPriceCents, 0, 100000000);
+  const wholesalePalletListPriceCents = optionalInteger(data?.wholesalePalletListPriceCents, 0, 100000000);
   const weightOz = optionalNumber(data?.weightOz, 0.01, 2400);
   const lengthIn = optionalNumber(data?.lengthIn, 0.01, 120);
   const widthIn = optionalNumber(data?.widthIn, 0.01, 120);
   const heightIn = optionalNumber(data?.heightIn, 0.01, 120);
-  if ([quantity, averageMsrpCents, cogsCents, usShippingCents, profitCents, weightOz, lengthIn, widthIn, heightIn].some(Number.isNaN)) return { error: "Check the inventory quantity, pricing, weight, and package dimensions." };
+  if ([quantity, averageMsrpCents, cogsCents, usShippingCents, profitCents, packagingCents, overheadCents, retailFixedFeeCents, wholesaleHandlingCents,
+    retailListPriceCents, websiteListPriceCents, internationalListPriceCents, whatnotListPriceCents, wholesaleSmallListPriceCents,
+    wholesaleCaseListPriceCents, wholesalePalletListPriceCents, weightOz, lengthIn, widthIn, heightIn].some(Number.isNaN)) return { error: "Check the inventory quantity, pricing, weight, and package dimensions." };
   const originCountry = String(rawOriginCountry || "").trim().toUpperCase();
   if (originCountry && !/^[A-Z]{2}$/.test(originCountry)) return { error: "Country of origin must be a two-letter code." };
   const hsCode = String(rawHsCode || "").trim();
   if (hsCode && !/^[0-9.]{4,12}$/.test(hsCode)) return { error: "HS code must contain 4 to 12 digits or periods." };
   const referencePriceObservedAt = String(data?.referencePriceObservedAt || "").trim();
   if (referencePriceObservedAt && !/^\d{4}-\d{2}-\d{2}$/.test(referencePriceObservedAt)) return { error: "Reference-price date must use YYYY-MM-DD." };
-  return {
-    item: {
+  const item = {
       name, upc: upc || null, category: clean(rawCategory, 64), description: String(rawDescription || "").trim(), imageUrl, sourceUrl,
       quantity, averageMsrpCents, referencePriceLabel: clean(rawReferenceLabel || "Retail reference price", 80), referencePriceObservedAt: referencePriceObservedAt || null,
-      cogsCents, usShippingCents, profitCents, weightOz, lengthIn, widthIn, heightIn,
+      cogsCents, usShippingCents, profitCents, packagingCents, overheadCents, retailFixedFeeCents, wholesaleHandlingCents,
+      retailListPriceCents, websiteListPriceCents, internationalListPriceCents, whatnotListPriceCents,
+      wholesaleSmallListPriceCents, wholesaleCaseListPriceCents, wholesalePalletListPriceCents,
+      weightOz, lengthIn, widthIn, heightIn,
       originCountry, hsCode, packingNotes: String(rawPackingNotes || "").trim(),
       isStoreVisible: data?.isStoreVisible !== false, isActive: data?.isActive !== false
-    }
   };
+  const pricingErrors = channelPricingErrors(item);
+  return pricingErrors.length ? { error: pricingErrors[0] } : { item };
 }
 const boundedString = (value, max) => {
   if (value === undefined || value === null) return "";
@@ -237,18 +254,30 @@ const campaignProduct = (campaign, ownerView = false) => campaign.inventory_item
   ...(ownerView ? { inventoryItemId: campaign.inventory_item_id, upc: campaign.product_upc_snapshot || "" } : {})
 } : null;
 const cents = value => value === null || value === undefined ? null : Number(value);
+const channelPricingInput = row => ({
+  cogsCents: cents(row.cogs_cents),
+  usShippingCents: cents(row.us_shipping_cents),
+  packagingCents: cents(row.packaging_cents),
+  overheadCents: cents(row.overhead_cents),
+  retailFixedFeeCents: cents(row.retail_fixed_fee_cents),
+  wholesaleHandlingCents: cents(row.wholesale_handling_cents),
+  retailListPriceCents: cents(row.retail_list_price_cents),
+  websiteListPriceCents: cents(row.website_list_price_cents),
+  internationalListPriceCents: cents(row.international_list_price_cents),
+  whatnotListPriceCents: cents(row.whatnot_list_price_cents),
+  wholesaleSmallListPriceCents: cents(row.wholesale_small_list_price_cents),
+  wholesaleCaseListPriceCents: cents(row.wholesale_case_list_price_cents),
+  wholesalePalletListPriceCents: cents(row.wholesale_pallet_list_price_cents)
+});
 const storePriceCents = (row, market) => {
-  const productCost = cents(row.cogs_cents);
-  const profit = cents(row.profit_cents);
-  const shipping = cents(row.us_shipping_cents);
-  if (productCost === null || profit === null) return null;
-  if (market === "us") return shipping === null ? null : productCost + shipping + profit;
-  return productCost + profit;
+  const pricing = calculateChannelPricing(channelPricingInput(row));
+  return market === "us" ? pricing.prices.websiteUs : pricing.prices.websiteInternational;
 };
 const inventoryItemView = row => {
   const committedUnits = Math.max(0, Number(row.committed_units || 0));
   const quantity = Number(row.quantity || 0);
   const availableQuantity = Math.max(0, quantity - committedUnits);
+  const channelPricing = calculateChannelPricing(channelPricingInput(row));
   return ({
   id: row.id,
   publicSlug: row.public_slug,
@@ -267,8 +296,20 @@ const inventoryItemView = row => {
   cogsCents: cents(row.cogs_cents),
   usShippingCents: cents(row.us_shipping_cents),
   profitCents: cents(row.profit_cents),
-  usStorePriceCents: storePriceCents(row, "us"),
-  internationalStorePriceCents: storePriceCents(row, "international"),
+  packagingCents: cents(row.packaging_cents),
+  overheadCents: cents(row.overhead_cents),
+  retailFixedFeeCents: cents(row.retail_fixed_fee_cents),
+  wholesaleHandlingCents: cents(row.wholesale_handling_cents),
+  retailListPriceCents: cents(row.retail_list_price_cents),
+  websiteListPriceCents: cents(row.website_list_price_cents),
+  internationalListPriceCents: cents(row.international_list_price_cents),
+  whatnotListPriceCents: cents(row.whatnot_list_price_cents),
+  wholesaleSmallListPriceCents: cents(row.wholesale_small_list_price_cents),
+  wholesaleCaseListPriceCents: cents(row.wholesale_case_list_price_cents),
+  wholesalePalletListPriceCents: cents(row.wholesale_pallet_list_price_cents),
+  channelPricing,
+  usStorePriceCents: channelPricing.prices.websiteUs,
+  internationalStorePriceCents: channelPricing.prices.websiteInternational,
   weightOz: row.weight_oz === null || row.weight_oz === undefined ? null : Number(row.weight_oz),
   lengthIn: row.length_in === null || row.length_in === undefined ? null : Number(row.length_in),
   widthIn: row.width_in === null || row.width_in === undefined ? null : Number(row.width_in),
@@ -1227,12 +1268,19 @@ async function route(request, env, cors, ctx) {
       await env.DB.prepare(`
         INSERT INTO inventory_items(
           id,owner_member_id,public_slug,name,upc,category,description,image_url,source_url,quantity,average_msrp_cents,
-          reference_price_label,reference_price_observed_at,cogs_cents,us_shipping_cents,profit_cents,weight_oz,length_in,width_in,height_in,
+          reference_price_label,reference_price_observed_at,cogs_cents,us_shipping_cents,profit_cents,
+          packaging_cents,overhead_cents,retail_fixed_fee_cents,wholesale_handling_cents,
+          retail_list_price_cents,website_list_price_cents,international_list_price_cents,whatnot_list_price_cents,
+          wholesale_small_list_price_cents,wholesale_case_list_price_cents,wholesale_pallet_list_price_cents,
+          weight_oz,length_in,width_in,height_in,
           origin_country,hs_code,packing_notes,is_store_visible,is_active,created_at,updated_at
-        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
       `).bind(
         inventoryId, member.id, publicSlug, item.name, item.upc, item.category, item.description, item.imageUrl, item.sourceUrl, item.quantity,
         item.averageMsrpCents, item.referencePriceLabel, item.referencePriceObservedAt, item.cogsCents, item.usShippingCents, item.profitCents,
+        item.packagingCents, item.overheadCents, item.retailFixedFeeCents, item.wholesaleHandlingCents,
+        item.retailListPriceCents, item.websiteListPriceCents, item.internationalListPriceCents, item.whatnotListPriceCents,
+        item.wholesaleSmallListPriceCents, item.wholesaleCaseListPriceCents, item.wholesalePalletListPriceCents,
         item.weightOz, item.lengthIn, item.widthIn, item.heightIn, item.originCountry, item.hsCode, item.packingNotes,
         item.isStoreVisible ? 1 : 0, item.isActive ? 1 : 0, createdAt, createdAt
       ).run();
@@ -1255,12 +1303,18 @@ async function route(request, env, cors, ctx) {
       const updated = await env.DB.prepare(`
         UPDATE inventory_items SET
           name=?,upc=?,category=?,description=?,image_url=?,source_url=?,quantity=?,average_msrp_cents=?,reference_price_label=?,reference_price_observed_at=?,
-          cogs_cents=?,us_shipping_cents=?,profit_cents=?,weight_oz=?,length_in=?,width_in=?,height_in=?,origin_country=?,hs_code=?,packing_notes=?,
+          cogs_cents=?,us_shipping_cents=?,profit_cents=?,packaging_cents=?,overhead_cents=?,retail_fixed_fee_cents=?,wholesale_handling_cents=?,
+          retail_list_price_cents=?,website_list_price_cents=?,international_list_price_cents=?,whatnot_list_price_cents=?,
+          wholesale_small_list_price_cents=?,wholesale_case_list_price_cents=?,wholesale_pallet_list_price_cents=?,
+          weight_oz=?,length_in=?,width_in=?,height_in=?,origin_country=?,hs_code=?,packing_notes=?,
           is_store_visible=?,is_active=?,updated_at=?
         WHERE id=? AND owner_member_id=?
       `).bind(
         item.name, item.upc, item.category, item.description, item.imageUrl, item.sourceUrl, item.quantity, item.averageMsrpCents,
         item.referencePriceLabel, item.referencePriceObservedAt, item.cogsCents, item.usShippingCents, item.profitCents,
+        item.packagingCents, item.overheadCents, item.retailFixedFeeCents, item.wholesaleHandlingCents,
+        item.retailListPriceCents, item.websiteListPriceCents, item.internationalListPriceCents, item.whatnotListPriceCents,
+        item.wholesaleSmallListPriceCents, item.wholesaleCaseListPriceCents, item.wholesalePalletListPriceCents,
         item.weightOz, item.lengthIn, item.widthIn, item.heightIn, item.originCountry, item.hsCode, item.packingNotes,
         item.isStoreVisible ? 1 : 0, item.isActive ? 1 : 0, updatedAt, adminInventoryMatch[1], member.id
       ).run();

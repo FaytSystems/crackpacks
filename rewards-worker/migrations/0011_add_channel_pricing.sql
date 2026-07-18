@@ -1,0 +1,11 @@
+ALTER TABLE inventory_items ADD COLUMN packaging_cents INTEGER CHECK(packaging_cents IS NULL OR packaging_cents BETWEEN 0 AND 10000000);
+ALTER TABLE inventory_items ADD COLUMN overhead_cents INTEGER CHECK(overhead_cents IS NULL OR overhead_cents BETWEEN 0 AND 10000000);
+ALTER TABLE inventory_items ADD COLUMN retail_fixed_fee_cents INTEGER CHECK(retail_fixed_fee_cents IS NULL OR retail_fixed_fee_cents BETWEEN 0 AND 10000000);
+ALTER TABLE inventory_items ADD COLUMN wholesale_handling_cents INTEGER CHECK(wholesale_handling_cents IS NULL OR wholesale_handling_cents BETWEEN 0 AND 10000000);
+ALTER TABLE inventory_items ADD COLUMN retail_list_price_cents INTEGER CHECK(retail_list_price_cents IS NULL OR retail_list_price_cents BETWEEN 0 AND 100000000);
+ALTER TABLE inventory_items ADD COLUMN website_list_price_cents INTEGER CHECK(website_list_price_cents IS NULL OR website_list_price_cents BETWEEN 0 AND 100000000);
+ALTER TABLE inventory_items ADD COLUMN international_list_price_cents INTEGER CHECK(international_list_price_cents IS NULL OR international_list_price_cents BETWEEN 0 AND 100000000);
+ALTER TABLE inventory_items ADD COLUMN whatnot_list_price_cents INTEGER CHECK(whatnot_list_price_cents IS NULL OR whatnot_list_price_cents BETWEEN 0 AND 100000000);
+ALTER TABLE inventory_items ADD COLUMN wholesale_small_list_price_cents INTEGER CHECK(wholesale_small_list_price_cents IS NULL OR wholesale_small_list_price_cents BETWEEN 0 AND 100000000);
+ALTER TABLE inventory_items ADD COLUMN wholesale_case_list_price_cents INTEGER CHECK(wholesale_case_list_price_cents IS NULL OR wholesale_case_list_price_cents BETWEEN 0 AND 100000000);
+ALTER TABLE inventory_items ADD COLUMN wholesale_pallet_list_price_cents INTEGER CHECK(wholesale_pallet_list_price_cents IS NULL OR wholesale_pallet_list_price_cents BETWEEN 0 AND 100000000);

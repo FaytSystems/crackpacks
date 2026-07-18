@@ -322,6 +322,18 @@
   const formatMoney = centsValue => centsValue === null || centsValue === undefined || !Number.isFinite(Number(centsValue)) ? "Not configured" : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(centsValue) / 100);
   const moneyInputValue = centsValue => centsValue === null || centsValue === undefined || !Number.isFinite(Number(centsValue)) ? "" : (Number(centsValue) / 100).toFixed(2);
   const optionalInputNumber = value => value === null || value === undefined || value === "" ? "" : String(value);
+  const pricingFloor = (components, denominatorPermille) => components.every(value => Number.isFinite(value) && value >= 0)
+    ? Math.ceil((components.reduce((total, value) => total + value, 0) * 1000) / denominatorPermille)
+    : null;
+  const channelPricingFromValues = values => ({
+    retail: pricingFloor([values.cogs, values.overhead, values.retailFixedFee], 723),
+    websiteUs: pricingFloor([values.cogs, values.usShipping, values.packaging, values.overhead, 30], 771),
+    websiteInternational: pricingFloor([values.cogs, values.packaging, values.overhead, 30], 771),
+    whatnot: pricingFloor([values.cogs, values.packaging, values.overhead, 30], 700),
+    wholesaleSmall: pricingFloor([values.cogs, values.wholesaleHandling], 850),
+    wholesaleCase: pricingFloor([values.cogs, values.wholesaleHandling], 880),
+    wholesalePallet: pricingFloor([values.cogs, values.wholesaleHandling], 900)
+  });
   function setInventoryStatus(message = "", kind = "") {
     const node = $("[data-inventory-status]");
     if (!node) return;
@@ -341,7 +353,7 @@
       if (filter === "active") return item.isActive;
       if (filter === "inactive") return !item.isActive;
       if (filter === "in_stock") return item.isActive && Number(item.quantity || 0) > 0;
-      if (filter === "needs_pricing") return item.cogsCents === null || item.cogsCents === undefined || item.usShippingCents === null || item.usShippingCents === undefined;
+      if (filter === "needs_pricing") return item.channelPricing?.prices?.websiteUs === null || item.channelPricing?.prices?.retail === null || item.channelPricing?.prices?.whatnot === null;
       return true;
     });
     if (!visible.length) {
@@ -376,7 +388,7 @@
 
       const metrics = document.createElement("div");
       metrics.className = "inventory-card-metrics";
-      [["On hand", String(Number(item.quantity || 0))], ["Campaign reserved", String(Number(item.committedUnits || 0))], ["Campaign available", String(Number(item.availableQuantity ?? item.quantity ?? 0))], ["Reference", formatMoney(item.averageMsrpCents)], ["USA price", formatMoney(item.usStorePriceCents)], ["International", formatMoney(item.internationalStorePriceCents)]].forEach(([labelText, valueText]) => {
+      [["On hand", String(Number(item.quantity || 0))], ["Campaign reserved", String(Number(item.committedUnits || 0))], ["Reference", formatMoney(item.averageMsrpCents)], ["Retail", formatMoney(item.channelPricing?.prices?.retail)], ["USA website", formatMoney(item.channelPricing?.prices?.websiteUs)], ["Whatnot", formatMoney(item.channelPricing?.prices?.whatnot)], ["Wholesale small", formatMoney(item.channelPricing?.prices?.wholesaleSmall)], ["Case", formatMoney(item.channelPricing?.prices?.wholesaleCase)], ["Pallet / large", formatMoney(item.channelPricing?.prices?.wholesalePallet)]].forEach(([labelText, valueText]) => {
         const metric = document.createElement("div");
         const label = document.createElement("span"); label.textContent = labelText;
         const value = document.createElement("strong"); value.textContent = valueText;
@@ -427,11 +439,41 @@
       const raw = String(form.elements.namedItem(name)?.value || "").trim();
       return raw === "" || !Number.isFinite(Number(raw)) ? null : Math.round(Number(raw) * 100);
     };
-    const cogs = readMoney("cogs");
-    const shipping = readMoney("usShipping");
-    const profit = readMoney("profit");
-    $("[data-inventory-us-price]").textContent = cogs === null || shipping === null || profit === null ? "Needs COGS + shipping" : formatMoney(cogs + shipping + profit);
-    $("[data-inventory-international-price]").textContent = cogs === null || profit === null ? "Needs COGS" : formatMoney(cogs + profit);
+    const floors = channelPricingFromValues({
+      cogs: readMoney("cogs"),
+      usShipping: readMoney("usShipping"),
+      packaging: readMoney("packaging"),
+      overhead: readMoney("overhead"),
+      retailFixedFee: readMoney("retailFixedFee"),
+      wholesaleHandling: readMoney("wholesaleHandling")
+    });
+    const previewFields = {
+      retail: "[data-inventory-retail-floor]",
+      websiteUs: "[data-inventory-website-floor]",
+      websiteInternational: "[data-inventory-international-floor]",
+      whatnot: "[data-inventory-whatnot-floor]",
+      wholesaleSmall: "[data-inventory-wholesale-small-floor]",
+      wholesaleCase: "[data-inventory-wholesale-case-floor]",
+      wholesalePallet: "[data-inventory-wholesale-pallet-floor]"
+    };
+    Object.entries(previewFields).forEach(([channel, selector]) => { $(selector).textContent = floors[channel] === null ? "Needs cost inputs" : formatMoney(floors[channel]); });
+    const overrideFields = {
+      retail: "retailListPrice",
+      websiteUs: "websiteListPrice",
+      websiteInternational: "internationalListPrice",
+      whatnot: "whatnotListPrice",
+      wholesaleSmall: "wholesaleSmallListPrice",
+      wholesaleCase: "wholesaleCaseListPrice",
+      wholesalePallet: "wholesalePalletListPrice"
+    };
+    Object.entries(overrideFields).forEach(([channel, name]) => {
+      const input = form.elements.namedItem(name);
+      const override = readMoney(name);
+      input.min = floors[channel] === null ? "0" : (floors[channel] / 100).toFixed(2);
+      input.setCustomValidity(override === null ? "" : floors[channel] === null
+        ? "Enter every required channel cost before setting a list price."
+        : override < floors[channel] ? `Enter at least ${formatMoney(floors[channel])} for this channel.` : "");
+    });
     $("[data-inventory-deactivate-note]").hidden = form.elements.namedItem("isActive").checked;
   }
   function openInventoryModal(item = null) {
@@ -453,7 +495,17 @@
     setInventoryField(form, "sourceUrl", item?.sourceUrl || "");
     setInventoryField(form, "cogs", moneyInputValue(item?.cogsCents));
     setInventoryField(form, "usShipping", moneyInputValue(item?.usShippingCents));
-    setInventoryField(form, "profit", item ? moneyInputValue(item.profitCents) : "10.00");
+    setInventoryField(form, "packaging", moneyInputValue(item?.packagingCents));
+    setInventoryField(form, "overhead", moneyInputValue(item?.overheadCents));
+    setInventoryField(form, "retailFixedFee", moneyInputValue(item?.retailFixedFeeCents));
+    setInventoryField(form, "wholesaleHandling", moneyInputValue(item?.wholesaleHandlingCents));
+    setInventoryField(form, "retailListPrice", moneyInputValue(item?.retailListPriceCents));
+    setInventoryField(form, "websiteListPrice", moneyInputValue(item?.websiteListPriceCents));
+    setInventoryField(form, "internationalListPrice", moneyInputValue(item?.internationalListPriceCents));
+    setInventoryField(form, "whatnotListPrice", moneyInputValue(item?.whatnotListPriceCents));
+    setInventoryField(form, "wholesaleSmallListPrice", moneyInputValue(item?.wholesaleSmallListPriceCents));
+    setInventoryField(form, "wholesaleCaseListPrice", moneyInputValue(item?.wholesaleCaseListPriceCents));
+    setInventoryField(form, "wholesalePalletListPrice", moneyInputValue(item?.wholesalePalletListPriceCents));
     setInventoryField(form, "weightOz", optionalInputNumber(item?.weightOz));
     setInventoryField(form, "lengthIn", optionalInputNumber(item?.lengthIn));
     setInventoryField(form, "widthIn", optionalInputNumber(item?.widthIn));
@@ -496,7 +548,17 @@
       sourceUrl: String(form.elements.namedItem("sourceUrl").value || "").trim(),
       cogsCents: inventoryMoneyCents(form, "cogs"),
       usShippingCents: inventoryMoneyCents(form, "usShipping"),
-      profitCents: inventoryMoneyCents(form, "profit"),
+      packagingCents: inventoryMoneyCents(form, "packaging"),
+      overheadCents: inventoryMoneyCents(form, "overhead"),
+      retailFixedFeeCents: inventoryMoneyCents(form, "retailFixedFee"),
+      wholesaleHandlingCents: inventoryMoneyCents(form, "wholesaleHandling"),
+      retailListPriceCents: inventoryMoneyCents(form, "retailListPrice"),
+      websiteListPriceCents: inventoryMoneyCents(form, "websiteListPrice"),
+      internationalListPriceCents: inventoryMoneyCents(form, "internationalListPrice"),
+      whatnotListPriceCents: inventoryMoneyCents(form, "whatnotListPrice"),
+      wholesaleSmallListPriceCents: inventoryMoneyCents(form, "wholesaleSmallListPrice"),
+      wholesaleCaseListPriceCents: inventoryMoneyCents(form, "wholesaleCaseListPrice"),
+      wholesalePalletListPriceCents: inventoryMoneyCents(form, "wholesalePalletListPrice"),
       weightOz: inventoryNumber(form, "weightOz"),
       lengthIn: inventoryNumber(form, "lengthIn"),
       widthIn: inventoryNumber(form, "widthIn"),
@@ -512,6 +574,9 @@
     name: item.name, upc: item.upc || "", category: item.category || "", quantity: Number(item.quantity || 0), imageUrl: item.imageUrl || "", description: item.description || "",
     averageMsrpCents: item.averageMsrpCents ?? null, referencePriceLabel: item.referencePriceLabel || "Retail reference price", referencePriceObservedAt: item.referencePriceObservedAt || "", sourceUrl: item.sourceUrl || "",
     cogsCents: item.cogsCents ?? null, usShippingCents: item.usShippingCents ?? null, profitCents: item.profitCents ?? 1000,
+    packagingCents: item.packagingCents ?? null, overheadCents: item.overheadCents ?? null, retailFixedFeeCents: item.retailFixedFeeCents ?? null, wholesaleHandlingCents: item.wholesaleHandlingCents ?? null,
+    retailListPriceCents: item.retailListPriceCents ?? null, websiteListPriceCents: item.websiteListPriceCents ?? null, internationalListPriceCents: item.internationalListPriceCents ?? null, whatnotListPriceCents: item.whatnotListPriceCents ?? null,
+    wholesaleSmallListPriceCents: item.wholesaleSmallListPriceCents ?? null, wholesaleCaseListPriceCents: item.wholesaleCaseListPriceCents ?? null, wholesalePalletListPriceCents: item.wholesalePalletListPriceCents ?? null,
     weightOz: item.weightOz ?? null, lengthIn: item.lengthIn ?? null, widthIn: item.widthIn ?? null, heightIn: item.heightIn ?? null,
     originCountry: item.originCountry || "", hsCode: item.hsCode || "", packingNotes: item.packingNotes || "", isStoreVisible: item.isStoreVisible !== false, isActive: item.isActive !== false,
     ...overrides
@@ -1341,7 +1406,7 @@
   });
   $("[data-inventory-status-filter]").addEventListener("change", renderInventory);
   document.querySelectorAll("[data-inventory-close]").forEach(button => button.addEventListener("click", closeInventoryModal));
-  ["cogs", "usShipping", "profit"].forEach(name => $("[data-inventory-form]").elements.namedItem(name).addEventListener("input", updateInventoryPricePreview));
+  ["cogs", "usShipping", "packaging", "overhead", "retailFixedFee", "wholesaleHandling", "retailListPrice", "websiteListPrice", "internationalListPrice", "whatnotListPrice", "wholesaleSmallListPrice", "wholesaleCaseListPrice", "wholesalePalletListPrice"].forEach(name => $("[data-inventory-form]").elements.namedItem(name).addEventListener("input", updateInventoryPricePreview));
   $("[data-inventory-form]").elements.namedItem("isActive").addEventListener("change", updateInventoryPricePreview);
   $("[data-inventory-form]").addEventListener("submit", async event => {
     event.preventDefault();

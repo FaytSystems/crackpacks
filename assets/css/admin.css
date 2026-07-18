@@ -62,12 +62,14 @@
 .inventory-form textarea{resize:vertical}
 .inventory-form input:focus,.inventory-form textarea:focus,.campaign-product-field input:focus{outline:2px solid var(--cyan);outline-offset:2px}
 .inventory-span-2{grid-column:span 2}
-.inventory-price-preview{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:15px}
+.inventory-pricing-intro{margin:0 0 14px;color:var(--muted);font-size:.84rem;line-height:1.55}
+.inventory-price-preview{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:15px 0}
 .inventory-price-preview div{padding:15px;border:1px solid rgba(93,255,197,.25);border-radius:14px;background:rgba(93,255,197,.045)}
 .inventory-price-preview span,.inventory-price-preview strong,.inventory-price-preview small{display:block}
 .inventory-price-preview span{color:var(--muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.07em}
 .inventory-price-preview strong{margin:5px 0;color:var(--mint);font-size:1.25rem}
 .inventory-price-preview small{color:var(--muted)}
+.inventory-list-price-grid{margin-top:17px;padding-top:17px;border-top:1px solid rgba(255,255,255,.1)}
 .inventory-switches{display:flex;flex-wrap:wrap;gap:12px}
 .inventory-switches label{display:flex;grid-template-columns:auto 1fr;align-items:center;gap:10px;padding:13px 15px;border:1px solid rgba(56,232,255,.2);border-radius:13px;background:rgba(56,232,255,.04)}
 .inventory-switches input{width:20px;height:20px;min-height:0;accent-color:var(--electric)}
@@ -84,6 +86,6 @@
 .inventory-combobox-options button b{flex:0 0 auto;color:var(--mint);font-size:.75rem}
 .inventory-combobox-options button:hover b,.inventory-combobox-options button.is-active b{color:#071019}
 .inventory-combobox-empty{padding:18px;color:var(--muted);text-align:center;font-size:.82rem}
-@media(max-width:1050px){.master-dashboard-nav{grid-template-columns:repeat(3,minmax(0,1fr))}.inventory-package-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:1050px){.master-dashboard-nav{grid-template-columns:repeat(3,minmax(0,1fr))}.inventory-package-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.inventory-price-preview{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:760px){.master-dashboard-nav{grid-template-columns:repeat(2,minmax(0,1fr))}.inventory-workspace-head{align-items:stretch;flex-direction:column}.inventory-head-actions .btn{flex:1}.inventory-pricing-note,.inventory-toolbar,.inventory-grid{grid-template-columns:1fr}.inventory-card-head{align-items:flex-start;flex-direction:column}.inventory-form-grid,.inventory-price-preview{grid-template-columns:1fr}.inventory-span-2{grid-column:auto}.inventory-form fieldset{padding:14px}.inventory-card-actions .btn{flex:1}.inventory-toolbar .btn{width:100%}}
 @media(max-width:560px){.master-dashboard-nav{grid-template-columns:1fr}.inventory-card-metrics{grid-template-columns:1fr}.inventory-head-actions,.inventory-switches{flex-direction:column}.inventory-head-actions .btn,.inventory-switches label{width:100%}}
