@@ -46,7 +46,7 @@ The owner dashboard generates an additional signed digital referral QR that chan
 
 ## Public offer campaigns
 
-Rewards Worker 2.6.0 adds owner-created, time-limited offer campaigns. Apply `rewards-worker/migrations/0003_add_offer_campaigns.sql` with `npm run db:remote` before deploying Worker 2.6.0. The migration is additive and creates campaign, redemption, and weekly reward-ledger tables.
+Rewards Worker 2.9.0 provides owner-created offer campaigns. Apply the pending versioned migrations with `npm run db:remote` before deploying the Worker. Migration `0003` creates campaign, redemption, and weekly reward-ledger tables; additive migration `0004` enables free-single campaigns, additive migration `0005` enables explicit indefinite campaigns, and additive migration `0006` adds server-side kill switches for every master referral and campaign QR.
 
 Only the verified owner account with a fresh passkey step-up may create campaigns, list campaign members, generate campaign QR codes, or mark rewards redeemed. Supported reward types are:
 
@@ -54,8 +54,9 @@ Only the verified owner account with a fresh passkey step-up may create campaign
 - `free_shipping`.
 - `pick_a_pack`.
 - `pack_draft` with a required numbered pack choice. `packCount` must be at least `maxRedemptions`.
+- `free_single` for a free holographic single. Use `maxRedemptions` to cap the shipment giveaway, such as the first 50 verified claims.
 
-Campaigns may last from 1 hour through 7 days (168 hours) and may allow up to 500 redemptions. The owner dashboard accepts hours or days; day values support thousandth-day precision, such as `3.05`. Offer URLs use an unguessable public token at `https://crackpacks.com/referral.html?offer=TOKEN`. The token identifies a public offer; it never authenticates the owner or grants dashboard access. Campaign QR images are rendered inside the Worker and do not send offer URLs to a third-party QR service.
+Campaigns may last from 1 hour through 7 days (168 hours), or may be explicitly Indefinite, and may allow up to 500 redemptions. The owner dashboard accepts hours or days; day values support thousandth-day precision, such as `3.05`. Indefinite campaigns remain claimable until their redemption cap is reached and should be manually retired by controlling distribution of their link. Offer URLs use an unguessable public token at `https://crackpacks.com/referral.html?offer=TOKEN`. The token identifies a public offer; it never authenticates the owner or grants dashboard access. Campaign QR images are rendered inside the Worker and do not send offer URLs to a third-party QR service.
 
 Members must finish email, passkey, and identity verification before claiming. The owner cannot claim their own campaign. Each campaign code and claim rank is unique, and pack draft numbers can be selected only once. A member may receive only one newly issued reward code per Thursday-to-Wednesday week, resetting Thursday at 12:00 AM in `America/New_York`. This weekly rule covers both campaign claims and the legacy one-time discount code. Reopening the same already-claimed campaign or legacy discount remains idempotent and returns the existing code.
 

@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.6.1">
   <link rel="stylesheet" href="assets/css/referral.css?v=2.6.0">
   <link rel="stylesheet" href="assets/css/rewards-modal.css?v=2.1.0">
-  <link rel="stylesheet" href="assets/css/admin.css?v=2.6.0">
+  <link rel="stylesheet" href="assets/css/admin.css?v=2.9.0">
 </head>
 <body>
   <header class="site-header">
@@ -67,15 +67,22 @@
 
       <section data-admin-dashboard hidden>
         <div class="dashboard-head admin-dashboard-head">
-          <div><p class="eyebrow">Live-show controls</p><h2>Discount redemptions</h2></div>
+          <div><p class="eyebrow">Protected owner controls</p><h2>Master Dashboard</h2></div>
           <div class="dashboard-actions"><button class="btn btn-outline btn-small" type="button" data-admin-refresh>Refresh</button><button class="btn btn-outline btn-small" type="button" data-admin-logout>Log out</button></div>
         </div>
-        <section class="reward-card owner-referral-card" data-owner-referral>
+        <nav class="master-dashboard-nav" aria-label="Master Dashboard sections">
+          <button class="is-active" type="button" data-master-section-button="create_link"><span>01</span><strong>Create Link</strong><small>Live 12-hour referral</small></button>
+          <button type="button" data-master-section-button="create_code"><span>02</span><strong>Create Code</strong><small>Promo QR generator</small></button>
+          <button type="button" data-master-section-button="signups"><span>03</span><strong>Sign Ups</strong><small>Members by campaign</small></button>
+          <button type="button" data-master-section-button="redeemed"><span>04</span><strong>Redeemed</strong><small>Verify promo rewards</small></button>
+          <button type="button" data-master-section-button="email"><span>05</span><strong>Email</strong><small>Message members</small></button>
+        </nav>
+        <section class="reward-card owner-referral-card" data-owner-referral data-master-section="create_link">
           <div class="owner-referral-grid">
             <div>
               <p class="eyebrow">LIVE &bull; 12-HOUR WINDOW</p>
-              <h3>Current owner referral</h3>
-              <p>This signed address and QR are the only owner referral credentials accepted during the current window.</p>
+              <h3>Constantly changing referral link</h3>
+              <p>This signed address and QR change every 12 hours at 7 AM and 7 PM Eastern. Only the current active link can award owner referral credit.</p>
               <div class="owner-referral-timing">
                 <strong data-owner-referral-window>Loading current window...</strong>
                 <span data-owner-referral-countdown></span>
@@ -85,17 +92,21 @@
                 <input data-owner-referral-url readonly aria-label="Current owner referral link">
                 <button class="btn btn-primary btn-small" type="button" data-owner-referral-copy>Copy current link</button>
               </div>
-              <button class="btn btn-outline btn-small" type="button" data-owner-referral-refresh>Refresh current window</button>
+              <div class="owner-referral-action-row">
+                <button class="btn btn-outline btn-small" type="button" data-owner-referral-refresh>Refresh current window</button>
+                <button class="btn btn-primary btn-small" type="button" data-owner-referral-share>Share Current QR</button>
+                <button class="btn btn-danger btn-small" type="button" data-owner-referral-toggle>Turn Off Current QR</button>
+              </div>
             </div>
             <div class="personal-qr owner-referral-qr-wrap">
               <img data-owner-referral-qr alt="Current owner rotating referral QR code">
-              <strong>ACTIVE QR</strong>
+              <strong data-owner-referral-qr-status>ACTIVE QR</strong>
               <small>Expires at the displayed Eastern-time boundary.</small>
               <button class="btn btn-primary btn-small" type="button" data-owner-referral-download>Download current QR</button>
             </div>
           </div>
         </section>
-        <section class="reward-card campaign-generator-card" data-campaign-generator>
+        <section class="reward-card campaign-generator-card" data-campaign-generator data-master-section="create_code" hidden>
           <div class="campaign-generator-head">
             <div>
               <p class="eyebrow">Owner growth tools</p>
@@ -118,32 +129,67 @@
             <div class="personal-qr campaign-generated-qr">
               <img data-campaign-generated-qr alt="Generated campaign QR code">
               <button class="btn btn-primary btn-small" type="button" data-campaign-download>Download QR</button>
+              <button class="btn btn-outline btn-small" type="button" data-campaign-share>Share Campaign</button>
+              <button class="btn btn-danger btn-small" type="button" data-campaign-generated-toggle>Turn Off QR</button>
             </div>
           </div>
         </section>
-        <section class="campaign-library" aria-labelledby="campaign-library-title">
+        <section class="campaign-library" aria-labelledby="campaign-library-title" data-master-section="signups" hidden>
           <div class="dashboard-head campaign-library-head">
-            <div><p class="eyebrow">Campaign control room</p><h2 id="campaign-library-title">Active &amp; expired campaigns</h2></div>
+            <div><p class="eyebrow">Campaign control room</p><h2 id="campaign-library-title">All discount &amp; reward campaigns</h2></div>
             <button class="btn btn-outline btn-small" type="button" data-campaign-refresh>Refresh campaigns</button>
           </div>
-          <label class="campaign-claim-search">Find a campaign claimant<input type="search" data-campaign-search placeholder="Search code, email, or WhatNot username" autocomplete="off"></label>
+          <label class="campaign-claim-search">Find a campaign or claimant<input type="search" data-campaign-search placeholder="Search campaign, reward, code, email, or WhatNot username" autocomplete="off"></label>
+          <div class="campaign-library-filters">
+            <label>Reward type<select data-campaign-type-filter><option value="all">All reward types</option><option value="percent">Percentage off</option><option value="free_shipping">Free shipping</option><option value="pick_a_pack">Free Pack / Pick a Pack</option><option value="pack_draft">Choose a Pack #</option><option value="free_single">Free Holographic Single</option></select></label>
+            <label>Signup / claim from<input type="date" data-campaign-date-from></label>
+            <label>Signup / claim through<input type="date" data-campaign-date-to></label>
+            <button class="btn btn-outline btn-small" type="button" data-campaign-filters-clear>Clear filters</button>
+          </div>
           <div class="admin-campaigns" data-admin-campaigns aria-live="polite"></div>
         </section>
-        <div class="admin-summary">
+        <section class="redeemed-heading" data-master-section="redeemed" hidden>
+          <p class="eyebrow">Promotion verification</p>
+          <h2>Redeemed rewards</h2>
+          <p>Confirm that a member received the discount or promotional gift from your post. Active rewards show a live expiration countdown.</p>
+        </section>
+        <div class="admin-summary" data-master-section="redeemed" hidden>
           <div><span>Total</span><strong data-count-total>0</strong></div>
           <div><span>Issued</span><strong data-count-issued>0</strong></div>
           <div><span>Requested</span><strong data-count-requested>0</strong></div>
           <div><span>Redeemed</span><strong data-count-redeemed>0</strong></div>
           <div><span>Expired</span><strong data-count-expired>0</strong></div>
         </div>
-        <section class="reward-card admin-search-card">
+        <section class="reward-card admin-search-card" data-master-section="redeemed" hidden>
           <div class="admin-filters">
             <label>Search member or code<input type="search" data-admin-search placeholder="Type name, email, username, or code" autocomplete="off"></label>
             <label>Status<select data-admin-filter><option value="all">All statuses</option><option value="issued">Issued</option><option value="requested">Requested</option><option value="redeemed">Redeemed</option><option value="expired">Expired</option></select></label>
+            <label>Claimed from<input type="date" data-admin-date-from></label>
+            <label>Claimed through<input type="date" data-admin-date-to></label>
           </div>
           <p class="fine-print">Results update as you type. Search is limited to 100 records and never exposes birthdays or identity-security data.</p>
         </section>
-        <div class="admin-results" data-admin-results></div>
+        <div class="admin-results" data-admin-results data-master-section="redeemed" hidden></div>
+        <section class="reward-card master-email-card" data-master-section="email" hidden>
+          <p class="eyebrow">Member communications</p>
+          <h2>Email Crack Packs members</h2>
+          <p>Choose every verified member or build a group by searching names, Whatnot usernames, or email addresses.</p>
+          <div class="email-audience-actions">
+            <button class="btn btn-primary" type="button" data-email-all>Message All</button>
+            <button class="btn btn-outline" type="button" data-email-select-open>Select Few</button>
+          </div>
+          <div class="email-recipient-summary" data-email-recipient-summary>No audience selected.</div>
+          <div class="email-selected-chips" data-email-selected-chips></div>
+          <form class="master-email-form" data-master-email-form>
+            <label>Subject<input name="subject" maxlength="120" required placeholder="Crack Packs live-show update"></label>
+            <label>Message<textarea name="message" maxlength="5000" required rows="8" placeholder="Write the member message here..."></textarea></label>
+            <div class="campaign-form-status" data-master-email-status aria-live="polite"></div>
+            <div class="campaign-modal-actions">
+              <button class="btn btn-outline" type="button" data-email-cancel>Cancel</button>
+              <button class="btn btn-primary" type="submit" data-email-send disabled>Send</button>
+            </div>
+          </form>
+        </section>
       </section>
     </section>
   </main>
@@ -161,10 +207,12 @@
           <select name="rewardType" data-campaign-reward-type required>
             <option value="percent">Percentage discount</option>
             <option value="free_shipping">Free shipping</option>
-            <option value="pick_a_pack">Pick a Pack</option>
+            <option value="pick_a_pack">Free Pack / Pick a Pack</option>
             <option value="pack_draft">Choose a Pack #</option>
+            <option value="free_single">Free Holographic Single</option>
           </select>
         </label>
+        <p class="fine-print" data-campaign-single-help hidden>First-show setup: leave Maximum people at 50. Each verified claim receives one unique rank and code for a free holographic single.</p>
         <label data-campaign-percent-field>Percentage<input name="percent" type="number" min="1" max="100" value="10" inputmode="numeric" required></label>
         <label data-campaign-pack-field hidden>Number of packs<input name="packCount" type="number" min="1" max="500" value="10" inputmode="numeric"></label>
         <div class="field-grid">
@@ -175,18 +223,61 @@
               <select name="expiresInUnit" data-campaign-expiry-unit aria-label="Expiration unit">
                 <option value="hours">Hours</option>
                 <option value="days">Days</option>
+                <option value="indefinite">Indefinite</option>
               </select>
             </div>
             <small id="campaign-expiry-help" data-campaign-expiry-help>Enter 1–168 hours.</small>
           </div>
           <label>Maximum people<input name="maxRedemptions" type="number" min="1" max="500" value="25" inputmode="numeric" required></label>
         </div>
+        <p class="campaign-qr-included"><strong>QR INCLUDED</strong><span>The campaign link, scannable QR, branded social graphic, and sharing controls are generated together.</span></p>
         <div class="campaign-form-status" data-campaign-form-status aria-live="polite"></div>
         <div class="campaign-modal-actions">
           <button class="btn btn-outline" type="button" data-campaign-close>Cancel</button>
-          <button class="btn btn-primary" type="submit" data-campaign-submit>Generate Discount</button>
+          <button class="btn btn-primary" type="submit" data-campaign-submit>Generate Discount + QR</button>
         </div>
       </form>
+    </section>
+  </div>
+
+  <div class="rewards-modal campaign-share-modal" data-campaign-share-modal hidden>
+    <button class="rewards-modal-backdrop" type="button" data-campaign-share-close aria-label="Close campaign sharing"></button>
+    <section class="rewards-modal-card campaign-share-modal-card" role="dialog" aria-modal="true" aria-labelledby="campaign-share-title">
+      <button class="rewards-modal-close" type="button" data-campaign-share-close aria-label="Close">&times;</button>
+      <p class="eyebrow">Owner social launcher</p>
+      <h2 id="campaign-share-title">Share this QR everywhere.</h2>
+      <p data-campaign-share-description>Your live QR is layered into a Crack Packs social graphic.</p>
+      <div class="campaign-share-preview" data-campaign-share-preview>
+        <canvas width="1080" height="1080" data-campaign-share-canvas aria-label="Crack Packs campaign share graphic with QR code"></canvas>
+        <span data-campaign-share-loading>Building the share graphic...</span>
+      </div>
+      <div class="campaign-share-primary-actions">
+        <button class="btn btn-primary" type="button" data-campaign-share-native>Share to Apps</button>
+        <button class="btn btn-outline" type="button" data-campaign-share-download>Download QR</button>
+        <button class="btn btn-outline" type="button" data-campaign-share-copy>Copy Caption + Link</button>
+      </div>
+      <div class="campaign-social-share-grid" aria-label="Share campaign to a social site">
+        <button type="button" data-campaign-share-social="facebook"><span>f</span><strong>Facebook</strong></button>
+        <button type="button" data-campaign-share-social="x"><span>X</span><strong>X</strong></button>
+        <button type="button" data-campaign-share-social="instagram"><span>◎</span><strong>Instagram</strong></button>
+        <button type="button" data-campaign-share-social="youtube"><span>▶</span><strong>YouTube</strong></button>
+        <button type="button" data-campaign-share-social="whatnot"><span>W</span><strong>Whatnot</strong></button>
+      </div>
+      <p class="fine-print">On phones, Share to Apps includes the image when supported. Instagram, YouTube, and Whatnot open after the caption is copied; use Download QR to attach the graphic.</p>
+      <button class="btn btn-outline campaign-share-done" type="button" data-campaign-share-close>Close</button>
+    </section>
+  </div>
+
+  <div class="rewards-modal" data-email-select-modal hidden>
+    <button class="rewards-modal-backdrop" type="button" data-email-select-close aria-label="Close member selection"></button>
+    <section class="rewards-modal-card campaign-modal-card" role="dialog" aria-modal="true" aria-labelledby="email-select-title">
+      <button class="rewards-modal-close" type="button" data-email-select-close aria-label="Close">&times;</button>
+      <p class="eyebrow">Select Few</p>
+      <h2 id="email-select-title">Add message recipients</h2>
+      <p>Keep searching and adding members. Your selection stays open until you click Finished.</p>
+      <label class="campaign-claim-search">Guess a name, username, or email<input type="search" data-email-member-search placeholder="Start typing a member..." autocomplete="off"></label>
+      <div class="email-member-results" data-email-member-results aria-live="polite"></div>
+      <div class="email-selection-footer"><strong data-email-selection-count>0 selected</strong><button class="btn btn-primary" type="button" data-email-select-finished>Finished</button></div>
     </section>
   </div>
 
@@ -204,6 +295,6 @@
 
   <script src="assets/js/config.js?v=1.9.6"></script>
   <script src="assets/js/nav-profile.js?v=2.6.1"></script>
-  <script src="assets/js/admin.js?v=2.6.0"></script>
+  <script src="assets/js/admin.js?v=2.9.0"></script>
 </body>
 </html>

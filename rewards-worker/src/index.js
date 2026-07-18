@@ -2,8 +2,8 @@ import QRCode from "qrcode";
 import { issueOwnerReferral, ownerReferralSlotAt, verifyOwnerReferral } from "./referral-rotation.js";
 import { campaignWeekAt, parseCampaignExpiryHours } from "./campaign-time.js";
 
-const VERSION = "2.6.0";
-const CAMPAIGN_REWARD_TYPES = new Set(["percent", "free_shipping", "pick_a_pack", "pack_draft"]);
+const VERSION = "2.9.0";
+const CAMPAIGN_REWARD_TYPES = new Set(["percent", "free_shipping", "pick_a_pack", "pack_draft", "free_single"]);
 const MAX_CAMPAIGN_REDEMPTIONS = 500;
 const TIERS = [
   { threshold: 0, name: "Starter", reward: "Member access" },
@@ -65,6 +65,28 @@ async function sendEmail(env, to, subject, html, idempotencyKey = id()) {
   const message = new EmailMessage("rewards@crackpacks.com", to, `From: Crack Packs Rewards <rewards@crackpacks.com>\r\nTo: ${to}\r\nSubject: ${subject}\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n${html}`);
   await env.REWARDS_EMAIL.send(message);
 }
+async function sendMemberEmailBatch(env, recipients, subject, message, idempotencyKey) {
+  if (!env.RESEND_API_KEY) throw new Error("MEMBER_EMAIL_NOT_CONFIGURED");
+  const messageHtml = escapeHtml(message).replace(/\r?\n/g, "<br>");
+  const payload = recipients.map(recipient => ({
+    from: "Crack Packs <rewards@crackpacks.com>",
+    to: [recipient.email],
+    subject,
+    html: `<div style="font-family:Arial,sans-serif;color:#111827"><h1 style="color:#151936">Crack Packs</h1><p>Hi ${escapeHtml(recipient.first_name || recipient.whatnot_username || "collector")},</p><p>${messageHtml}</p><p style="margin-top:28px;color:#5d6475;font-size:12px">This member-account message was sent by Crack Packs. Reply to this email if you no longer want member announcements.</p></div>`,
+    headers: { "List-Unsubscribe": "<mailto:rewards@crackpacks.com?subject=Unsubscribe>" }
+  }));
+  const result = await fetch("https://api.resend.com/emails/batch", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
+    body: JSON.stringify(payload)
+  });
+  if (!result.ok) {
+    const details = await result.json().catch(() => ({}));
+    console.error("Member email batch failed", { status: result.status, name: details.name || "", message: details.message || "" });
+    throw new Error("MEMBER_EMAIL_DELIVERY_FAILED");
+  }
+  return result.json().catch(() => ({}));
+}
 async function memberFromRequest(request, env) {
   const token = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
   if (!token) return null;
@@ -98,6 +120,7 @@ async function inviteDetailsFor(member, env, epochMs = Date.now(), allowOwnerTok
       };
     }
     const current = await issueOwnerReferral(env.SITE_URL, member.id, env.OWNER_REFERRAL_SECRET, epochMs);
+    const isActive = await ownerReferralIsActive(env, member.id, current.id);
     return {
       url: current.url,
       displayCode: "LIVE 12H",
@@ -107,7 +130,8 @@ async function inviteDetailsFor(member, env, epochMs = Date.now(), allowOwnerTok
       expiresAt: current.expiresAt,
       windowLabel: current.label,
       nextBoundaryLabel: current.nextBoundaryLabel,
-      serverNow: new Date(epochMs).toISOString()
+      serverNow: new Date(epochMs).toISOString(),
+      isActive
     };
   }
   return {
@@ -138,8 +162,16 @@ const offerTokenValue = value => {
   return /^OFR[A-HJ-NP-Z2-9]{32}$/.test(normalized) ? normalized : "";
 };
 const campaignUrl = (campaign, env) => `${env.SITE_URL}/referral.html?offer=${encodeURIComponent(campaign.offer_token)}`;
+const campaignRewardType = campaign => campaign.reward_variant || campaign.reward_type;
+const campaignNeverExpires = campaign => Number(campaign.never_expires || 0) === 1;
+const campaignIsActive = campaign => Number(campaign.is_active ?? 1) === 1;
+async function ownerReferralIsActive(env, ownerMemberId, slotId) {
+  const control = await env.DB.prepare(`SELECT is_active FROM owner_referral_controls WHERE owner_member_id=? AND slot_id=?`).bind(ownerMemberId, slotId).first();
+  return control ? Number(control.is_active) === 1 : true;
+}
 const campaignState = (campaign, redemptionCount, epochMs = Date.now()) => {
-  if (Date.parse(campaign.expires_at) <= epochMs) return "expired";
+  if (!campaignIsActive(campaign)) return "disabled";
+  if (!campaignNeverExpires(campaign) && Date.parse(campaign.expires_at) <= epochMs) return "expired";
   if (redemptionCount >= Number(campaign.max_redemptions)) return "full";
   return "active";
 };
@@ -153,12 +185,13 @@ function campaignRedemptionView(row) {
     id: row.id,
     campaignId: row.campaign_id,
     title: row.title,
-    rewardType: row.reward_type,
+    rewardType: campaignRewardType(row),
     percent: row.percent === null || row.percent === undefined ? null : Number(row.percent),
     maxRedemptions: Number(row.max_redemptions),
     packCount: row.pack_count === null || row.pack_count === undefined ? null : Number(row.pack_count),
-    campaignExpiresAt: row.expires_at,
-    expiresAt: row.expires_at,
+    campaignExpiresAt: campaignNeverExpires(row) ? null : row.expires_at,
+    expiresAt: campaignNeverExpires(row) ? null : row.expires_at,
+    neverExpires: campaignNeverExpires(row),
     code: row.code,
     rank: Number(row.claim_rank),
     claimRank: Number(row.claim_rank),
@@ -185,14 +218,16 @@ function adminCampaignView(campaign, redemptions, env, epochMs = Date.now()) {
   return {
     id: campaign.id,
     title: campaign.title,
-    rewardType: campaign.reward_type,
+    rewardType: campaignRewardType(campaign),
     percent: campaign.percent === null || campaign.percent === undefined ? null : Number(campaign.percent),
     maxRedemptions: Number(campaign.max_redemptions),
     packCount: campaign.pack_count === null || campaign.pack_count === undefined ? null : Number(campaign.pack_count),
     offerToken: campaign.offer_token,
     url: campaignUrl(campaign, env),
     createdAt: campaign.created_at,
-    expiresAt: campaign.expires_at,
+    expiresAt: campaignNeverExpires(campaign) ? null : campaign.expires_at,
+    neverExpires: campaignNeverExpires(campaign),
+    isActive: campaignIsActive(campaign),
     status: campaignState(campaign, redemptionCount, epochMs),
     claimedCount: redemptionCount,
     remaining: Math.max(0, Number(campaign.max_redemptions) - redemptionCount),
@@ -215,11 +250,13 @@ async function publicCampaignStatus(env, offerToken, epochMs = Date.now()) {
     serverNow: new Date(epochMs).toISOString(),
     campaign: {
       title: campaign.title,
-      rewardType: campaign.reward_type,
+      rewardType: campaignRewardType(campaign),
       percent: campaign.percent === null || campaign.percent === undefined ? null : Number(campaign.percent),
       maxRedemptions: Number(campaign.max_redemptions),
       packCount: campaign.pack_count === null || campaign.pack_count === undefined ? null : Number(campaign.pack_count),
-      expiresAt: campaign.expires_at,
+      expiresAt: campaignNeverExpires(campaign) ? null : campaign.expires_at,
+      neverExpires: campaignNeverExpires(campaign),
+      isActive: campaignIsActive(campaign),
       claimedCount: redemptionCount,
       remaining: Math.max(0, Number(campaign.max_redemptions) - redemptionCount),
       redemptionCount,
@@ -296,8 +333,9 @@ async function route(request, env, cors, ctx) {
     if (ownerToken) {
       const owner = normalizeEmail(env.ADMIN_EMAIL) ? await env.DB.prepare(`SELECT id FROM members WHERE email=? AND identity_status='verified'`).bind(normalizeEmail(env.ADMIN_EMAIL)).first() : null;
       const slot = ownerReferralSlotAt(epochMs);
-      const valid = Boolean(owner && await verifyOwnerReferral(ownerToken, env.SITE_URL, owner.id, env.OWNER_REFERRAL_SECRET, epochMs));
-      return response({ valid, rotating: true, expiresAt: slot.expiresAt, windowLabel: slot.label, nextBoundaryLabel: slot.nextBoundaryLabel, serverNow, reason: valid ? "current" : "expired" }, 200, cors);
+      const credentialValid = Boolean(owner && await verifyOwnerReferral(ownerToken, env.SITE_URL, owner.id, env.OWNER_REFERRAL_SECRET, epochMs));
+      const isActive = Boolean(credentialValid && await ownerReferralIsActive(env, owner.id, slot.id));
+      return response({ valid: isActive, rotating: true, isActive, expiresAt: slot.expiresAt, windowLabel: slot.label, nextBoundaryLabel: slot.nextBoundaryLabel, serverNow, reason: isActive ? "current" : credentialValid ? "disabled" : "expired" }, 200, cors);
     }
     if (ref) {
       const inviter = await env.DB.prepare(`SELECT id,email,identity_status FROM members WHERE invite_code=?`).bind(ref).first();
@@ -345,7 +383,9 @@ async function route(request, env, cors, ctx) {
     let ownerReferralRejected = false;
     if (ownerReferralToken) {
       const owner = normalizeEmail(env.ADMIN_EMAIL) ? await env.DB.prepare(`SELECT id,email FROM members WHERE email=? AND identity_status='verified'`).bind(normalizeEmail(env.ADMIN_EMAIL)).first() : null;
-      if (owner && normalizeEmail(owner.email) !== email && await verifyOwnerReferral(ownerReferralToken, env.SITE_URL, owner.id, env.OWNER_REFERRAL_SECRET)) referrerMemberId = owner.id;
+      const slot = ownerReferralSlotAt(Date.now());
+      const credentialValid = Boolean(owner && normalizeEmail(owner.email) !== email && await verifyOwnerReferral(ownerReferralToken, env.SITE_URL, owner.id, env.OWNER_REFERRAL_SECRET));
+      if (credentialValid && await ownerReferralIsActive(env, owner.id, slot.id)) referrerMemberId = owner.id;
       else ownerReferralRejected = true;
     } else if (ref) {
       const inviter = await env.DB.prepare(`SELECT id,email,identity_status FROM members WHERE invite_code=?`).bind(ref).first();
@@ -506,14 +546,15 @@ async function route(request, env, cors, ctx) {
     const campaign = await env.DB.prepare(`SELECT * FROM offer_campaigns WHERE offer_token=?`).bind(offerToken).first();
     if (!campaign) return response({ error: "Campaign offer not found." }, 404, cors);
     if (isOwnerEmail(member, env) || campaign.owner_member_id === member.id) return response({ error: "The owner account cannot claim its own public campaign rewards." }, 403, cors);
+    if (!campaignIsActive(campaign)) return response({ error: "This campaign QR has been turned off by Crack Packs." }, 410, cors);
     const loadMemberClaim = () => env.DB.prepare(`
-      SELECT cr.*,c.title,c.reward_type,c.percent,c.max_redemptions,c.pack_count,c.expires_at
+      SELECT cr.*,c.title,c.reward_type,c.reward_variant,c.percent,c.max_redemptions,c.pack_count,c.expires_at,c.never_expires
       FROM campaign_redemptions cr JOIN offer_campaigns c ON c.id=cr.campaign_id
       WHERE cr.campaign_id=? AND cr.member_id=?
     `).bind(campaign.id, member.id).first();
     let existingClaim = await loadMemberClaim();
     if (existingClaim) return response(campaignClaimPayload(existingClaim, true, claimedAt, week), 200, cors);
-    if (campaign.expires_at <= claimedAt) return response({ error: "This campaign has expired." }, 410, cors);
+    if (!campaignNeverExpires(campaign) && campaign.expires_at <= claimedAt) return response({ error: "This campaign has expired." }, 410, cors);
     let packNumber = null;
     if (campaign.reward_type === "pack_draft") {
       if (!Number.isInteger(data.packNumber) || data.packNumber < 1 || data.packNumber > Number(campaign.pack_count)) return response({ error: `Choose an available pack number from 1 to ${Number(campaign.pack_count)}.` }, 400, cors);
@@ -544,13 +585,13 @@ async function route(request, env, cors, ctx) {
         INSERT OR IGNORE INTO campaign_redemptions(id,campaign_id,member_id,week_key,code,claim_rank,pack_number,claimed_at,redeemed_at,redeemed_by_member_id)
         SELECT ?,c.id,?,?,?,COALESCE((SELECT MAX(existing.claim_rank) FROM campaign_redemptions existing WHERE existing.campaign_id=c.id),0)+1,?,?,NULL,NULL
         FROM offer_campaigns c
-        WHERE c.id=? AND c.owner_member_id<>? AND c.expires_at>?
+        WHERE c.id=? AND c.owner_member_id<>? AND c.is_active=1 AND c.expires_at>?
           AND (SELECT COUNT(*) FROM campaign_redemptions capacity WHERE capacity.campaign_id=c.id) < c.max_redemptions
           AND (? IS NULL OR (c.reward_type='pack_draft' AND ? BETWEEN 1 AND c.pack_count AND NOT EXISTS (SELECT 1 FROM campaign_redemptions packs WHERE packs.campaign_id=c.id AND packs.pack_number=?)))
       `).bind(redemptionId, member.id, week.key, code, packNumber, claimedAt, campaign.id, member.id, claimedAt, packNumber, packNumber, packNumber).run();
       if (Number(inserted.meta?.changes || 0) === 1) {
         const claim = await env.DB.prepare(`
-          SELECT cr.*,c.title,c.reward_type,c.percent,c.max_redemptions,c.pack_count,c.expires_at
+          SELECT cr.*,c.title,c.reward_type,c.reward_variant,c.percent,c.max_redemptions,c.pack_count,c.expires_at,c.never_expires
           FROM campaign_redemptions cr JOIN offer_campaigns c ON c.id=cr.campaign_id WHERE cr.id=?
         `).bind(redemptionId).first();
         await audit(env, request, "campaign_reward_claimed", member.id, `${campaign.id}|${redemptionId}|rank:${claim.claim_rank}${packNumber === null ? "" : `|pack:${packNumber}`}`);
@@ -561,7 +602,9 @@ async function route(request, env, cors, ctx) {
       if (existingClaim) return response(campaignClaimPayload(existingClaim, true, new Date().toISOString(), week), 200, cors);
       const currentCount = await env.DB.prepare(`SELECT COUNT(*) count FROM campaign_redemptions WHERE campaign_id=?`).bind(campaign.id).first();
       if (Number(currentCount?.count || 0) >= Number(campaign.max_redemptions)) return response({ error: "This campaign has reached its redemption limit." }, 409, cors);
-      if (campaign.expires_at <= now()) return response({ error: "This campaign has expired." }, 410, cors);
+      const currentCampaign = await env.DB.prepare(`SELECT is_active FROM offer_campaigns WHERE id=?`).bind(campaign.id).first();
+      if (!currentCampaign || Number(currentCampaign.is_active) !== 1) return response({ error: "This campaign QR has been turned off by Crack Packs." }, 410, cors);
+      if (!campaignNeverExpires(campaign) && campaign.expires_at <= now()) return response({ error: "This campaign has expired." }, 410, cors);
       if (packNumber !== null) {
         const chosenPack = await env.DB.prepare(`SELECT id FROM campaign_redemptions WHERE campaign_id=? AND pack_number=?`).bind(campaign.id, packNumber).first();
         if (chosenPack) return response({ error: "That pack number was already selected. Choose another available pack." }, 409, cors);
@@ -572,7 +615,7 @@ async function route(request, env, cors, ctx) {
   if (url.pathname === "/campaigns/mine" && request.method === "GET") {
     const [claimRows, legacyDiscount] = await Promise.all([
       env.DB.prepare(`
-        SELECT cr.*,c.title,c.reward_type,c.percent,c.max_redemptions,c.pack_count,c.expires_at
+        SELECT cr.*,c.title,c.reward_type,c.reward_variant,c.percent,c.max_redemptions,c.pack_count,c.expires_at,c.never_expires
         FROM campaign_redemptions cr JOIN offer_campaigns c ON c.id=cr.campaign_id
         WHERE cr.member_id=? ORDER BY cr.claimed_at DESC
       `).bind(member.id).all(),
@@ -686,6 +729,24 @@ async function route(request, env, cors, ctx) {
     if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
     return response(await inviteDetailsFor(member, env, Date.now(), true), 200, cors);
   }
+  if (url.pathname === "/admin/referral/status" && request.method === "POST") {
+    if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
+    const data = await body(request);
+    if (typeof data?.active !== "boolean") return response({ error: "Choose whether the current owner referral QR is active." }, 400, cors);
+    const epochMs = Date.now();
+    const slot = ownerReferralSlotAt(epochMs);
+    const updatedAt = new Date(epochMs).toISOString();
+    if (data.active) {
+      await env.DB.prepare(`DELETE FROM owner_referral_controls WHERE owner_member_id=? AND slot_id=?`).bind(member.id, slot.id).run();
+    } else {
+      await env.DB.batch([
+        env.DB.prepare(`INSERT INTO owner_referral_controls(owner_member_id,slot_id,is_active,updated_at) VALUES(?,?,0,?) ON CONFLICT(owner_member_id,slot_id) DO UPDATE SET is_active=0,updated_at=excluded.updated_at`).bind(member.id, slot.id, updatedAt),
+        env.DB.prepare(`UPDATE login_codes SET used_at=? WHERE referrer_member_id=? AND used_at IS NULL AND expires_at>?`).bind(updatedAt, member.id, updatedAt)
+      ]);
+    }
+    await audit(env, request, data.active ? "owner_referral_enabled" : "owner_referral_disabled", member.id, slot.id);
+    return response({ current: await inviteDetailsFor(member, env, epochMs, true) }, 200, cors);
+  }
   if (url.pathname === "/admin/referral/qr" && request.method === "POST") {
     if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
     const data = await body(request);
@@ -703,12 +764,15 @@ async function route(request, env, cors, ctx) {
     const rawRewardType = boundedString(data?.rewardType, 32);
     const title = rawTitle === null ? "" : clean(rawTitle, 100);
     const rewardType = rawRewardType || "";
-    const expiresInHours = parseCampaignExpiryHours(data?.expiresInHours);
+    const neverExpires = data?.neverExpires === true;
+    const expiresInHours = neverExpires ? null : parseCampaignExpiryHours(data?.expiresInHours);
     const maxRedemptions = data?.maxRedemptions;
     if (!title) return response({ error: "Enter a campaign title up to 100 characters." }, 400, cors);
     if (!CAMPAIGN_REWARD_TYPES.has(rewardType)) return response({ error: "Choose a valid campaign reward type." }, 400, cors);
-    if (expiresInHours === null) return response({ error: "Campaign expiration must be between 1 hour and 7 days." }, 400, cors);
+    if (!neverExpires && expiresInHours === null) return response({ error: "Campaign expiration must be between 1 hour and 7 days, or choose Indefinite." }, 400, cors);
     if (!Number.isInteger(maxRedemptions) || maxRedemptions < 1 || maxRedemptions > MAX_CAMPAIGN_REDEMPTIONS) return response({ error: `Maximum redemptions must be from 1 to ${MAX_CAMPAIGN_REDEMPTIONS}.` }, 400, cors);
+    const storageRewardType = rewardType === "free_single" ? "pick_a_pack" : rewardType;
+    const rewardVariant = rewardType === "free_single" ? "free_single" : null;
     let percent = null;
     let packCount = null;
     if (rewardType === "percent") {
@@ -726,12 +790,12 @@ async function route(request, env, cors, ctx) {
     }
     const epochMs = Date.now();
     const createdAt = new Date(epochMs).toISOString();
-    const expiresAt = new Date(epochMs + Math.round(expiresInHours * 3600e3)).toISOString();
+    const expiresAt = neverExpires ? "9999-12-31T23:59:59.999Z" : new Date(epochMs + Math.round(expiresInHours * 3600e3)).toISOString();
     let campaign = null;
     for (let attempt = 0; attempt < 5 && !campaign; attempt += 1) {
       const campaignId = id();
       const offerToken = `OFR${randomString(32)}`;
-      const inserted = await env.DB.prepare(`INSERT OR IGNORE INTO offer_campaigns(id,owner_member_id,title,reward_type,percent,max_redemptions,pack_count,offer_token,expires_at,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)`).bind(campaignId, member.id, title, rewardType, percent, maxRedemptions, packCount, offerToken, expiresAt, createdAt).run();
+      const inserted = await env.DB.prepare(`INSERT OR IGNORE INTO offer_campaigns(id,owner_member_id,title,reward_type,reward_variant,percent,max_redemptions,pack_count,offer_token,expires_at,never_expires,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`).bind(campaignId, member.id, title, storageRewardType, rewardVariant, percent, maxRedemptions, packCount, offerToken, expiresAt, neverExpires ? 1 : 0, createdAt).run();
       if (Number(inserted.meta?.changes || 0) === 1) campaign = await env.DB.prepare(`SELECT * FROM offer_campaigns WHERE id=?`).bind(campaignId).first();
     }
     if (!campaign) return response({ error: "The campaign could not be created. Try again." }, 503, cors);
@@ -743,7 +807,7 @@ async function route(request, env, cors, ctx) {
     const [campaignRows, redemptionRows] = await Promise.all([
       env.DB.prepare(`SELECT * FROM offer_campaigns WHERE owner_member_id=? ORDER BY created_at DESC`).bind(member.id).all(),
       env.DB.prepare(`
-        SELECT cr.*,c.title,c.reward_type,c.percent,c.max_redemptions,c.pack_count,c.expires_at,m.email,m.whatnot_username
+        SELECT cr.*,c.title,c.reward_type,c.reward_variant,c.percent,c.max_redemptions,c.pack_count,c.expires_at,c.never_expires,m.email,m.whatnot_username
         FROM campaign_redemptions cr
         JOIN offer_campaigns c ON c.id=cr.campaign_id
         JOIN members m ON m.id=cr.member_id
@@ -764,14 +828,31 @@ async function route(request, env, cors, ctx) {
     if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
     const campaign = await env.DB.prepare(`SELECT * FROM offer_campaigns WHERE id=? AND owner_member_id=?`).bind(adminCampaignQrMatch[1], member.id).first();
     if (!campaign) return response({ error: "Campaign not found." }, 404, cors);
+    if (!campaignIsActive(campaign)) return response({ error: "This campaign QR is turned off. Turn it on before downloading or sharing it." }, 410, cors);
     await audit(env, request, "campaign_qr_generated", member.id, campaign.id);
     return svgResponse(await referralQrSvg(campaignUrl(campaign, env)), cors);
+  }
+  const adminCampaignStatusMatch = url.pathname.match(/^\/admin\/campaigns\/([0-9a-f-]{36})\/status$/i);
+  if (adminCampaignStatusMatch && request.method === "POST") {
+    if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
+    const data = await body(request);
+    if (typeof data?.active !== "boolean") return response({ error: "Choose whether this campaign QR is active." }, 400, cors);
+    const updated = await env.DB.prepare(`UPDATE offer_campaigns SET is_active=? WHERE id=? AND owner_member_id=?`).bind(data.active ? 1 : 0, adminCampaignStatusMatch[1], member.id).run();
+    if (Number(updated.meta?.changes || 0) !== 1) return response({ error: "Campaign not found." }, 404, cors);
+    const campaign = await env.DB.prepare(`SELECT * FROM offer_campaigns WHERE id=? AND owner_member_id=?`).bind(adminCampaignStatusMatch[1], member.id).first();
+    const redemptions = await env.DB.prepare(`
+      SELECT cr.*,c.title,c.reward_type,c.reward_variant,c.percent,c.max_redemptions,c.pack_count,c.expires_at,c.never_expires,m.email,m.whatnot_username
+      FROM campaign_redemptions cr JOIN offer_campaigns c ON c.id=cr.campaign_id JOIN members m ON m.id=cr.member_id
+      WHERE cr.campaign_id=? ORDER BY cr.claim_rank
+    `).bind(campaign.id).all();
+    await audit(env, request, data.active ? "campaign_qr_enabled" : "campaign_qr_disabled", member.id, campaign.id);
+    return response({ campaign: adminCampaignView(campaign, redemptions.results || [], env, Date.now()) }, 200, cors);
   }
   const adminCampaignRedeemMatch = url.pathname.match(/^\/admin\/campaign-redemptions\/([0-9a-f-]{36})\/redeem$/i);
   if (adminCampaignRedeemMatch && request.method === "POST") {
     if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
     const redemption = await env.DB.prepare(`
-      SELECT cr.*,c.title,c.reward_type,c.percent,c.max_redemptions,c.pack_count,c.expires_at,m.email,m.whatnot_username
+      SELECT cr.*,c.title,c.reward_type,c.reward_variant,c.percent,c.max_redemptions,c.pack_count,c.expires_at,c.never_expires,m.email,m.whatnot_username
       FROM campaign_redemptions cr
       JOIN offer_campaigns c ON c.id=cr.campaign_id
       JOIN members m ON m.id=cr.member_id
@@ -779,13 +860,64 @@ async function route(request, env, cors, ctx) {
     `).bind(adminCampaignRedeemMatch[1], member.id).first();
     if (!redemption) return response({ error: "Campaign redemption not found." }, 404, cors);
     if (redemption.redeemed_at) return response({ error: "This campaign reward was already marked redeemed." }, 409, cors);
-    if (redemption.expires_at <= now()) return response({ error: "This campaign reward has expired and cannot be redeemed." }, 410, cors);
+    if (!campaignNeverExpires(redemption) && redemption.expires_at <= now()) return response({ error: "This campaign reward has expired and cannot be redeemed." }, 410, cors);
     const redeemedAt = now();
     const updated = await env.DB.prepare(`UPDATE campaign_redemptions SET redeemed_at=?,redeemed_by_member_id=? WHERE id=? AND redeemed_at IS NULL`).bind(redeemedAt, member.id, redemption.id).run();
     if (Number(updated.meta?.changes || 0) !== 1) return response({ error: "This campaign reward was already marked redeemed." }, 409, cors);
     redemption.redeemed_at = redeemedAt;
     await audit(env, request, "campaign_redemption_redeemed", member.id, `${redemption.id}|member:${redemption.member_id}|code:${redemption.code}`);
     return response({ redemption: adminRedemptionView(redemption) }, 200, cors);
+  }
+  if (url.pathname === "/admin/members" && request.method === "GET") {
+    if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
+    const query = clean(url.searchParams.get("q"), 80).toLowerCase().replace(/^@+/, "").replace(/[^a-z0-9@._+ -]/g, "");
+    const from = /^\d{4}-\d{2}-\d{2}$/.test(url.searchParams.get("from") || "") ? `${url.searchParams.get("from")}T00:00:00.000Z` : "";
+    const to = /^\d{4}-\d{2}-\d{2}$/.test(url.searchParams.get("to") || "") ? `${url.searchParams.get("to")}T23:59:59.999Z` : "";
+    const search = `%${query}%`;
+    const rows = await env.DB.prepare(`
+      SELECT id,email,first_name,last_name,whatnot_username,created_at,referral_qualified_at
+      FROM members
+      WHERE email_verified_at IS NOT NULL AND identity_status='verified' AND email<>?
+        AND (?='' OR created_at>=?) AND (?='' OR created_at<=?)
+        AND (?='' OR lower(email) LIKE ? OR lower(COALESCE(first_name,'') || ' ' || COALESCE(last_name,'')) LIKE ? OR lower(COALESCE(whatnot_username,'')) LIKE ?)
+      ORDER BY created_at DESC LIMIT 250
+    `).bind(normalizeEmail(env.ADMIN_EMAIL), from, from, to, to, query, search, search, search).all();
+    return response({ members: (rows.results || []).map(row => ({ id: row.id, email: row.email, firstName: row.first_name || "", lastName: row.last_name || "", whatnotUsername: row.whatnot_username || "", createdAt: row.created_at, qualifiedAt: row.referral_qualified_at || null })) }, 200, cors);
+  }
+  if (url.pathname === "/admin/email" && request.method === "POST") {
+    if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
+    const contentLength = Number(request.headers.get("Content-Length") || 0);
+    if (Number.isFinite(contentLength) && contentLength > 20000) return response({ error: "Email request is too large." }, 413, cors);
+    const data = await body(request);
+    const audience = data?.audience === "all" ? "all" : data?.audience === "selected" ? "selected" : "";
+    const rawSubject = boundedString(data?.subject, 120);
+    const rawMessage = boundedString(data?.message, 5000);
+    const subject = rawSubject === null ? "" : clean(rawSubject, 120);
+    const message = rawMessage === null ? "" : String(rawMessage).trim();
+    if (!audience) return response({ error: "Choose Message All or Select Few." }, 400, cors);
+    if (!subject || subject.length < 3) return response({ error: "Enter an email subject from 3 to 120 characters." }, 400, cors);
+    if (!message || message.length < 3) return response({ error: "Enter an email message from 3 to 5,000 characters." }, 400, cors);
+    let rows;
+    if (audience === "all") {
+      rows = await env.DB.prepare(`SELECT id,email,first_name,whatnot_username FROM members WHERE email_verified_at IS NOT NULL AND identity_status='verified' AND email<>? ORDER BY created_at LIMIT 101`).bind(normalizeEmail(env.ADMIN_EMAIL)).all();
+    } else {
+      const memberIds = Array.isArray(data?.memberIds) ? [...new Set(data.memberIds.filter(value => typeof value === "string" && /^[0-9a-f-]{36}$/i.test(value)))].slice(0, 101) : [];
+      if (!memberIds.length) return response({ error: "Add at least one member before sending." }, 400, cors);
+      const placeholders = memberIds.map(() => "?").join(",");
+      rows = await env.DB.prepare(`SELECT id,email,first_name,whatnot_username FROM members WHERE id IN (${placeholders}) AND email_verified_at IS NOT NULL AND identity_status='verified' AND email<>?`).bind(...memberIds, normalizeEmail(env.ADMIN_EMAIL)).all();
+    }
+    const recipients = rows.results || [];
+    if (!recipients.length) return response({ error: "No verified member recipients matched this message." }, 400, cors);
+    if (recipients.length > 100) return response({ error: "Message All currently supports up to 100 verified members per send. Use Select Few for a smaller group." }, 400, cors);
+    const sendId = id();
+    try {
+      await sendMemberEmailBatch(env, recipients, subject, message, sendId);
+    } catch (error) {
+      if (error.message === "MEMBER_EMAIL_NOT_CONFIGURED") return response({ error: "Member email is not configured. Add the existing RESEND_API_KEY Worker secret." }, 503, cors);
+      return response({ error: "The member email batch could not be queued. No send was confirmed; try again." }, 502, cors);
+    }
+    await audit(env, request, "member_email_sent", member.id, `${sendId}|audience:${audience}|count:${recipients.length}|subject:${subject.slice(0, 80)}`);
+    return response({ ok: true, sendId, recipientCount: recipients.length }, 202, cors);
   }
   if (url.pathname === "/admin/summary" && request.method === "GET") {
     if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);

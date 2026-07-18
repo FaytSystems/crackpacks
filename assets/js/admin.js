@@ -27,6 +27,14 @@
   let campaignModalLastFocus = null;
   let campaignClockOffset = 0;
   let campaignListState = [];
+  let legacyClaimsState = [];
+  let legacySummaryState = { total: 0, issued: 0, requested: 0, redeemed: 0, expired: 0 };
+  let emailAudience = "";
+  const selectedEmailMembers = new Map();
+  let emailMemberSearchTimer = null;
+  let campaignShareState = null;
+  let campaignShareLastFocus = null;
+  let campaignShareRenderPromise = null;
   const menuButton = $(".menu-toggle");
   const navigation = $("#admin-site-nav");
   menuButton?.addEventListener("click", () => {
@@ -37,6 +45,16 @@
     navigation.classList.remove("is-open");
     menuButton?.setAttribute("aria-expanded", "false");
   }));
+  function openMasterSection(section) {
+    document.querySelectorAll("[data-master-section]").forEach(node => { node.hidden = node.dataset.masterSection !== section; });
+    document.querySelectorAll("[data-master-section-button]").forEach(button => {
+      const active = button.dataset.masterSectionButton === section;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-current", active ? "page" : "false");
+    });
+    if (section === "signups") refreshCampaigns().catch(error => showStatus(error.message, "error"));
+    if (section === "redeemed") Promise.all([refreshDashboard(), refreshCampaigns()]).catch(error => showStatus(error.message, "error"));
+  }
 
   const request = async (path, options = {}) => {
     const response = await fetch(`${api}${path}`, {
@@ -128,10 +146,12 @@
     return hours ? `${hours}h ${minutes}m remaining` : `${minutes}m remaining`;
   };
   function setOwnerReferralActionsEnabled(enabled) {
-    ["[data-owner-referral-copy]", "[data-owner-referral-download]"].forEach(selector => {
+    ["[data-owner-referral-copy]", "[data-owner-referral-download]", "[data-owner-referral-share]"].forEach(selector => {
       const button = $(selector);
       if (button) button.disabled = !enabled;
     });
+    const toggle = $("[data-owner-referral-toggle]");
+    if (toggle) toggle.disabled = !adminToken || !ownerReferralState;
   }
   function clearOwnerReferralDisplay(message = "Verify the owner passkey to load the current window.") {
     clearTimeout(ownerReferralTimer);
@@ -193,13 +213,34 @@
     $("[data-owner-referral-url]").value = data.url;
     $("[data-owner-referral-window]").textContent = data.windowLabel;
     $("[data-owner-referral-expires]").textContent = data.nextBoundaryLabel;
+    const isActive = data.isActive !== false;
+    const toggle = $("[data-owner-referral-toggle]");
+    toggle.textContent = isActive ? "Turn Off Current QR" : "Turn On Current QR";
+    toggle.classList.toggle("btn-danger", isActive);
+    toggle.classList.toggle("btn-primary", !isActive);
+    $("[data-owner-referral-qr-status]").textContent = isActive ? "ACTIVE QR" : "QR TURNED OFF";
+    $("[data-owner-referral]").classList.toggle("is-qr-disabled", !isActive);
     clearTimeout(ownerReferralTimer);
     clearInterval(ownerReferralCountdownTimer);
     updateOwnerReferralCountdown();
     ownerReferralCountdownTimer = setInterval(updateOwnerReferralCountdown, 30000);
     const delay = Math.max(1000, Date.parse(data.expiresAt) - Date.parse(data.serverNow) + 1200);
     ownerReferralTimer = setTimeout(() => refreshOwnerReferral({ announce: true }).catch(() => {}), delay);
-    setOwnerReferralActionsEnabled(true);
+    setOwnerReferralActionsEnabled(isActive);
+  }
+  async function toggleOwnerReferral() {
+    if (!ownerReferralState) await refreshOwnerReferral();
+    const active = ownerReferralState?.isActive !== false;
+    if (active && !confirm("Turn off the current owner referral QR? Every saved copy and link for this 12-hour window will stop accepting signups immediately.")) return;
+    const button = $("[data-owner-referral-toggle]");
+    button.disabled = true;
+    try {
+      const data = await request("/admin/referral/status", { method: "POST", body: JSON.stringify({ active: !active }) });
+      await renderOwnerReferral(data.current);
+      showStatus(!active ? "Current owner referral QR turned on." : "Current owner referral QR turned off. Saved copies and links are now blocked.", "success");
+    } finally {
+      button.disabled = false;
+    }
   }
   async function refreshOwnerReferral({ announce = false } = {}) {
     if (!memberToken || !adminToken) throw new Error("Verify the owner passkey to load the current referral.");
@@ -230,6 +271,7 @@
   }
   async function copyOwnerReferral() {
     await ensureCurrentOwnerReferral();
+    if (ownerReferralState?.isActive === false) throw new Error("Turn the current owner referral QR on before copying its link.");
     const value = $("[data-owner-referral-url]").value;
     if (!value) throw new Error("The current owner referral is not ready.");
     if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(value);
@@ -250,6 +292,7 @@
     button.disabled = true; const original = button.textContent; button.textContent = "Preparing current QR...";
     try {
       await ensureCurrentOwnerReferral();
+      if (ownerReferralState?.isActive === false) throw new Error("Turn the current owner referral QR on before downloading it.");
       const image = $("[data-owner-referral-qr]");
       if (!image.src) throw new Error("The current owner QR is not ready.");
       const blobUrl = URL.createObjectURL(await qrPngBlob(image));
@@ -272,10 +315,12 @@
     const type = String(pick(campaign, "rewardType", "reward_type") || "");
     if (type === "percent") return `${Number(pick(campaign, "percent") || 0)}% off`;
     if (type === "free_shipping") return "Free shipping";
-    if (type === "pick_a_pack") return "Pick a Pack";
+    if (type === "pick_a_pack") return "Free Pack / Pick a Pack";
     if (type === "pack_draft") return "Choose a Pack #";
+    if (type === "free_single") return "Free Holographic Single";
     return "Campaign reward";
   };
+  const campaignIsActive = campaign => pick(campaign, "isActive", "is_active") !== false && Number(pick(campaign, "isActive", "is_active") ?? 1) !== 0;
   const campaignWeeklyError = error => {
     const message = String(error?.message || "");
     if (error?.status === 429 || /weekly|thursday/i.test(message)) return "The weekly campaign limit has been reached. Campaign availability resets Thursday; existing campaigns remain listed below.";
@@ -283,6 +328,10 @@
   };
   function updateCampaignCountdowns() {
     document.querySelectorAll("[data-campaign-expires-at]").forEach(node => {
+      if (node.dataset.campaignNeverExpires === "true") {
+        node.textContent = "No expiration";
+        return;
+      }
       const expiresAt = node.dataset.campaignExpiresAt;
       const remaining = Date.parse(expiresAt) - (Date.now() + campaignClockOffset);
       node.textContent = remaining <= 0 ? `Expired ${new Date(expiresAt).toLocaleString()}` : `${countdownLabel(remaining)} - ${new Date(expiresAt).toLocaleString()}`;
@@ -293,6 +342,12 @@
         if (chip) { chip.textContent = "Expired"; chip.className = "campaign-status-chip expired"; }
         card.querySelectorAll(".campaign-redemption .btn").forEach(button => button.remove());
       }
+    });
+    document.querySelectorAll("[data-admin-claim-expires-at]").forEach(node => {
+      if (node.dataset.adminClaimNeverExpires === "true") { node.textContent = "No expiration"; return; }
+      const expiresAt = node.dataset.adminClaimExpiresAt;
+      const remaining = Date.parse(expiresAt) - (Date.now() + campaignClockOffset);
+      node.textContent = remaining <= 0 ? `Expired ${new Date(expiresAt).toLocaleString()}` : `${countdownLabel(remaining)} - expires ${new Date(expiresAt).toLocaleString()}`;
     });
   }
   function startCampaignCountdowns() {
@@ -312,6 +367,7 @@
     const percentInput = percentField.querySelector("input");
     const packInput = packField.querySelector("input");
     const needsPacks = type === "pack_draft";
+    $("[data-campaign-single-help]").hidden = type !== "free_single";
     percentField.hidden = type !== "percent";
     percentInput.required = type === "percent";
     packField.hidden = !needsPacks;
@@ -320,22 +376,32 @@
       const maxInput = $("[data-campaign-form] input[name='maxRedemptions']");
       if (Number(maxInput.value) > Number(packInput.value)) maxInput.value = packInput.value;
     }
+    if (type === "free_single") {
+      const maxInput = $("[data-campaign-form] input[name='maxRedemptions']");
+      if (!maxInput.value || Number(maxInput.value) === 25) maxInput.value = "50";
+      const titleInput = $("[data-campaign-form] input[name='title']");
+      if (!titleInput.value) titleInput.placeholder = "First Show Holographic Singles";
+    } else {
+      const titleInput = $("[data-campaign-form] input[name='title']");
+      if (!titleInput.value) titleInput.placeholder = "Friday Night Rip Bonus";
+    }
   }
   function syncCampaignExpiryUnit({ convert = false } = {}) {
     const unitInput = $("[data-campaign-expiry-unit]");
     const valueInput = $("[data-campaign-form] input[name='expiresInValue']");
     const help = $("[data-campaign-expiry-help]");
-    const unit = unitInput.value === "days" ? "days" : "hours";
+    const unit = ["days", "indefinite"].includes(unitInput.value) ? unitInput.value : "hours";
     const previousUnit = unitInput.dataset.previousUnit || unit;
     let value = Number(valueInput.value);
-    if (convert && Number.isFinite(value) && previousUnit !== unit) value = unit === "days" ? value / 24 : value * 24;
+    if (convert && Number.isFinite(value) && previousUnit !== unit && previousUnit !== "indefinite" && unit !== "indefinite") value = unit === "days" ? value / 24 : value * 24;
     const min = 1;
     const max = unit === "days" ? 7 : 168;
+    valueInput.disabled = unit === "indefinite";
     valueInput.min = String(min);
     valueInput.max = String(max);
     valueInput.step = "0.001";
-    if (Number.isFinite(value)) valueInput.value = String(Math.min(max, Math.max(min, Number(value.toFixed(3)))));
-    help.textContent = unit === "days" ? "Enter 1–7 days; decimals are allowed to 0.001 (for example, 3.05)." : "Enter 1–168 hours.";
+    if (unit !== "indefinite" && Number.isFinite(value)) valueInput.value = String(Math.min(max, Math.max(min, Number(value.toFixed(3)))));
+    help.textContent = unit === "indefinite" ? "No time expiration. The QR remains active until its claim limit is reached." : unit === "days" ? "Enter 1–7 days; decimals are allowed to 0.001 (for example, 3.05)." : "Enter 1–168 hours.";
     unitInput.dataset.previousUnit = unit;
   }
   function openCampaignModal() {
@@ -379,13 +445,53 @@
     $("[data-campaign-generated-url]").value = String(pick(campaign, "url") || "");
     const expiry = $("[data-campaign-generated-expiry]");
     const expiresAt = String(pick(campaign, "expiresAt", "expires_at") || "");
-    expiry.dateTime = expiresAt;
+    const neverExpires = pick(campaign, "neverExpires", "never_expires") === true || Number(pick(campaign, "neverExpires", "never_expires") || 0) === 1;
+    expiry.dateTime = neverExpires ? "" : expiresAt;
     expiry.dataset.campaignExpiresAt = expiresAt;
+    expiry.dataset.campaignNeverExpires = String(neverExpires);
     show("[data-campaign-generated]", true);
+    updateGeneratedCampaignControls(campaign);
     startCampaignCountdowns();
-    await loadCampaignQr(campaign);
+    if (campaignIsActive(campaign)) await loadCampaignQr(campaign);
+  }
+  function updateGeneratedCampaignControls(campaign) {
+    const active = campaignIsActive(campaign);
+    ["[data-campaign-copy]", "[data-campaign-download]", "[data-campaign-share]"].forEach(selector => { $(selector).disabled = !active; });
+    const toggle = $("[data-campaign-generated-toggle]");
+    toggle.textContent = active ? "Turn Off QR" : "Turn On QR";
+    toggle.classList.toggle("btn-danger", active);
+    toggle.classList.toggle("btn-primary", !active);
+    $("[data-campaign-generated]").classList.toggle("is-qr-disabled", !active);
+    $("[data-campaign-generated] .campaign-live-chip").textContent = active ? "CAMPAIGN READY" : "QR TURNED OFF";
+    if (!active) $("[data-campaign-generated-qr]").removeAttribute("src");
+  }
+  async function toggleCampaign(campaign, button) {
+    const campaignId = String(pick(campaign, "id") || "");
+    if (!campaignId) throw new Error("Campaign ID is missing.");
+    const active = campaignIsActive(campaign);
+    if (active && !confirm(`Turn off \"${String(pick(campaign, "title") || "this campaign")}\"? Saved QR images and copied links will stop accepting new claims immediately.`)) return;
+    button.disabled = true;
+    const original = button.textContent;
+    button.textContent = active ? "Turning off..." : "Turning on...";
+    try {
+      const data = await request(`/admin/campaigns/${encodeURIComponent(campaignId)}/status`, { method: "POST", body: JSON.stringify({ active: !active }) });
+      if (!data.campaign) throw new Error("The campaign status response was incomplete.");
+      if (generatedCampaign && String(pick(generatedCampaign, "id") || "") === campaignId) {
+        generatedCampaign = data.campaign;
+        campaignQrCampaignId = "";
+        updateGeneratedCampaignControls(generatedCampaign);
+        if (campaignIsActive(generatedCampaign)) await loadCampaignQr(generatedCampaign);
+      }
+      await refreshCampaigns();
+      showStatus(active ? "Campaign QR turned off. Saved images and links are now blocked." : "Campaign QR turned on and ready to share.", "success");
+    } finally {
+      button.disabled = false;
+      if (button.matches("[data-campaign-generated-toggle]") && generatedCampaign) updateGeneratedCampaignControls(generatedCampaign);
+      else button.textContent = original;
+    }
   }
   async function copyGeneratedCampaign() {
+    if (!campaignIsActive(generatedCampaign)) throw new Error("Turn this campaign QR on before copying its link.");
     const value = $("[data-campaign-generated-url]").value;
     if (!value) throw new Error("Generate a campaign before copying its link.");
     await copyCampaignText(value);
@@ -411,6 +517,156 @@
       document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
       showStatus("Campaign QR downloaded.", "success");
     } finally { button.disabled = false; button.textContent = original; }
+  }
+  const loadShareImage = source => new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("A share-card image could not load."));
+    image.src = source;
+  });
+  function roundedCanvasRect(context, x, y, width, height, radius) {
+    const r = Math.min(radius, width / 2, height / 2);
+    context.beginPath();
+    context.moveTo(x + r, y);
+    context.arcTo(x + width, y, x + width, y + height, r);
+    context.arcTo(x + width, y + height, x, y + height, r);
+    context.arcTo(x, y + height, x, y, r);
+    context.arcTo(x, y, x + width, y, r);
+    context.closePath();
+  }
+  function drawContained(context, image, x, y, width, height) {
+    const ratio = Math.min(width / image.naturalWidth, height / image.naturalHeight);
+    const drawWidth = image.naturalWidth * ratio;
+    const drawHeight = image.naturalHeight * ratio;
+    context.drawImage(image, x + (width - drawWidth) / 2, y + (height - drawHeight) / 2, drawWidth, drawHeight);
+  }
+  function fitCanvasText(context, text, maxWidth, startSize, minimumSize = 20) {
+    let size = startSize;
+    do {
+      context.font = `900 ${size}px Arial Black, Arial, sans-serif`;
+      if (context.measureText(text).width <= maxWidth) return size;
+      size -= 2;
+    } while (size >= minimumSize);
+    return minimumSize;
+  }
+  const shareCaption = state => `${state.title}\n${state.reward}\n\nScan or claim here: ${state.url}\n\nWhere pack crackin' is happenin'\nCRACKPACKSdotcom`;
+  const shareFilename = state => `crackpacks-${state.kind === "owner-referral" ? "current-referral" : "campaign"}-qr.png`;
+  async function renderCampaignShareCard(state) {
+    const canvas = $("[data-campaign-share-canvas]");
+    const context = canvas.getContext("2d");
+    const [background, logo, icon, qr] = await Promise.all([
+      loadShareImage("assets/images/crackpacks-share-card-bg-v1.png"),
+      loadShareImage("assets/images/logo.svg"),
+      loadShareImage("assets/images/favicon.svg"),
+      loadShareImage(state.qrSrc)
+    ]);
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(background, 0, 0, canvas.width, canvas.height);
+    context.fillStyle = "rgba(4,8,35,.58)";
+    roundedCanvasRect(context, 145, 42, 790, 996, 44); context.fill();
+    drawContained(context, logo, 235, 52, 610, 120);
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.fillStyle = "#f8ff46";
+    context.font = "900 38px Arial Black, Arial, sans-serif";
+    context.fillText("SCAN • JOIN • INVITE", 540, 188);
+    const title = String(state.title || "CRACK PACKS REWARD").toUpperCase();
+    fitCanvasText(context, title, 740, 44, 24);
+    context.fillStyle = "#ffffff";
+    context.fillText(title, 540, 238);
+    const reward = String(state.reward || "FREE REWARDS + FRIEND INVITES").toUpperCase();
+    fitCanvasText(context, reward, 730, 30, 20);
+    context.fillStyle = "#50e7ff";
+    context.fillText(reward, 540, 280);
+    context.fillStyle = "#ffffff";
+    context.shadowColor = "rgba(0,0,0,.45)"; context.shadowBlur = 24;
+    roundedCanvasRect(context, 214, 312, 652, 652, 46); context.fill();
+    context.shadowBlur = 0;
+    context.drawImage(qr, 252, 350, 576, 576);
+    context.fillStyle = "#ffffff";
+    context.shadowColor = "rgba(0,0,0,.28)"; context.shadowBlur = 14;
+    roundedCanvasRect(context, 470, 568, 140, 140, 30); context.fill();
+    context.shadowBlur = 0;
+    drawContained(context, icon, 488, 586, 104, 104);
+    context.fillStyle = "#ffffff";
+    fitCanvasText(context, "Where pack crackin' is happenin'", 780, 34, 23);
+    context.fillText("Where pack crackin' is happenin'", 540, 997);
+    context.fillStyle = "#f8ff46";
+    context.font = "900 31px Arial Black, Arial, sans-serif";
+    context.fillText("CRACKPACKSdotcom", 540, 1036);
+    $("[data-campaign-share-preview]").classList.add("is-ready");
+  }
+  async function openCampaignShare(campaign) {
+    const campaignId = String(pick(campaign, "id") || "");
+    const url = String(pick(campaign, "url") || "");
+    if (!campaignId || !url) throw new Error("This campaign is missing its share link.");
+    campaignShareLastFocus = document.activeElement;
+    campaignShareState = { kind: "campaign", title: String(pick(campaign, "title") || "Crack Packs Reward"), reward: campaignRewardDescription(campaign), url, qrSrc: "" };
+    $("[data-campaign-share-modal]").hidden = false;
+    $("[data-campaign-share-preview]").classList.remove("is-ready");
+    $("[data-campaign-share-description]").textContent = `${campaignShareState.reward} • ${pick(campaign, "neverExpires", "never_expires") ? "No expiration" : "Time-limited campaign"}`;
+    const qrObjectUrl = URL.createObjectURL(await requestBlob(`/admin/campaigns/${encodeURIComponent(campaignId)}/qr`));
+    campaignShareState.qrSrc = qrObjectUrl;
+    campaignShareRenderPromise = renderCampaignShareCard(campaignShareState).finally(() => URL.revokeObjectURL(qrObjectUrl));
+    await campaignShareRenderPromise;
+  }
+  async function openOwnerReferralShare() {
+    if (!ownerReferralState || !ownerReferralQrUrl) await refreshOwnerReferral();
+    if (ownerReferralState?.isActive === false) throw new Error("Turn the current owner referral QR on before sharing it.");
+    const url = String(ownerReferralState?.inviteUrl || ownerReferralState?.url || $("[data-owner-referral-url]").value || "");
+    const qrSrc = ownerReferralQrUrl || $("[data-owner-referral-qr]").src;
+    if (!url || !qrSrc) throw new Error("The current owner referral QR is not ready.");
+    campaignShareLastFocus = document.activeElement;
+    campaignShareState = { kind: "owner-referral", title: "Join the Crack Packs Crew", reward: "Free Rewards + Friend Invites", url, qrSrc };
+    $("[data-campaign-share-modal]").hidden = false;
+    $("[data-campaign-share-preview]").classList.remove("is-ready");
+    $("[data-campaign-share-description]").textContent = "Current 12-hour owner referral QR. Share it before the displayed 7 AM or 7 PM Eastern boundary.";
+    campaignShareRenderPromise = renderCampaignShareCard(campaignShareState);
+    await campaignShareRenderPromise;
+  }
+  function closeCampaignShare() {
+    $("[data-campaign-share-modal]").hidden = true;
+    campaignShareLastFocus?.focus?.();
+  }
+  async function campaignShareBlob() {
+    if (!campaignShareState || !campaignShareRenderPromise) throw new Error("Open a campaign share card first.");
+    await campaignShareRenderPromise;
+    return new Promise((resolve, reject) => $("[data-campaign-share-canvas]").toBlob(blob => blob ? resolve(blob) : reject(new Error("The share graphic could not be created.")), "image/png"));
+  }
+  async function downloadCampaignShare() {
+    const blobUrl = URL.createObjectURL(await campaignShareBlob());
+    const link = document.createElement("a"); link.href = blobUrl; link.download = shareFilename(campaignShareState);
+    document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+    showStatus("Branded QR graphic downloaded.", "success");
+  }
+  async function nativeCampaignShare() {
+    if (!campaignShareState) throw new Error("Open a campaign share card first.");
+    const caption = shareCaption(campaignShareState);
+    const blob = await campaignShareBlob();
+    const file = new File([blob], shareFilename(campaignShareState), { type: "image/png" });
+    if (navigator.share) {
+      const payload = navigator.canShare?.({ files: [file] }) ? { title: campaignShareState.title, text: caption, files: [file] } : { title: campaignShareState.title, text: caption, url: campaignShareState.url };
+      await navigator.share(payload);
+      return;
+    }
+    await copyCampaignText(caption);
+    showStatus("Sharing apps are unavailable here, so the caption and link were copied.", "success");
+  }
+  async function shareCampaignToSocial(platform) {
+    if (!campaignShareState) throw new Error("Open a campaign share card first.");
+    const caption = shareCaption(campaignShareState);
+    const destinations = {
+      facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(campaignShareState.url)}`,
+      x: `https://x.com/intent/post?text=${encodeURIComponent(caption)}`,
+      instagram: "https://www.instagram.com/crackpacksdotcom/",
+      youtube: "https://www.youtube.com/@CRACKPACKSdotcom",
+      whatnot: "https://whatnot.com/invite/crackpacksdotcom"
+    };
+    const destination = destinations[platform];
+    if (!destination) throw new Error("That social destination is unavailable.");
+    window.open(destination, "_blank", "noopener,noreferrer");
+    await Promise.all([copyCampaignText(caption), downloadCampaignShare()]);
+    showStatus(`${platform === "x" ? "X" : platform[0].toUpperCase() + platform.slice(1)} opened. The caption was copied and the QR graphic was downloaded.`, "success");
   }
   function redemptionStatus(redemption) {
     if (pick(redemption, "redeemedAt", "redeemed_at", "usedAt", "used_at")) return "used";
@@ -451,21 +707,23 @@
   }
   function renderCampaign(campaign, visibleRedemptions = null) {
     const expiresAt = String(pick(campaign, "expiresAt", "expires_at") || "");
-    const expired = String(pick(campaign, "status") || "").toLowerCase() === "expired" || (expiresAt && Date.parse(expiresAt) <= Date.now() + campaignClockOffset);
+    const neverExpires = pick(campaign, "neverExpires", "never_expires") === true || Number(pick(campaign, "neverExpires", "never_expires") || 0) === 1;
+    const active = campaignIsActive(campaign);
+    const expired = !neverExpires && (String(pick(campaign, "status") || "").toLowerCase() === "expired" || (expiresAt && Date.parse(expiresAt) <= Date.now() + campaignClockOffset));
     const remaining = Math.max(0, Number(pick(campaign, "remaining") || 0));
     const full = !expired && remaining === 0;
-    const card = document.createElement("article"); card.className = `admin-campaign${expired ? " is-expired" : ""}`; card.dataset.campaignCard = "";
+    const card = document.createElement("article"); card.className = `admin-campaign${expired ? " is-expired" : ""}${!active ? " is-qr-disabled" : ""}`; card.dataset.campaignCard = "";
     const head = document.createElement("div"); head.className = "admin-campaign-head";
     const heading = document.createElement("div"); const title = document.createElement("h3"); title.textContent = String(pick(campaign, "title") || "Untitled campaign");
     const description = document.createElement("p"); description.className = "admin-campaign-description"; description.textContent = campaignRewardDescription(campaign); heading.append(title, description);
-    const chip = document.createElement("span"); chip.dataset.campaignStatus = ""; chip.className = `campaign-status-chip${expired ? " expired" : ""}`; chip.textContent = expired ? "Expired" : full ? "Full" : "Active"; head.append(heading, chip);
+    const chip = document.createElement("span"); chip.dataset.campaignStatus = ""; chip.className = `campaign-status-chip${expired || !active ? " expired" : ""}`; chip.textContent = !active ? "QR Off" : expired ? "Expired" : full ? "Full" : "Active"; head.append(heading, chip);
     const metrics = document.createElement("div"); metrics.className = "admin-campaign-metrics";
     const claimed = Number(pick(campaign, "claimedCount", "claimed_count") || 0); const cap = Number(pick(campaign, "maxRedemptions", "max_redemptions") || claimed + remaining);
     for (const value of [`Claimed ${claimed}/${cap}`, `${remaining} remaining`]) { const item = document.createElement("strong"); item.textContent = value; metrics.append(item); }
-    const expiry = document.createElement("time"); expiry.dateTime = expiresAt; expiry.dataset.campaignExpiresAt = expiresAt; metrics.append(expiry);
+    const expiry = document.createElement("time"); expiry.dateTime = neverExpires ? "" : expiresAt; expiry.dataset.campaignExpiresAt = expiresAt; expiry.dataset.campaignNeverExpires = String(neverExpires); metrics.append(expiry);
     const actions = document.createElement("div"); actions.className = "campaign-card-actions";
     const campaignUrl = String(pick(campaign, "url") || "");
-    if (campaignUrl) {
+    if (campaignUrl && active) {
       const copyButton = document.createElement("button"); copyButton.className = "btn btn-outline btn-small"; copyButton.type = "button"; copyButton.textContent = "Copy Link";
       copyButton.addEventListener("click", async () => {
         try { await copyCampaignText(campaignUrl); showStatus("Campaign link copied.", "success"); }
@@ -476,13 +734,19 @@
         try { await renderGeneratedCampaign(campaign); await downloadCampaignQr(downloadButton); }
         catch (error) { showStatus(error.message, "error"); }
       });
-      actions.append(copyButton, downloadButton);
+      const shareButton = document.createElement("button"); shareButton.className = "btn btn-outline btn-small"; shareButton.type = "button"; shareButton.textContent = "Share";
+      shareButton.addEventListener("click", () => openCampaignShare(campaign).catch(error => showStatus(error.message, "error")));
+      actions.append(copyButton, downloadButton, shareButton);
     }
+    const toggleButton = document.createElement("button"); toggleButton.className = `btn ${active ? "btn-danger" : "btn-primary"} btn-small`; toggleButton.type = "button"; toggleButton.textContent = active ? "Turn Off QR" : "Turn On QR";
+    toggleButton.addEventListener("click", () => toggleCampaign(campaign, toggleButton).catch(error => { toggleButton.disabled = false; showStatus(error.message, "error"); }));
+    actions.append(toggleButton);
     const redemptions = document.createElement("div"); redemptions.className = "campaign-redemptions";
     const list = visibleRedemptions || (Array.isArray(campaign.redemptions) ? campaign.redemptions : []);
+    const peopleHeading = document.createElement("h4"); peopleHeading.className = "campaign-people-title"; peopleHeading.textContent = `Signed up / claimed collectors (${list.length})`;
     if (list.length) list.forEach(item => redemptions.append(renderCampaignRedemption(item)));
     else { const empty = document.createElement("div"); empty.className = "campaign-empty"; empty.textContent = "No verified claims yet."; redemptions.append(empty); }
-    card.append(head, metrics, actions, redemptions);
+    card.append(head, metrics, actions, peopleHeading, redemptions);
     return card;
   }
   function renderCampaigns(campaigns, filter = "") {
@@ -490,16 +754,31 @@
     const container = $("[data-admin-campaigns]"); container.replaceChildren();
     if (!campaigns.length) { const empty = document.createElement("div"); empty.className = "campaign-empty"; empty.textContent = "No campaigns yet. Create one for the next live show."; container.append(empty); return; }
     const query = String(filter || "").trim().toLowerCase();
+    const rewardTypeFilter = $("[data-campaign-type-filter]").value;
+    const dateFrom = $("[data-campaign-date-from]").value;
+    const dateTo = $("[data-campaign-date-to]").value;
     const ordered = [...campaigns].sort((a, b) => Date.parse(String(pick(b, "createdAt", "created_at", "expiresAt", "expires_at") || 0)) - Date.parse(String(pick(a, "createdAt", "created_at", "expiresAt", "expires_at") || 0)));
     let matches = 0;
     ordered.forEach(campaign => {
+      const rewardType = String(pick(campaign, "rewardType", "reward_type") || "");
+      if (rewardTypeFilter !== "all" && rewardType !== rewardTypeFilter) return;
       const allRedemptions = Array.isArray(campaign.redemptions) ? campaign.redemptions : [];
-      const visible = query ? allRedemptions.filter(redemption => [pick(redemption, "code"), pick(redemption, "email"), pick(redemption, "whatnotUsername", "whatnot_username")].some(value => String(value || "").toLowerCase().includes(query))) : allRedemptions;
-      if (query && !visible.length) return;
+      const easternDate = value => value ? new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(value)) : "";
+      const dateMatches = value => {
+        const date = easternDate(value);
+        return Boolean(date) && (!dateFrom || date >= dateFrom) && (!dateTo || date <= dateTo);
+      };
+      const hasDateFilter = Boolean(dateFrom || dateTo);
+      const dateFilteredRedemptions = hasDateFilter ? allRedemptions.filter(redemption => dateMatches(pick(redemption, "claimedAt", "claimed_at"))) : allRedemptions;
+      const campaignCreatedMatches = hasDateFilter && dateMatches(pick(campaign, "createdAt", "created_at"));
+      if (hasDateFilter && !campaignCreatedMatches && !dateFilteredRedemptions.length) return;
+      const campaignMatches = query && [pick(campaign, "title"), campaignRewardDescription(campaign), rewardType, pick(campaign, "url")].some(value => String(value || "").toLowerCase().includes(query));
+      const visible = !query || campaignMatches ? dateFilteredRedemptions : dateFilteredRedemptions.filter(redemption => [pick(redemption, "code"), pick(redemption, "email"), pick(redemption, "whatnotUsername", "whatnot_username")].some(value => String(value || "").toLowerCase().includes(query)));
+      if (query && !campaignMatches && !visible.length) return;
       matches += 1;
       container.append(renderCampaign(campaign, visible));
     });
-    if (!matches) { const empty = document.createElement("div"); empty.className = "campaign-empty"; empty.textContent = "No campaign claimants match that search."; container.append(empty); }
+    if (!matches) { const empty = document.createElement("div"); empty.className = "campaign-empty"; empty.textContent = "No campaigns or claimants match those filters."; container.append(empty); }
     startCampaignCountdowns();
   }
   async function refreshCampaigns() {
@@ -507,6 +786,8 @@
     const data = await request("/admin/campaigns");
     if (data.serverNow) campaignClockOffset = Date.parse(data.serverNow) - Date.now();
     renderCampaigns(Array.isArray(data.campaigns) ? data.campaigns : [], $("[data-campaign-search]").value);
+    renderClaims(legacyClaimsState);
+    updateCombinedPromotionSummary();
   }
 
   function claimStatus(claim) {
@@ -517,8 +798,18 @@
   }
   function renderClaims(claims) {
     const container = $("[data-admin-results]"); container.replaceChildren();
-    if (!claims.length) { const empty = document.createElement("div"); empty.className = "admin-empty"; empty.textContent = "No matching discount codes."; container.append(empty); return; }
-    claims.forEach(claim => {
+    const query = $("[data-admin-search]").value.trim().toLowerCase();
+    const statusFilter = $("[data-admin-filter]").value;
+    const dateFrom = $("[data-admin-date-from]").value;
+    const dateTo = $("[data-admin-date-to]").value;
+    const dateMatches = value => {
+      if (!dateFrom && !dateTo) return true;
+      if (!value) return false;
+      const date = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(value));
+      return (!dateFrom || date >= dateFrom) && (!dateTo || date <= dateTo);
+    };
+    let rendered = 0;
+    claims.filter(claim => dateMatches(claim.created_at)).forEach(claim => {
       const state = claimStatus(claim); const card = document.createElement("article"); card.className = "admin-claim";
       const identity = document.createElement("div"); const code = document.createElement("h3"); code.textContent = claim.code;
       const member = document.createElement("p"); member.textContent = `${claim.first_name || ""} ${claim.last_name || ""}`.trim() || "Unnamed member";
@@ -528,7 +819,8 @@
       const details = document.createElement("div"); const badge = document.createElement("span"); badge.className = `admin-claim-status ${state}`; badge.textContent = state;
       const percent = document.createElement("p"); const percentValue = document.createElement("strong"); percentValue.textContent = `${Number(claim.percent)}%`; percent.append(percentValue, " discount");
       const timing = document.createElement("p"); timing.textContent = claim.redeemed_at ? `Redeemed ${new Date(claim.redeemed_at).toLocaleString()}` : claim.redemption_requested_at ? `Requested ${new Date(claim.redemption_requested_at).toLocaleString()}` : `Issued ${new Date(claim.created_at).toLocaleDateString()}`;
-      details.append(badge, percent, timing);
+      const expiry = document.createElement("time"); expiry.dataset.adminClaimExpiresAt = claim.expires_at; expiry.dataset.adminClaimNeverExpires = "false";
+      details.append(badge, percent, timing, expiry);
       const actions = document.createElement("div"); actions.className = "admin-claim-actions";
       if (state !== "redeemed" && state !== "expired") {
         const button = document.createElement("button"); button.className = "btn btn-primary btn-small"; button.type = "button"; button.textContent = "Mark redeemed";
@@ -540,15 +832,120 @@
         });
         actions.append(button);
       }
-      card.append(identity, details, actions); container.append(card);
+      card.append(identity, details, actions); container.append(card); rendered += 1;
     });
+    campaignListState.forEach(campaign => {
+      const campaignExpiresAt = String(pick(campaign, "expiresAt", "expires_at") || "");
+      const neverExpires = pick(campaign, "neverExpires", "never_expires") === true || Number(pick(campaign, "neverExpires", "never_expires") || 0) === 1;
+      (Array.isArray(campaign.redemptions) ? campaign.redemptions : []).forEach(redemption => {
+        const claimedAt = String(pick(redemption, "claimedAt", "claimed_at") || "");
+        if (!dateMatches(claimedAt)) return;
+        const redeemedAt = String(pick(redemption, "redeemedAt", "redeemed_at") || "");
+        const state = redeemedAt ? "redeemed" : !neverExpires && campaignExpiresAt && Date.parse(campaignExpiresAt) <= Date.now() + campaignClockOffset ? "expired" : "issued";
+        if (statusFilter !== "all" && statusFilter !== state) return;
+        const codeValue = String(pick(redemption, "code") || "");
+        const emailValue = String(pick(redemption, "email") || "");
+        const usernameValue = String(pick(redemption, "whatnotUsername", "whatnot_username") || "");
+        if (query && ![codeValue, emailValue, usernameValue, pick(campaign, "title"), campaignRewardDescription(campaign)].some(value => String(value || "").toLowerCase().includes(query))) return;
+        const card = document.createElement("article"); card.className = "admin-claim";
+        const identity = document.createElement("div");
+        const code = document.createElement("h3"); code.textContent = codeValue;
+        const title = document.createElement("p"); title.textContent = String(pick(campaign, "title") || "Campaign reward");
+        const email = document.createElement("p"); email.textContent = emailValue;
+        const username = document.createElement("p"); username.textContent = usernameValue ? `@${usernameValue}` : "No Whatnot username";
+        identity.append(code, title, email, username);
+        const details = document.createElement("div");
+        const badge = document.createElement("span"); badge.className = `admin-claim-status ${state}`; badge.textContent = state;
+        const reward = document.createElement("p"); const rewardStrong = document.createElement("strong"); rewardStrong.textContent = campaignRewardDescription(campaign); reward.append(rewardStrong);
+        const timing = document.createElement("p"); timing.textContent = redeemedAt ? `Redeemed ${new Date(redeemedAt).toLocaleString()}` : `Claimed ${new Date(claimedAt).toLocaleString()}`;
+        const expiry = document.createElement("time"); expiry.dataset.adminClaimExpiresAt = campaignExpiresAt; expiry.dataset.adminClaimNeverExpires = String(neverExpires);
+        details.append(badge, reward, timing, expiry);
+        const actions = document.createElement("div"); actions.className = "admin-claim-actions";
+        if (state === "issued") {
+          const button = document.createElement("button"); button.className = "btn btn-primary btn-small"; button.type = "button"; button.textContent = "Mark redeemed";
+          button.addEventListener("click", async () => {
+            if (!confirm(`Confirm ${codeValue} was gifted or used? This cannot be undone.`)) return;
+            button.disabled = true;
+            try { await request(`/admin/campaign-redemptions/${encodeURIComponent(String(pick(redemption, "id") || ""))}/redeem`, { method: "POST" }); showStatus(`${codeValue} marked redeemed.`, "success"); await refreshCampaigns(); }
+            catch (error) { button.disabled = false; showStatus(error.message, "error"); }
+          });
+          actions.append(button);
+        }
+        card.append(identity, details, actions); container.append(card); rendered += 1;
+      });
+    });
+    if (!rendered) { const empty = document.createElement("div"); empty.className = "admin-empty"; empty.textContent = "No promotional rewards match these filters."; container.append(empty); }
+    startCampaignCountdowns();
+  }
+  function updateCombinedPromotionSummary() {
+    const combined = { ...legacySummaryState };
+    campaignListState.forEach(campaign => {
+      const expiresAt = String(pick(campaign, "expiresAt", "expires_at") || "");
+      const neverExpires = pick(campaign, "neverExpires", "never_expires") === true || Number(pick(campaign, "neverExpires", "never_expires") || 0) === 1;
+      (Array.isArray(campaign.redemptions) ? campaign.redemptions : []).forEach(redemption => {
+        combined.total += 1;
+        if (pick(redemption, "redeemedAt", "redeemed_at")) combined.redeemed += 1;
+        else if (!neverExpires && expiresAt && Date.parse(expiresAt) <= Date.now() + campaignClockOffset) combined.expired += 1;
+        else combined.issued += 1;
+      });
+    });
+    Object.entries(combined).forEach(([key, value]) => { const node = $(`[data-count-${key}]`); if (node) node.textContent = value; });
   }
   async function refreshDashboard() {
     const query = encodeURIComponent($("[data-admin-search]").value.trim());
     const filter = encodeURIComponent($("[data-admin-filter]").value);
     const [summaryData, claimsData] = await Promise.all([request("/admin/summary"), request(`/admin/discounts?q=${query}&status=${filter}`)]);
-    Object.entries(summaryData.summary).forEach(([key, value]) => { const node = $(`[data-count-${key}]`); if (node) node.textContent = value; });
-    renderClaims(claimsData.claims);
+    legacySummaryState = { ...legacySummaryState, ...(summaryData.summary || {}) };
+    updateCombinedPromotionSummary();
+    legacyClaimsState = Array.isArray(claimsData.claims) ? claimsData.claims : [];
+    renderClaims(legacyClaimsState);
+  }
+
+  function setMasterEmailStatus(message = "", kind = "") {
+    const node = $("[data-master-email-status]"); node.textContent = message; node.dataset.kind = kind;
+  }
+  function syncEmailComposer() {
+    const count = selectedEmailMembers.size;
+    const summary = $("[data-email-recipient-summary]");
+    summary.textContent = emailAudience === "all" ? "Audience: every verified Crack Packs member (up to 100 per send)." : emailAudience === "selected" ? `Audience: ${count} selected member${count === 1 ? "" : "s"}.` : "No audience selected.";
+    const chips = $("[data-email-selected-chips]"); chips.replaceChildren();
+    if (emailAudience === "selected") selectedEmailMembers.forEach(member => {
+      const chip = document.createElement("button"); chip.type = "button"; chip.className = "email-recipient-chip"; chip.textContent = `${member.whatnotUsername ? `@${member.whatnotUsername}` : member.email} ×`;
+      chip.title = `Remove ${member.email}`;
+      chip.addEventListener("click", () => { selectedEmailMembers.delete(member.id); syncEmailComposer(); });
+      chips.append(chip);
+    });
+    $("[data-email-send]").disabled = !emailAudience || (emailAudience === "selected" && !count);
+    $("[data-email-selection-count]").textContent = `${count} selected`;
+  }
+  async function searchEmailMembers() {
+    const query = encodeURIComponent($("[data-email-member-search]").value.trim());
+    const data = await request(`/admin/members?q=${query}`);
+    const container = $("[data-email-member-results]"); container.replaceChildren();
+    const members = Array.isArray(data.members) ? data.members : [];
+    if (!members.length) { const empty = document.createElement("div"); empty.className = "campaign-empty"; empty.textContent = "No verified members match that search."; container.append(empty); return; }
+    members.forEach(member => {
+      const row = document.createElement("article"); row.className = "email-member-row";
+      const identity = document.createElement("div"); const name = document.createElement("strong"); name.textContent = `${member.firstName || ""} ${member.lastName || ""}`.trim() || member.email;
+      const detail = document.createElement("span"); detail.textContent = [member.whatnotUsername ? `@${member.whatnotUsername}` : "", member.email].filter(Boolean).join(" · "); identity.append(name, detail);
+      const button = document.createElement("button"); button.type = "button"; button.className = `btn ${selectedEmailMembers.has(member.id) ? "btn-danger" : "btn-outline"} btn-small`; button.textContent = selectedEmailMembers.has(member.id) ? "Remove" : "Add";
+      button.addEventListener("click", () => {
+        if (selectedEmailMembers.has(member.id)) selectedEmailMembers.delete(member.id); else selectedEmailMembers.set(member.id, member);
+        emailAudience = "selected"; syncEmailComposer(); searchEmailMembers().catch(error => showStatus(error.message, "error"));
+      });
+      row.append(identity, button); container.append(row);
+    });
+  }
+  function openEmailMemberSelection() {
+    emailAudience = "selected";
+    $("[data-email-select-modal]").hidden = false;
+    $("[data-email-member-search]").focus();
+    syncEmailComposer();
+    searchEmailMembers().catch(error => showStatus(error.message, "error"));
+  }
+  function closeEmailMemberSelection() { $("[data-email-select-modal]").hidden = true; }
+  function resetMasterEmail() {
+    emailAudience = ""; selectedEmailMembers.clear(); $("[data-master-email-form]").reset(); setMasterEmailStatus(""); syncEmailComposer();
   }
 
   async function boot() {
@@ -588,6 +985,29 @@
     sessionStorage.removeItem("cp_admin_token"); localStorage.removeItem("cp_rewards_token"); location.href = "admin.html";
   }));
   document.querySelectorAll("[data-admin-email-close]").forEach(button => button.addEventListener("click", () => { $("[data-admin-email-modal]").hidden = true; }));
+  document.querySelectorAll("[data-master-section-button]").forEach(button => button.addEventListener("click", () => openMasterSection(button.dataset.masterSectionButton)));
+  $("[data-email-all]").addEventListener("click", () => { emailAudience = "all"; selectedEmailMembers.clear(); syncEmailComposer(); setMasterEmailStatus("Message All selected. Review your subject and message before sending.", "success"); });
+  $("[data-email-select-open]").addEventListener("click", openEmailMemberSelection);
+  document.querySelectorAll("[data-email-select-close]").forEach(button => button.addEventListener("click", closeEmailMemberSelection));
+  $("[data-email-select-finished]").addEventListener("click", () => { closeEmailMemberSelection(); syncEmailComposer(); $("[data-master-email-form] input[name='subject']").focus(); });
+  $("[data-email-member-search]").addEventListener("input", () => { clearTimeout(emailMemberSearchTimer); emailMemberSearchTimer = setTimeout(() => searchEmailMembers().catch(error => showStatus(error.message, "error")), 220); });
+  $("[data-email-cancel]").addEventListener("click", resetMasterEmail);
+  $("[data-master-email-form]").addEventListener("submit", async event => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const payload = { audience: emailAudience, subject: String(form.get("subject") || "").trim(), message: String(form.get("message") || "").trim() };
+    if (emailAudience === "selected") payload.memberIds = [...selectedEmailMembers.keys()];
+    const audienceLabel = emailAudience === "all" ? "every verified member" : `${selectedEmailMembers.size} selected member${selectedEmailMembers.size === 1 ? "" : "s"}`;
+    if (!emailAudience || (emailAudience === "selected" && !selectedEmailMembers.size)) { setMasterEmailStatus("Choose Message All or Select Few first.", "error"); return; }
+    if (!confirm(`Send \"${payload.subject}\" to ${audienceLabel}?`)) return;
+    const button = $("[data-email-send]"); button.disabled = true; button.textContent = "Sending..."; setMasterEmailStatus("");
+    try {
+      const data = await request("/admin/email", { method: "POST", body: JSON.stringify(payload) });
+      setMasterEmailStatus(`Email queued for ${Number(data.recipientCount || 0)} member${Number(data.recipientCount || 0) === 1 ? "" : "s"}.`, "success");
+      event.currentTarget.reset(); emailAudience = ""; selectedEmailMembers.clear(); syncEmailComposer();
+    } catch (error) { setMasterEmailStatus(error.message, "error"); }
+    finally { button.textContent = "Send"; syncEmailComposer(); }
+  });
   $("[data-campaign-open]").addEventListener("click", openCampaignModal);
   document.querySelectorAll("[data-campaign-close]").forEach(button => button.addEventListener("click", closeCampaignModal));
   $("[data-campaign-reward-type]").addEventListener("change", syncCampaignFields);
@@ -606,13 +1026,14 @@
     const maxRedemptions = Number(form.get("maxRedemptions") || 0);
     const expiresInValue = Number(form.get("expiresInValue"));
     const expiresInUnit = String(form.get("expiresInUnit") || "hours");
+    const neverExpires = expiresInUnit === "indefinite";
     const expiresInHours = expiresInUnit === "days" ? expiresInValue * 24 : expiresInValue;
     if (rewardType === "pack_draft" && packCount < maxRedemptions) {
       setCampaignFormStatus("Choose a Pack # needs at least one unique pack number per person. Increase packs or lower maximum people.", "error");
       $("[data-campaign-pack-field] input").focus();
       return;
     }
-    if (!Number.isFinite(expiresInHours) || expiresInHours < 1 || expiresInHours > 168 || (expiresInUnit === "days" && (expiresInValue < 1 || expiresInValue > 7))) {
+    if (!neverExpires && (!Number.isFinite(expiresInHours) || expiresInHours < 1 || expiresInHours > 168 || (expiresInUnit === "days" && (expiresInValue < 1 || expiresInValue > 7)))) {
       setCampaignFormStatus("Time to Expire must be 1–168 hours or 1–7 days.", "error");
       $("[data-campaign-form] input[name='expiresInValue']").focus();
       return;
@@ -620,9 +1041,10 @@
     const payload = {
       title: String(form.get("title") || "").trim(),
       rewardType,
-      expiresInHours: Number(expiresInHours.toFixed(6)),
+      neverExpires,
       maxRedemptions
     };
+    if (!neverExpires) payload.expiresInHours = Number(expiresInHours.toFixed(6));
     if (rewardType === "percent") payload.percent = Number(form.get("percent"));
     if (rewardType === "pack_draft") payload.packCount = packCount;
     const submit = $("[data-campaign-submit]"); submit.disabled = true; submit.textContent = "Generating..."; setCampaignFormStatus("");
@@ -639,18 +1061,38 @@
       const message = campaignWeeklyError(error);
       setCampaignFormStatus(message, "error");
       showStatus(message, "error");
-    } finally { submit.disabled = false; submit.textContent = "Generate Discount"; }
+    } finally { submit.disabled = false; submit.textContent = "Generate Discount + QR"; }
   });
   $("[data-campaign-copy]").addEventListener("click", () => copyGeneratedCampaign().catch(error => showStatus(error.message, "error")));
   $("[data-campaign-download]").addEventListener("click", event => downloadCampaignQr(event.currentTarget).catch(error => showStatus(error.message, "error")));
+  $("[data-campaign-share]").addEventListener("click", () => generatedCampaign ? openCampaignShare(generatedCampaign).catch(error => showStatus(error.message, "error")) : showStatus("Generate a campaign before sharing it.", "error"));
+  $("[data-campaign-generated-toggle]").addEventListener("click", event => generatedCampaign ? toggleCampaign(generatedCampaign, event.currentTarget).catch(error => showStatus(error.message, "error")) : showStatus("Generate a campaign before changing its QR status.", "error"));
   $("[data-campaign-refresh]").addEventListener("click", () => refreshCampaigns().catch(error => showStatus(error.message, "error")));
   $("[data-campaign-search]").addEventListener("input", event => renderCampaigns(campaignListState, event.currentTarget.value));
-  document.addEventListener("keydown", event => { if (event.key === "Escape" && !$("[data-campaign-modal]").hidden) closeCampaignModal(); });
+  ["[data-campaign-type-filter]", "[data-campaign-date-from]", "[data-campaign-date-to]"].forEach(selector => $(selector).addEventListener("change", () => renderCampaigns(campaignListState, $("[data-campaign-search]").value)));
+  $("[data-campaign-filters-clear]").addEventListener("click", () => {
+    $("[data-campaign-search]").value = ""; $("[data-campaign-type-filter]").value = "all"; $("[data-campaign-date-from]").value = ""; $("[data-campaign-date-to]").value = "";
+    renderCampaigns(campaignListState);
+  });
+  document.querySelectorAll("[data-campaign-share-close]").forEach(button => button.addEventListener("click", closeCampaignShare));
+  $("[data-campaign-share-download]").addEventListener("click", () => downloadCampaignShare().catch(error => showStatus(error.message, "error")));
+  $("[data-campaign-share-copy]").addEventListener("click", () => campaignShareState ? copyCampaignText(shareCaption(campaignShareState)).then(() => showStatus("Share caption and link copied.", "success")).catch(error => showStatus(error.message, "error")) : showStatus("Open a share card first.", "error"));
+  $("[data-campaign-share-native]").addEventListener("click", () => nativeCampaignShare().catch(error => { if (error.name !== "AbortError") showStatus(error.message, "error"); }));
+  document.querySelectorAll("[data-campaign-share-social]").forEach(button => button.addEventListener("click", () => shareCampaignToSocial(button.dataset.campaignShareSocial).catch(error => showStatus(error.message, "error"))));
+  document.addEventListener("keydown", event => {
+    if (event.key !== "Escape") return;
+    if (!$("[data-email-select-modal]").hidden) closeEmailMemberSelection();
+    else if (!$("[data-campaign-share-modal]").hidden) closeCampaignShare();
+    else if (!$("[data-campaign-modal]").hidden) closeCampaignModal();
+  });
   $("[data-admin-refresh]").addEventListener("click", () => Promise.all([refreshDashboard(), refreshCampaigns()]).catch(error => showStatus(error.message, "error")));
   $("[data-admin-filter]").addEventListener("change", () => refreshDashboard().catch(error => showStatus(error.message, "error")));
   $("[data-admin-search]").addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => refreshDashboard().catch(error => showStatus(error.message, "error")), 250); });
+  ["[data-admin-date-from]", "[data-admin-date-to]"].forEach(selector => $(selector).addEventListener("change", () => renderClaims(legacyClaimsState)));
   $("[data-owner-referral-copy]").addEventListener("click", () => copyOwnerReferral().catch(error => showStatus(error.message, "error")));
   $("[data-owner-referral-download]").addEventListener("click", event => downloadOwnerReferral(event.currentTarget).catch(error => showStatus(error.message, "error")));
+  $("[data-owner-referral-share]").addEventListener("click", () => openOwnerReferralShare().catch(error => showStatus(error.message, "error")));
+  $("[data-owner-referral-toggle]").addEventListener("click", () => toggleOwnerReferral().catch(error => showStatus(error.message, "error")));
   $("[data-owner-referral-refresh]").addEventListener("click", () => refreshOwnerReferral({ announce: true }).catch(() => {}));
   document.addEventListener("visibilitychange", () => { if (!document.hidden && ownerReferralState) refreshOwnerReferral().catch(() => {}); });
   window.addEventListener("focus", () => { if (ownerReferralState) refreshOwnerReferral().catch(() => {}); });
@@ -662,5 +1104,7 @@
   setOwnerReferralActionsEnabled(false);
   syncCampaignFields();
   syncCampaignExpiryUnit();
+  syncEmailComposer();
+  openMasterSection("create_link");
   boot().catch(error => { showStatus(error.message, "error"); show("[data-admin-login]", true); initializeTurnstile(); });
 })();

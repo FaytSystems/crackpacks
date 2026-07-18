@@ -209,10 +209,12 @@
     const type = String(pick(campaign, "rewardType", "reward_type") || "");
     if (type === "percent") return `${Number(pick(campaign, "percent") || 0)}% off`;
     if (type === "free_shipping") return "Free shipping";
-    if (type === "pick_a_pack") return "Pick a Pack";
+    if (type === "pick_a_pack") return "Free Pack / Pick a Pack";
     if (type === "pack_draft") return "Choose a Pack #";
+    if (type === "free_single") return "Free Holographic Single";
     return "Campaign reward";
   };
+  const campaignNeverExpires = campaign => pick(campaign, "neverExpires", "never_expires") === true || Number(pick(campaign, "neverExpires", "never_expires") || 0) === 1;
   const campaignCountdownLabel = milliseconds => {
     const totalMinutes = Math.max(0, Math.ceil(milliseconds / 60000));
     const hours = Math.floor(totalMinutes / 60);
@@ -226,13 +228,17 @@
   function updateCampaignCountdowns() {
     const serverTime = Date.now() + campaignClockOffset;
     document.querySelectorAll("[data-live-campaign-expiry]").forEach(node => {
+      if (node.dataset.liveCampaignNeverExpires === "true") {
+        node.textContent = "No expiration";
+        return;
+      }
       const expiresAt = node.dataset.liveCampaignExpiry;
       const remaining = Date.parse(expiresAt) - serverTime;
       node.textContent = remaining <= 0 ? "Expired" : campaignCountdownLabel(remaining);
     });
     if (activeOffer) {
       const expiresAt = String(pick(activeOffer, "expiresAt", "expires_at") || "");
-      if (expiresAt && Date.parse(expiresAt) <= serverTime) {
+      if (!campaignNeverExpires(activeOffer) && expiresAt && Date.parse(expiresAt) <= serverTime) {
         $("[data-campaign-offer]").dataset.state = "expired";
         $("[data-offer-state]").textContent = "EXPIRED";
         $("[data-offer-claim]").disabled = true;
@@ -300,7 +306,8 @@
     const remaining = pick(campaign, "remaining");
     $("[data-offer-remaining]").textContent = String(remaining === null ? Math.max(0, cap - claimed) : remaining);
     const expiresAt = String(pick(campaign, "expiresAt", "expires_at") || "");
-    const expiry = $("[data-offer-expiry]"); expiry.dateTime = expiresAt; expiry.dataset.liveCampaignExpiry = expiresAt;
+    const neverExpires = campaignNeverExpires(campaign);
+    const expiry = $("[data-offer-expiry]"); expiry.dateTime = neverExpires ? "" : expiresAt; expiry.dataset.liveCampaignExpiry = expiresAt; expiry.dataset.liveCampaignNeverExpires = String(neverExpires);
     const isPackDraft = String(pick(campaign, "rewardType", "reward_type") || "") === "pack_draft";
     show("[data-offer-pack-choice]", isPackDraft);
     const select = $("[data-offer-pack-number]"); select.replaceChildren();
@@ -315,8 +322,8 @@
     activeOffer = null;
     offerClaimBlocked = true;
     const panel = $("[data-campaign-offer]"); panel.hidden = false; panel.dataset.state = state;
-    $("[data-offer-title]").textContent = state === "expired" ? "This campaign offer expired" : "This campaign offer is unavailable";
-    $("[data-offer-state]").textContent = state.toUpperCase();
+    $("[data-offer-title]").textContent = state === "expired" ? "This campaign offer expired" : state === "disabled" ? "This campaign QR was turned off" : "This campaign offer is unavailable";
+    $("[data-offer-state]").textContent = state === "disabled" ? "QR OFF" : state.toUpperCase();
     $("[data-offer-description]").textContent = message;
     show("[data-offer-meta]", false); show("[data-offer-pack-choice]", false);
     $("[data-offer-guidance]").textContent = "You can still sign in and view rewards already saved to your campaign wallet.";
@@ -337,8 +344,9 @@
       if (!data.valid || !data.campaign) {
         const offerStatus = String(data.status || "").toLowerCase();
         const expired = offerStatus === "expired";
-        const message = expired ? "The claim window has ended." : offerStatus === "full" ? "Every available claim in this campaign has been taken." : "The link was not found or is no longer active.";
-        renderInvalidOffer(message, expired ? "expired" : "invalid");
+        const disabled = offerStatus === "disabled";
+        const message = expired ? "The claim window has ended." : disabled ? "Crack Packs has stopped this QR and link from accepting new claims." : offerStatus === "full" ? "Every available claim in this campaign has been taken." : "The link was not found or is no longer active.";
+        renderInvalidOffer(message, expired ? "expired" : disabled ? "disabled" : "invalid");
         return;
       }
       renderOfferCampaign(data.campaign);
@@ -367,14 +375,15 @@
       banner.dataset.state = attachedReferralValid ? "valid" : "invalid";
       if (attachedReferralValid && data.rotating) {
         heading.textContent = "Current owner referral attached - unlock 10% off";
-        copy.textContent = `Complete verified signup before ${data.nextBoundaryLabel} to lock in the referral. The emailed verification link may be finished afterward.`;
+        copy.textContent = `Complete the emailed verification link before ${data.nextBoundaryLabel} to lock in the referral.`;
       } else if (attachedReferralValid) {
         heading.textContent = "Friend referral attached - unlock 10% off";
         copy.textContent = "Complete verified signup to receive a one-time 10% discount code and add +1 to the friend who referred you.";
       } else if (!attachedReferralValid && data.rotating) {
-        heading.textContent = "This owner referral window expired";
-        copy.textContent = "Ask the owner for the current QR or referral link. You can still create an account, but this expired link cannot award referral credit.";
-        showStatus("This rotating owner referral has expired. Ask for the current QR or link.", "error");
+        const disabled = data.reason === "disabled";
+        heading.textContent = disabled ? "This owner referral QR was turned off" : "This owner referral window expired";
+        copy.textContent = disabled ? "Crack Packs stopped this QR and link from accepting signups. Ask the owner for an active referral." : "Ask the owner for the current QR or referral link. You can still create an account, but this expired link cannot award referral credit.";
+        showStatus(disabled ? "This owner referral QR was turned off." : "This rotating owner referral has expired. Ask for the current QR or link.", "error");
       } else {
         heading.textContent = "This referral link is invalid";
         copy.textContent = "Ask your friend for a new referral link. You can still create an account without referral credit.";
@@ -499,7 +508,7 @@
   function memberCampaignStatus(claim) {
     if (pick(claim, "redeemedAt", "redeemed_at", "usedAt", "used_at")) return "used";
     const expiresAt = String(pick(claim, "expiresAt", "expires_at") || "");
-    if (expiresAt && Date.parse(expiresAt) <= Date.now() + campaignClockOffset) return "expired";
+    if (!campaignNeverExpires(claim) && expiresAt && Date.parse(expiresAt) <= Date.now() + campaignClockOffset) return "expired";
     return "claimed";
   }
   function renderMemberCampaignClaim(claim) {
@@ -516,10 +525,11 @@
     const state = memberCampaignStatus(claim); const badge = document.createElement("span"); badge.className = `campaign-member-status ${state}`; badge.textContent = state;
     side.append(badge);
     const expiresAt = String(pick(claim, "expiresAt", "expires_at") || "");
-    if (expiresAt) {
+    const neverExpires = campaignNeverExpires(claim);
+    if (expiresAt || neverExpires) {
       const expiry = document.createElement("div"); expiry.className = "campaign-member-expiry";
-      const label = document.createElement("span"); label.textContent = "Expires: ";
-      const time = document.createElement("time"); time.dateTime = expiresAt; time.dataset.liveCampaignExpiry = expiresAt;
+      const label = document.createElement("span"); label.textContent = neverExpires ? "Availability: " : "Expires: ";
+      const time = document.createElement("time"); time.dateTime = neverExpires ? "" : expiresAt; time.dataset.liveCampaignExpiry = expiresAt; time.dataset.liveCampaignNeverExpires = String(neverExpires);
       expiry.append(label, time); side.append(expiry);
     }
     card.append(main, side);

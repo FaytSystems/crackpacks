@@ -37,11 +37,14 @@ CREATE TABLE IF NOT EXISTS offer_campaigns (
   owner_member_id TEXT NOT NULL,
   title TEXT NOT NULL CHECK(length(title) BETWEEN 1 AND 100),
   reward_type TEXT NOT NULL CHECK(reward_type IN ('percent','free_shipping','pick_a_pack','pack_draft')),
+  reward_variant TEXT CHECK(reward_variant IS NULL OR (reward_variant = 'free_single' AND reward_type = 'pick_a_pack')),
   percent INTEGER,
   max_redemptions INTEGER NOT NULL CHECK(max_redemptions BETWEEN 1 AND 500),
   pack_count INTEGER,
   offer_token TEXT NOT NULL UNIQUE CHECK(length(offer_token) BETWEEN 20 AND 80),
   expires_at TEXT NOT NULL,
+  never_expires INTEGER NOT NULL DEFAULT 0 CHECK(never_expires IN (0,1)),
+  is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
   created_at TEXT NOT NULL,
   CHECK(expires_at > created_at),
   CHECK(
@@ -53,6 +56,15 @@ CREATE TABLE IF NOT EXISTS offer_campaigns (
 );
 CREATE INDEX IF NOT EXISTS idx_offer_campaigns_created ON offer_campaigns(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_offer_campaigns_expires ON offer_campaigns(expires_at);
+CREATE TABLE IF NOT EXISTS owner_referral_controls (
+  owner_member_id TEXT NOT NULL,
+  slot_id TEXT NOT NULL,
+  is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY(owner_member_id, slot_id),
+  FOREIGN KEY(owner_member_id) REFERENCES members(id)
+);
+CREATE INDEX IF NOT EXISTS idx_owner_referral_controls_updated ON owner_referral_controls(updated_at DESC);
 CREATE TABLE IF NOT EXISTS campaign_redemptions (
   id TEXT PRIMARY KEY,
   campaign_id TEXT NOT NULL,
