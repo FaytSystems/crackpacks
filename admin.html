@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.6.1">
   <link rel="stylesheet" href="assets/css/referral.css?v=2.6.0">
   <link rel="stylesheet" href="assets/css/rewards-modal.css?v=2.1.0">
-  <link rel="stylesheet" href="assets/css/admin.css?v=3.3.2">
+  <link rel="stylesheet" href="assets/css/admin.css?v=3.3.3">
 </head>
 <body>
   <header class="site-header">
@@ -132,6 +132,7 @@
               <img data-campaign-generated-qr alt="Generated campaign QR code">
               <button class="btn btn-primary btn-small" type="button" data-campaign-download>Download QR</button>
               <button class="btn btn-outline btn-small" type="button" data-campaign-share>Share Campaign</button>
+              <button class="btn btn-outline btn-small" type="button" data-campaign-homepage>Paste to Homepage</button>
               <button class="btn btn-danger btn-small" type="button" data-campaign-generated-toggle>Turn Off QR</button>
             </div>
           </div>
@@ -312,6 +313,8 @@
           </div>
           <label>Maximum people<input name="maxRedemptions" type="number" min="1" max="500" value="25" inputmode="numeric" required></label>
         </div>
+        <label class="campaign-homepage-option"><input name="featureHomepage" type="checkbox" data-campaign-homepage-on-create> Paste to Homepage after creation</label>
+        <p class="fine-print">Homepage promos require a timed expiration so the public countdown can run. Indefinite QR campaigns can still be shared manually.</p>
         <p class="campaign-qr-included"><strong>QR INCLUDED</strong><span>The campaign link, scannable QR, branded social graphic, and sharing controls are generated together.</span></p>
         <div class="campaign-form-status" data-campaign-form-status aria-live="polite"></div>
         <div class="campaign-modal-actions">
@@ -469,6 +472,6 @@
 
   <script src="assets/js/config.js?v=3.0.0"></script>
   <script src="assets/js/nav-profile.js?v=2.6.1"></script>
-  <script src="assets/js/admin.js?v=3.3.3"></script>
+  <script src="assets/js/admin.js?v=3.3.4"></script>
 </body>
 </html>

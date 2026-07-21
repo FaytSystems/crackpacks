@@ -23,6 +23,13 @@ CREATE TABLE IF NOT EXISTS member_email_preferences (
   FOREIGN KEY(member_id) REFERENCES members(id)
 );
 CREATE INDEX IF NOT EXISTS idx_member_email_preferences_alerts ON member_email_preferences(drop_alerts_opt_in, updated_at DESC);
+CREATE TABLE IF NOT EXISTS site_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL DEFAULT '',
+  updated_by_member_id TEXT,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY(updated_by_member_id) REFERENCES members(id)
+);
 CREATE TABLE IF NOT EXISTS sessions (
   token_hash TEXT PRIMARY KEY, member_id TEXT NOT NULL, expires_at TEXT NOT NULL, created_at TEXT NOT NULL,
   FOREIGN KEY(member_id) REFERENCES members(id)

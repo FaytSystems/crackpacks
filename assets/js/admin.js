@@ -892,7 +892,10 @@
   }
   function updateGeneratedCampaignControls(campaign) {
     const active = campaignIsActive(campaign);
+    const homepageButton = $("[data-campaign-homepage]");
     ["[data-campaign-copy]", "[data-campaign-download]", "[data-campaign-share]"].forEach(selector => { $(selector).disabled = !active; });
+    homepageButton.disabled = !campaignCanFeatureHomepage(campaign) && !pick(campaign, "homepageFeatured", "homepage_featured");
+    homepageButton.textContent = pick(campaign, "homepageFeatured", "homepage_featured") ? "Remove from Homepage" : "Paste to Homepage";
     const toggle = $("[data-campaign-generated-toggle]");
     toggle.textContent = active ? "Turn Off QR" : "Turn On QR";
     toggle.classList.toggle("btn-danger", active);
@@ -900,6 +903,37 @@
     $("[data-campaign-generated]").classList.toggle("is-qr-disabled", !active);
     $("[data-campaign-generated] .campaign-live-chip").textContent = active ? "CAMPAIGN READY" : "QR TURNED OFF";
     if (!active) $("[data-campaign-generated-qr]").removeAttribute("src");
+  }
+  function campaignCanFeatureHomepage(campaign) {
+    const expiresAt = String(pick(campaign, "expiresAt", "expires_at") || "");
+    const neverExpires = pick(campaign, "neverExpires", "never_expires") === true || Number(pick(campaign, "neverExpires", "never_expires") || 0) === 1;
+    const status = String(pick(campaign, "status") || "").toLowerCase();
+    return campaignIsActive(campaign) && !neverExpires && expiresAt && Date.parse(expiresAt) > Date.now() + campaignClockOffset && status !== "full" && Number(pick(campaign, "remaining", "remainingRedemptions", "remaining_redemptions") || 0) > 0;
+  }
+  async function setCampaignHomepage(campaign, button) {
+    const campaignId = String(pick(campaign, "id") || "");
+    if (!campaignId) throw new Error("Campaign ID is missing.");
+    const currentlyFeatured = Boolean(pick(campaign, "homepageFeatured", "homepage_featured"));
+    const nextFeatured = !currentlyFeatured;
+    if (nextFeatured && !campaignCanFeatureHomepage(campaign)) throw new Error("Only active timed campaigns with remaining claims can be pasted to the homepage.");
+    if (nextFeatured && !confirm(`Paste "${String(pick(campaign, "title") || "this campaign")}" to the homepage until it expires?`)) return;
+    if (!nextFeatured && !confirm(`Remove "${String(pick(campaign, "title") || "this campaign")}" from the homepage?`)) return;
+    const original = button.textContent;
+    button.disabled = true;
+    button.textContent = nextFeatured ? "Pasting..." : "Removing...";
+    try {
+      const data = await request(`/admin/campaigns/${encodeURIComponent(campaignId)}/homepage`, { method: "POST", body: JSON.stringify({ featured: nextFeatured }) });
+      if (generatedCampaign && String(pick(generatedCampaign, "id") || "") === campaignId && data.campaign) {
+        generatedCampaign = data.campaign;
+        updateGeneratedCampaignControls(generatedCampaign);
+      }
+      await refreshCampaigns();
+      showStatus(nextFeatured ? "Promo pasted to the homepage with a live countdown." : "Promo removed from the homepage.", "success");
+    } finally {
+      button.disabled = false;
+      if (generatedCampaign && String(pick(generatedCampaign, "id") || "") === campaignId) updateGeneratedCampaignControls(generatedCampaign);
+      else button.textContent = original;
+    }
   }
   async function toggleCampaign(campaign, button) {
     const campaignId = String(pick(campaign, "id") || "");
@@ -1172,7 +1206,11 @@
       });
       const shareButton = document.createElement("button"); shareButton.className = "btn btn-outline btn-small"; shareButton.type = "button"; shareButton.textContent = "Share";
       shareButton.addEventListener("click", () => openCampaignShare(campaign).catch(error => showStatus(error.message, "error")));
-      actions.append(copyButton, downloadButton, shareButton);
+      const homepageButton = document.createElement("button"); homepageButton.className = "btn btn-outline btn-small"; homepageButton.type = "button";
+      homepageButton.textContent = pick(campaign, "homepageFeatured", "homepage_featured") ? "Remove from Homepage" : "Paste to Homepage";
+      homepageButton.disabled = !campaignCanFeatureHomepage(campaign) && !pick(campaign, "homepageFeatured", "homepage_featured");
+      homepageButton.addEventListener("click", () => setCampaignHomepage(campaign, homepageButton).catch(error => { homepageButton.disabled = false; showStatus(error.message, "error"); }));
+      actions.append(copyButton, downloadButton, shareButton, homepageButton);
     }
     const toggleButton = document.createElement("button"); toggleButton.className = `btn ${active ? "btn-danger" : "btn-primary"} btn-small`; toggleButton.type = "button"; toggleButton.textContent = active ? "Turn Off QR" : "Turn On QR";
     toggleButton.addEventListener("click", () => toggleCampaign(campaign, toggleButton).catch(error => { toggleButton.disabled = false; showStatus(error.message, "error"); }));
@@ -1660,6 +1698,7 @@
     const expiresInValue = Number(form.get("expiresInValue"));
     const expiresInUnit = String(form.get("expiresInUnit") || "hours");
     const neverExpires = expiresInUnit === "indefinite";
+    const featureHomepage = form.get("featureHomepage") === "on";
     const expiresInHours = expiresInUnit === "days" ? expiresInValue * 24 : expiresInValue;
     const inventoryItemId = String(form.get("inventoryItemId") || "");
     if (rewardType === "pack_draft" && packCount < maxRedemptions) {
@@ -1670,6 +1709,11 @@
     if (!neverExpires && (!Number.isFinite(expiresInHours) || expiresInHours < 1 || expiresInHours > 168 || (expiresInUnit === "days" && (expiresInValue < 1 || expiresInValue > 7)))) {
       setCampaignFormStatus("Time to Expire must be 1–168 hours or 1–7 days.", "error");
       $("[data-campaign-form] input[name='expiresInValue']").focus();
+      return;
+    }
+    if (featureHomepage && neverExpires) {
+      setCampaignFormStatus("Paste to Homepage requires a timed expiration so the homepage countdown can run.", "error");
+      $("[data-campaign-expiry-unit]").focus();
       return;
     }
     if (rewardType === "product" && !inventoryItemId) {
@@ -1695,8 +1739,12 @@
       formElement.reset(); clearCampaignInventorySelection(); syncCampaignFields(); syncCampaignExpiryUnit(); closeCampaignModal();
       try { await renderGeneratedCampaign(data.campaign); }
       catch (qrError) { showStatus(`Campaign created, but its QR could not load: ${qrError.message}`, "error"); }
+      if (featureHomepage) {
+        const homepageData = await request(`/admin/campaigns/${encodeURIComponent(String(pick(data.campaign, "id") || ""))}/homepage`, { method: "POST", body: JSON.stringify({ featured: true }) });
+        if (homepageData.campaign) await renderGeneratedCampaign(homepageData.campaign);
+      }
       await refreshCampaigns();
-      if ($("[data-campaign-generated-qr]").src) showStatus("Campaign created. Its link and QR are ready.", "success");
+      if ($("[data-campaign-generated-qr]").src) showStatus(featureHomepage ? "Campaign created and pasted to the homepage with a countdown." : "Campaign created. Its link and QR are ready.", "success");
     } catch (error) {
       const message = campaignWeeklyError(error);
       setCampaignFormStatus(message, "error");
@@ -1706,6 +1754,7 @@
   $("[data-campaign-copy]").addEventListener("click", () => copyGeneratedCampaign().catch(error => showStatus(error.message, "error")));
   $("[data-campaign-download]").addEventListener("click", event => downloadCampaignQr(event.currentTarget).catch(error => showStatus(error.message, "error")));
   $("[data-campaign-share]").addEventListener("click", () => generatedCampaign ? openCampaignShare(generatedCampaign).catch(error => showStatus(error.message, "error")) : showStatus("Generate a campaign before sharing it.", "error"));
+  $("[data-campaign-homepage]").addEventListener("click", event => generatedCampaign ? setCampaignHomepage(generatedCampaign, event.currentTarget).catch(error => showStatus(error.message, "error")) : showStatus("Generate a campaign before pasting it to the homepage.", "error"));
   $("[data-campaign-generated-toggle]").addEventListener("click", event => generatedCampaign ? toggleCampaign(generatedCampaign, event.currentTarget).catch(error => showStatus(error.message, "error")) : showStatus("Generate a campaign before changing its QR status.", "error"));
   $("[data-campaign-refresh]").addEventListener("click", () => refreshCampaigns().catch(error => showStatus(error.message, "error")));
   $("[data-campaign-search]").addEventListener("input", event => renderCampaigns(campaignListState, event.currentTarget.value));

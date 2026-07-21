@@ -104,6 +104,8 @@ Only the verified owner account with a fresh passkey step-up may create campaign
 
 Campaigns may last from 1 hour through 7 days (168 hours), or may be explicitly Indefinite, and may allow up to 500 redemptions. The owner dashboard accepts hours or days; day values support thousandth-day precision, such as `3.05`. Indefinite campaigns remain claimable until their redemption cap is reached and should be manually retired by controlling distribution of their link. Offer URLs use an unguessable public token at `https://crackpacks.com/referral.html?offer=TOKEN`. The token identifies a public offer; it never authenticates the owner or grants dashboard access. Campaign QR images are rendered inside the Worker and do not send offer URLs to a third-party QR service.
 
+Timed campaigns can be pasted to the homepage from the owner dashboard. Only one campaign is featured at a time. The homepage reads `GET /campaign/homepage`, shows a public-safe title/reward/claim link, and displays a live countdown until the campaign expires. Indefinite campaigns are intentionally blocked from homepage placement because the homepage promo needs expiration urgency.
+
 Members must finish email, passkey, and identity verification before claiming. The owner cannot claim their own campaign. Each campaign code and claim rank is unique, and pack draft numbers can be selected only once. A member may receive only one newly issued reward code per Thursday-to-Wednesday week, resetting Thursday at 12:00 AM in `America/New_York`. This weekly rule covers both campaign claims and the legacy one-time discount code. Reopening the same already-claimed campaign or legacy discount remains idempotent and returns the existing code.
 
 Campaign API routes:
@@ -112,7 +114,9 @@ Campaign API routes:
 - `GET /admin/campaigns` returns campaigns and their member redemption records.
 - `POST /admin/campaigns/:id/qr` returns a first-party SVG QR.
 - `POST /admin/campaign-redemptions/:id/redeem` permanently marks one campaign reward used.
+- `POST /admin/campaigns/:id/homepage` pastes or removes one timed campaign from the homepage promo slot.
 - `POST /campaign/status` accepts `{ "offerToken": "..." }` and returns public-safe availability.
+- `GET /campaign/homepage` returns the current public-safe homepage promo, or `campaign: null` when none is active.
 - `POST /campaign/claim` accepts `{ "offerToken": "...", "packNumber": 1 }`; `packNumber` is used only for pack drafts.
 - `GET /campaigns/mine` returns the signed-in member's campaign history and legacy discount, if any.
 

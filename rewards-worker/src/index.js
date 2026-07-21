@@ -5,7 +5,7 @@ import { calculateChannelPricing, channelPricingErrors } from "./channel-pricing
 import { sanitizeEasyPostTracker, verifyEasyPostWebhook } from "./easypost-tracking.js";
 import { stripeRequest, verifyStripeWebhook } from "./stripe-commerce.js";
 
-const VERSION = "4.1.0";
+const VERSION = "4.2.0";
 const CAMPAIGN_REWARD_TYPES = new Set(["percent", "free_shipping", "pick_a_pack", "pack_draft", "free_single", "product"]);
 const MAX_CAMPAIGN_REDEMPTIONS = 500;
 const STORE_CURRENCIES = new Set(["USD", "CAD", "EUR", "GBP", "AUD", "NZD", "JPY", "CHF", "SEK", "NOK", "DKK", "PLN", "CZK", "HUF", "RON"]);
@@ -713,7 +713,7 @@ function adminRedemptionView(row) {
     whatnotUsername: row.whatnot_username || ""
   };
 }
-function adminCampaignView(campaign, redemptions, env, epochMs = Date.now()) {
+function adminCampaignView(campaign, redemptions, env, epochMs = Date.now(), homepageCampaignId = "") {
   const redemptionCount = redemptions.length;
   return {
     id: campaign.id,
@@ -729,6 +729,7 @@ function adminCampaignView(campaign, redemptions, env, epochMs = Date.now()) {
     neverExpires: campaignNeverExpires(campaign),
     product: campaignProduct(campaign, true),
     isActive: campaignIsActive(campaign),
+    homepageFeatured: Boolean(homepageCampaignId && campaign.id === homepageCampaignId),
     status: campaignState(campaign, redemptionCount, epochMs),
     claimedCount: redemptionCount,
     remaining: Math.max(0, Number(campaign.max_redemptions) - redemptionCount),
@@ -738,33 +739,40 @@ function adminCampaignView(campaign, redemptions, env, epochMs = Date.now()) {
     redemptions: redemptions.map(adminRedemptionView)
   };
 }
+function publicCampaignView(campaign, redemptions, env, epochMs = Date.now()) {
+  const redemptionCount = redemptions.length;
+  return {
+    title: campaign.title,
+    rewardType: campaignRewardType(campaign),
+    percent: campaign.percent === null || campaign.percent === undefined ? null : Number(campaign.percent),
+    maxRedemptions: Number(campaign.max_redemptions),
+    packCount: campaign.pack_count === null || campaign.pack_count === undefined ? null : Number(campaign.pack_count),
+    url: campaignUrl(campaign, env),
+    expiresAt: campaignNeverExpires(campaign) ? null : campaign.expires_at,
+    neverExpires: campaignNeverExpires(campaign),
+    product: campaignProduct(campaign),
+    isActive: campaignIsActive(campaign),
+    status: campaignState(campaign, redemptionCount, epochMs),
+    claimedCount: redemptionCount,
+    remaining: Math.max(0, Number(campaign.max_redemptions) - redemptionCount),
+    redemptionCount,
+    remainingRedemptions: Math.max(0, Number(campaign.max_redemptions) - redemptionCount),
+    availablePackNumbers: availablePackNumbers(campaign, redemptions)
+  };
+}
 async function publicCampaignStatus(env, offerToken, epochMs = Date.now()) {
   const campaign = await env.DB.prepare(`SELECT * FROM offer_campaigns WHERE offer_token=?`).bind(offerToken).first();
   if (!campaign) return { valid: false, status: "not_found", serverNow: new Date(epochMs).toISOString(), campaign: null };
   const rows = await env.DB.prepare(`SELECT pack_number FROM campaign_redemptions WHERE campaign_id=? ORDER BY claim_rank`).bind(campaign.id).all();
   const redemptions = rows.results || [];
   const redemptionCount = redemptions.length;
+  const publicView = publicCampaignView(campaign, redemptions, env, epochMs);
   const status = campaignState(campaign, redemptionCount, epochMs);
   return {
     valid: status === "active",
     status,
     serverNow: new Date(epochMs).toISOString(),
-    campaign: {
-      title: campaign.title,
-      rewardType: campaignRewardType(campaign),
-      percent: campaign.percent === null || campaign.percent === undefined ? null : Number(campaign.percent),
-      maxRedemptions: Number(campaign.max_redemptions),
-      packCount: campaign.pack_count === null || campaign.pack_count === undefined ? null : Number(campaign.pack_count),
-      expiresAt: campaignNeverExpires(campaign) ? null : campaign.expires_at,
-      neverExpires: campaignNeverExpires(campaign),
-      product: campaignProduct(campaign),
-      isActive: campaignIsActive(campaign),
-      claimedCount: redemptionCount,
-      remaining: Math.max(0, Number(campaign.max_redemptions) - redemptionCount),
-      redemptionCount,
-      remainingRedemptions: Math.max(0, Number(campaign.max_redemptions) - redemptionCount),
-      availablePackNumbers: availablePackNumbers(campaign, redemptions)
-    }
+    campaign: publicView
   };
 }
 async function weeklyReservation(env, memberId, week, sourceType, sourceId, createdAt) {
@@ -1071,6 +1079,19 @@ async function route(request, env, cors, ctx) {
     const offerToken = offerTokenValue(data?.offerToken);
     if (!offerToken) return response({ error: "Enter a valid offer token." }, 400, cors);
     return response(await publicCampaignStatus(env, offerToken, Date.now()), 200, cors);
+  }
+  if (url.pathname === "/campaign/homepage" && request.method === "GET") {
+    const epochMs = Date.now();
+    const setting = await env.DB.prepare(`SELECT value FROM site_settings WHERE key='homepage_campaign_id'`).first();
+    if (!setting?.value) return response({ valid: false, status: "empty", serverNow: new Date(epochMs).toISOString(), campaign: null }, 200, cors);
+    const campaign = await env.DB.prepare(`SELECT * FROM offer_campaigns WHERE id=?`).bind(setting.value).first();
+    if (!campaign) return response({ valid: false, status: "missing", serverNow: new Date(epochMs).toISOString(), campaign: null }, 200, cors);
+    const rows = await env.DB.prepare(`SELECT pack_number FROM campaign_redemptions WHERE campaign_id=? ORDER BY claim_rank`).bind(campaign.id).all();
+    const redemptions = rows.results || [];
+    const status = campaignState(campaign, redemptions.length, epochMs);
+    if (campaignNeverExpires(campaign)) return response({ valid: false, status: "no_expiration", serverNow: new Date(epochMs).toISOString(), campaign: null }, 200, cors);
+    if (status !== "active") return response({ valid: false, status, serverNow: new Date(epochMs).toISOString(), campaign: null }, 200, cors);
+    return response({ valid: true, status, serverNow: new Date(epochMs).toISOString(), campaign: publicCampaignView(campaign, redemptions, env, epochMs) }, 200, cors);
   }
   if (url.pathname === "/auth/request" && request.method === "POST") {
     const data = await body(request); const email = normalizeEmail(data.email);
@@ -1852,7 +1873,7 @@ async function route(request, env, cors, ctx) {
   }
   if (url.pathname === "/admin/campaigns" && request.method === "GET") {
     if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
-    const [campaignRows, redemptionRows] = await Promise.all([
+    const [campaignRows, redemptionRows, homepageSetting] = await Promise.all([
       env.DB.prepare(`SELECT * FROM offer_campaigns WHERE owner_member_id=? ORDER BY created_at DESC`).bind(member.id).all(),
       env.DB.prepare(`
         SELECT cr.*,c.title,c.reward_type,c.reward_variant,c.percent,c.max_redemptions,c.pack_count,c.expires_at,c.never_expires,c.inventory_item_id,c.product_name_snapshot,c.product_upc_snapshot,m.email,m.whatnot_username
@@ -1861,7 +1882,8 @@ async function route(request, env, cors, ctx) {
         JOIN members m ON m.id=cr.member_id
         WHERE c.owner_member_id=?
         ORDER BY c.created_at DESC,cr.claim_rank
-      `).bind(member.id).all()
+      `).bind(member.id).all(),
+      env.DB.prepare(`SELECT value FROM site_settings WHERE key='homepage_campaign_id'`).first()
     ]);
     const byCampaign = new Map();
     for (const redemption of redemptionRows.results || []) {
@@ -1869,7 +1891,8 @@ async function route(request, env, cors, ctx) {
       byCampaign.get(redemption.campaign_id).push(redemption);
     }
     const epochMs = Date.now();
-    return response({ serverNow: new Date(epochMs).toISOString(), campaigns: (campaignRows.results || []).map(campaign => adminCampaignView(campaign, byCampaign.get(campaign.id) || [], env, epochMs)) }, 200, cors);
+    const homepageCampaignId = String(homepageSetting?.value || "");
+    return response({ serverNow: new Date(epochMs).toISOString(), homepageCampaignId, campaigns: (campaignRows.results || []).map(campaign => adminCampaignView(campaign, byCampaign.get(campaign.id) || [], env, epochMs, homepageCampaignId)) }, 200, cors);
   }
   const adminCampaignQrMatch = url.pathname.match(/^\/admin\/campaigns\/([0-9a-f-]{36})\/qr$/i);
   if (adminCampaignQrMatch && request.method === "POST") {
@@ -1894,13 +1917,39 @@ async function route(request, env, cors, ctx) {
     }
     if (Number(updated.meta?.changes || 0) !== 1) return response({ error: "Campaign not found." }, 404, cors);
     const campaign = await env.DB.prepare(`SELECT * FROM offer_campaigns WHERE id=? AND owner_member_id=?`).bind(adminCampaignStatusMatch[1], member.id).first();
+    if (!data.active) await env.DB.prepare(`DELETE FROM site_settings WHERE key='homepage_campaign_id' AND value=?`).bind(campaign.id).run();
     const redemptions = await env.DB.prepare(`
       SELECT cr.*,c.title,c.reward_type,c.reward_variant,c.percent,c.max_redemptions,c.pack_count,c.expires_at,c.never_expires,c.inventory_item_id,c.product_name_snapshot,c.product_upc_snapshot,m.email,m.whatnot_username
       FROM campaign_redemptions cr JOIN offer_campaigns c ON c.id=cr.campaign_id JOIN members m ON m.id=cr.member_id
       WHERE cr.campaign_id=? ORDER BY cr.claim_rank
     `).bind(campaign.id).all();
     await audit(env, request, data.active ? "campaign_qr_enabled" : "campaign_qr_disabled", member.id, campaign.id);
-    return response({ campaign: adminCampaignView(campaign, redemptions.results || [], env, Date.now()) }, 200, cors);
+    const homepageSetting = await env.DB.prepare(`SELECT value FROM site_settings WHERE key='homepage_campaign_id'`).first();
+    return response({ campaign: adminCampaignView(campaign, redemptions.results || [], env, Date.now(), String(homepageSetting?.value || "")) }, 200, cors);
+  }
+  const adminCampaignHomepageMatch = url.pathname.match(/^\/admin\/campaigns\/([0-9a-f-]{36})\/homepage$/i);
+  if (adminCampaignHomepageMatch && request.method === "POST") {
+    if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
+    const data = await body(request);
+    if (typeof data?.featured !== "boolean") return response({ error: "Choose whether this campaign should appear on the homepage." }, 400, cors);
+    const campaign = await env.DB.prepare(`SELECT * FROM offer_campaigns WHERE id=? AND owner_member_id=?`).bind(adminCampaignHomepageMatch[1], member.id).first();
+    if (!campaign) return response({ error: "Campaign not found." }, 404, cors);
+    const redemptions = await env.DB.prepare(`
+      SELECT cr.*,c.title,c.reward_type,c.reward_variant,c.percent,c.max_redemptions,c.pack_count,c.expires_at,c.never_expires,c.inventory_item_id,c.product_name_snapshot,c.product_upc_snapshot,m.email,m.whatnot_username
+      FROM campaign_redemptions cr JOIN offer_campaigns c ON c.id=cr.campaign_id JOIN members m ON m.id=cr.member_id
+      WHERE cr.campaign_id=? ORDER BY cr.claim_rank
+    `).bind(campaign.id).all();
+    const epochMs = Date.now();
+    if (data.featured && campaignNeverExpires(campaign)) return response({ error: "Homepage promos need an expiration so the countdown can be shown. Create a timed campaign instead." }, 409, cors);
+    if (data.featured && campaignState(campaign, (redemptions.results || []).length, epochMs) !== "active") return response({ error: "Only an active campaign with available redemptions can be pasted to the homepage." }, 409, cors);
+    if (data.featured) {
+      await env.DB.prepare(`INSERT INTO site_settings(key,value,updated_by_member_id,updated_at) VALUES('homepage_campaign_id',?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_by_member_id=excluded.updated_by_member_id,updated_at=excluded.updated_at`).bind(campaign.id, member.id, now()).run();
+      await audit(env, request, "homepage_campaign_featured", member.id, campaign.id);
+    } else {
+      await env.DB.prepare(`DELETE FROM site_settings WHERE key='homepage_campaign_id' AND value=?`).bind(campaign.id).run();
+      await audit(env, request, "homepage_campaign_removed", member.id, campaign.id);
+    }
+    return response({ campaign: adminCampaignView(campaign, redemptions.results || [], env, epochMs, data.featured ? campaign.id : "") }, 200, cors);
   }
   const adminCampaignRedeemMatch = url.pathname.match(/^\/admin\/campaign-redemptions\/([0-9a-f-]{36})\/redeem$/i);
   if (adminCampaignRedeemMatch && request.method === "POST") {
