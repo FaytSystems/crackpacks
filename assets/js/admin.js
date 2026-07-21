@@ -1344,7 +1344,7 @@
   function syncEmailComposer() {
     const count = selectedEmailMembers.size;
     const summary = $("[data-email-recipient-summary]");
-    summary.textContent = emailAudience === "all" ? "Audience: every verified Crack Packs member." : emailAudience === "selected" ? `Audience: ${count} selected member${count === 1 ? "" : "s"}.` : emailAudience === "tier" ? `Audience: verified members currently in the ${emailTier} referral tier.` : "No audience selected.";
+    summary.textContent = emailAudience === "all" ? "Audience: every verified Crack Packs member." : emailAudience === "alerts" ? "Audience: members opted into Drop Alerts." : emailAudience === "selected" ? `Audience: ${count} selected member${count === 1 ? "" : "s"}.` : emailAudience === "tier" ? `Audience: verified members currently in the ${emailTier} referral tier.` : "No audience selected.";
     const chips = $("[data-email-selected-chips]"); chips.replaceChildren();
     if (emailAudience === "selected") selectedEmailMembers.forEach(member => {
       const chip = document.createElement("button"); chip.type = "button"; chip.className = "email-recipient-chip"; chip.textContent = `${member.whatnotUsername ? `@${member.whatnotUsername}` : member.email} ×`;
@@ -1582,6 +1582,7 @@
     finally { button.disabled = false; button.textContent = editingInventoryId ? "Save Changes" : "Save Product"; }
   });
   $("[data-email-all]").addEventListener("click", () => { emailAudience = "all"; selectedEmailMembers.clear(); syncEmailComposer(); setMasterEmailStatus("Message All selected. Review your subject and message before sending.", "success"); });
+  $("[data-email-alerts]").addEventListener("click", () => { emailAudience = "alerts"; selectedEmailMembers.clear(); syncEmailComposer(); setMasterEmailStatus("Drop Alerts selected. This sends only to members who opted into alerts.", "success"); });
   $("[data-email-select-open]").addEventListener("click", openEmailMemberSelection);
   $("[data-email-tier-use]").addEventListener("click", () => {
     emailTier = String($("[data-email-tier]").value || "");
@@ -1603,11 +1604,12 @@
   $("[data-master-email-form]").addEventListener("submit", async event => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const payload = { audience: emailAudience, tier: emailTier, subject: String(form.get("subject") || "").trim(), message: String(form.get("message") || "").trim() };
+    const payload = { audience: emailAudience, senderKey: String(form.get("senderKey") || "rewards"), tier: emailTier, subject: String(form.get("subject") || "").trim(), message: String(form.get("message") || "").trim() };
     if (emailAudience === "selected") payload.memberIds = [...selectedEmailMembers.keys()];
-    const audienceLabel = emailAudience === "all" ? "every verified member" : emailAudience === "tier" ? `the ${emailTier} referral tier` : `${selectedEmailMembers.size} selected member${selectedEmailMembers.size === 1 ? "" : "s"}`;
-    if (!emailAudience || (emailAudience === "selected" && !selectedEmailMembers.size) || (emailAudience === "tier" && !emailTier)) { setMasterEmailStatus("Choose All Members, Select Members, or a Referral Tier first.", "error"); return; }
-    if (!confirm(`Send \"${payload.subject}\" to ${audienceLabel}?`)) return;
+    const senderLabel = $("[data-email-sender]")?.selectedOptions?.[0]?.textContent || "Rewards - rewards@crackpacks.com";
+    const audienceLabel = emailAudience === "all" ? "every verified member" : emailAudience === "alerts" ? "Drop Alerts subscribers" : emailAudience === "tier" ? `the ${emailTier} referral tier` : `${selectedEmailMembers.size} selected member${selectedEmailMembers.size === 1 ? "" : "s"}`;
+    if (!emailAudience || (emailAudience === "selected" && !selectedEmailMembers.size) || (emailAudience === "tier" && !emailTier)) { setMasterEmailStatus("Choose All Members, Drop Alerts, Select Members, or a Referral Tier first.", "error"); return; }
+    if (!confirm(`Send \"${payload.subject}\" from ${senderLabel} to ${audienceLabel}?`)) return;
     const button = $("[data-email-send]"); button.disabled = true; button.textContent = "Sending..."; setMasterEmailStatus("");
     try {
       const data = await request("/admin/email", { method: "POST", body: JSON.stringify(payload) });

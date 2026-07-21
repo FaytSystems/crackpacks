@@ -29,9 +29,11 @@ Stripe public business links:
 - Support: `support@crackpacks.com`
 
 Order, shipping, delivery, and refund mail is sent from
-`orders@crackpacks.com`. Code Generator rewards and selected-member messages
-use `rewards@crackpacks.com`. New paid-order notices go to
-`robertreese@faytsystems.com`.
+`orders@crackpacks.com`. Code Generator rewards default to
+`rewards@crackpacks.com`. The owner dashboard email composer can send from
+`rewards@crackpacks.com`, `alerts@crackpacks.com`, `orders@crackpacks.com`,
+`support@crackpacks.com`, or `hello@crackpacks.com`. New paid-order notices go
+to `robertreese@faytsystems.com`.
 
 Label purchase remains manual. Payment creates the order and preserves the
 EasyPost shipment/rate choice; the owner buys the label separately and attaches
@@ -61,7 +63,11 @@ The included internal checker accepts any valid verified email address and enfor
    - `npx wrangler secret put EASYPOST_TEST_API_KEY`
    - `npx wrangler secret put SHIP_FROM_ADDRESS_JSON`
 5. Run `npm run db:remote`.
-6. Configure Cloudflare Email Routing so `rewards@crackpacks.com` may send.
+6. Configure Cloudflare Email Routing so `rewards@crackpacks.com`,
+   `orders@crackpacks.com`, `alerts@crackpacks.com`,
+   `support@crackpacks.com`, and `hello@crackpacks.com` route to the inboxes
+   you want to monitor. Also verify the `crackpacks.com` sender domain in
+   Resend so those addresses can send from the owner email composer.
 7. Run `npm run deploy`.
 8. Confirm `https://rewards-api.crackpacks.com/health`.
 

@@ -11,9 +11,18 @@ CREATE TABLE IF NOT EXISTS members (
 CREATE TABLE IF NOT EXISTS login_codes (
   id TEXT PRIMARY KEY, email TEXT NOT NULL, code_hash TEXT NOT NULL,
   auth_flow TEXT NOT NULL DEFAULT 'legacy', referrer_member_id TEXT,
+  signup_intent TEXT NOT NULL DEFAULT '',
   expires_at TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, used_at TEXT, created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_login_codes_email ON login_codes(email, created_at);
+CREATE TABLE IF NOT EXISTS member_email_preferences (
+  member_id TEXT PRIMARY KEY,
+  drop_alerts_opt_in INTEGER NOT NULL DEFAULT 0 CHECK(drop_alerts_opt_in IN (0,1)),
+  drop_alerts_opted_at TEXT,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY(member_id) REFERENCES members(id)
+);
+CREATE INDEX IF NOT EXISTS idx_member_email_preferences_alerts ON member_email_preferences(drop_alerts_opt_in, updated_at DESC);
 CREATE TABLE IF NOT EXISTS sessions (
   token_hash TEXT PRIMARY KEY, member_id TEXT NOT NULL, expires_at TEXT NOT NULL, created_at TEXT NOT NULL,
   FOREIGN KEY(member_id) REFERENCES members(id)

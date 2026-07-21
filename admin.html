@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.6.1">
   <link rel="stylesheet" href="assets/css/referral.css?v=2.6.0">
   <link rel="stylesheet" href="assets/css/rewards-modal.css?v=2.1.0">
-  <link rel="stylesheet" href="assets/css/admin.css?v=3.3.1">
+  <link rel="stylesheet" href="assets/css/admin.css?v=3.3.2">
 </head>
 <body>
   <header class="site-header">
@@ -178,6 +178,7 @@
           <p>Choose every verified member or build a group by searching names, Whatnot usernames, or email addresses.</p>
           <div class="email-audience-actions">
             <button class="btn btn-primary" type="button" data-email-all>Message All</button>
+            <button class="btn btn-outline" type="button" data-email-alerts>Drop Alerts</button>
             <button class="btn btn-outline" type="button" data-email-select-open>Select Few</button>
             <label>Referral Tier<select data-email-tier><option value="">Choose tier</option><option>Starter</option><option>Crew</option><option>Breaker</option><option>Headliner</option><option>Legend</option></select></label>
             <button class="btn btn-outline" type="button" data-email-tier-use>Use Tier</button>
@@ -185,6 +186,13 @@
           <div class="email-recipient-summary" data-email-recipient-summary>No audience selected.</div>
           <div class="email-selected-chips" data-email-selected-chips></div>
           <form class="master-email-form" data-master-email-form>
+            <label>Send from<select name="senderKey" data-email-sender>
+              <option value="rewards">Rewards - rewards@crackpacks.com</option>
+              <option value="alerts">Drop Alerts - alerts@crackpacks.com</option>
+              <option value="orders">Orders &amp; Tracking - orders@crackpacks.com</option>
+              <option value="support">Support - support@crackpacks.com</option>
+              <option value="hello">Hello - hello@crackpacks.com</option>
+            </select></label>
             <label>Subject<input name="subject" maxlength="120" required placeholder="Crack Packs live-show update"></label>
             <label>Message<textarea name="message" maxlength="5000" required rows="8" placeholder="Write the member message here, then paste a Code Generator reward link..."></textarea></label>
             <button class="btn btn-outline btn-small" type="button" data-email-paste-reward>Paste Latest Reward Link</button>
@@ -461,6 +469,6 @@
 
   <script src="assets/js/config.js?v=3.0.0"></script>
   <script src="assets/js/nav-profile.js?v=2.6.1"></script>
-  <script src="assets/js/admin.js?v=3.3.2"></script>
+  <script src="assets/js/admin.js?v=3.3.3"></script>
 </body>
 </html>

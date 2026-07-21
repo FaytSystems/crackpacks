@@ -404,11 +404,9 @@
 
   document.querySelector("[data-newsletter]")?.addEventListener("submit", event => {
     event.preventDefault();
-    const form = event.currentTarget;
-    const email = form.querySelector('input[type="email"]')?.value.trim() || "";
     const target = new URL("referral.html", window.location.href);
     target.searchParams.set("mode", "signup");
-    if (email) target.searchParams.set("email", email);
+    target.searchParams.set("intent", "alerts");
     window.location.assign(target.href);
   });
 

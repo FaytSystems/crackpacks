@@ -5,7 +5,7 @@ import { calculateChannelPricing, channelPricingErrors } from "./channel-pricing
 import { sanitizeEasyPostTracker, verifyEasyPostWebhook } from "./easypost-tracking.js";
 import { stripeRequest, verifyStripeWebhook } from "./stripe-commerce.js";
 
-const VERSION = "4.0.0";
+const VERSION = "4.1.0";
 const CAMPAIGN_REWARD_TYPES = new Set(["percent", "free_shipping", "pick_a_pack", "pack_draft", "free_single", "product"]);
 const MAX_CAMPAIGN_REDEMPTIONS = 500;
 const STORE_CURRENCIES = new Set(["USD", "CAD", "EUR", "GBP", "AUD", "NZD", "JPY", "CHF", "SEK", "NOK", "DKK", "PLN", "CZK", "HUF", "RON"]);
@@ -160,17 +160,30 @@ const sendOrderEmail = (env, to, subject, html, idempotencyKey) => sendEmail(
   env, to, subject, html, idempotencyKey,
   { email: env.ORDER_FROM_EMAIL || "orders@crackpacks.com", name: "Crack Packs Orders" }
 );
-async function sendMemberEmailBatch(env, recipients, subject, message, idempotencyKey) {
+function memberEmailSender(env, key) {
+  const senders = {
+    rewards: { email: "rewards@crackpacks.com", name: "Crack Packs Rewards" },
+    alerts: { email: env.ALERTS_FROM_EMAIL || "alerts@crackpacks.com", name: "Crack Packs Alerts" },
+    orders: { email: env.ORDER_FROM_EMAIL || "orders@crackpacks.com", name: "Crack Packs Orders" },
+    support: { email: env.SUPPORT_EMAIL || "support@crackpacks.com", name: "Crack Packs Support" },
+    hello: { email: env.HELLO_FROM_EMAIL || "hello@crackpacks.com", name: "Crack Packs" }
+  };
+  return senders[key] || senders.rewards;
+}
+async function sendMemberEmailBatch(env, recipients, subject, message, idempotencyKey, senderKey = "rewards") {
   if (!env.RESEND_API_KEY) throw new Error("MEMBER_EMAIL_NOT_CONFIGURED");
   if (!clean(env.BUSINESS_POSTAL_ADDRESS, 300)) throw new Error("BUSINESS_ADDRESS_NOT_CONFIGURED");
+  const sender = memberEmailSender(env, senderKey);
+  const replyTo = normalizeEmail(env.SUPPORT_EMAIL) || "support@crackpacks.com";
   const messageHtml = escapeHtml(message).replace(/\r?\n/g, "<br>");
   const postalAddress = escapeHtml(clean(env.BUSINESS_POSTAL_ADDRESS, 300));
   const payload = recipients.map(recipient => ({
-    from: "Crack Packs <rewards@crackpacks.com>",
+    from: `${sender.name} <${sender.email}>`,
     to: [recipient.email],
     subject,
     html: `<div style="font-family:Arial,sans-serif;color:#111827"><h1 style="color:#151936">Crack Packs</h1><p>Hi ${escapeHtml(recipient.first_name || recipient.whatnot_username || "collector")},</p><p>${messageHtml}</p><p style="margin-top:28px;color:#5d6475;font-size:12px">Crack Packs · ${postalAddress}<br>Reply with “Unsubscribe” if you no longer want member announcements. Transactional order and security notices will still be sent.</p></div>`,
-    headers: { "List-Unsubscribe": "<mailto:rewards@crackpacks.com?subject=Unsubscribe>" }
+    reply_to: replyTo,
+    headers: { "List-Unsubscribe": `<mailto:${sender.email}?subject=Unsubscribe>` }
   }));
   const result = await fetch("https://api.resend.com/emails/batch", {
     method: "POST",
@@ -789,7 +802,9 @@ async function account(member, count, env) {
 }
 async function accountFor(member, env) {
   const row = await env.DB.prepare(`SELECT COUNT(*) count FROM members WHERE referred_by_member_id=? AND referral_qualified_at IS NOT NULL AND identity_status='verified'`).bind(member.id).first();
-  return account(member, Number(row?.count || 0), env);
+  const details = await account(member, Number(row?.count || 0), env);
+  const preferences = await env.DB.prepare(`SELECT drop_alerts_opt_in FROM member_email_preferences WHERE member_id=?`).bind(member.id).first();
+  return { ...details, dropAlertsOptIn: Boolean(preferences?.drop_alerts_opt_in) };
 }
 async function audit(env, request, type, memberId = null, detail = "") {
   const ip = request.headers.get("CF-Connecting-IP") || "";
@@ -1062,6 +1077,7 @@ async function route(request, env, cors, ctx) {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return response({ error: "Enter a valid email address." }, 400, cors);
     const returnTo = data.returnTo === "admin" ? "admin" : "rewards";
     const authFlow = returnTo === "admin" ? "admin" : data.authMode === "signup" ? "signup" : "signin";
+    const signupIntent = authFlow === "signup" && data.signupIntent === "alerts" ? "alerts" : "";
     if (!await verifyTurnstile(env, data.turnstileToken, request)) return response({ error: "Security check failed. Refresh the page and try again." }, 403, cors);
     const existingMember = await env.DB.prepare(`SELECT id FROM members WHERE email=?`).bind(email).first();
     const emailKey = await hash(email, env.AUTH_SECRET);
@@ -1105,7 +1121,7 @@ async function route(request, env, cors, ctx) {
     }
     const verifyUrl = `${env.SITE_URL}${destinationPath}?${verifyParams}`;
     const codeId = id();
-    await env.DB.prepare(`INSERT INTO login_codes(id,email,code_hash,auth_flow,referrer_member_id,expires_at,created_at) VALUES(?,?,?,?,?,?,?)`).bind(codeId, email, await hash(linkToken, env.AUTH_SECRET), authFlow, referrerMemberId, new Date(Date.now() + 10 * 60e3).toISOString(), created).run();
+    await env.DB.prepare(`INSERT INTO login_codes(id,email,code_hash,auth_flow,referrer_member_id,signup_intent,expires_at,created_at) VALUES(?,?,?,?,?,?,?,?)`).bind(codeId, email, await hash(linkToken, env.AUTH_SECRET), authFlow, referrerMemberId, signupIntent, new Date(Date.now() + 10 * 60e3).toISOString(), created).run();
     const emailCopy = authFlow === "signup"
       ? { subject: "Create your Crack Packs account", heading: "Create your account", button: "Verify email and create account" }
       : { subject: "Sign in to your Crack Packs account", heading: "Sign in to your account", button: "Verify email and sign in" };
@@ -1147,6 +1163,9 @@ async function route(request, env, cors, ctx) {
       const memberId = id(); const inviteCode = `CP${randomString(8)}`; const created = now();
       try {
         await env.DB.prepare(`INSERT INTO members(id,email,email_verified_at,invite_code,referred_by_member_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?)`).bind(memberId, email, created, inviteCode, referrerMemberId, created, created).run();
+        if (record.signup_intent === "alerts") {
+          await env.DB.prepare(`INSERT OR REPLACE INTO member_email_preferences(member_id,drop_alerts_opt_in,drop_alerts_opted_at,updated_at) VALUES(?,?,?,?)`).bind(memberId, 1, created, created).run();
+        }
       } catch (error) {
         return response({ error: "An account already exists for this email. Return to Profile and choose Sign In." }, 409, cors);
       }
@@ -1464,6 +1483,24 @@ async function route(request, env, cors, ctx) {
     await env.DB.prepare(`UPDATE members SET whatnot_username=?,updated_at=? WHERE id=?`).bind(username, now(), member.id).run();
     const updated = await env.DB.prepare(`SELECT * FROM members WHERE id=?`).bind(member.id).first();
     await audit(env, request, "whatnot_username_updated", member.id, username);
+    return response({ account: await accountFor(updated, env) }, 200, cors);
+  }
+  if (url.pathname === "/profile/email-preferences" && request.method === "POST") {
+    const contentLength = Number(request.headers.get("Content-Length") || 0);
+    if (Number.isFinite(contentLength) && contentLength > 1000) return response({ error: "Preference update is too large." }, 413, cors);
+    const data = await body(request);
+    const optedIn = Boolean(data?.dropAlerts);
+    const updatedAt = now();
+    await env.DB.prepare(`
+      INSERT INTO member_email_preferences(member_id,drop_alerts_opt_in,drop_alerts_opted_at,updated_at)
+      VALUES(?,?,?,?)
+      ON CONFLICT(member_id) DO UPDATE SET
+        drop_alerts_opt_in=excluded.drop_alerts_opt_in,
+        drop_alerts_opted_at=CASE WHEN excluded.drop_alerts_opt_in=1 THEN excluded.drop_alerts_opted_at ELSE member_email_preferences.drop_alerts_opted_at END,
+        updated_at=excluded.updated_at
+    `).bind(member.id, optedIn ? 1 : 0, optedIn ? updatedAt : null, updatedAt).run();
+    const updated = await env.DB.prepare(`SELECT * FROM members WHERE id=?`).bind(member.id).first();
+    await audit(env, request, "email_preferences_updated", member.id, optedIn ? "drop_alerts:on" : "drop_alerts:off");
     return response({ account: await accountFor(updated, env) }, 200, cors);
   }
   if (url.pathname === "/admin/auth/options" && request.method === "POST") {
@@ -2021,18 +2058,27 @@ async function route(request, env, cors, ctx) {
     const contentLength = Number(request.headers.get("Content-Length") || 0);
     if (Number.isFinite(contentLength) && contentLength > 20000) return response({ error: "Email request is too large." }, 413, cors);
     const data = await body(request);
-    const audience = data?.audience === "all" ? "all" : data?.audience === "selected" ? "selected" : data?.audience === "tier" ? "tier" : "";
+    const audience = data?.audience === "all" ? "all" : data?.audience === "selected" ? "selected" : data?.audience === "tier" ? "tier" : data?.audience === "alerts" ? "alerts" : "";
+    const senderKey = ["rewards", "alerts", "orders", "support", "hello"].includes(data?.senderKey) ? data.senderKey : "rewards";
     const requestedTier = clean(data?.tier, 20);
     const rawSubject = boundedString(data?.subject, 120);
     const rawMessage = boundedString(data?.message, 5000);
     const subject = rawSubject === null ? "" : clean(rawSubject, 120);
     const message = rawMessage === null ? "" : String(rawMessage).trim();
-    if (!audience) return response({ error: "Choose All Members, Select Members, or Referral Tier." }, 400, cors);
+    if (!audience) return response({ error: "Choose All Members, Drop Alerts, Select Members, or Referral Tier." }, 400, cors);
     if (audience === "tier" && !TIERS.some(tier => tier.name === requestedTier)) return response({ error: "Choose a valid referral tier." }, 400, cors);
     if (!subject || subject.length < 3) return response({ error: "Enter an email subject from 3 to 120 characters." }, 400, cors);
     if (!message || message.length < 3) return response({ error: "Enter an email message from 3 to 5,000 characters." }, 400, cors);
     let rows;
-    if (audience === "all" || audience === "tier") {
+    if (audience === "alerts") {
+      rows = await env.DB.prepare(`
+        SELECT member.id,member.email,member.first_name,member.whatnot_username
+        FROM members member
+        JOIN member_email_preferences preferences ON preferences.member_id=member.id
+        WHERE member.email_verified_at IS NOT NULL AND preferences.drop_alerts_opt_in=1 AND member.email<>?
+        ORDER BY preferences.updated_at DESC LIMIT 2000
+      `).bind(normalizeEmail(env.ADMIN_EMAIL)).all();
+    } else if (audience === "all" || audience === "tier") {
       rows = await env.DB.prepare(`
         SELECT member.id,member.email,member.first_name,member.whatnot_username,
           (SELECT COUNT(*) FROM members invited WHERE invited.referred_by_member_id=member.id AND invited.referral_qualified_at IS NOT NULL AND invited.identity_status='verified') referral_count
@@ -2048,13 +2094,13 @@ async function route(request, env, cors, ctx) {
     if (!recipients.length) return response({ error: "No verified member recipients matched this message." }, 400, cors);
     const sendId = id();
     try {
-      for (let index = 0; index < recipients.length; index += 100) await sendMemberEmailBatch(env, recipients.slice(index, index + 100), subject, message, `${sendId}-${Math.floor(index / 100)}`);
+      for (let index = 0; index < recipients.length; index += 100) await sendMemberEmailBatch(env, recipients.slice(index, index + 100), subject, message, `${sendId}-${Math.floor(index / 100)}`, senderKey);
     } catch (error) {
       if (error.message === "MEMBER_EMAIL_NOT_CONFIGURED") return response({ error: "Member email is not configured. Add the existing RESEND_API_KEY Worker secret." }, 503, cors);
       if (error.message === "BUSINESS_ADDRESS_NOT_CONFIGURED") return response({ error: "Add BUSINESS_POSTAL_ADDRESS before sending member announcements." }, 503, cors);
       return response({ error: "The member email batch could not be queued. No send was confirmed; try again." }, 502, cors);
     }
-    await audit(env, request, "member_email_sent", member.id, `${sendId}|audience:${audience}|count:${recipients.length}|subject:${subject.slice(0, 80)}`);
+    await audit(env, request, "member_email_sent", member.id, `${sendId}|sender:${senderKey}|audience:${audience}|count:${recipients.length}|subject:${subject.slice(0, 80)}`);
     return response({ ok: true, sendId, recipientCount: recipients.length }, 202, cors);
   }
   if (url.pathname === "/admin/summary" && request.method === "GET") {

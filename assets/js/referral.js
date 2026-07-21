@@ -4,9 +4,9 @@
   const config = window.CRACKPACKS_CONFIG || {};
   const api = String(config.rewardsApiUrl || "").replace(/\/$/, "");
   const qs = new URLSearchParams(location.search);
-  const requestedEmail = String(qs.get("email") || "").trim().slice(0, 254);
   const referralCode = (qs.get("ref") || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 16);
   const ownerReferralToken = String(qs.get("owner_ref") || "").slice(0, 80);
+  const signupIntent = qs.get("intent") === "alerts" ? "alerts" : "";
   const hasAttachedReferral = Boolean(referralCode || ownerReferralToken);
   const verificationToken = String(qs.get("verify") || "");
   const normalizeOfferToken = value => {
@@ -51,9 +51,9 @@
       sentStatus: "If that email matches an account, a secure sign-in link is on the way."
     },
     signup: {
-      kicker: "New collector",
-      title: "Create your Profile",
-      description: "Use an email you can access. We will send a secure link to begin verified account setup. Already registered? Choose Sign In.",
+      kicker: signupIntent === "alerts" ? "Drop Alerts" : "New collector",
+      title: signupIntent === "alerts" ? "Join Drop Alerts" : "Create your Profile",
+      description: signupIntent === "alerts" ? "Create a verified Crack Packs Profile and we will email you about releases, restocks, live drops, and member rewards." : "Use an email you can access. We will send a secure link to begin verified account setup. Already registered? Choose Sign In.",
       emailLabel: "Signup email",
       sendLabel: "Send signup link",
       modalTitle: "Check inbox to create your account",
@@ -106,10 +106,6 @@
     });
   });
   setAuthMode(authMode);
-  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(requestedEmail)) {
-    const emailInput = $("[data-request-panel] input[name='email']");
-    if (emailInput) emailInput.value = requestedEmail;
-  }
   const turnstileNode = $("[data-turnstile]");
   if (turnstileNode && config.turnstileSiteKey) {
     window.cpTurnstileReady = () => { turnstileWidgetId = window.turnstile.render(turnstileNode, {
@@ -526,6 +522,8 @@
       loadPersonalQr(data.inviteUrl).catch(error => showStatus(error.message, "error"));
     }
     $("[data-whatnot-username]").value = data.whatnotUsername || "";
+    const dropAlertsToggle = $("[data-drop-alerts-opt-in]");
+    if (dropAlertsToggle) dropAlertsToggle.checked = Boolean(data.dropAlertsOptIn);
     $("[data-next-tier]").textContent = data.nextTier ? `${data.nextTier.remaining} more verified friend${data.nextTier.remaining === 1 ? "" : "s"} to unlock ${data.nextTier.name}: ${data.nextTier.reward}.` : "You have reached the highest published reward tier.";
     const tierTrack = $("[data-tier-track]"); tierTrack.replaceChildren();
     (Array.isArray(data.tiers) ? data.tiers : []).forEach(tier => {
@@ -676,7 +674,7 @@
     }
     sendButton.textContent = "Sending secure link...";
     try {
-      await request("/auth/request", { method: "POST", body: JSON.stringify({ email, referralCode: submittedReferral, ownerReferralToken: submittedOwnerReferral, offerToken, authMode: submittedMode, turnstileToken }) });
+      await request("/auth/request", { method: "POST", body: JSON.stringify({ email, referralCode: submittedReferral, ownerReferralToken: submittedOwnerReferral, offerToken, authMode: submittedMode, signupIntent, turnstileToken }) });
       authRequestSent = true;
       resetTurnstile();
       sendButton.textContent = "Check Inbox 10 min code";
@@ -840,6 +838,21 @@
       showStatus(error.message, "error");
     }
   });
+  $("[data-drop-alerts-opt-in]")?.addEventListener("change", async event => {
+    const input = event.currentTarget;
+    const nextValue = Boolean(input.checked);
+    input.disabled = true;
+    try {
+      const data = await request("/profile/email-preferences", { method: "POST", body: JSON.stringify({ dropAlerts: nextValue }) });
+      renderAccount(data.account);
+      showStatus(nextValue ? "Drop Alerts turned on." : "Drop Alerts turned off.", "success");
+    } catch (error) {
+      input.checked = !nextValue;
+      showStatus(error.message, "error");
+    } finally {
+      input.disabled = false;
+    }
+  });
   $("[data-sign-out]").addEventListener("click", async () => {
     try { await request("/auth/logout", { method: "POST" }); } catch {}
     localStorage.removeItem("cp_rewards_token");
@@ -863,6 +876,7 @@
       else if (referralCode) preserved.set("ref", referralCode);
       if (offerToken) preserved.set("offer", offerToken);
       if (authMode === "signup") preserved.set("mode", "signup");
+      if (signupIntent) preserved.set("intent", signupIntent);
       const query = preserved.toString();
       history.replaceState({}, document.title, `${location.pathname}${query ? `?${query}` : ""}`);
       showStatus(error.message, "error");
