@@ -5,7 +5,7 @@ import { calculateChannelPricing, channelPricingErrors } from "./channel-pricing
 import { sanitizeEasyPostTracker, verifyEasyPostWebhook } from "./easypost-tracking.js";
 import { stripeRequest, verifyStripeWebhook } from "./stripe-commerce.js";
 
-const VERSION = "4.2.0";
+const VERSION = "4.3.0";
 const CAMPAIGN_REWARD_TYPES = new Set(["percent", "free_shipping", "pick_a_pack", "pack_draft", "free_single", "product"]);
 const MAX_CAMPAIGN_REDEMPTIONS = 500;
 const STORE_CURRENCIES = new Set(["USD", "CAD", "EUR", "GBP", "AUD", "NZD", "JPY", "CHF", "SEK", "NOK", "DKK", "PLN", "CZK", "HUF", "RON"]);
@@ -520,6 +520,42 @@ async function easyPostCreateTracker(env, trackingCode, carrier = "") {
   if (!sanitized?.trackingCode || !sanitized.carrier) throw new Error("TRACKING_PROVIDER_ERROR");
   return sanitized;
 }
+async function easyPostBuyLabel(env, shipmentId, rateId) {
+  const apiKey = env.EASYPOST_API_KEY || env.EASYPOST_TEST_API_KEY || "";
+  if (!apiKey) throw new Error("LABEL_NOT_CONFIGURED");
+  if (!/^shp_[a-z0-9]+$/i.test(String(shipmentId || "")) || !/^rate_[a-z0-9]+$/i.test(String(rateId || ""))) throw new Error("LABEL_REQUEST_INVALID");
+  const result = await fetch(`https://api.easypost.com/v2/shipments/${encodeURIComponent(shipmentId)}/buy`, {
+    method: "POST",
+    headers: { Authorization: `Basic ${btoa(`${apiKey}:`)}`, "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ rate: { id: rateId } })
+  });
+  const payload = await result.json().catch(() => ({}));
+  if (!result.ok) {
+    console.error("EasyPost label purchase failed", { status: result.status, code: payload?.error?.code || "" });
+    throw new Error("LABEL_PROVIDER_ERROR");
+  }
+  const tracker = sanitizeEasyPostTracker(payload?.tracker || {});
+  const selectedRate = payload?.selected_rate || {};
+  const postageLabel = payload?.postage_label || {};
+  const trackingCode = clean(payload?.tracking_code || tracker?.trackingCode, 120);
+  const carrier = clean(selectedRate?.carrier || tracker?.carrier, 60);
+  const labelUrl = /^https:\/\//i.test(String(postageLabel?.label_url || "")) ? String(postageLabel.label_url).slice(0, 500) : "";
+  const labelPdfUrl = /^https:\/\//i.test(String(postageLabel?.label_pdf_url || "")) ? String(postageLabel.label_pdf_url).slice(0, 500) : "";
+  const labelRateCents = Math.round(Number(selectedRate?.rate || 0) * 100);
+  if (!tracker?.id || !trackingCode || !carrier || !labelUrl) throw new Error("LABEL_PROVIDER_ERROR");
+  return {
+    shipmentId: String(payload.id || shipmentId),
+    rateId: String(selectedRate?.id || rateId),
+    mode: payload.mode === "production" ? "production" : "test",
+    carrier,
+    trackingCode,
+    tracker,
+    labelUrl,
+    labelPdfUrl,
+    labelFileType: clean(postageLabel?.label_file_type, 20),
+    labelRateCents: Number.isInteger(labelRateCents) && labelRateCents >= 0 ? labelRateCents : null
+  };
+}
 function parseOrderItems(value) {
   if (!Array.isArray(value) || value.length < 1 || value.length > 50) return null;
   const items = value.map(item => {
@@ -562,6 +598,11 @@ function orderView(row, env) {
       estimatedDeliveryDate: row.estimated_delivery_date || null,
       carrierPublicUrl: row.carrier_public_url || "",
       mode: row.tracking_mode || "test",
+      labelOrdered: Boolean(row.label_purchased_at || row.postage_label_url),
+      labelPurchasedAt: row.label_purchased_at || null,
+      labelUrl: row.postage_label_url || "",
+      labelPdfUrl: row.postage_label_pdf_url || "",
+      labelRateCents: row.label_rate_cents === null || row.label_rate_cents === undefined ? null : Number(row.label_rate_cents),
       details: Array.isArray(details) ? details : [],
       url: `${env.SITE_URL}/tracking.html?order=${encodeURIComponent(row.id)}`
     } : null
@@ -570,7 +611,9 @@ function orderView(row, env) {
 const orderSelectSql = `
   SELECT orders.*,shipments.easypost_tracker_id,shipments.mode tracking_mode,shipments.carrier,shipments.tracking_code,
          shipments.status tracking_status,shipments.status_detail,shipments.estimated_delivery_date,
-         shipments.carrier_public_url,shipments.tracking_details_json
+         shipments.carrier_public_url,shipments.tracking_details_json,
+         shipments.easypost_shipment_id,shipments.easypost_rate_id,shipments.postage_label_url,
+         shipments.postage_label_pdf_url,shipments.label_file_type,shipments.label_rate_cents,shipments.label_purchased_at
   FROM member_orders orders LEFT JOIN order_shipments shipments ON shipments.order_id=orders.id
 `;
 
@@ -2002,6 +2045,8 @@ async function route(request, env, cors, ctx) {
       SELECT orders.*,shipments.easypost_tracker_id,shipments.mode tracking_mode,shipments.carrier,shipments.tracking_code,
              shipments.status tracking_status,shipments.status_detail,shipments.estimated_delivery_date,
              shipments.carrier_public_url,shipments.tracking_details_json,
+             shipments.easypost_shipment_id,shipments.easypost_rate_id,shipments.postage_label_url,
+             shipments.postage_label_pdf_url,shipments.label_file_type,shipments.label_rate_cents,shipments.label_purchased_at,
              customer.email,customer.first_name,customer.last_name,customer.whatnot_username
       FROM member_orders orders
       LEFT JOIN order_shipments shipments ON shipments.order_id=orders.id
@@ -2059,6 +2104,47 @@ async function route(request, env, cors, ctx) {
     const saved = await env.DB.prepare(`${orderSelectSql} WHERE orders.id=? LIMIT 1`).bind(orderId).first();
     return response({ order: orderView(saved, env) }, 201, cors);
   }
+  const adminOrderLabelMatch = url.pathname.match(/^\/admin\/orders\/([0-9a-f-]{36})\/label$/i);
+  if (adminOrderLabelMatch && request.method === "POST") {
+    if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
+    const order = await env.DB.prepare(`
+      SELECT orders.*,customer.email,reservations.easypost_shipment_id,reservations.easypost_rate_id
+      FROM member_orders orders
+      JOIN members customer ON customer.id=orders.member_id
+      LEFT JOIN checkout_reservations reservations ON reservations.order_id=orders.id
+      WHERE orders.id=? AND orders.owner_member_id=? LIMIT 1
+    `).bind(adminOrderLabelMatch[1], member.id).first();
+    if (!order) return response({ error: "Order not found." }, 404, cors);
+    if (order.payment_status !== "paid") return response({ error: "Only paid orders can have a label ordered." }, 409, cors);
+    if (order.status === "cancelled" || order.payment_status === "refunded") return response({ error: "Cancelled or refunded orders cannot have a label ordered." }, 409, cors);
+    if (order.channel !== "website" || !order.easypost_shipment_id || !order.easypost_rate_id) return response({ error: "This order does not have a checkout shipping quote to buy from. Attach tracking manually after buying the label elsewhere." }, 409, cors);
+    const existing = await env.DB.prepare(`SELECT id,postage_label_url FROM order_shipments WHERE order_id=?`).bind(order.id).first();
+    if (existing) return response({ error: existing.postage_label_url ? "A label was already ordered for this order." : "This order already has tracking attached." }, 409, cors);
+    let label;
+    try { label = await easyPostBuyLabel(env, order.easypost_shipment_id, order.easypost_rate_id); }
+    catch (error) {
+      const messages = {
+        LABEL_NOT_CONFIGURED: "Add the EasyPost production API key before ordering live labels.",
+        LABEL_REQUEST_INVALID: "This order's saved EasyPost shipment or rate is invalid.",
+        LABEL_PROVIDER_ERROR: "EasyPost could not buy the label. Check the EasyPost dashboard for carrier billing, wallet, address, or rate issues."
+      };
+      return response({ error: messages[error.message] || "EasyPost could not buy the label. No dashboard status was changed." }, 502, cors);
+    }
+    const createdAt = now();
+    const initialOrderStatus = label.tracker.status === "delivered" ? "delivered" : ["pre_transit", "unknown", "error"].includes(label.tracker.status) ? "processing" : "shipped";
+    await env.DB.batch([
+      env.DB.prepare(`INSERT INTO order_shipments(id,order_id,easypost_tracker_id,mode,carrier,tracking_code,status,status_detail,estimated_delivery_date,carrier_public_url,tracking_details_json,easypost_shipment_id,easypost_rate_id,postage_label_url,postage_label_pdf_url,label_file_type,label_rate_cents,label_purchased_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
+        id(), order.id, label.tracker.id, label.mode, label.carrier, label.trackingCode, label.tracker.status, label.tracker.statusDetail, label.tracker.estimatedDeliveryDate, label.tracker.publicUrl, JSON.stringify(label.tracker.details),
+        label.shipmentId, label.rateId, label.labelUrl, label.labelPdfUrl, label.labelFileType, label.labelRateCents, createdAt, createdAt, createdAt
+      ),
+      env.DB.prepare(`UPDATE member_orders SET status=?,updated_at=? WHERE id=?`).bind(initialOrderStatus, createdAt, order.id)
+    ]);
+    const trackingUrl = `${env.SITE_URL}/tracking.html?order=${encodeURIComponent(order.id)}`;
+    ctx.waitUntil(sendOrderNotificationOnce(env, order.id, order.email, "order-label-created", `Shipping label created: ${order.order_number}`, `<h1>Your Crack Packs label is ready</h1><p>Order <strong>${escapeHtml(order.order_number)}</strong> has a ${escapeHtml(label.carrier)} label.</p><p><strong>Tracking:</strong> ${escapeHtml(label.trackingCode)}</p><p><a href="${escapeHtml(trackingUrl)}">Open private tracking</a></p><p>Questions: <a href="mailto:${escapeHtml(env.SUPPORT_EMAIL || "support@crackpacks.com")}">${escapeHtml(env.SUPPORT_EMAIL || "support@crackpacks.com")}</a></p>`));
+    await audit(env, request, "easypost_label_ordered", member.id, `${order.id}|${label.shipmentId}|${label.rateId}|mode:${label.mode}`);
+    const saved = await env.DB.prepare(`${orderSelectSql} WHERE orders.id=? LIMIT 1`).bind(order.id).first();
+    return response({ order: orderView(saved, env) }, 201, cors);
+  }
   const adminOrderTrackingMatch = url.pathname.match(/^\/admin\/orders\/([0-9a-f-]{36})\/tracking$/i);
   if (adminOrderTrackingMatch && request.method === "POST") {
     if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
@@ -2094,6 +2180,8 @@ async function route(request, env, cors, ctx) {
     if (order.channel !== "website" || !order.stripe_payment_intent_id) return response({ error: "Only Stripe website orders can be refunded here." }, 409, cors);
     if (order.payment_status === "refunded") return response({ error: "This order was already refunded." }, 409, cors);
     if (order.status !== "processing") return response({ error: "Shipped orders require a return review before refunding. Contact the customer and use Stripe Dashboard after the return is received." }, 409, cors);
+    const shipment = await env.DB.prepare(`SELECT id FROM order_shipments WHERE order_id=? LIMIT 1`).bind(order.id).first();
+    if (shipment) return response({ error: "A label or tracking record already exists for this order. Review postage and refund manually in Stripe if needed." }, 409, cors);
     let refund;
     try { refund = await stripeRequest(env.STRIPE_SECRET_KEY, "/refunds", [["payment_intent", order.stripe_payment_intent_id], ["metadata[order_id]", order.id]], `refund-${order.id}`); }
     catch { return response({ error: "Stripe could not issue the refund. No order status was changed." }, 502, cors); }

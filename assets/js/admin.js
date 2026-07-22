@@ -1458,6 +1458,41 @@
     });
   }
   function adminOrderStatusLabel(value) { return String(value || "unknown").replace(/_/g, " "); }
+  function paymentBadgeLabel(value) {
+    const status = String(value || "not_applicable").toLowerCase();
+    if (status === "paid") return "PAID";
+    if (status === "refunded") return "REFUNDED";
+    if (status === "refund_pending") return "REFUND PENDING";
+    return "UNPAID";
+  }
+  function confirmOrderLabel(order) {
+    return new Promise(resolve => {
+      const modal = document.createElement("section");
+      modal.className = "rewards-modal order-label-confirm";
+      modal.setAttribute("role", "dialog");
+      modal.setAttribute("aria-modal", "true");
+      modal.setAttribute("aria-labelledby", "order-label-confirm-title");
+      modal.innerHTML = `
+        <button class="rewards-modal-backdrop" type="button" data-label-cancel aria-label="Cancel label order"></button>
+        <div class="rewards-modal-card order-label-confirm-card">
+          <button class="rewards-modal-close" type="button" data-label-cancel aria-label="Close">×</button>
+          <p class="eyebrow">Buy EasyPost label</p>
+          <h2 id="order-label-confirm-title">Are you sure?</h2>
+          <p>This will purchase postage for <strong>${order.orderNumber}</strong> using the shipping service selected during checkout.</p>
+          <div class="order-label-confirm-actions">
+            <button class="btn btn-outline" type="button" data-label-cancel>Cancel</button>
+            <button class="btn btn-primary" type="button" data-label-ok>OK — Order Label</button>
+          </div>
+        </div>`;
+      const cleanup = result => { document.removeEventListener("keydown", onKeydown); modal.remove(); resolve(result); };
+      const onKeydown = event => { if (event.key === "Escape") cleanup(false); };
+      modal.querySelectorAll("[data-label-cancel]").forEach(button => button.addEventListener("click", () => cleanup(false)));
+      modal.querySelector("[data-label-ok]").addEventListener("click", () => cleanup(true));
+      document.addEventListener("keydown", onKeydown);
+      document.body.append(modal);
+      modal.querySelector("[data-label-ok]").focus();
+    });
+  }
   function renderAdminOrders(orders) {
     const container = $("[data-admin-order-list]"); container.replaceChildren();
     if (!orders.length) { const empty = document.createElement("div"); empty.className = "campaign-empty"; empty.textContent = $("[data-tracking-order-search]").value.trim() ? "No tracked member orders match this search." : "No orders exist yet. Create the first order with the form on the left, then it will appear here."; container.append(empty); return; }
@@ -1466,7 +1501,10 @@
       const head = document.createElement("div"); head.className = "admin-order-head";
       const titleWrap = document.createElement("div"); const title = document.createElement("h3"); title.textContent = order.orderNumber;
       const member = document.createElement("p"); member.textContent = [order.member?.whatnotUsername ? `@${order.member.whatnotUsername}` : "", order.member?.email].filter(Boolean).join(" · "); titleWrap.append(title, member);
-      const badge = document.createElement("span"); badge.className = `order-status-chip ${order.status || "processing"}`; badge.textContent = adminOrderStatusLabel(order.status); head.append(titleWrap, badge);
+      const badges = document.createElement("div"); badges.className = "admin-order-badges";
+      const payment = document.createElement("span"); payment.className = `order-payment-chip ${order.paymentStatus === "paid" ? "paid" : order.paymentStatus === "refunded" ? "refunded" : "unpaid"}`; payment.textContent = paymentBadgeLabel(order.paymentStatus);
+      const badge = document.createElement("span"); badge.className = `order-status-chip ${order.status || "processing"}`; badge.textContent = adminOrderStatusLabel(order.status);
+      badges.append(payment, badge); head.append(titleWrap, badges);
       const items = document.createElement("ul"); items.className = "admin-order-items";
       (Array.isArray(order.items) ? order.items : []).forEach(item => { const li = document.createElement("li"); li.textContent = `${Number(item.quantity || 1)}× ${item.name}`; items.append(li); });
       const tracking = document.createElement("div"); tracking.className = "admin-order-tracking";
@@ -1479,6 +1517,31 @@
       const state = document.createElement("span"); state.textContent = `Latest: ${adminOrderStatusLabel(order.tracking?.status)}${order.tracking?.mode === "test" ? " · TEST" : ""}`;
       tracking.append(carrier, state);
       if (order.tracking?.url) { const link = document.createElement("a"); link.className = "btn btn-outline btn-small"; link.href = order.tracking.url; link.target = "_blank"; link.rel = "noopener"; link.textContent = "Open Tracking"; tracking.append(link); }
+      if (order.tracking?.labelOrdered) {
+        const ordered = document.createElement("span"); ordered.className = "order-label-chip ordered"; ordered.textContent = "Label ordered";
+        tracking.append(ordered);
+        const labelUrl = order.tracking.labelPdfUrl || order.tracking.labelUrl || "";
+        if (labelUrl) {
+          const labelLink = document.createElement("a"); labelLink.className = "btn btn-outline btn-small"; labelLink.href = labelUrl; labelLink.target = "_blank"; labelLink.rel = "noopener"; labelLink.textContent = "Print Label";
+          tracking.append(labelLink);
+        }
+      }
+      if (order.channel === "website" && order.paymentStatus === "paid" && order.status === "processing" && !order.tracking) {
+        const labelButton = document.createElement("button"); labelButton.type = "button"; labelButton.className = "btn btn-primary btn-small admin-order-label"; labelButton.textContent = "Order Label";
+        labelButton.addEventListener("click", async () => {
+          if (!await confirmOrderLabel(order)) return;
+          labelButton.disabled = true; labelButton.textContent = "Ordering Label...";
+          try {
+            const data = await request(`/admin/orders/${encodeURIComponent(order.id)}/label`, { method: "POST", body: "{}" });
+            setTrackingStatus(`${data.order?.orderNumber || order.orderNumber} label ordered. Print it from the Orders card.`, "success");
+            await refreshAdminOrders();
+          } catch (error) {
+            setTrackingStatus(error.message, "error");
+            labelButton.disabled = false; labelButton.textContent = "Order Label";
+          }
+        });
+        tracking.append(labelButton);
+      }
       if (!order.tracking && order.status === "processing") {
         carrier.textContent = "Manual label pending";
         state.textContent = order.shippingService || "Shipping service selected at checkout";
@@ -1491,7 +1554,7 @@
         });
         tracking.append(attach);
       }
-      if (order.channel === "website" && order.paymentStatus === "paid" && order.status === "processing") {
+      if (order.channel === "website" && order.paymentStatus === "paid" && order.status === "processing" && !order.tracking) {
         const refund = document.createElement("button"); refund.type = "button"; refund.className = "btn btn-outline btn-small admin-order-refund"; refund.textContent = "Cancel + Full Refund";
         refund.addEventListener("click", async () => {
           if (!confirm(`Issue a full Stripe refund for ${order.orderNumber}? This cannot be undone.`)) return;

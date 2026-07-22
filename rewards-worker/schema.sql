@@ -363,6 +363,13 @@ CREATE TABLE IF NOT EXISTS order_shipments (
   estimated_delivery_date TEXT,
   carrier_public_url TEXT NOT NULL DEFAULT '',
   tracking_details_json TEXT NOT NULL DEFAULT '[]' CHECK(length(tracking_details_json) BETWEEN 2 AND 50000),
+  easypost_shipment_id TEXT CHECK(easypost_shipment_id IS NULL OR easypost_shipment_id LIKE 'shp_%'),
+  easypost_rate_id TEXT CHECK(easypost_rate_id IS NULL OR easypost_rate_id LIKE 'rate_%'),
+  postage_label_url TEXT NOT NULL DEFAULT '' CHECK(length(postage_label_url) <= 500),
+  postage_label_pdf_url TEXT NOT NULL DEFAULT '' CHECK(length(postage_label_pdf_url) <= 500),
+  label_file_type TEXT NOT NULL DEFAULT '' CHECK(length(label_file_type) <= 20),
+  label_rate_cents INTEGER CHECK(label_rate_cents IS NULL OR label_rate_cents >= 0),
+  label_purchased_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   FOREIGN KEY(order_id) REFERENCES member_orders(id)
