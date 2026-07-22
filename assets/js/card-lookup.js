@@ -23,11 +23,13 @@
   const next = document.querySelector("[data-price-check-next]");
   const pageLabel = document.querySelector("[data-price-check-page]");
   const summary = document.querySelector("[data-price-check-summary]");
+  const seriesTabs = document.querySelector("[data-card-series-tabs]");
 
   const state = {
     term: "",
     field: "all",
     orderBy: "-set.releaseDate",
+    series: "all",
     pageSize: 20,
     page: 1,
     totalCount: 0,
@@ -71,10 +73,11 @@
       url.searchParams.set("q", state.term);
       url.searchParams.set("field", state.field);
       url.searchParams.set("sort", state.orderBy);
+      url.searchParams.set("series", state.series);
       url.searchParams.set("size", String(state.pageSize));
       url.searchParams.set("page", String(state.page));
     } else {
-      ["q", "field", "sort", "size", "page"].forEach(key => url.searchParams.delete(key));
+      ["q", "field", "sort", "series", "size", "page"].forEach(key => url.searchParams.delete(key));
     }
     window.history.replaceState({}, "", url);
   }
@@ -84,11 +87,13 @@
     const term = (params.get("q") || "").trim();
     const allowedFields = new Set(["all", "name", "set", "number", "rarity", "type"]);
     const allowedSorts = new Set(["-set.releaseDate", "set.releaseDate", "name", "-name"]);
+    const allowedSeries = new Set(["all", "pokemon", "magic"]);
     const allowedSizes = new Set([12, 20, 24, 36, 48]);
 
     state.term = term;
     state.field = allowedFields.has(params.get("field")) ? params.get("field") : "all";
     state.orderBy = allowedSorts.has(params.get("sort")) ? params.get("sort") : "-set.releaseDate";
+    state.series = allowedSeries.has(params.get("series")) ? params.get("series") : "all";
 
     const parsedSize = Number.parseInt(params.get("size"), 10);
     state.pageSize = allowedSizes.has(parsedSize) ? parsedSize : 20;
@@ -100,6 +105,11 @@
     field.value = state.field;
     order.value = state.orderBy;
     pageSize.value = String(state.pageSize);
+    if (seriesTabs) {
+      seriesTabs.querySelectorAll("[data-card-series]").forEach(button => {
+        button.classList.toggle("is-active", String(button.dataset.cardSeries || "all") === state.series);
+      });
+    }
   }
 
   function skeletonCards(amount = 8) {
@@ -269,6 +279,7 @@
     state.term = term;
     state.field = field.value;
     state.orderBy = order.value;
+    state.series = document.querySelector("[data-card-series].is-active")?.dataset.cardSeries || state.series || "all";
     state.pageSize = Number.parseInt(pageSize.value, 10) || 20;
     state.loading = true;
 
@@ -287,6 +298,7 @@
     const query = new URLSearchParams({
       term: state.term,
       field: state.field,
+      series: state.series,
       page: String(state.page),
       pageSize: String(state.pageSize),
       orderBy: state.orderBy
@@ -396,6 +408,19 @@
       field.value = button.dataset.priceCheckField || "all";
       state.page = 1;
       searchCards({ scroll: true });
+    });
+  });
+
+  seriesTabs?.querySelectorAll("[data-card-series]").forEach(button => {
+    button.addEventListener("click", () => {
+      seriesTabs.querySelectorAll("[data-card-series]").forEach(candidate => candidate.classList.toggle("is-active", candidate === button));
+      state.series = button.dataset.cardSeries || "all";
+      if (state.term.length >= 2) {
+        state.page = 1;
+        searchCards({ scroll: true });
+      } else {
+        updateUrl();
+      }
     });
   });
 

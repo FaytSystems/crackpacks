@@ -3,12 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Pokémon TCG Release Radar | Crack Packs</title>
+  <title>Pokémon TCG Releases | Crack Packs</title>
   <meta name="description" content="Track upcoming Pokémon TCG product dates, live countdowns, official information, and Crack Packs store availability.">
   <meta name="theme-color" content="#07091b">
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="stylesheet" href="assets/css/styles.css?v=1.5.0">
+  <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.6.1">
   
   <!-- CRACK PACKS CONTACT ASSETS:START -->
   <link rel="stylesheet" href="assets/css/contact-form.css?v=1.7.1">
@@ -24,20 +25,24 @@
       <button class="menu-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="site-nav"><span></span><span></span><span></span></button>
       <nav class="site-nav" id="site-nav" aria-label="Primary navigation">
         <a href="index.html">Home</a>
-        <a href="shop.html">Shop</a>
-        <a href="releases.html" aria-current="page">Release Radar</a>
-        <a href="card-lookup.html">Card Search &amp; Price Check</a>
+        <a href="streams.html">Live</a>
+        <a href="releases.html" aria-current="page">Releases</a>
+        <a href="card-lookup.html">Card Search ($)</a>
+        <div class="nav-profile" data-nav-profile>
+          <button class="nav-profile-trigger" type="button" data-profile-trigger aria-expanded="false">Profile <span class="nav-profile-caret" aria-hidden="true">▼</span></button>
+          <div class="nav-profile-menu"><a href="referral.html"><strong>Invites &amp; Rewards</strong><small>QR referrals, tiers and member offers</small></a></div>
+        </div>
         <a class="nav-live nav-youtube" href="index.html#crack-packs-live" aria-label="Open the Crack Packs YouTube live room">YouTube <span aria-hidden="true">&bull;</span> Watch Live</a>
-        <a class="nav-live" data-whatnot href="#">Live on Whatnot <span aria-hidden="true">↗</span></a>
+        <a class="nav-live" data-live-hub href="#">Live hub <span aria-hidden="true">↗</span></a>
       </nav>
     </div>
   </header>
 
   <section class="visual-marquee visual-marquee-top" aria-label="Crack Packs release showcase">
     <div class="marquee-slides" data-marquee>
-      <a class="marquee-slide is-active" href="#release-list" style="--slide-image:url('assets/images/banner-cosmic.svg')"><span class="marquee-kicker">Drop radar</span><strong>Upcoming products. Live countdowns.</strong><em>See dates</em></a>
-      <a class="marquee-slide" href="card-lookup.html" style="--slide-image:url('assets/images/banner-electric.svg')"><span class="marquee-kicker">Pulled something new?</span><strong>Search the card. Check the market.</strong><em>Open price check</em></a>
-      <a class="marquee-slide" data-whatnot href="#" style="--slide-image:url('assets/images/banner-flame.svg')"><span class="marquee-kicker">Opening night</span><strong>Watch the newest packs crack live.</strong><em>Join Whatnot</em></a>
+      <a class="marquee-slide is-active" href="#release-list" style="--slide-image:url('/assets/images/banner-cosmic.svg')"><span class="marquee-kicker">Drop radar</span><strong>Upcoming products. Live countdowns.</strong><em>See dates</em></a>
+      <a class="marquee-slide" href="card-lookup.html" style="--slide-image:url('/assets/images/banner-electric.svg')"><span class="marquee-kicker">Pulled something new?</span><strong>Search the card. Check the market.</strong><em>Open price check</em></a>
+      <a class="marquee-slide" data-live-hub href="#" style="--slide-image:url('/assets/images/banner-flame.svg')"><span class="marquee-kicker">Opening night</span><strong>Watch the newest packs crack live.</strong><em>Open live hub</em></a>
       <div class="marquee-dots" aria-label="Choose showcase slide"></div>
     </div>
   </section>
@@ -59,6 +64,23 @@
       </div>
     </section>
 
+    <section class="section seller-release-panel" data-seller-only hidden>
+      <div class="container holo-panel">
+        <p class="eyebrow">Seller Portal preorders</p>
+        <h2>14-day preorder window</h2>
+        <p>Seller mode turns releases into a preorder dashboard. Use this window to collect breaker demand for the next distributor order, then move those asks into seller inventory planning.</p>
+        <div class="process-grid">
+          <article class="process-card holo-panel reveal"><span>01</span><h3>Release minus 14 days</h3><p>Open preorder intake for breakers and sellers who want bulk product on release week.</p></article>
+          <article class="process-card holo-panel reveal"><span>02</span><h3>Collect exact asks</h3><p>Track requested booster boxes, ETBs, bundles, and Japanese product before you place the distributor order.</p></article>
+          <article class="process-card holo-panel reveal"><span>03</span><h3>Move to seller store</h3><p>When inventory lands, publish seller-priced stock into Store and notify the live hub audience.</p></article>
+        </div>
+        <div class="actions">
+          <a class="btn btn-primary" href="shop.html">Open Seller Store</a>
+          <a class="btn btn-outline" href="referral.html">Open Profile</a>
+        </div>
+      </div>
+    </section>
+
     <section class="section release-tips">
       <div class="container process-grid">
         <article class="process-card holo-panel reveal"><span>01</span><h3>Save the date</h3><p>Use the countdown to plan launch-day inventory, streams, and collector budgets.</p></article>
@@ -68,7 +90,7 @@
     </section>
 
     <section class="section">
-      <div class="container live-panel holo-panel reveal"><div class="live-visual" aria-hidden="true"><span class="live-orbit orbit-one"></span><span class="live-orbit orbit-two"></span><span class="live-mark">DROP</span></div><div class="live-copy"><p class="eyebrow">Release-night heat</p><h2>Check Crack Packs before the rush.</h2><p>Move from the release radar to the store, search card references, or watch new product open live when inventory becomes available.</p><div class="actions"><a class="btn btn-primary" href="shop.html">Check store</a><a class="btn btn-glass" href="card-lookup.html">Check card prices</a><a class="btn btn-glass" data-whatnot href="#">Watch live ↗</a></div></div></div>
+      <div class="container live-panel holo-panel reveal"><div class="live-visual" aria-hidden="true"><span class="live-orbit orbit-one"></span><span class="live-orbit orbit-two"></span><span class="live-mark">DROP</span></div><div class="live-copy"><p class="eyebrow">Buyer release calendar</p><h2>Track dates, then jump into the live room.</h2><p>Buyer mode keeps this page focused on release timing, current sets, and card-price references. Seller mode adds preorder planning inside the seller portal.</p><div class="actions"><a class="btn btn-primary" href="streams.html">Open live hub</a><a class="btn btn-glass" href="card-lookup.html">Check card prices</a><a class="btn btn-glass" href="referral.html">Open profile</a></div></div></div>
     </section>
   </main>
 
@@ -78,10 +100,10 @@
       <div class="footer-links">
         <h3>Explore</h3>
         <a href="index.html">Home</a>
-        <a href="shop.html">Shop</a>
-        <a href="releases.html">Release Radar</a>
+        <a href="streams.html">Live</a>
+        <a href="releases.html">Releases</a>
         <a href="card-lookup.html">Card Search &amp; Price Check</a>
-        <a data-whatnot href="#">Whatnot</a>
+        <a data-live-hub href="#">Live Hub</a>
       </div>
       <div class="footer-links"><h3>Contact</h3><a data-email href="#">hello@crackpacks.com</a><a href="https://github.com/FaytSystems/crackpacks" target="_blank" rel="noopener noreferrer">GitHub repository ↗</a></div>
     </div>
@@ -95,9 +117,10 @@
   <!-- CRACK PACKS CONTACT FOOTER:END -->
 </footer>
 
-  <script src="assets/js/config.js?v=1.5.0"></script>
-  <script src="assets/js/data.js?v=1.5.0"></script>
-  <script src="assets/js/app.js?v=1.5.0"></script>
+<script src="assets/js/config.js?v=3.0.0"></script>
+<script src="assets/js/data.js?v=1.5.0"></script>
+<script src="assets/js/app.js?v=1.5.0"></script>
+<script src="assets/js/portal-mode.js?v=1.0.0"></script>
 
 
 <!-- CRACK PACKS CONTACT MODAL:START -->
@@ -139,6 +162,7 @@
 </div>
 <!-- CRACK PACKS CONTACT MODAL:END -->
 <!-- CRACK PACKS CONTACT SCRIPT:START -->
+<script src="assets/js/nav-profile.js?v=2.6.1"></script>
 <script src="assets/js/contact-form.js?v=1.7.1"></script>
 <!-- CRACK PACKS CONTACT SCRIPT:END -->
 </body>

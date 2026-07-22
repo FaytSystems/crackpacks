@@ -10,7 +10,7 @@ window.CRACKPACKS_PRODUCTS = [
     badge: "Box fresh",
     image: "assets/images/product-electric.svg",
     description: "Factory-sealed booster displays selected for collectors, pack lots, and live opening nights.",
-    url: "https://www.whatnot.com/user/crack_packs",
+    url: "shop.html",
     featured: true,
     enabled: true
   },
@@ -25,7 +25,7 @@ window.CRACKPACKS_PRODUCTS = [
     badge: "Collector favorite",
     image: "assets/images/product-flame.svg",
     description: "ETBs, premium collections, and specialty sealed products with current availability shown on the linked store page.",
-    url: "https://www.whatnot.com/user/crack_packs",
+    url: "shop.html",
     featured: true,
     enabled: true
   },
@@ -40,7 +40,7 @@ window.CRACKPACKS_PRODUCTS = [
     badge: "Rip ready",
     image: "assets/images/product-cosmic.svg",
     description: "Choose sealed delivery when permitted, or join a live show to watch your packs open in real time.",
-    url: "https://www.whatnot.com/user/crack_packs",
+    url: "shop.html",
     featured: true,
     enabled: true
   },
@@ -55,7 +55,7 @@ window.CRACKPACKS_PRODUCTS = [
     badge: "Import chase",
     image: "assets/images/product-aurora.svg",
     description: "Japanese-language packs and sealed products with clear set, condition, and opening details.",
-    url: "https://www.whatnot.com/user/crack_packs",
+    url: "shop.html",
     featured: true,
     enabled: true
   },
@@ -70,7 +70,7 @@ window.CRACKPACKS_PRODUCTS = [
     badge: "Condition shown",
     image: "assets/images/product-vintage.svg",
     description: "Card condition should be shown clearly in the listing and on camera before a live purchase.",
-    url: "https://www.whatnot.com/user/crack_packs",
+    url: "shop.html",
     featured: false,
     enabled: true
   },
@@ -85,7 +85,7 @@ window.CRACKPACKS_PRODUCTS = [
     badge: "Slab vault",
     image: "assets/images/product-slab.svg",
     description: "Graded modern, Japanese, and vintage cards ready for claim sales, fixed-price listings, or premium auctions.",
-    url: "https://www.whatnot.com/user/crack_packs",
+    url: "shop.html",
     featured: false,
     enabled: true
   }
@@ -103,7 +103,7 @@ window.CRACKPACKS_RELEASES = [
     details: "A 36-pack booster display for the Pitch Black expansion. Check the official retailer page for current limits and availability.",
     sourceLabel: "Best Buy product details",
     sourceUrl: "https://www.bestbuy.com/product/pokemon-trading-card-game-mega-evolution-pitch-black-booster-box-36-packs/JJG2TL8C7R",
-    shopUrl: "shop.html#sealed-boxes",
+    shopUrl: "releases.html#release-list",
     featured: true
   },
   {
@@ -117,7 +117,7 @@ window.CRACKPACKS_RELEASES = [
     details: "The cited retailer lists nine booster packs, a full-art promo card, sleeves, Energy cards, dice, and accessories.",
     sourceLabel: "Best Buy product details",
     sourceUrl: "https://www.bestbuy.com/product/pokemon-trading-card-game-mega-evolution-pitch-black-elite-trainer-box/JJG2TL8J45",
-    shopUrl: "shop.html#elite-trainer-boxes",
+    shopUrl: "releases.html#release-list",
     featured: true
   },
   {
@@ -131,7 +131,7 @@ window.CRACKPACKS_RELEASES = [
     details: "A compact six-pack sealed bundle. Availability may change quickly around release day.",
     sourceLabel: "Pokémon Center listing",
     sourceUrl: "https://www.pokemoncenter.com/category/booster-packs",
-    shopUrl: "shop.html#booster-pack-lots",
+    shopUrl: "releases.html#release-list",
     featured: true
   },
   {
@@ -145,7 +145,7 @@ window.CRACKPACKS_RELEASES = [
     details: "Three Pitch Black booster packs with a promotional card, according to the cited retailer product page.",
     sourceLabel: "Best Buy product details",
     sourceUrl: "https://www.bestbuy.com/product/pokemon-trading-card-game-mega-evolution-pitch-black-3pk-booster/JJG2TL8JVC",
-    shopUrl: "shop.html#booster-pack-lots",
+    shopUrl: "releases.html#release-list",
     featured: false
   },
   {
@@ -159,7 +159,7 @@ window.CRACKPACKS_RELEASES = [
     details: "A currently released ETB. The cited GameStop page lists the product at $74.99 and notes the set released November 14, 2025.",
     sourceLabel: "GameStop product details",
     sourceUrl: "https://www.gamestop.com/toys-games/trading-cards/products/pokemon-trading-card-game-phantasmal-flames-elite-trainer-box/432742.html",
-    shopUrl: "shop.html#elite-trainer-boxes",
+    shopUrl: "releases.html#release-list",
     featured: false
   }
 ];

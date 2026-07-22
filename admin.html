@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Crack Packs Owner Dashboard</title>
+  <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/css/styles.css?v=2.1.0">
+  <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.6.1">
+  <link rel="stylesheet" href="assets/css/referral.css?v=2.6.0">
+  <link rel="stylesheet" href="assets/css/rewards-modal.css?v=2.1.0">
+  <link rel="stylesheet" href="assets/css/admin.css?v=3.3.1">
+</head>
+<body>
+  <header class="site-header">
+    <div class="container nav-shell">
+      <a class="brand" href="index.html"><img src="assets/images/logo.svg" alt="Crack Packs"></a>
+      <button class="menu-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="admin-site-nav"><span></span><span></span><span></span></button>
+      <nav class="site-nav" id="admin-site-nav" aria-label="Owner navigation"><a href="referral.html">Member account</a><a href="index.html">Storefront</a></nav>
+    </div>
+  </header>
+
+  <main class="admin-main" data-admin-app>
+    <section class="container admin-hero">
+      <p class="eyebrow">Protected owner tools</p>
+      <h1>Redemption <span>Dashboard.</span></h1>
+      <p>Search reward members during a live show and mark codes redeemed only after they are actually used.</p>
+    </section>
+
+    <section class="container">
+      <div class="rewards-notice" data-admin-status aria-live="polite"></div>
+
+      <section class="reward-card" data-admin-login>
+        <p class="eyebrow">Owner sign in</p>
+        <h2>Access the dashboard</h2>
+        <p>Sign in with the authorized owner email. A verification link and your registered passkey are both required.</p>
+        <form data-admin-login-form>
+          <label>Owner email<input name="email" type="email" autocomplete="email" required placeholder="owner@example.com"></label>
+          <div data-admin-turnstile></div>
+          <button class="btn btn-primary" type="submit" data-admin-send disabled>Complete security check</button>
+        </form>
+        <p class="fine-print">Returning after logout? Use this form to receive a fresh secure login link.</p>
+      </section>
+
+      <section class="reward-card" data-admin-setup hidden>
+        <p class="eyebrow">Security setup required</p>
+        <h2>Finish the owner account first</h2>
+        <p>The owner account must complete its passkey and identity profile before dashboard access is allowed.</p>
+        <a class="btn btn-primary" href="referral.html">Complete account setup</a>
+      </section>
+
+      <section class="reward-card" data-admin-step-up hidden>
+        <p class="eyebrow">Fresh passkey required</p>
+        <h2>Verify owner access</h2>
+        <p>Use the passkey already registered to this owner account. This short-lived verification protects redemption controls even if a normal login session is copied.</p>
+        <button class="btn btn-primary" type="button" data-admin-passkey>Verify owner passkey</button>
+        <button class="btn btn-outline" type="button" data-admin-logout>Log out</button>
+      </section>
+
+      <section class="reward-card" data-admin-denied hidden>
+        <p class="eyebrow">Access denied</p>
+        <h2>This is not the owner account</h2>
+        <p>Log out and sign in with the authorized Crack Packs owner email.</p>
+        <button class="btn btn-primary" type="button" data-admin-logout>Log out and return to login</button>
+      </section>
+
+      <section data-admin-dashboard hidden>
+        <div class="dashboard-head admin-dashboard-head">
+          <div><p class="eyebrow">Protected owner controls</p><h2>Master Dashboard</h2></div>
+          <div class="dashboard-actions"><button class="btn btn-outline btn-small" type="button" data-admin-refresh>Refresh</button><button class="btn btn-outline btn-small" type="button" data-admin-logout>Log out</button></div>
+        </div>
+        <nav class="master-dashboard-nav" aria-label="Master Dashboard sections">
+          <button class="is-active" type="button" data-master-section-button="create_link"><span>01</span><strong>Create Link</strong><small>Live 12-hour referral</small></button>
+          <button type="button" data-master-section-button="create_code"><span>02</span><strong>Create Code</strong><small>Promo QR generator</small></button>
+          <button type="button" data-master-section-button="signups"><span>03</span><strong>Sign Ups</strong><small>Members by campaign</small></button>
+          <button type="button" data-master-section-button="redeemed"><span>04</span><strong>Redeemed</strong><small>Verify promo rewards</small></button>
+          <button type="button" data-master-section-button="email"><span>05</span><strong>Email</strong><small>Message members</small></button>
+          <button type="button" data-master-section-button="inventory"><span>06</span><strong>Inventory</strong><small>Products &amp; store pricing</small></button>
+          <button type="button" data-master-section-button="tracking"><span>07</span><strong>Orders</strong><small>Member tracking</small></button>
+        </nav>
+        <section class="reward-card owner-referral-card" data-owner-referral data-master-section="create_link">
+          <div class="owner-referral-grid">
+            <div>
+              <p class="eyebrow">LIVE &bull; 12-HOUR WINDOW</p>
+              <h3>Constantly changing referral link</h3>
+              <p>This signed address and QR change every 12 hours at 7 AM and 7 PM Eastern. Only the current active link can award owner referral credit.</p>
+              <div class="owner-referral-timing">
+                <strong data-owner-referral-window>Loading current window...</strong>
+                <span data-owner-referral-countdown></span>
+                <small>Changes automatically at <b data-owner-referral-expires></b>.</small>
+              </div>
+              <div class="share-row owner-referral-share">
+                <input data-owner-referral-url readonly aria-label="Current owner referral link">
+                <button class="btn btn-primary btn-small" type="button" data-owner-referral-copy>Copy current link</button>
+              </div>
+              <div class="owner-referral-action-row">
+                <button class="btn btn-outline btn-small" type="button" data-owner-referral-refresh>Refresh current window</button>
+                <button class="btn btn-primary btn-small" type="button" data-owner-referral-share>Share Current QR</button>
+                <button class="btn btn-danger btn-small" type="button" data-owner-referral-toggle>Turn Off Current QR</button>
+              </div>
+            </div>
+            <div class="personal-qr owner-referral-qr-wrap">
+              <img data-owner-referral-qr alt="Current owner rotating referral QR code">
+              <strong data-owner-referral-qr-status>ACTIVE QR</strong>
+              <small>Expires at the displayed Eastern-time boundary.</small>
+              <button class="btn btn-primary btn-small" type="button" data-owner-referral-download>Download current QR</button>
+            </div>
+          </div>
+        </section>
+        <section class="reward-card campaign-generator-card" data-campaign-generator data-master-section="create_code" hidden>
+          <div class="campaign-generator-head">
+            <div>
+              <p class="eyebrow">Owner growth tools</p>
+              <h3>Discount Generator</h3>
+              <p>Launch a time-limited campaign link and QR for a live show, social post, or collector drop.</p>
+            </div>
+            <button class="btn btn-primary" type="button" data-campaign-open>Generate Discount</button>
+          </div>
+          <div class="campaign-generated" data-campaign-generated hidden>
+            <div>
+              <span class="campaign-live-chip">CAMPAIGN READY</span>
+              <h4 data-campaign-generated-title></h4>
+              <p data-campaign-generated-description></p>
+              <div class="share-row campaign-generated-share">
+                <input data-campaign-generated-url readonly aria-label="Generated campaign link">
+                <button class="btn btn-outline btn-small" type="button" data-campaign-copy>Copy Link</button>
+              </div>
+              <p class="fine-print">This link stops accepting claims at <time data-campaign-generated-expiry></time>.</p>
+            </div>
+            <div class="personal-qr campaign-generated-qr">
+              <img data-campaign-generated-qr alt="Generated campaign QR code">
+              <button class="btn btn-primary btn-small" type="button" data-campaign-download>Download QR</button>
+              <button class="btn btn-outline btn-small" type="button" data-campaign-share>Share Campaign</button>
+              <button class="btn btn-danger btn-small" type="button" data-campaign-generated-toggle>Turn Off QR</button>
+            </div>
+          </div>
+        </section>
+        <section class="campaign-library" aria-labelledby="campaign-library-title" data-master-section="signups" hidden>
+          <div class="dashboard-head campaign-library-head">
+            <div><p class="eyebrow">Campaign control room</p><h2 id="campaign-library-title">All discount &amp; reward campaigns</h2></div>
+            <button class="btn btn-outline btn-small" type="button" data-campaign-refresh>Refresh campaigns</button>
+          </div>
+          <label class="campaign-claim-search">Find a campaign or claimant<input type="search" data-campaign-search placeholder="Search campaign, reward, code, email, or Live Hub username" autocomplete="off"></label>
+          <div class="campaign-library-filters">
+            <label>Reward type<select data-campaign-type-filter><option value="all">All reward types</option><option value="percent">Percentage off</option><option value="free_shipping">Free shipping</option><option value="pick_a_pack">Free Pack / Pick a Pack</option><option value="pack_draft">Choose a Pack #</option><option value="free_single">Free Holographic Single</option><option value="product">Products (Inventory)</option></select></label>
+            <label>Signup / claim from<input type="date" data-campaign-date-from></label>
+            <label>Signup / claim through<input type="date" data-campaign-date-to></label>
+            <button class="btn btn-outline btn-small" type="button" data-campaign-filters-clear>Clear filters</button>
+          </div>
+          <div class="admin-campaigns" data-admin-campaigns aria-live="polite"></div>
+        </section>
+        <section class="redeemed-heading" data-master-section="redeemed" hidden>
+          <p class="eyebrow">Promotion verification</p>
+          <h2>Redeemed rewards</h2>
+          <p>Confirm that a member received the discount or promotional gift from your post. Active rewards show a live expiration countdown.</p>
+        </section>
+        <div class="admin-summary" data-master-section="redeemed" hidden>
+          <div><span>Total</span><strong data-count-total>0</strong></div>
+          <div><span>Issued</span><strong data-count-issued>0</strong></div>
+          <div><span>Requested</span><strong data-count-requested>0</strong></div>
+          <div><span>Redeemed</span><strong data-count-redeemed>0</strong></div>
+          <div><span>Expired</span><strong data-count-expired>0</strong></div>
+        </div>
+        <section class="reward-card admin-search-card" data-master-section="redeemed" hidden>
+          <div class="admin-filters">
+            <label>Search member or code<input type="search" data-admin-search placeholder="Type name, email, username, or code" autocomplete="off"></label>
+            <label>Status<select data-admin-filter><option value="all">All statuses</option><option value="issued">Issued</option><option value="requested">Requested</option><option value="redeemed">Redeemed</option><option value="expired">Expired</option></select></label>
+            <label>Claimed from<input type="date" data-admin-date-from></label>
+            <label>Claimed through<input type="date" data-admin-date-to></label>
+          </div>
+          <p class="fine-print">Results update as you type. Search is limited to 100 records and never exposes birthdays or identity-security data.</p>
+        </section>
+        <div class="admin-results" data-admin-results data-master-section="redeemed" hidden></div>
+        <section class="reward-card master-email-card" data-master-section="email" hidden>
+          <p class="eyebrow">Member communications</p>
+          <h2>Email Crack Packs members</h2>
+          <p>Choose every verified member or build a group by searching names, stream usernames, or email addresses.</p>
+          <div class="email-audience-actions">
+            <button class="btn btn-primary" type="button" data-email-all>Message All</button>
+            <button class="btn btn-outline" type="button" data-email-select-open>Select Few</button>
+          </div>
+          <div class="email-recipient-summary" data-email-recipient-summary>No audience selected.</div>
+          <div class="email-selected-chips" data-email-selected-chips></div>
+          <form class="master-email-form" data-master-email-form>
+            <label>Subject<input name="subject" maxlength="120" required placeholder="Crack Packs live-show update"></label>
+            <label>Message<textarea name="message" maxlength="5000" required rows="8" placeholder="Write the member message here..."></textarea></label>
+            <div class="campaign-form-status" data-master-email-status aria-live="polite"></div>
+            <div class="campaign-modal-actions">
+              <button class="btn btn-outline" type="button" data-email-cancel>Cancel</button>
+              <button class="btn btn-primary" type="submit" data-email-send disabled>Send</button>
+            </div>
+          </form>
+        </section>
+        <section class="inventory-workspace" data-master-section="inventory" hidden>
+          <div class="dashboard-head inventory-workspace-head">
+            <div>
+              <p class="eyebrow">Stock &amp; campaign products</p>
+              <h2>Inventory control room</h2>
+              <p>Keep products, stock, store pricing, and package details in one place. Active products with stock appear automatically in the campaign generator.</p>
+            </div>
+            <div class="inventory-head-actions">
+              <button class="btn btn-outline btn-small" type="button" data-inventory-shipping-test>Test EasyPost</button>
+              <button class="btn btn-outline btn-small" type="button" data-inventory-import>Import starter catalog</button>
+              <button class="btn btn-primary btn-small" type="button" data-inventory-new>Add Product</button>
+            </div>
+          </div>
+          <div class="inventory-pricing-note">
+            <strong>Safe price floors</strong>
+            <span>Every channel price is the higher of its calculated minimum floor or your market/list price. Floors protect the selected contribution margin; they never cap a hot product's selling price. Review platform rates whenever a channel changes its fees.</span>
+          </div>
+          <div class="inventory-toolbar">
+            <label>Search inventory<input type="search" data-inventory-search placeholder="Guess a name, UPC, or category" autocomplete="off"></label>
+            <label>Show<select data-inventory-status-filter><option value="all">All products</option><option value="active">Active only</option><option value="inactive">Deactivated only</option><option value="in_stock">In stock</option><option value="needs_pricing">Needs pricing</option></select></label>
+            <button class="btn btn-outline btn-small" type="button" data-inventory-refresh>Refresh</button>
+          </div>
+          <div class="campaign-form-status inventory-status" data-inventory-status aria-live="polite"></div>
+          <div class="inventory-grid" data-inventory-list aria-live="polite"></div>
+        </section>
+        <section class="tracking-workspace" data-master-section="tracking" hidden>
+          <div class="dashboard-head tracking-workspace-head">
+            <div>
+              <p class="eyebrow">Orders &amp; carrier updates</p>
+              <h2>Attach tracking to a member order</h2>
+              <p>Choose a verified member, list what they purchased, and add the carrier number. EasyPost will send future scan updates to Crack Packs.</p>
+            </div>
+            <button class="btn btn-outline btn-small" type="button" data-tracking-refresh>Refresh Orders</button>
+          </div>
+          <div class="tracking-workspace-grid">
+            <form class="reward-card admin-tracking-form" data-tracking-form>
+              <label>Find member<span class="tracking-search-row"><input type="search" data-tracking-member-search placeholder="Guess email, name, or stream username" autocomplete="off"><button class="btn btn-outline btn-small" type="button" data-tracking-member-search-button>Search</button></span></label>
+              <div class="tracking-member-results" data-tracking-member-results aria-live="polite"></div>
+              <div class="tracking-member-selected" data-tracking-member-selected>No member selected.</div>
+              <input type="hidden" name="memberId" data-tracking-member-id>
+              <div class="field-grid">
+                <label>Order number<input name="orderNumber" required maxlength="64" placeholder="CRACKPACKS-1042"></label>
+                <label>Sales channel<select name="channel"><option value="website">Website</option><option value="manual">Manual / Gift</option></select></label>
+              </div>
+              <label>What they purchased<textarea name="items" required maxlength="8000" rows="5" placeholder="1x Pitch Black Booster Box&#10;2x Holographic Single"></textarea><small>One item per line. Start with a quantity such as 2x when needed.</small></label>
+              <div class="field-grid">
+                <label>Carrier<select name="carrier"><option value="">Auto-detect</option><option value="USPS">USPS</option><option value="UPS">UPS</option><option value="FedEx">FedEx</option><option value="DHLExpress">DHL Express</option></select></label>
+                <label>Tracking number<input name="trackingCode" required maxlength="120" autocomplete="off" placeholder="Carrier tracking number"></label>
+              </div>
+              <div class="campaign-form-status" data-tracking-status aria-live="polite"></div>
+              <button class="btn btn-primary" type="submit" data-tracking-submit>Create Order + Tracking</button>
+              <p class="fine-print">Test mode examples: EZ1000000001 (pre-transit), EZ2000000002 (in transit), or EZ4000000004 (delivered). Test trackers do not buy labels.</p>
+            </form>
+            <div>
+              <label class="tracking-order-search">Search Orders<span class="tracking-search-row"><input type="search" data-tracking-order-search placeholder="Order, member, username, or tracking number" autocomplete="off"><button class="btn btn-outline btn-small" type="button" data-tracking-order-search-button>Search</button></span></label>
+              <div class="admin-order-list" data-admin-order-list aria-live="polite"></div>
+            </div>
+          </div>
+        </section>
+      </section>
+    </section>
+  </main>
+
+  <div class="rewards-modal" data-campaign-modal hidden>
+    <button class="rewards-modal-backdrop" type="button" data-campaign-close aria-label="Close campaign generator"></button>
+    <section class="rewards-modal-card campaign-modal-card" role="dialog" aria-modal="true" aria-labelledby="campaign-modal-title">
+      <button class="rewards-modal-close" type="button" data-campaign-close aria-label="Close">&times;</button>
+      <p class="eyebrow">Protected owner generator</p>
+      <h2 id="campaign-modal-title">Create a discount campaign</h2>
+      <p>Each verified member can claim only within the campaign and weekly reward rules.</p>
+      <form class="campaign-form" data-campaign-form>
+        <label>Campaign title<input name="title" required maxlength="100" placeholder="Friday Night Rip Bonus"></label>
+        <label>Reward type
+          <select name="rewardType" data-campaign-reward-type required>
+            <option value="percent">Percentage discount</option>
+            <option value="free_shipping">Free shipping</option>
+            <option value="pick_a_pack">Free Pack / Pick a Pack</option>
+            <option value="pack_draft">Choose a Pack #</option>
+            <option value="free_single">Free Holographic Single</option>
+            <option value="product">Products (Inventory)</option>
+          </select>
+        </label>
+        <p class="fine-print" data-campaign-single-help hidden>First-show setup: leave Maximum people at 50. Each verified claim receives one unique rank and code for a free holographic single.</p>
+        <label data-campaign-percent-field>Percentage<input name="percent" type="number" min="1" max="100" value="10" inputmode="numeric" required></label>
+        <label data-campaign-pack-field hidden>Number of packs<input name="packCount" type="number" min="1" max="500" value="10" inputmode="numeric"></label>
+        <div class="campaign-product-field" data-campaign-product-field hidden>
+          <label for="campaign-inventory-search">Inventory product</label>
+          <div class="inventory-combobox">
+            <input id="campaign-inventory-search" type="search" data-campaign-inventory-search role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="campaign-inventory-options" autocomplete="off" placeholder="Search by product name or UPC">
+            <input name="inventoryItemId" type="hidden" data-campaign-inventory-id>
+            <div class="inventory-combobox-options" id="campaign-inventory-options" data-campaign-inventory-options role="listbox" hidden></div>
+          </div>
+          <small data-campaign-inventory-selection>Choose an active product with available stock.</small>
+        </div>
+        <div class="field-grid">
+          <div class="campaign-expiry-field">
+            <span>Time to Expire</span>
+            <div class="campaign-expiry-controls">
+              <input name="expiresInValue" type="number" min="1" max="168" step="0.001" value="12" inputmode="decimal" aria-describedby="campaign-expiry-help" required>
+              <select name="expiresInUnit" data-campaign-expiry-unit aria-label="Expiration unit">
+                <option value="hours">Hours</option>
+                <option value="days">Days</option>
+                <option value="indefinite">Indefinite</option>
+              </select>
+            </div>
+            <small id="campaign-expiry-help" data-campaign-expiry-help>Enter 1–168 hours.</small>
+          </div>
+          <label>Maximum people<input name="maxRedemptions" type="number" min="1" max="500" value="25" inputmode="numeric" required></label>
+        </div>
+        <p class="campaign-qr-included"><strong>QR INCLUDED</strong><span>The campaign link, scannable QR, branded social graphic, and sharing controls are generated together.</span></p>
+        <div class="campaign-form-status" data-campaign-form-status aria-live="polite"></div>
+        <div class="campaign-modal-actions">
+          <button class="btn btn-outline" type="button" data-campaign-close>Cancel</button>
+          <button class="btn btn-primary" type="submit" data-campaign-submit>Generate Discount + QR</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <div class="rewards-modal" data-inventory-modal hidden>
+    <button class="rewards-modal-backdrop" type="button" data-inventory-close aria-label="Close inventory editor"></button>
+    <section class="rewards-modal-card inventory-modal-card" role="dialog" aria-modal="true" aria-labelledby="inventory-modal-title">
+      <button class="rewards-modal-close" type="button" data-inventory-close aria-label="Close">&times;</button>
+      <p class="eyebrow">Protected inventory editor</p>
+      <h2 id="inventory-modal-title" data-inventory-modal-title>Add an inventory product</h2>
+      <p>Use actual landed costs and packed measurements. Leave any unknown price blank; the storefront will not invent a selling price.</p>
+      <form class="inventory-form" data-inventory-form>
+        <input name="id" type="hidden">
+        <fieldset>
+          <legend>Product identity</legend>
+          <div class="inventory-form-grid">
+            <label class="inventory-span-2">Product name<input name="name" required maxlength="120" placeholder="Mega Evolution Booster Box"></label>
+            <label>UPC<input name="upc" inputmode="numeric" maxlength="32" placeholder="Preserves leading zeros"></label>
+            <label>Category<input name="category" maxlength="64" placeholder="Booster Box"></label>
+            <label>Quantity on hand<input name="quantity" type="number" min="0" max="100000" step="1" value="0" required inputmode="numeric"></label>
+            <label class="inventory-span-2">Image or local asset URL<input name="imageUrl" maxlength="500" placeholder="https://... or assets/images/product.svg"></label>
+            <label>Series<select name="series"><option value="pokemon">Pokémon</option><option value="magic">Magic the Gathering</option></select></label><label class="inventory-span-2">Description<textarea name="description" maxlength="1000" rows="3" placeholder="Collector-facing product description"></textarea></label>
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend>Market reference</legend>
+          <div class="inventory-form-grid inventory-money-grid">
+            <label>Reference price ($)<input name="averageMsrp" type="number" min="0" step="0.01" inputmode="decimal" placeholder="161.64"></label>
+            <label>Reference label<input name="referencePriceLabel" maxlength="80" value="Retail reference price" placeholder="Average MSRP"></label>
+            <label>Price observed on<input name="referencePriceObservedAt" type="date"></label>
+            <label>Reference source URL<input name="sourceUrl" maxlength="500" placeholder="https://retailer.example/product"></label>
+          </div>
+          <p class="fine-print">The reference price is comparison information only. It is not used as a floor or a cap.</p>
+        </fieldset>
+        <fieldset>
+          <legend>Channel cost inputs</legend>
+          <p class="inventory-pricing-intro">Enter actual per-item costs. Leave an unknown cost blank; dependent channels will remain unpriced instead of guessing.</p>
+          <div class="inventory-form-grid inventory-money-grid">
+            <label>Landed COGS ($)<input name="cogs" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Product + inbound freight"></label>
+            <label>USA postage allowance ($)<input name="usShipping" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Free-shipping postage"></label>
+            <label>Packaging ($)<input name="packaging" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Mailers, boxes, fill, labels"></label>
+            <label>Overhead allocation ($)<input name="overhead" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Typically $2–$5 sealed"></label>
+            <label>Retail fixed fee ($)<input name="retailFixedFee" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Per-sale fixed fee"></label>
+            <label>Wholesale handling ($)<input name="wholesaleHandling" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Per-order/item handling"></label>
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend>Safe floors &amp; market list prices</legend>
+          <p class="inventory-pricing-intro">Leave a list price blank to use its floor. A list price may be above the floor for strong market demand, but the system will reject anything below it.</p>
+          <div class="inventory-price-preview" data-inventory-price-preview>
+            <div><span>Retail floor</span><strong data-inventory-retail-floor>Needs cost inputs</strong><small>2.7% processing · 25% margin</small></div>
+            <div><span>USA website floor</span><strong data-inventory-website-floor>Needs cost inputs</strong><small>2.9% + $0.30 · 20% margin · postage included</small></div>
+            <div><span>International item floor</span><strong data-inventory-international-floor>Needs cost inputs</strong><small>2.9% + $0.30 · 20% margin · shipping separate</small></div>
+            <div><span>Live auction floor</span><strong data-inventory-live-floor>Needs cost inputs</strong><small>12% fees + $0.30 · 18% margin · buyer-paid shipping</small></div>
+            <div><span>Small reseller floor</span><strong data-inventory-wholesale-small-floor>Needs cost inputs</strong><small>15% margin · ACH/wire · freight separate</small></div>
+            <div><span>Case floor</span><strong data-inventory-wholesale-case-floor>Needs cost inputs</strong><small>12% margin · ACH/wire · freight separate</small></div>
+            <div><span>Pallet / large floor</span><strong data-inventory-wholesale-pallet-floor>Needs cost inputs</strong><small>10% margin · ACH/wire · freight separate</small></div>
+          </div>
+          <div class="inventory-form-grid inventory-money-grid inventory-list-price-grid">
+            <label>Retail list price ($)<input name="retailListPrice" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Optional — blank uses floor"></label>
+            <label>USA website list price ($)<input name="websiteListPrice" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Optional — blank uses floor"></label>
+            <label>International item list price ($)<input name="internationalListPrice" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Optional — shipping separate"></label>
+            <label>Live auction list price ($)<input name="liveListPrice" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Optional — buyer pays shipping"></label>
+            <label>Small reseller price ($)<input name="wholesaleSmallListPrice" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Optional — 15% floor"></label>
+            <label>Case price ($)<input name="wholesaleCaseListPrice" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Optional — 12% floor"></label>
+            <label>Pallet / large price ($)<input name="wholesalePalletListPrice" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Optional — 10% floor"></label>
+          </div>
+          <p class="fine-print">Wholesale floors assume ACH or wire (0% payment fee) and buyer-paid freight unless your minimum-order policy says otherwise. Insurance, taxes, refunds, and unusual carrier adjustments still require owner review.</p>
+        </fieldset>
+        <fieldset>
+          <legend>Packed shipment details</legend>
+          <div class="inventory-form-grid inventory-package-grid">
+            <label>Weight (oz)<input name="weightOz" type="number" min="0.01" max="2400" step="0.01" inputmode="decimal"></label>
+            <label>Length (in)<input name="lengthIn" type="number" min="0.01" max="120" step="0.01" inputmode="decimal"></label>
+            <label>Width (in)<input name="widthIn" type="number" min="0.01" max="120" step="0.01" inputmode="decimal"></label>
+            <label>Height (in)<input name="heightIn" type="number" min="0.01" max="120" step="0.01" inputmode="decimal"></label>
+            <label>Origin country<input name="originCountry" maxlength="2" placeholder="US" aria-describedby="origin-country-help"></label>
+            <label>HS code<input name="hsCode" maxlength="12" inputmode="numeric" placeholder="9504.40"></label>
+            <label class="inventory-span-2">Packing notes<textarea name="packingNotes" maxlength="500" rows="3" placeholder="Internal-only packing instructions"></textarea></label>
+          </div>
+          <p class="fine-print" id="origin-country-help">Country of origin means where the product was manufactured, not where it ships from. Use the two-letter country code and confirm customs details before international sales.</p>
+        </fieldset>
+        <div class="inventory-switches">
+          <label><input name="isStoreVisible" type="checkbox" checked> Show in Coming Soon store</label>
+          <label><input name="isActive" type="checkbox" checked> Active inventory item</label>
+        </div>
+        <p class="inventory-deactivate-note" data-inventory-deactivate-note hidden>Turning Active off safely removes this product from new product campaigns and the public catalog. Existing campaign snapshots stay intact.</p>
+        <div class="campaign-form-status" data-inventory-form-status aria-live="polite"></div>
+        <div class="campaign-modal-actions">
+          <button class="btn btn-outline" type="button" data-inventory-close>Cancel</button>
+          <button class="btn btn-primary" type="submit" data-inventory-save>Save Product</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <div class="rewards-modal campaign-share-modal" data-campaign-share-modal hidden>
+    <button class="rewards-modal-backdrop" type="button" data-campaign-share-close aria-label="Close campaign sharing"></button>
+    <section class="rewards-modal-card campaign-share-modal-card" role="dialog" aria-modal="true" aria-labelledby="campaign-share-title">
+      <button class="rewards-modal-close" type="button" data-campaign-share-close aria-label="Close">&times;</button>
+      <p class="eyebrow">Owner social launcher</p>
+      <h2 id="campaign-share-title">Share this QR everywhere.</h2>
+      <p data-campaign-share-description>Your live QR is layered into a Crack Packs social graphic.</p>
+      <div class="campaign-share-preview" data-campaign-share-preview>
+        <canvas width="1080" height="1080" data-campaign-share-canvas aria-label="Crack Packs campaign share graphic with QR code"></canvas>
+        <span data-campaign-share-loading>Building the share graphic...</span>
+      </div>
+      <div class="campaign-share-primary-actions">
+        <button class="btn btn-primary" type="button" data-campaign-share-native>Share to Apps</button>
+        <button class="btn btn-outline" type="button" data-campaign-share-download>Download QR</button>
+        <button class="btn btn-outline" type="button" data-campaign-share-copy>Copy Caption + Link</button>
+      </div>
+      <div class="campaign-social-share-grid" aria-label="Share campaign to a social site">
+        <button type="button" data-campaign-share-social="facebook"><span>f</span><strong>Facebook</strong></button>
+        <button type="button" data-campaign-share-social="x"><span>X</span><strong>X</strong></button>
+        <button type="button" data-campaign-share-social="instagram"><span>◎</span><strong>Instagram</strong></button>
+        <button type="button" data-campaign-share-social="youtube"><span>▶</span><strong>YouTube</strong></button>
+        <button type="button" data-campaign-share-social="live"><span>W</span><strong>Live Hub</strong></button>
+      </div>
+      <p class="fine-print">On phones, Share to Apps includes the image when supported. Instagram, YouTube, and the live hub open after the caption is copied; use Download QR to attach the graphic.</p>
+      <button class="btn btn-outline campaign-share-done" type="button" data-campaign-share-close>Close</button>
+    </section>
+  </div>
+
+  <div class="rewards-modal" data-email-select-modal hidden>
+    <button class="rewards-modal-backdrop" type="button" data-email-select-close aria-label="Close member selection"></button>
+    <section class="rewards-modal-card campaign-modal-card" role="dialog" aria-modal="true" aria-labelledby="email-select-title">
+      <button class="rewards-modal-close" type="button" data-email-select-close aria-label="Close">&times;</button>
+      <p class="eyebrow">Select Few</p>
+      <h2 id="email-select-title">Add message recipients</h2>
+      <p>Keep searching and adding members. Your selection stays open until you click Finished.</p>
+      <label class="campaign-claim-search">Guess a name, username, or email<input type="search" data-email-member-search placeholder="Start typing a member..." autocomplete="off"></label>
+      <div class="email-member-results" data-email-member-results aria-live="polite"></div>
+      <div class="email-selection-footer"><strong data-email-selection-count>0 selected</strong><button class="btn btn-primary" type="button" data-email-select-finished>Finished</button></div>
+    </section>
+  </div>
+
+  <div class="rewards-modal" data-admin-email-modal hidden>
+    <button class="rewards-modal-backdrop" type="button" data-admin-email-close aria-label="Close"></button>
+    <section class="rewards-modal-card" role="dialog" aria-modal="true" aria-labelledby="admin-email-title">
+      <button class="rewards-modal-close" type="button" data-admin-email-close>&times;</button>
+      <div class="email-icon" aria-hidden="true">&#9993;</div>
+      <p class="eyebrow">Owner login</p>
+      <h2 id="admin-email-title">Check your inbox</h2>
+      <p>Open the owner verification link within 10 minutes. You will then confirm the registered passkey.</p>
+      <button class="btn btn-primary" type="button" data-admin-email-close>Close</button>
+    </section>
+  </div>
+
+  <script src="assets/js/config.js?v=3.0.0"></script>
+  <script src="assets/js/nav-profile.js?v=2.6.1"></script>
+  <script src="assets/js/admin.js?v=3.3.2"></script>
+</body>
+</html>

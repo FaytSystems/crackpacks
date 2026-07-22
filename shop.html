@@ -4,17 +4,19 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Shop Pokémon Cards | Crack Packs</title>
-  <meta name="description" content="Browse Crack Packs sealed products, booster packs, Japanese cards, singles, slabs, and live Whatnot inventory.">
+  <meta name="description" content="Seller-only Crack Packs store portal for breaker-priced inventory, preorder planning, and protected store access.">
   <meta name="theme-color" content="#07091b">
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="stylesheet" href="assets/css/styles.css?v=1.5.0">
+  <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.6.1">
+  <link rel="stylesheet" href="assets/css/store.css?v=3.0.0">
   
   <!-- CRACK PACKS CONTACT ASSETS:START -->
   <link rel="stylesheet" href="assets/css/contact-form.css?v=1.7.1">
   <!-- CRACK PACKS CONTACT ASSETS:END -->
 </head>
-<body data-page="shop">
+<body data-page="shop" data-store-market="us" data-seller-page="true">
   <a class="skip-link" href="#main">Skip to content</a>
   <div class="ambient-layer" aria-hidden="true"><span class="ambient-orb orb-a"></span><span class="ambient-orb orb-b"></span><span class="ambient-orb orb-c"></span><span class="grain"></span></div>
 
@@ -24,36 +26,62 @@
       <button class="menu-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="site-nav"><span></span><span></span><span></span></button>
       <nav class="site-nav" id="site-nav" aria-label="Primary navigation">
         <a href="index.html">Home</a>
-        <a href="shop.html" aria-current="page">Shop</a>
-        <a href="releases.html">Release Radar</a>
-        <a href="card-lookup.html">Card Search &amp; Price Check</a>
+        <a href="streams.html">Live</a>
+        <a href="releases.html">Releases</a>
+        <a href="card-lookup.html">Card Search ($)</a>
+        <div class="nav-profile" data-nav-profile>
+          <button class="nav-profile-trigger" type="button" data-profile-trigger aria-expanded="false">Profile <span class="nav-profile-caret" aria-hidden="true">▼</span></button>
+          <div class="nav-profile-menu"><a href="referral.html"><strong>Invites &amp; Rewards</strong><small>QR referrals, tiers and member offers</small></a></div>
+        </div>
         <a class="nav-live nav-youtube" href="index.html#crack-packs-live" aria-label="Open the Crack Packs YouTube live room">YouTube <span aria-hidden="true">&bull;</span> Watch Live</a>
-        <a class="nav-live" data-whatnot href="#">Live on Whatnot <span aria-hidden="true">↗</span></a>
+        <a class="nav-live" href="shop.html" aria-current="page">Store</a>
       </nav>
     </div>
   </header>
 
-  <section class="visual-marquee visual-marquee-top" aria-label="Crack Packs shop showcase">
+  <div class="container portal-lock holo-panel" data-seller-gate hidden>
+    <p class="eyebrow">Seller Portal locked</p>
+    <h1>This store is only visible in Seller mode.</h1>
+    <p>Buyer mode never shows Store. Sign in on your Profile and switch to Seller Portal to view breaker-priced inventory and preorder tools.</p>
+    <div class="actions">
+      <a class="btn btn-primary" href="referral.html">Open Profile</a>
+      <button class="btn btn-outline" type="button" data-open-buyer-portal>Open Buyer Portal</button>
+    </div>
+  </div>
+
+  <div class="store-coming-soon-tape" role="status" aria-label="Crack Packs store is coming soon" data-seller-page-content>
+    <span>Coming soon</span><span>Checkout locked</span><span>Coming soon</span><span aria-hidden="true">Store preview</span>
+  </div>
+
+  <section class="visual-marquee visual-marquee-top" aria-label="Crack Packs shop showcase" data-seller-page-content>
     <div class="marquee-slides" data-marquee>
-      <a class="marquee-slide is-active" href="#inventory" style="--slide-image:url('assets/images/banner-flame.svg')"><span class="marquee-kicker">Shop the heat</span><strong>Sealed, singles, slabs and packs.</strong><em>Browse below</em></a>
-      <a class="marquee-slide" href="card-lookup.html" style="--slide-image:url('assets/images/banner-electric.svg')"><span class="marquee-kicker">Before you buy or bid</span><strong>Search the card. Check the value.</strong><em>Open price check</em></a>
-      <a class="marquee-slide" data-whatnot href="#" style="--slide-image:url('assets/images/banner-vintage.svg')"><span class="marquee-kicker">Live inventory</span><strong>New claims can land during every stream.</strong><em>Join Whatnot</em></a>
+      <a class="marquee-slide is-active" href="#inventory" style="--slide-image:url('/assets/images/banner-flame.svg')"><span class="marquee-kicker">Shop the heat</span><strong>Sealed, singles, slabs and packs.</strong><em>Browse below</em></a>
+      <a class="marquee-slide" href="card-lookup.html" style="--slide-image:url('/assets/images/banner-electric.svg')"><span class="marquee-kicker">Before you buy or bid</span><strong>Search the card. Check the value.</strong><em>Open price check</em></a>
+      <a class="marquee-slide" data-live-hub href="#" style="--slide-image:url('/assets/images/banner-vintage.svg')"><span class="marquee-kicker">Live inventory</span><strong>Launch saved giveaways and promo drops from your show.</strong><em>Open live hub</em></a>
       <div class="marquee-dots" aria-label="Choose showcase slide"></div>
     </div>
   </section>
 
-  <main id="main">
+  <main id="main" data-seller-page-content>
     <section class="page-hero shop-hero">
       <div class="container page-hero-grid">
-        <div class="reveal"><p class="eyebrow">Crack Packs shop</p><h1>Find your next <span>chase.</span></h1><p>Browse product categories here, then open the current checkout or Whatnot listing. Inventory, pricing, and availability can change quickly.</p><div class="actions"><a class="btn btn-primary" href="#inventory">Browse inventory</a><a class="btn btn-glass" href="card-lookup.html">Search card prices</a><a class="btn btn-glass" data-whatnot href="#">Shop live on Whatnot ↗</a></div></div>
+        <div class="reveal"><p class="eyebrow">Seller Store Portal</p><h1>Breaker-priced inventory with <span>protected access.</span></h1><p>Seller mode unlocks wholesale-fed inventory, margin-friendly pricing, and preorder planning. Public buyers do not see this store in their nav.</p><div class="actions"><a class="btn btn-primary" href="#inventory">Browse seller inventory</a><a class="btn btn-glass" href="international-shop.html">International seller pricing</a><a class="btn btn-glass" href="releases.html">Open release calendar</a></div></div>
         <div class="shop-orb holo-panel reveal" aria-hidden="true"><span class="shop-orb-ring ring-one"></span><span class="shop-orb-ring ring-two"></span><span class="shop-orb-ring ring-three"></span><strong>SHOP<br>THE<br>CHASE</strong></div>
       </div>
     </section>
 
     <section class="section-tight" id="inventory">
       <div class="container">
-        <div class="store-notice holo-panel"><span class="notice-dot"></span><strong>Store status:</strong><span data-store-notice></span></div>
-        <div class="shop-tools holo-panel" aria-label="Shop filters">
+        <div class="store-prelaunch-note holo-panel">
+          <span class="store-lock-icon" aria-hidden="true">&#128274;</span>
+          <div><strong>USA storefront preview</strong><p>Displayed prices include configured USA shipping and never fall below the protected channel floor. Checkout buttons are disabled, so this page cannot create a charge.</p></div>
+          <nav class="store-market-switch" aria-label="Choose storefront"><a href="shop.html" aria-current="page">USA store</a><a href="international-shop.html">International</a></nav>
+        </div>
+        <div class="shop-tools store-tools holo-panel" aria-label="Shop filters">
+          <div class="lookup-examples" aria-label="Store series tabs">
+            <span>Store tabs:</span>
+            <div class="type-grid" data-store-series-tabs></div>
+          </div>
           <label class="search-box"><span class="sr-only">Search products</span><input type="search" placeholder="Search sealed, packs, Japanese, singles…" data-product-search></label>
           <div class="filter-list" role="group" aria-label="Product category">
             <button class="filter-btn is-active" type="button" data-product-filter="all">All</button>
@@ -63,14 +91,15 @@
             <button class="filter-btn" type="button" data-product-filter="singles">Singles &amp; slabs</button>
           </div>
         </div>
-        <div class="product-grid shop-grid" data-all-products></div>
+        <p class="store-catalog-status" data-store-catalog-status aria-live="polite">Preparing the store preview…</p>
+        <div class="product-grid shop-grid" data-all-products data-store-catalog></div>
         <div class="empty-state" data-product-empty hidden><strong>No products match that search.</strong><span>Try another keyword or category.</span></div>
       </div>
     </section>
 
     <section class="section element-zone">
       <div class="container element-panel holo-panel reveal">
-        <div class="element-panel-copy"><p class="eyebrow">Card Search &amp; Price Check</p><h2>Need a value before you buy, sell, or bid?</h2><p>Use the dedicated collector tool to find the exact printing, review returned market-reference pricing, and open the external market listing for verification.</p><div class="actions"><a class="btn btn-primary" href="card-lookup.html">Open the price check</a><a class="btn btn-glass" data-whatnot href="#">View live inventory ↗</a></div></div>
+        <div class="element-panel-copy"><p class="eyebrow">Card Search &amp; Price Check</p><h2>Need a value before you buy, sell, or bid?</h2><p>Use the dedicated collector tool to find the exact printing, review returned market-reference pricing, and open the external market listing for verification.</p><div class="actions"><a class="btn btn-primary" href="card-lookup.html">Open the price check</a><a class="btn btn-glass" href="streams.html">View live inventory</a></div></div>
         <div class="element-wheel" aria-hidden="true"><div class="wheel-core"><span>⌕</span></div><span class="wheel-node wheel-electric">$</span><span class="wheel-node wheel-fire">#</span><span class="wheel-node wheel-water">◆</span><span class="wheel-node wheel-leaf">★</span><span class="wheel-node wheel-psychic">CP</span><span class="wheel-node wheel-cosmic">↗</span></div>
       </div>
     </section>
@@ -87,7 +116,7 @@
     </section>
 
     <section class="section">
-      <div class="container live-panel holo-panel reveal"><div class="live-visual" aria-hidden="true"><span class="live-orbit orbit-one"></span><span class="live-orbit orbit-two"></span><span class="live-mark">LIVE</span></div><div class="live-copy"><p class="eyebrow"><span class="live-pulse"></span> Live inventory</p><h2>Some of the best cards never sit still.</h2><p>Whatnot inventory may update faster than the website. Follow Crack Packs there for live claims, sudden drops, special lots, and stream-only offers.</p><a class="btn btn-primary" data-whatnot href="#">Open Whatnot ↗</a></div></div>
+      <div class="container live-panel holo-panel reveal"><div class="live-visual" aria-hidden="true"><span class="live-orbit orbit-one"></span><span class="live-orbit orbit-two"></span><span class="live-mark">LIVE</span></div><div class="live-copy"><p class="eyebrow"><span class="live-pulse"></span> Seller live tools</p><h2>Launch giveaways, push promos, and track referrals while live.</h2><p>Seller mode pairs this store with the live hub so you can drive buyers from stream into profile-based rewards and giveaway entries.</p><a class="btn btn-primary" href="streams.html">Open live hub</a></div></div>
     </section>
   </main>
 
@@ -98,9 +127,10 @@
         <h3>Explore</h3>
         <a href="index.html">Home</a>
         <a href="shop.html">Shop</a>
-        <a href="releases.html">Release Radar</a>
-        <a href="card-lookup.html">Card Search &amp; Price Check</a>
-        <a data-whatnot href="#">Whatnot</a>
+        <a href="international-shop.html">International Shop</a>
+        <a href="releases.html">Releases</a>
+        <a href="card-lookup.html">Card Search ($)</a>
+        <a data-live-hub href="#">Live Hub</a>
       </div>
       <div class="footer-links"><h3>Contact</h3><a data-email href="#">hello@crackpacks.com</a><a href="https://github.com/FaytSystems/crackpacks" target="_blank" rel="noopener noreferrer">GitHub repository ↗</a></div>
     </div>
@@ -114,9 +144,11 @@
   <!-- CRACK PACKS CONTACT FOOTER:END -->
 </footer>
 
-  <script src="assets/js/config.js?v=1.5.0"></script>
+  <script src="assets/js/config.js?v=3.0.0"></script>
   <script src="assets/js/data.js?v=1.5.0"></script>
   <script src="assets/js/app.js?v=1.5.0"></script>
+  <script src="assets/js/portal-mode.js?v=1.0.0"></script>
+  <script src="assets/js/store.js?v=3.0.0"></script>
 
 
 <!-- CRACK PACKS CONTACT MODAL:START -->
@@ -158,6 +190,7 @@
 </div>
 <!-- CRACK PACKS CONTACT MODAL:END -->
 <!-- CRACK PACKS CONTACT SCRIPT:START -->
+<script src="assets/js/nav-profile.js?v=2.6.1"></script>
 <script src="assets/js/contact-form.js?v=1.7.1"></script>
 <!-- CRACK PACKS CONTACT SCRIPT:END -->
 </body>

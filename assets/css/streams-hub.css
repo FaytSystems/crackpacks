@@ -1,0 +1,137 @@
+.streams-shell {
+  padding: 2rem 0 4rem;
+}
+
+.streams-grid,
+.watchlist-grid,
+.giveaway-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+  gap: 1.25rem;
+}
+
+.stream-card,
+.watchlist-card,
+.gifted-giveaway-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.stream-card img {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 1rem;
+  display: block;
+  margin-bottom: 1rem;
+}
+
+.stream-card-top,
+.stream-card-meta,
+.stream-card-actions,
+.gifted-giveaway-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.stream-card-top,
+.stream-card-meta {
+  justify-content: space-between;
+}
+
+.stream-pill,
+.viewer-pill,
+.watch-pill,
+.follow-pill {
+  border: 1px solid rgba(255,255,255,0.16);
+  border-radius: 999px;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.78rem;
+  background: rgba(5, 10, 30, 0.72);
+}
+
+.stream-pill.live {
+  color: #72ffa4;
+  border-color: rgba(114,255,164,0.45);
+}
+
+.stream-pill.upcoming {
+  color: #8fc6ff;
+  border-color: rgba(143,198,255,0.45);
+}
+
+.stream-empty {
+  padding: 1rem 1.25rem;
+  border-radius: 1rem;
+  border: 1px dashed rgba(255,255,255,0.18);
+  color: rgba(255,255,255,0.8);
+}
+
+.hub-tabs {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.25rem;
+}
+
+.hub-tab {
+  border: 1px solid rgba(255,255,255,0.18);
+  background: rgba(6, 12, 32, 0.72);
+  color: #fff;
+  border-radius: 999px;
+  padding: 0.7rem 1rem;
+  cursor: pointer;
+}
+
+.hub-tab.is-active {
+  background: linear-gradient(135deg, rgba(41,209,255,0.24), rgba(232,89,255,0.22));
+  border-color: rgba(255,255,255,0.32);
+}
+
+.seller-show-tools,
+.seller-release-panel {
+  margin-top: 1.5rem;
+}
+
+.seller-giveaway-form,
+.gifted-giveaway-form {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.seller-giveaway-form .field-grid,
+.gifted-giveaway-form .field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.85rem;
+}
+
+.seller-giveaway-list,
+.gifted-giveaway-queue {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.seller-giveaway-item,
+.gifted-giveaway-card {
+  border-radius: 1rem;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(7, 11, 28, 0.82);
+  padding: 1rem;
+}
+
+.seller-giveaway-item header,
+.gifted-giveaway-card header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+}
+
+.portal-lock {
+  max-width: 720px;
+  margin: 2rem auto 0;
+}

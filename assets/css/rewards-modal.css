@@ -1,0 +1,19 @@
+.rewards-modal{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:20px}
+.rewards-modal-backdrop{position:absolute;inset:0;border:0;background:rgba(3,4,16,.82);backdrop-filter:blur(10px)}
+.rewards-modal-card{position:relative;width:min(520px,100%);padding:42px;border:1px solid rgba(248,255,70,.4);border-radius:26px;background:linear-gradient(145deg,#121638,#080a1f);box-shadow:0 35px 100px rgba(0,0,0,.65);text-align:center}
+.rewards-modal-card h2{margin:0 0 12px;font-size:clamp(2rem,6vw,3.2rem);line-height:1}
+.rewards-modal-card p:not(.eyebrow){color:var(--muted)}
+.rewards-modal-card .eyebrow{justify-content:center}
+.rewards-modal-close{position:absolute;right:14px;top:12px;width:42px;height:42px;border:0;background:transparent;font-size:2rem;cursor:pointer}
+.email-icon{display:grid;place-items:center;width:74px;height:74px;margin:0 auto 22px;border-radius:22px;color:#070815;background:linear-gradient(135deg,var(--electric),var(--cyan));font-size:2rem}
+.invite-sent-icon{background:linear-gradient(135deg,var(--mint),var(--electric));font-weight:950}
+.invite-copy-card{max-width:680px;padding:clamp(34px,7vw,72px);border-color:rgba(255,78,219,.72);background:radial-gradient(circle at 50% 0,rgba(255,78,219,.24),transparent 46%),linear-gradient(145deg,#15183d,#07091d);box-shadow:0 0 42px rgba(255,78,219,.34),0 0 90px rgba(56,232,255,.12);animation:inviteCopyPulse 1.05s ease-in-out infinite alternate}
+.invite-copy-card h2{font-size:clamp(2.25rem,7vw,5rem);line-height:.92;text-transform:uppercase;letter-spacing:-.055em}
+.invite-copy-signal{display:inline-flex;margin-bottom:18px;padding:7px 13px;border:1px solid rgba(248,255,70,.55);border-radius:999px;color:var(--electric);font-size:.78rem;font-weight:950;letter-spacing:.16em;box-shadow:0 0 24px rgba(248,255,70,.16)}
+@keyframes inviteCopyPulse{from{transform:scale(.99);filter:saturate(.9)}to{transform:scale(1.01);filter:saturate(1.18)}}
+@media(prefers-reduced-motion:reduce){.invite-copy-card{animation:none}}
+.rewards-hero-single{grid-template-columns:1fr!important;max-width:980px}
+.referral-attached{max-width:1040px;margin:0 auto 22px;padding:16px 20px;border:1px solid var(--mint);border-radius:16px;background:rgba(93,255,197,.09);color:var(--mint)}
+.referral-attached strong,.referral-attached span{display:block}
+.referral-attached span{margin-top:4px;color:#e8fff7}
+.dashboard-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}

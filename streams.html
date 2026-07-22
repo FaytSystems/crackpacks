@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Crack Packs Live Hub</title>
+  <meta name="description" content="Watch live streams, save upcoming shows, follow sellers, and fund gifted giveaways on Crack Packs.">
+  <meta name="theme-color" content="#07091b">
+  <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/css/styles.css?v=1.9.2">
+  <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.6.1">
+  <link rel="stylesheet" href="assets/css/streams-hub.css?v=1.0.0">
+</head>
+<body data-page="streams">
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="container nav-shell">
+      <a class="brand" href="index.html" aria-label="Crack Packs home"><img src="assets/images/logo.svg" alt="Crack Packs"></a>
+      <button class="menu-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="site-nav"><span></span><span></span><span></span></button>
+      <nav class="site-nav" id="site-nav" aria-label="Primary navigation">
+        <a href="index.html">Home</a>
+        <a href="streams.html" aria-current="page">Live Feed</a>
+        <a href="releases.html">Releases</a>
+        <a href="card-lookup.html">Card Search ($)</a>
+        <a href="referral.html">Profile</a>
+        <a href="shop.html" data-hide-store-link hidden>Store</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main" class="streams-shell">
+    <section class="container page-hero">
+      <div class="reveal">
+        <p class="eyebrow">Buyer Website</p>
+        <h1>Live shows, saved watchlists, and <span>followed sellers.</span></h1>
+        <p>Buyers land here first: watch live, follow shows, save upcoming streams to your watchlist, and fund gifted giveaways for a seller’s queue.</p>
+      </div>
+      <div class="actions">
+        <button class="btn btn-outline" type="button" data-open-buyer-portal>Stay in Buyer Portal</button>
+        <button class="btn btn-primary" type="button" data-open-seller-portal>Switch to Seller Portal</button>
+      </div>
+    </section>
+
+    <section class="container">
+      <div class="hub-tabs">
+        <button class="hub-tab is-active" type="button" data-hub-tab="watchlist">Saved Watchlist</button>
+        <button class="hub-tab" type="button" data-hub-tab="live">Live Now</button>
+        <button class="hub-tab" type="button" data-hub-tab="upcoming">Upcoming</button>
+        <button class="hub-tab" type="button" data-hub-tab="followed">Followed</button>
+      </div>
+      <div class="streams-grid" data-streams-list></div>
+      <div class="stream-empty" data-streams-empty hidden>No shows match this tab yet. Follow sellers or save upcoming streams to fill this page.</div>
+    </section>
+
+    <section class="container section seller-show-tools" data-seller-only hidden>
+      <div class="section-heading reveal">
+        <div>
+          <p class="eyebrow">Seller tools</p>
+          <h2>Saved giveaway presets for your <span>live shows.</span></h2>
+          <p>Build giveaway presets before stream, then queue the one you want during your show.</p>
+        </div>
+      </div>
+      <div class="holo-panel">
+        <form class="seller-giveaway-form" data-seller-giveaway-form>
+          <div class="field-grid">
+            <label>Giveaway title<input name="title" required maxlength="80" placeholder="Friday night holo rush"></label>
+            <label>Winner count<input name="quantity" type="number" min="1" max="50" value="1" required></label>
+            <label>Inventory label<input name="inventoryLabel" required maxlength="80" placeholder="1 holo single per winner"></label>
+          </div>
+          <div class="field-grid">
+            <label>Eligibility profile<input name="eligibility" required maxlength="80" placeholder="Followers + active bidders"></label>
+            <label>Open mode<input name="openMode" required maxlength="80" placeholder="Open on command"></label>
+          </div>
+          <label>Rules / notes<textarea name="rules" rows="3" maxlength="300" placeholder="Minimum follow + at least one bid this stream."></textarea></label>
+          <button class="btn btn-primary" type="submit">Save giveaway preset</button>
+        </form>
+        <div class="seller-giveaway-list" data-seller-giveaway-list></div>
+      </div>
+    </section>
+
+    <section class="container section">
+      <div class="section-heading reveal">
+        <div>
+          <p class="eyebrow">Gift a giveaway</p>
+          <h2>Fund a giveaway for a seller <span>show.</span></h2>
+          <p>Gifted giveaways are logged to the selected show queue so the seller can launch them on stream after payment verification.</p>
+        </div>
+      </div>
+      <div class="giveaway-grid">
+        <article class="holo-panel">
+          <form class="gifted-giveaway-form" data-gifted-giveaway-form>
+            <input type="hidden" name="showId" data-gifted-show-id>
+            <p class="fine-print" data-gifted-show-title>Select a show from above with “Donate to Show”.</p>
+            <div class="field-grid">
+              <label>Your name<input name="buyerName" maxlength="80" placeholder="Collector name"></label>
+              <label>Giveaway product<input name="product" required maxlength="80" placeholder="Holo single · sealed pack · bonus card"></label>
+            </div>
+            <label>Message to seller<textarea name="note" rows="3" maxlength="300" placeholder="Use this for the final bonus spin of the stream."></textarea></label>
+            <button class="btn btn-primary" type="submit">Queue gifted giveaway</button>
+          </form>
+        </article>
+        <article class="holo-panel">
+          <p class="eyebrow">Gifted queue</p>
+          <h3>Queued for seller launch</h3>
+          <div class="gifted-giveaway-queue" data-gifted-giveaway-queue></div>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <script src="assets/js/config.js?v=3.0.0"></script>
+  <script src="assets/js/app.js?v=1.9.2"></script>
+  <script src="assets/js/portal-mode.js?v=1.0.0"></script>
+  <script src="assets/js/streams-hub.js?v=1.0.0"></script>
+</body>
+</html>

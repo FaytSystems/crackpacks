@@ -15,14 +15,14 @@
   }[character]));
 
   const resolveDynamicUrl = url => {
-    if (!url || url.includes("YOUR_USERNAME")) return config.whatnotUrl || "#";
+    if (!url || url.includes("YOUR_USERNAME")) return config.liveHubUrl || "#";
     return url;
   };
 
   const isExternal = url => /^https?:\/\//i.test(url || "");
 
-  document.querySelectorAll("[data-whatnot]").forEach(link => {
-    const url = config.whatnotUrl || "#";
+  document.querySelectorAll("[data-live-hub]").forEach(link => {
+    const url = config.liveHubUrl || "#";
     link.href = url;
     if (isExternal(url)) {
       link.target = "_blank";

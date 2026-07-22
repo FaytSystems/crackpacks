@@ -8,6 +8,7 @@
   <meta name="theme-color" content="#07091b">
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/css/styles.css?v=1.5.0">
+  <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.6.1">
   
   <!-- CRACK PACKS CONTACT ASSETS:START -->
   <link rel="stylesheet" href="assets/css/contact-form.css?v=1.7.1">
@@ -24,9 +25,13 @@
       <nav class="site-nav" id="site-nav" aria-label="Primary navigation">
         <a href="index.html">Home</a>
         <a href="shop.html">Shop</a>
-        <a href="releases.html">Release Radar</a>
-        <a href="card-lookup.html">Card Search &amp; Price Check</a>
-        <a class="nav-live" data-whatnot href="#">Live on Whatnot <span aria-hidden="true">↗</span></a>
+        <a href="releases.html">Releases</a>
+        <a href="card-lookup.html">Card Search ($)</a>
+        <div class="nav-profile" data-nav-profile>
+          <button class="nav-profile-trigger" type="button" data-profile-trigger aria-expanded="false">Profile <span class="nav-profile-caret" aria-hidden="true">▼</span></button>
+          <div class="nav-profile-menu"><a href="referral.html"><strong>Invites &amp; Rewards</strong><small>QR referrals, tiers and member offers</small></a></div>
+        </div>
+        <a class="nav-live" data-live-hub href="streams.html">Live Hub <span aria-hidden="true">↗</span></a>
       </nav>
     </div>
   </header>
@@ -53,7 +58,7 @@
         <a href="shop.html">Shop</a>
         <a href="releases.html">Release Radar</a>
         <a href="card-lookup.html">Card Search &amp; Price Check</a>
-        <a data-whatnot href="#">Whatnot</a>
+        <a data-live-hub href="streams.html">Live Hub</a>
       </div>
       <div class="footer-links"><h3>Contact</h3><a data-email href="#">hello@crackpacks.com</a><a href="https://github.com/FaytSystems/crackpacks" target="_blank" rel="noopener noreferrer">GitHub repository ↗</a></div>
     </div>
@@ -67,9 +72,10 @@
   <!-- CRACK PACKS CONTACT FOOTER:END -->
 </footer>
 
-  <script src="assets/js/config.js?v=1.5.0"></script>
+  <script src="assets/js/config.js?v=3.0.0"></script>
   <script src="assets/js/data.js?v=1.5.0"></script>
   <script src="assets/js/app.js?v=1.5.0"></script>
+  <script src="assets/js/nav-profile.js?v=2.6.1"></script>
 
 
 <!-- CRACK PACKS CONTACT MODAL:START -->
