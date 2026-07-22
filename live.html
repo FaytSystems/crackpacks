@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Live Breaks | Crack Packs</title>
+  <meta name="description" content="Watch Crack Packs breaker streams and slide to bid live.">
+  <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/css/styles.css?v=1.9.2">
+  <link rel="stylesheet" href="assets/css/live.css?v=1.0.0">
+</head>
+<body data-page="live">
+  <header class="site-header">
+    <div class="container nav-shell">
+      <a class="brand" href="index.html" aria-label="Crack Packs home"><img src="assets/images/logo.svg" alt="Crack Packs"></a>
+      <nav class="site-nav" aria-label="Primary navigation"><a href="index.html">Home</a><a href="shop.html">Shop</a><a href="referral.html">Profile</a></nav>
+    </div>
+  </header>
+  <main class="live-main" data-live-app>
+    <section class="container live-stage">
+      <div class="live-video-card">
+        <p class="eyebrow">Breaker live</p>
+        <h1>Crack Packs <span>Live Auction.</span></h1>
+        <p data-live-status>Loading the current auction...</p>
+        <div class="live-video-placeholder">Stream player connects here when a breaker session is live.</div>
+      </div>
+      <aside class="live-bid-card" data-live-bid-card data-state="ready">
+        <div class="winner-flash" data-winner-flash hidden></div>
+        <p class="eyebrow">Current auction</p>
+        <h2 data-lot-title>No live auction yet</h2>
+        <p data-lot-description>Waiting for the breaker to open the next lot.</p>
+        <div class="bid-meter">
+          <div><span>Current bid</span><strong data-current-bid>$0.00</strong></div>
+          <div><span>Next slide bid</span><strong data-next-bid>$0.00</strong></div>
+        </div>
+        <div class="slide-bid" data-slide-bid>
+          <span data-slide-fill></span>
+          <button type="button" data-slide-handle aria-label="Slide to bid">SLIDE TO BID</button>
+        </div>
+        <form class="custom-bid-form" data-custom-bid-form>
+          <div class="custom-bid-live">
+            <div>
+              <span>Live current bid</span>
+              <strong data-custom-live-current>$0.00</strong>
+            </div>
+            <div>
+              <span>Minimum next bid</span>
+              <strong data-custom-live-min>$0.00</strong>
+            </div>
+          </div>
+          <label>Set Your Bid
+            <input name="bidAmount" type="number" min="1" step="0.01" inputmode="decimal" placeholder="Enter your max bid">
+          </label>
+          <p class="custom-bid-help" data-custom-bid-help>Enter the amount you want to bid. This updates live while the auction moves.</p>
+          <button class="btn btn-primary" type="submit">Set Your Bid</button>
+        </form>
+        <p class="bid-state-copy" data-bid-state-copy>Sign in to your Profile before bidding.</p>
+        <a class="btn btn-outline" href="referral.html">Sign in / Profile</a>
+      </aside>
+    </section>
+  </main>
+  <script src="assets/js/config.js?v=3.0.0"></script>
+  <script src="assets/js/live.js?v=1.0.0"></script>
+</body>
+</html>

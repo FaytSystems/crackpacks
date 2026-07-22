@@ -1,12 +1,17 @@
 // D:\crackpacks\crackpacks-github-ready\youtube-live-worker\src\index.js
 
+import { DurableObject } from "cloudflare:workers";
+
 const WORKER_NAME = "crackpacks-youtube-live";
-const WORKER_VERSION = "1.6.0";
+const WORKER_VERSION = "1.7.0";
 const YOUTUBE_API_BASE = "https://www.googleapis.com/youtube/v3";
 const YOUTUBE_FEED_BASE = "https://www.youtube.com/feeds/videos.xml";
+const FACEBOOK_GRAPH_BASE = "https://graph.facebook.com";
 const DEFAULT_STATUS_CACHE_SECONDS = 45;
 const DEFAULT_DISCOVERY_CACHE_SECONDS = 3600;
 const MAX_CANDIDATE_VIDEOS = 30;
+const FACEBOOK_RETRY_DELAY_MS = 15 * 60 * 1000;
+const FACEBOOK_MAX_REJECTED_ATTEMPTS = 12;
 
 function jsonResponse(body, status = 200, headers = {}) {
   return new Response(JSON.stringify(body), {
@@ -23,6 +28,66 @@ function boundedInteger(value, fallback, minimum, maximum) {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.min(Math.max(parsed, minimum), maximum);
+}
+
+function enabled(value) {
+  return ["1", "true", "yes", "on"].includes(String(value || "").trim().toLowerCase());
+}
+
+function validFacebookPageId(value) {
+  const candidate = String(value || "").trim();
+  return /^\d{5,30}$/.test(candidate) ? candidate : "";
+}
+
+function facebookGraphVersion(value) {
+  const candidate = String(value || "").trim();
+  return /^v\d{1,2}\.\d$/.test(candidate) ? candidate : "v25.0";
+}
+
+function safeWhatnotUrl(value) {
+  try {
+    const parsed = new URL(String(value || "").trim());
+    const hostname = parsed.hostname.toLowerCase();
+    if (parsed.protocol !== "https:") return "";
+    if (hostname !== "whatnot.com" && !hostname.endsWith(".whatnot.com")) return "";
+    parsed.hash = "";
+    return parsed.toString();
+  } catch {
+    return "";
+  }
+}
+
+function safeWorkerOrigin(value) {
+  try {
+    const parsed = new URL(String(value || "").trim());
+    if (parsed.protocol !== "https:") return "";
+    return parsed.origin;
+  } catch {
+    return "";
+  }
+}
+
+function facebookConfiguration(env) {
+  const pageId = validFacebookPageId(env.FACEBOOK_PAGE_ID);
+  const pageAccessToken = String(env.FACEBOOK_PAGE_ACCESS_TOKEN || "").trim();
+  const appSecret = String(env.FACEBOOK_APP_SECRET || "").trim();
+  const whatnotUrl = safeWhatnotUrl(env.WHATNOT_LIVE_URL);
+
+  return {
+    enabled: enabled(env.FACEBOOK_AUTO_POST_ENABLED),
+    configured: Boolean(
+      pageId &&
+      pageAccessToken &&
+      appSecret &&
+      whatnotUrl &&
+      env.SOCIAL_ANNOUNCEMENTS
+    ),
+    pageId,
+    pageAccessToken,
+    appSecret,
+    whatnotUrl,
+    graphVersion: facebookGraphVersion(env.FACEBOOK_GRAPH_VERSION)
+  };
 }
 
 function allowedOrigins(env) {
@@ -97,6 +162,156 @@ function truncate(value, maximumLength) {
   const text = String(value || "").trim();
   if (text.length <= maximumLength) return text;
   return `${text.slice(0, maximumLength - 1).trimEnd()}…`;
+}
+
+function normalizedPostText(value, maximumLength) {
+  return truncate(
+    String(value || "")
+      .replace(/\r\n?/g, "\n")
+      .replace(/[ \t]+/g, " ")
+      .replace(/\n{3,}/g, "\n\n"),
+    maximumLength
+  );
+}
+
+function safeYoutubeWatchUrl(value) {
+  try {
+    const parsed = new URL(String(value || "").trim());
+    const hostname = parsed.hostname.toLowerCase();
+    if (parsed.protocol !== "https:") return "";
+    if (
+      hostname !== "youtube.com" &&
+      hostname !== "www.youtube.com" &&
+      hostname !== "youtu.be"
+    ) {
+      return "";
+    }
+    return parsed.toString();
+  } catch {
+    return "";
+  }
+}
+
+function facebookAnnouncementMessage(live, whatnotUrl) {
+  const title = normalizedPostText(live?.title, 180) || "Crack Packs is live";
+  const description = normalizedPostText(live?.description, 420);
+  const youtubeUrl = safeYoutubeWatchUrl(live?.watchUrl);
+  const lines = [
+    "LIVE ON WHATNOT",
+    title
+  ];
+
+  if (description) lines.push(description);
+
+  lines.push(
+    "Join Crack Packs live on Whatnot:",
+    whatnotUrl
+  );
+
+  if (youtubeUrl) {
+    lines.push(
+      "YouTube stream:",
+      youtubeUrl
+    );
+  }
+
+  return truncate(lines.join("\n\n"), 2000);
+}
+
+async function hmacSha256Hex(secret, value) {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(value));
+  return Array.from(new Uint8Array(signature), byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function publishFacebookAnnouncement(env, live) {
+  const config = facebookConfiguration(env);
+  if (!config.enabled || !config.configured) {
+    return {
+      ok: false,
+      attempted: false,
+      retryable: false,
+      error: "Facebook auto-posting is not fully configured."
+    };
+  }
+
+  const message = facebookAnnouncementMessage(live, config.whatnotUrl);
+  const appSecretProof = await hmacSha256Hex(config.appSecret, config.pageAccessToken);
+  const form = new URLSearchParams({
+    message,
+    link: config.whatnotUrl,
+    appsecret_proof: appSecretProof
+  });
+  const endpoint = `${FACEBOOK_GRAPH_BASE}/${config.graphVersion}/${config.pageId}/feed`;
+
+  let response;
+  try {
+    response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${config.pageAccessToken}`,
+        "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"
+      },
+      body: form.toString()
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      attempted: true,
+      retryable: false,
+      ambiguous: true,
+      error: truncate(error?.message || "The Facebook request failed without a response.", 300)
+    };
+  }
+
+  const responseText = await response.text();
+  let payload = null;
+  try {
+    payload = responseText ? JSON.parse(responseText) : null;
+  } catch {
+    payload = null;
+  }
+
+  if (!response.ok || payload?.error) {
+    const graphError = payload?.error || {};
+    return {
+      ok: false,
+      attempted: true,
+      retryable: response.status >= 400 && response.status < 500,
+      ambiguous: response.status >= 500,
+      httpStatus: response.status,
+      graphErrorCode: Number.isFinite(Number(graphError.code)) ? Number(graphError.code) : null,
+      graphErrorType: truncate(graphError.type, 80) || null,
+      error: truncate(graphError.message || `Facebook returned HTTP ${response.status}.`, 300)
+    };
+  }
+
+  const postId = String(payload?.id || "").trim();
+  if (!postId) {
+    return {
+      ok: false,
+      attempted: true,
+      retryable: false,
+      ambiguous: true,
+      httpStatus: response.status,
+      error: "Facebook accepted the request but did not return a post ID."
+    };
+  }
+
+  return {
+    ok: true,
+    attempted: true,
+    retryable: false,
+    postId
+  };
 }
 
 function isoDate(value) {
@@ -413,6 +628,162 @@ async function handleStatus(request, env, cors) {
   }
 }
 
+async function runScheduledAnnouncement(env) {
+  const facebook = facebookConfiguration(env);
+  if (!facebook.enabled) return;
+
+  if (!facebook.configured) {
+    console.warn("Facebook auto-posting is enabled but is not fully configured.");
+    return;
+  }
+
+  const channelId = validChannelId(env.YOUTUBE_CHANNEL_ID);
+  const apiKeyConfigured = Boolean(String(env.YOUTUBE_API_KEY || "").trim());
+  if (!channelId || !apiKeyConfigured) {
+    console.warn("Facebook auto-posting skipped because YouTube is not fully configured.");
+    return;
+  }
+
+  const workerOrigin = safeWorkerOrigin(env.WORKER_PUBLIC_URL) || "https://live-api.crackpacks.com";
+  const request = new Request(`${workerOrigin}/status`, {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+      Origin: "https://crackpacks.com"
+    }
+  });
+  const response = await handleStatus(request, env, {});
+  if (!response.ok) {
+    console.error("Scheduled YouTube live check failed", { status: response.status });
+    return;
+  }
+
+  const payload = await response.json().catch(() => null);
+  if (!payload?.live || !validVideoId(payload.videoId)) return;
+
+  const coordinator = env.SOCIAL_ANNOUNCEMENTS.getByName("facebook-page");
+  const result = await coordinator.announce(payload);
+
+  if (result?.status === "posted") {
+    console.log("Facebook live announcement posted", {
+      videoId: payload.videoId,
+      postId: result.postId
+    });
+  } else if (result?.status === "failed" || result?.status === "unknown") {
+    console.error("Facebook live announcement was not posted", {
+      videoId: payload.videoId,
+      status: result.status,
+      error: result.error || null
+    });
+  }
+}
+
+export class SocialAnnouncementCoordinator extends DurableObject {
+  async announce(live) {
+    const videoId = validVideoId(live?.videoId);
+    if (!videoId) {
+      return { status: "invalid", error: "A valid YouTube video ID is required." };
+    }
+
+    const key = `facebook:youtube:${videoId}`;
+    const existing = await this.ctx.storage.get(key);
+    const timestamp = Date.now();
+
+    if (existing?.status === "posted") {
+      return {
+        status: "already-posted",
+        postId: existing.postId || null,
+        postedAt: existing.postedAt || null
+      };
+    }
+
+    if (existing?.status === "posting" || existing?.status === "unknown") {
+      return {
+        status: existing.status,
+        error: existing.error || null
+      };
+    }
+
+    const previousAttempts = Number.isFinite(Number(existing?.attempts))
+      ? Number(existing.attempts)
+      : 0;
+
+    if (existing?.status === "failed") {
+      if (previousAttempts >= FACEBOOK_MAX_REJECTED_ATTEMPTS) {
+        return {
+          status: "failed",
+          error: existing.error || "Facebook rejected the maximum number of posting attempts."
+        };
+      }
+
+      if (Number(existing.nextAttemptAt || 0) > timestamp) {
+        return {
+          status: "waiting",
+          nextAttemptAt: existing.nextAttemptAt
+        };
+      }
+    }
+
+    const attempts = previousAttempts + 1;
+    const reservedAt = new Date(timestamp).toISOString();
+    await this.ctx.storage.put(key, {
+      status: "posting",
+      videoId,
+      title: normalizedPostText(live?.title, 180),
+      attempts,
+      reservedAt
+    });
+
+    const result = await publishFacebookAnnouncement(this.env, live);
+    const completedAt = new Date().toISOString();
+
+    if (result.ok) {
+      const posted = {
+        status: "posted",
+        videoId,
+        title: normalizedPostText(live?.title, 180),
+        attempts,
+        reservedAt,
+        postedAt: completedAt,
+        postId: result.postId
+      };
+      await this.ctx.storage.put(key, posted);
+      return posted;
+    }
+
+    if (result.retryable && !result.ambiguous) {
+      const failed = {
+        status: "failed",
+        videoId,
+        title: normalizedPostText(live?.title, 180),
+        attempts,
+        reservedAt,
+        failedAt: completedAt,
+        nextAttemptAt: timestamp + FACEBOOK_RETRY_DELAY_MS,
+        httpStatus: result.httpStatus || null,
+        graphErrorCode: result.graphErrorCode || null,
+        graphErrorType: result.graphErrorType || null,
+        error: result.error || "Facebook rejected the post."
+      };
+      await this.ctx.storage.put(key, failed);
+      return failed;
+    }
+
+    const unknown = {
+      status: "unknown",
+      videoId,
+      title: normalizedPostText(live?.title, 180),
+      attempts,
+      reservedAt,
+      failedAt: completedAt,
+      httpStatus: result.httpStatus || null,
+      error: result.error || "The Facebook posting outcome is unknown."
+    };
+    await this.ctx.storage.put(key, unknown);
+    return unknown;
+  }
+}
+
 export default {
   async fetch(request, env) {
     const cors = corsHeaders(request, env);
@@ -446,6 +817,10 @@ export default {
           service: WORKER_NAME,
           version: WORKER_VERSION,
           configured: Boolean(validChannelId(env.YOUTUBE_CHANNEL_ID) && String(env.YOUTUBE_API_KEY || "").trim()),
+          facebookAutoPost: {
+            enabled: facebookConfiguration(env).enabled,
+            configured: facebookConfiguration(env).configured
+          },
           endpoints: ["/health", "/status"]
         },
         200,
@@ -461,6 +836,16 @@ export default {
       { ok: false, error: "Not found." },
       404,
       { ...cors, "Cache-Control": "no-store" }
+    );
+  },
+
+  async scheduled(_controller, env, ctx) {
+    ctx.waitUntil(
+      runScheduledAnnouncement(env).catch(error => {
+        console.error("Scheduled social announcement failed", {
+          error: truncate(error?.message || "Unknown scheduled-task error.", 300)
+        });
+      })
     );
   }
 };

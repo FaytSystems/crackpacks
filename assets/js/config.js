@@ -19,9 +19,9 @@ window.CRACKPACKS_CONFIG = {
     { id: "pokemon", label: "Pokémon" },
     { id: "magic", label: "Magic the Gathering" }
   ],
-  email: "hello@crackpacks.com",
+  email: "support@crackpacks.com",
   domain: "https://crackpacks.com",
   updated: "July 18, 2026",
   storeNotice: "The Crack Packs storefront is a Coming Soon preview. Checkout is locked until inventory, shipping, and payment settings are verified.",
-  newsletterMessage: "The signup design is ready. Connect the form to your email provider before collecting addresses."
+  newsletterMessage: "Create your verified Profile to join Crack Packs drop alerts."
 };

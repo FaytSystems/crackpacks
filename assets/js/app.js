@@ -2,6 +2,7 @@
   "use strict";
 
   const config = window.CRACKPACKS_CONFIG || {};
+  const rewardsApi = String(config.rewardsApiUrl || "").replace(/\/$/, "");
   const products = (window.CRACKPACKS_PRODUCTS || []).filter(item => item.enabled !== false);
   const releases = window.CRACKPACKS_RELEASES || [];
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -46,6 +47,58 @@
 
   const storeNotice = document.querySelector("[data-store-notice]");
   if (storeNotice) storeNotice.textContent = config.storeNotice || "";
+
+  function campaignRewardText(campaign) {
+    const type = String(campaign?.rewardType || "");
+    if (type === "percent") return `${Number(campaign.percent || 0)}% off for verified collectors`;
+    if (type === "free_shipping") return "Free shipping reward";
+    if (type === "pack_draft") return `Choose a pack number from ${Number(campaign.packCount || 0)} packs`;
+    if (type === "free_single") return "Free holographic single reward";
+    if (type === "product") return campaign.product?.name ? `Featured product reward: ${campaign.product.name}` : "Featured product reward";
+    if (type === "pick_a_pack") return "Pick a pack reward";
+    return "Limited Crack Packs reward";
+  }
+
+  function formatCountdown(ms) {
+    const total = Math.max(0, Math.floor(ms / 1000));
+    const days = Math.floor(total / 86400);
+    const hours = Math.floor((total % 86400) / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    const seconds = total % 60;
+    const pad = value => String(value).padStart(2, "0");
+    return days > 0 ? `${days}d ${pad(hours)}:${pad(minutes)}:${pad(seconds)}` : `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+  }
+
+  async function loadHomepagePromo() {
+    const panel = document.querySelector("[data-homepage-promo]");
+    if (!panel || !rewardsApi) return;
+    try {
+      const result = await fetch(`${rewardsApi}/campaign/homepage`, { headers: { Accept: "application/json" } });
+      if (!result.ok) throw new Error("Homepage promo unavailable.");
+      const data = await result.json();
+      const campaign = data?.campaign;
+      if (!data?.valid || !campaign?.url || !campaign?.expiresAt) { panel.hidden = true; return; }
+      document.querySelector("[data-homepage-promo-title]").textContent = campaign.title || "Crack Packs reward is live";
+      document.querySelector("[data-homepage-promo-reward]").textContent = `${campaignRewardText(campaign)}. ${Number(campaign.remaining || 0)} claim${Number(campaign.remaining || 0) === 1 ? "" : "s"} remaining.`;
+      const link = document.querySelector("[data-homepage-promo-link]");
+      link.href = campaign.url;
+      link.textContent = "Claim Promo";
+      const countdown = document.querySelector("[data-homepage-promo-countdown]");
+      const serverOffset = data.serverNow ? Date.parse(data.serverNow) - Date.now() : 0;
+      const update = () => {
+        const remainingMs = Date.parse(campaign.expiresAt) - (Date.now() + serverOffset);
+        countdown.textContent = formatCountdown(remainingMs);
+        if (remainingMs <= 0) panel.hidden = true;
+      };
+      panel.hidden = false;
+      update();
+      window.clearInterval(window.cpHomepagePromoTimer);
+      window.cpHomepagePromoTimer = window.setInterval(update, 1000);
+    } catch {
+      panel.hidden = true;
+    }
+  }
+  loadHomepagePromo();
 
   const menuButton = document.querySelector(".menu-toggle");
   const navigation = document.querySelector(".site-nav");
@@ -404,8 +457,10 @@
 
   document.querySelector("[data-newsletter]")?.addEventListener("submit", event => {
     event.preventDefault();
-    const message = event.currentTarget.querySelector("[data-form-message]");
-    if (message) message.textContent = config.newsletterMessage || "Signup form is ready to connect.";
+    const target = new URL("referral.html", window.location.href);
+    target.searchParams.set("mode", "signup");
+    target.searchParams.set("intent", "alerts");
+    window.location.assign(target.href);
   });
 
   const revealItems = [...document.querySelectorAll(".reveal")];

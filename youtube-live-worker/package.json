@@ -1,8 +1,8 @@
 {
   "name": "crackpacks-youtube-live-worker",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "private": true,
-  "description": "Cloudflare Worker that detects Crack Packs YouTube live and upcoming streams without exposing the YouTube API key.",
+  "description": "Cloudflare Worker that detects Crack Packs YouTube live streams and can securely announce them on a Facebook Page.",
   "type": "module",
   "scripts": {
     "check": "node --check src/index.js",
