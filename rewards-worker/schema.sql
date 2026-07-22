@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS inventory_items (
   public_slug TEXT NOT NULL UNIQUE CHECK(length(public_slug) BETWEEN 4 AND 160),
   name TEXT NOT NULL CHECK(length(name) BETWEEN 2 AND 120),
   upc TEXT CHECK(upc IS NULL OR (length(upc) BETWEEN 6 AND 18 AND upc NOT GLOB '*[^0-9]*')),
+  sku TEXT NOT NULL DEFAULT '' CHECK(length(sku) <= 64),
   category TEXT NOT NULL DEFAULT '' CHECK(length(category) <= 64),
   description TEXT NOT NULL DEFAULT '' CHECK(length(description) <= 1000),
   image_url TEXT NOT NULL DEFAULT '' CHECK(length(image_url) <= 500),
@@ -76,6 +77,11 @@ CREATE TABLE IF NOT EXISTS inventory_items (
   wholesale_small_list_price_cents INTEGER CHECK(wholesale_small_list_price_cents IS NULL OR wholesale_small_list_price_cents BETWEEN 0 AND 100000000),
   wholesale_case_list_price_cents INTEGER CHECK(wholesale_case_list_price_cents IS NULL OR wholesale_case_list_price_cents BETWEEN 0 AND 100000000),
   wholesale_pallet_list_price_cents INTEGER CHECK(wholesale_pallet_list_price_cents IS NULL OR wholesale_pallet_list_price_cents BETWEEN 0 AND 100000000),
+  product_weight_oz REAL CHECK(product_weight_oz IS NULL OR (product_weight_oz > 0 AND product_weight_oz <= 2400)),
+  packaging_weight_oz REAL CHECK(packaging_weight_oz IS NULL OR (packaging_weight_oz >= 0 AND packaging_weight_oz <= 2400)),
+  product_length_in REAL CHECK(product_length_in IS NULL OR (product_length_in > 0 AND product_length_in <= 120)),
+  product_width_in REAL CHECK(product_width_in IS NULL OR (product_width_in > 0 AND product_width_in <= 120)),
+  product_height_in REAL CHECK(product_height_in IS NULL OR (product_height_in > 0 AND product_height_in <= 120)),
   weight_oz REAL CHECK(weight_oz IS NULL OR (weight_oz > 0 AND weight_oz <= 2400)),
   length_in REAL CHECK(length_in IS NULL OR (length_in > 0 AND length_in <= 120)),
   width_in REAL CHECK(width_in IS NULL OR (width_in > 0 AND width_in <= 120)),
@@ -83,6 +89,9 @@ CREATE TABLE IF NOT EXISTS inventory_items (
   origin_country TEXT NOT NULL DEFAULT '' CHECK(length(origin_country) <= 2),
   hs_code TEXT NOT NULL DEFAULT '' CHECK(length(hs_code) <= 12),
   packing_notes TEXT NOT NULL DEFAULT '' CHECK(length(packing_notes) <= 500),
+  stripe_paylink_url TEXT NOT NULL DEFAULT '' CHECK(length(stripe_paylink_url) <= 500),
+  stripe_buy_button_id TEXT NOT NULL DEFAULT '' CHECK(length(stripe_buy_button_id) <= 120),
+  stripe_publishable_key TEXT NOT NULL DEFAULT '' CHECK(length(stripe_publishable_key) <= 200),
   is_store_visible INTEGER NOT NULL DEFAULT 1 CHECK(is_store_visible IN (0,1)),
   is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
   created_at TEXT NOT NULL,
@@ -94,6 +103,25 @@ CREATE INDEX IF NOT EXISTS idx_inventory_items_owner_name ON inventory_items(own
 CREATE INDEX IF NOT EXISTS idx_inventory_items_owner_upc ON inventory_items(owner_member_id, upc);
 CREATE INDEX IF NOT EXISTS idx_inventory_items_public_store ON inventory_items(is_store_visible, is_active, created_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_items_owner_source ON inventory_items(owner_member_id, source_url) WHERE source_url <> '';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_items_owner_sku ON inventory_items(owner_member_id, sku) WHERE sku <> '';
+CREATE TABLE IF NOT EXISTS inventory_stock_movements (
+  id TEXT PRIMARY KEY,
+  inventory_item_id TEXT NOT NULL,
+  owner_member_id TEXT NOT NULL,
+  order_id TEXT,
+  reservation_id TEXT,
+  movement_type TEXT NOT NULL CHECK(movement_type IN ('manual_set','manual_add','reserved','released','refunded','correction')),
+  delta_quantity INTEGER NOT NULL CHECK(delta_quantity BETWEEN -100000 AND 100000),
+  resulting_quantity INTEGER CHECK(resulting_quantity IS NULL OR resulting_quantity BETWEEN 0 AND 100000),
+  note TEXT NOT NULL DEFAULT '' CHECK(length(note) <= 300),
+  created_at TEXT NOT NULL,
+  FOREIGN KEY(inventory_item_id) REFERENCES inventory_items(id),
+  FOREIGN KEY(owner_member_id) REFERENCES members(id),
+  FOREIGN KEY(order_id) REFERENCES member_orders(id),
+  FOREIGN KEY(reservation_id) REFERENCES checkout_reservations(id)
+);
+CREATE INDEX IF NOT EXISTS idx_inventory_stock_movements_item_created ON inventory_stock_movements(inventory_item_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_inventory_stock_movements_owner_created ON inventory_stock_movements(owner_member_id, created_at DESC);
 CREATE TABLE IF NOT EXISTS offer_campaigns (
   id TEXT PRIMARY KEY,
   owner_member_id TEXT NOT NULL,

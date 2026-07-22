@@ -10,7 +10,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="stylesheet" href="assets/css/styles.css?v=1.5.0">
   <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.6.1">
-  <link rel="stylesheet" href="assets/css/store.css?v=3.0.0">
+  <link rel="stylesheet" href="assets/css/store.css?v=3.2.0">
   <link rel="stylesheet" href="assets/css/contact-form.css?v=1.7.1">
 </head>
 <body data-page="shop" data-store-market="international">
@@ -71,6 +71,8 @@
 
         <div class="shop-tools store-tools holo-panel" aria-label="International shop controls">
           <label class="search-box"><span class="sr-only">Search products</span><input type="search" placeholder="Search boxes, packs, tins, singles…" data-product-search></label>
+          <nav class="store-market-switch store-toolbar-market" aria-label="Shop region"><a href="shop.html">USA</a><a href="international-shop.html" aria-current="page">International</a></nav>
+          <label class="store-sort-control"><span>Sort products</span><select data-product-sort aria-label="Sort products"><option value="recent">Most recent release</option><option value="price_asc">Price low to high</option><option value="price_desc">Price high to low</option><option value="packs_desc">Most packs</option><option value="cards_desc">Most cards</option><option value="best_selling">Best selling</option></select></label>
           <label class="store-currency-control"><span>Display currency</span>
             <select data-store-currency aria-label="Display currency">
               <option value="USD">USD — US dollar</option>
@@ -92,7 +94,7 @@
           </label>
         </div>
 
-        <div class="filter-list international-filter-list" role="group" aria-label="Product category">
+        <div class="filter-list international-filter-list store-filter-list" role="group" aria-label="Product category">
           <button class="filter-btn is-active" type="button" data-product-filter="all">All</button>
           <button class="filter-btn" type="button" data-product-filter="sealed">Sealed</button>
           <button class="filter-btn" type="button" data-product-filter="packs">Packs</button>
@@ -172,7 +174,7 @@
   <script src="assets/js/config.js?v=3.0.0"></script>
   <script src="assets/js/data.js?v=1.5.0"></script>
   <script src="assets/js/app.js?v=1.5.0"></script>
-  <script src="assets/js/store.js?v=3.0.0"></script>
+  <script src="assets/js/store.js?v=3.2.0"></script>
 
   <div class="contact-modal" data-contact-modal hidden aria-hidden="true">
     <button class="contact-modal-backdrop" type="button" data-contact-close aria-label="Close contact form"></button>

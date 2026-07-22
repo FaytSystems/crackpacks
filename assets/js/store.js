@@ -8,6 +8,7 @@
   const catalogStatus = document.querySelector("[data-store-catalog-status]");
   const emptyState = document.querySelector("[data-product-empty]");
   const searchInput = document.querySelector("[data-product-search]");
+  const sortSelect = document.querySelector("[data-product-sort]");
   const currencySelect = document.querySelector("[data-store-currency]");
   const inventoryEndpoint = "/store/inventory";
   const quoteEndpoint = "/store/shipping-quote";
@@ -22,9 +23,11 @@
   let inventoryItems = [];
   let activeFilter = "all";
   let activeSearch = "";
+  let activeSort = "recent";
   let catalogController = null;
   let storeComingSoon = true;
   let checkoutEnabled = false;
+  let stripeBuyButtonScriptAdded = false;
   let shippingTurnstileToken = "";
   let shippingTurnstileWidgetId = null;
   let shippingTurnstileScriptAdded = false;
@@ -81,6 +84,94 @@
     }
   };
 
+  function ensureSearchSuggestions() {
+    if (!searchInput) return null;
+    let suggestions = document.querySelector("[data-store-search-suggestions]");
+    if (suggestions) return suggestions;
+    const parent = searchInput.closest(".search-box") || searchInput.parentElement;
+    if (parent) parent.classList.add("store-search-box");
+    if (parent && !parent.querySelector(".store-search-title")) {
+      const title = document.createElement("span");
+      title.className = "store-search-title";
+      title.textContent = "Search inventory";
+      parent.prepend(title);
+    }
+    suggestions = document.createElement("div");
+    suggestions.className = "store-search-suggestions";
+    suggestions.dataset.storeSearchSuggestions = "";
+    suggestions.hidden = true;
+    suggestions.id = "store-search-suggestions";
+    searchInput.setAttribute("aria-autocomplete", "list");
+    searchInput.setAttribute("aria-controls", suggestions.id);
+    searchInput.setAttribute("aria-expanded", "false");
+    parent?.append(suggestions);
+    return suggestions;
+  }
+
+  function inferPackCount(item) {
+    const text = `${item?.name || ""} ${item?.category || ""} ${item?.categoryLabel || ""} ${item?.description || ""}`.toLowerCase();
+    const explicit = text.match(/(\d+)\s*[- ]?\s*pack/);
+    if (explicit) return Number(explicit[1]);
+    if (/booster box/.test(text) && /japan|japanese/.test(text)) return /high class|vstar|shiny treasure|terastal/.test(text) ? 10 : 30;
+    if (/booster box/.test(text)) return 36;
+    if (/booster bundle/.test(text)) return 6;
+    if (/elite trainer box|etb/.test(text)) return 9;
+    if (/build\s*&\s*battle/.test(text)) return 4;
+    if (/premium collection/.test(text)) return 8;
+    if (/sleeved booster|booster pack/.test(text)) return 1;
+    return 0;
+  }
+
+  function inferCardCount(item, packs) {
+    const text = `${item?.name || ""} ${item?.description || ""}`.toLowerCase();
+    const explicit = text.match(/(\d+)\s*cards?/);
+    if (explicit && !/40-card prerelease/.test(text)) return Number(explicit[1]);
+    if (/build\s*&\s*battle/.test(text)) return 40 + packs * 10;
+    if (!packs) return 0;
+    return packs * (/japan|japanese/.test(text) && !/high class|mega dream|vstar|shiny treasure|terastal/.test(text) ? 5 : 10);
+  }
+
+  function releaseRank(item) {
+    const text = `${item?.name || ""} ${item?.categoryLabel || ""}`.toLowerCase();
+    const known = [
+      [/pitch black|chaos rising|perfect order|mega dream|abyss eye|ninja spinner|munikis zero/, 202607],
+      [/inferno x|mega brave|mega symphonia/, 202606],
+      [/black bolt|white flare|glory of team rocket|destined rivals/, 202505],
+      [/journey together|battle partners/, 202503],
+      [/prismatic evolutions|terastal festival/, 202501],
+      [/surging sparks/, 202411],
+      [/stellar crown/, 202409],
+      [/twilight masquerade|mask of change|crimson haze/, 202405],
+      [/temporal forces/, 202403],
+      [/paldean fates|shiny treasure/, 202401],
+      [/pokemon 151/, 202309],
+      [/obsidian flames|ruler of the black flame/, 202308],
+      [/paldea evolved/, 202306],
+      [/scarlet & violet base|scarlet-violet base/, 202303],
+      [/crown zenith|vstar universe/, 202301],
+      [/silver tempest/, 202211],
+      [/lost origin/, 202209],
+      [/pokemon go/, 202207],
+      [/brilliant stars/, 202202],
+      [/evolving skies/, 202108]
+    ];
+    const match = known.find(([pattern]) => pattern.test(text));
+    return match ? match[1] : 0;
+  }
+
+  function enrichProduct(item, index = 0) {
+    const packs = Number(item?.packCount ?? item?.packs ?? inferPackCount(item)) || 0;
+    const cards = Number(item?.cardCount ?? item?.cards ?? inferCardCount(item, packs)) || 0;
+    return {
+      ...item,
+      packCount: packs,
+      cardCount: cards,
+      releaseRank: Number(item?.releaseRank || 0) || releaseRank(item),
+      soldCount: Number(item?.soldCount || item?.salesCount || 0) || 0,
+      catalogIndex: index
+    };
+  }
+
   function normalizeApiItem(item, payload) {
     const category = classifyCategory(item?.category);
     const displayCurrency = String(item?.price?.currency || payload?.displayCurrency || "USD").toUpperCase();
@@ -89,6 +180,7 @@
     const displayMsrpCents = centsValue(item?.msrp?.displayCents);
     return {
       slug: String(item?.slug || "").trim(),
+      sku: String(item?.sku || "").trim(),
       name: String(item?.name || "Unlisted product").trim(),
       category,
       categoryLabel: String(item?.category || category).trim(),
@@ -104,6 +196,12 @@
       msrpCurrency: displayMsrpCents === null ? "USD" : msrpCurrency,
       msrpLabel: String(item?.msrp?.label || "Average MSRP").trim(),
       msrpObservedAt: String(item?.msrp?.observedAt || "").trim(),
+      paylink: item?.paylink && (item.paylink.url || item.paylink.buyButtonId) ? {
+        url: safeSourceUrl(item.paylink.url),
+        buyButtonId: String(item.paylink.buyButtonId || "").trim(),
+        publishableKey: String(item.paylink.publishableKey || "").trim()
+      } : null,
+      productSpec: item?.productSpec || null,
       shippingReady: item?.shippingReady === true,
       isFallback: false
     };
@@ -113,6 +211,7 @@
     const category = classifyCategory(item?.category);
     return {
       slug: String(item?.id || `preview-${index + 1}`),
+      sku: String(item?.sku || "").trim(),
       name: String(item?.name || "Store preview"),
       category,
       categoryLabel: String(item?.type || item?.category || "Product preview"),
@@ -128,6 +227,8 @@
       msrpCurrency: currencySelect?.value || "USD",
       msrpLabel: "Average MSRP to be posted",
       msrpObservedAt: "",
+      paylink: null,
+      productSpec: null,
       shippingReady: false,
       isFallback: true
     };
@@ -161,19 +262,41 @@
     return `<strong class="store-current-price">${escapeHtml(price)}</strong><span class="store-shipping-label">${escapeHtml(shipping)}</span>`;
   }
 
+  function productSpecMarkup(item) {
+    const spec = item.productSpec || {};
+    const parts = [];
+    if (Number(item.packCount) > 0) parts.push(`${Number(item.packCount)} pack${Number(item.packCount) === 1 ? "" : "s"}`);
+    if (Number(item.cardCount) > 0) parts.push(`${Number(item.cardCount)} card${Number(item.cardCount) === 1 ? "" : "s"} est.`);
+    if (Number(spec.sealedWeightOz) > 0) parts.push(`Sealed ${Number(spec.sealedWeightOz).toFixed(2)} oz`);
+    if (Number(spec.packagingWeightOz) >= 0) parts.push(`Pack allowance ${(Number(spec.packagingWeightOz) / 16).toFixed(3)} lb`);
+    if (Number(spec.packedWeightOz) > 0) parts.push(`Ship ${Number(spec.packedWeightOz).toFixed(2)} oz`);
+    const dims = spec.packedDimensionsIn;
+    if (dims && Number(dims.length) > 0 && Number(dims.width) > 0 && Number(dims.height) > 0) parts.push(`Box ${dims.length} x ${dims.width} x ${dims.height} in`);
+    return parts.length ? `<p class="store-product-specs">${parts.map(escapeHtml).join(" / ")}</p>` : "";
+  }
+
+  function checkoutMarkup(item) {
+    const paylink = item.paylink || {};
+    if (!item.available) return `<button class="store-checkout-button" type="button" disabled aria-disabled="true">Sold out / off</button>`;
+    if (paylink.url) return `<a class="store-checkout-button is-live" href="${escapeHtml(paylink.url)}" target="_blank" rel="noopener noreferrer">Add to cart + checkout</a>`;
+    if (paylink.buyButtonId && paylink.publishableKey) return `<div class="store-stripe-buy-button"><stripe-buy-button buy-button-id="${escapeHtml(paylink.buyButtonId)}" publishable-key="${escapeHtml(paylink.publishableKey)}"></stripe-buy-button></div>`;
+    return `<button class="store-checkout-button" type="button" disabled aria-disabled="true">Checkout coming soon</button>`;
+  }
+
   function productCard(item) {
-    const search = `${item.name} ${item.categoryLabel} ${item.description}`.toLowerCase();
+    const search = `${item.name} ${item.sku || ""} ${item.categoryLabel} ${item.description}`.toLowerCase();
+    const livePaylink = item.available && (item.paylink?.url || (item.paylink?.buyButtonId && item.paylink?.publishableKey));
     const sourceLink = item.sourceUrl
       ? `<a class="store-source-link" href="${escapeHtml(item.sourceUrl)}" target="_blank" rel="noopener noreferrer">Product source ↗</a>`
       : "";
-    const quoteButton = item.slug
+    const quoteButton = item.slug && !livePaylink
       ? `<button class="btn btn-small btn-outline" type="button" data-quote-product="${escapeHtml(item.slug)}">${market === "international" ? "Estimate shipping" : "Choose shipping + checkout"}</button>`
       : "";
     const image = item.imageUrl
       ? `<img src="${escapeHtml(item.imageUrl)}" alt="${escapeHtml(item.name)}" loading="lazy" data-store-product-image>`
       : `<span class="store-product-placeholder">Crack Packs</span>`;
     return `
-      <article class="product-card store-product-card holo-panel reveal is-visible" data-product-card data-category="${escapeHtml(item.category)}" data-search="${escapeHtml(search)}" id="${escapeHtml(item.slug)}">
+      <article class="product-card store-product-card${livePaylink ? " is-paylink-live" : ""} holo-panel reveal is-visible" data-product-card data-category="${escapeHtml(item.category)}" data-search="${escapeHtml(search)}" id="${escapeHtml(item.slug)}">
         <div class="product-media">
           ${image}
           <span class="product-badge">${escapeHtml(item.quantityLabel)}</span>
@@ -183,11 +306,12 @@
           <p class="card-kicker">${escapeHtml(item.categoryLabel)}</p>
           <h3>${escapeHtml(item.name)}</h3>
           <p class="product-description">${escapeHtml(item.description)}</p>
+          ${productSpecMarkup(item)}
           <div class="store-msrp-row">${msrpMarkup(item)}</div>
           ${sourceLink}
           <div class="product-footer">
             <div class="store-price-stack">${priceMarkup(item)}</div>
-            <button class="store-checkout-button" type="button" disabled aria-disabled="true">Checkout coming soon</button>
+            ${checkoutMarkup(item)}
           </div>
           ${quoteButton}
         </div>
@@ -205,13 +329,51 @@
     });
   }
 
+  function ensureStripeBuyButtonScript(items) {
+    if (stripeBuyButtonScriptAdded || !items.some(item => item.paylink?.buyButtonId && item.paylink?.publishableKey)) return;
+    stripeBuyButtonScriptAdded = true;
+    const script = document.createElement("script");
+    script.src = "https://js.stripe.com/v3/buy-button.js";
+    script.async = true;
+    document.head.append(script);
+  }
+
   function renderCatalog(items) {
-    inventoryItems = items;
+    inventoryItems = items.map(enrichProduct);
     if (!catalog) return;
-    catalog.innerHTML = items.map(productCard).join("");
+    catalog.innerHTML = sortedItems(inventoryItems).map(productCard).join("");
+    ensureStripeBuyButtonScript(inventoryItems);
     bindImageFallbacks();
-    populateShippingProducts(items);
+    populateShippingProducts(inventoryItems);
     applyFilters();
+    renderSearchSuggestions();
+  }
+
+  function sortValuePrice(item) {
+    return centsValue(item.priceCents) ?? centsValue(item.msrpCents) ?? Number.MAX_SAFE_INTEGER;
+  }
+
+  function sortedItems(items) {
+    const copy = [...items];
+    copy.sort((a, b) => {
+      if (activeSort === "price_asc") return sortValuePrice(a) - sortValuePrice(b) || a.catalogIndex - b.catalogIndex;
+      if (activeSort === "price_desc") return sortValuePrice(b) - sortValuePrice(a) || a.catalogIndex - b.catalogIndex;
+      if (activeSort === "packs_desc") return Number(b.packCount || 0) - Number(a.packCount || 0) || a.catalogIndex - b.catalogIndex;
+      if (activeSort === "cards_desc") return Number(b.cardCount || 0) - Number(a.cardCount || 0) || a.catalogIndex - b.catalogIndex;
+      if (activeSort === "best_selling") return Number(b.soldCount || 0) - Number(a.soldCount || 0) || Number(b.available) - Number(a.available) || a.catalogIndex - b.catalogIndex;
+      return Number(b.releaseRank || 0) - Number(a.releaseRank || 0) || a.catalogIndex - b.catalogIndex;
+    });
+    return copy;
+  }
+
+  function rerenderCatalog() {
+    if (!catalog) return;
+    catalog.innerHTML = sortedItems(inventoryItems).map(productCard).join("");
+    ensureStripeBuyButtonScript(inventoryItems);
+    bindImageFallbacks();
+    populateShippingProducts(inventoryItems);
+    applyFilters();
+    renderSearchSuggestions();
   }
 
   function applyFilters() {
@@ -227,6 +389,62 @@
     if (emptyState) emptyState.hidden = visible !== 0;
   }
 
+  function scoreSearchSuggestion(item, query) {
+    const q = String(query || "").trim().toLowerCase();
+    if (!q) return 0;
+    const fields = [item.name, item.sku, item.categoryLabel, item.description].map(value => String(value || "").toLowerCase());
+    let best = 0;
+    for (const field of fields) {
+      if (!field) continue;
+      if (field === q) best = Math.max(best, 100);
+      else if (field.startsWith(q)) best = Math.max(best, 88);
+      else if (field.includes(q)) best = Math.max(best, 66);
+      else {
+        const tokens = q.split(/\s+/).filter(Boolean);
+        const hits = tokens.filter(token => field.includes(token)).length;
+        if (hits) best = Math.max(best, 28 + hits * 11);
+      }
+    }
+    return best;
+  }
+
+  function renderSearchSuggestions() {
+    const suggestions = ensureSearchSuggestions();
+    if (!searchInput || !suggestions) return;
+    const query = searchInput.value.trim();
+    suggestions.replaceChildren();
+    if (query.length < 2) {
+      suggestions.hidden = true;
+      searchInput.setAttribute("aria-expanded", "false");
+      return;
+    }
+    const matches = sortedItems(inventoryItems)
+      .map(item => ({ item, score: scoreSearchSuggestion(item, query) }))
+      .filter(match => match.score > 0)
+      .sort((a, b) => b.score - a.score || a.item.catalogIndex - b.item.catalogIndex)
+      .slice(0, 8);
+    if (!matches.length) {
+      suggestions.innerHTML = `<div class="store-search-empty">No inventory match yet.</div>`;
+    } else {
+      matches.forEach(({ item }) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.innerHTML = `<strong>${escapeHtml(item.name)}</strong><span>${escapeHtml([item.sku ? `SKU ${item.sku}` : "", item.categoryLabel, item.packCount ? `${item.packCount} packs` : ""].filter(Boolean).join(" / "))}</span>`;
+        button.addEventListener("click", () => {
+          searchInput.value = item.name;
+          activeSearch = item.name.toLowerCase();
+          suggestions.hidden = true;
+          searchInput.setAttribute("aria-expanded", "false");
+          applyFilters();
+          document.getElementById(item.slug)?.scrollIntoView({ behavior: "smooth", block: "center" });
+        });
+        suggestions.append(button);
+      });
+    }
+    suggestions.hidden = false;
+    searchInput.setAttribute("aria-expanded", "true");
+  }
+
   function bindFilters() {
     document.querySelectorAll("[data-product-filter]").forEach(button => {
       button.addEventListener("click", () => {
@@ -238,6 +456,17 @@
     searchInput?.addEventListener("input", event => {
       activeSearch = String(event.currentTarget.value || "").trim().toLowerCase();
       applyFilters();
+      renderSearchSuggestions();
+    });
+    searchInput?.addEventListener("focus", renderSearchSuggestions);
+    searchInput?.addEventListener("blur", () => setTimeout(() => {
+      const suggestions = document.querySelector("[data-store-search-suggestions]");
+      if (suggestions) suggestions.hidden = true;
+      searchInput.setAttribute("aria-expanded", "false");
+    }, 140));
+    sortSelect?.addEventListener("change", event => {
+      activeSort = String(event.currentTarget.value || "recent");
+      rerenderCatalog();
     });
     const requested = String(new URLSearchParams(window.location.search).get("category") || "").toLowerCase();
     const requestedButton = [...document.querySelectorAll("[data-product-filter]")].find(button => button.dataset.productFilter === requested);

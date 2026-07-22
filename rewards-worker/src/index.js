@@ -5,7 +5,7 @@ import { calculateChannelPricing, channelPricingErrors } from "./channel-pricing
 import { sanitizeEasyPostTracker, verifyEasyPostWebhook } from "./easypost-tracking.js";
 import { stripeRequest, verifyStripeWebhook } from "./stripe-commerce.js";
 
-const VERSION = "4.3.0";
+const VERSION = "4.4.0";
 const CAMPAIGN_REWARD_TYPES = new Set(["percent", "free_shipping", "pick_a_pack", "pack_draft", "free_single", "product"]);
 const MAX_CAMPAIGN_REDEMPTIONS = 500;
 const STORE_CURRENCIES = new Set(["USD", "CAD", "EUR", "GBP", "AUD", "NZD", "JPY", "CHF", "SEK", "NOK", "DKK", "PLN", "CZK", "HUF", "RON"]);
@@ -25,6 +25,114 @@ const STARTER_INVENTORY = [
   { publicSlug: "perfect-order-elite-trainer-box", name: "Mega Evolution—Perfect Order Elite Trainer Box", upc: null, category: "Elite Trainer Box", averageMsrpCents: 4999, imageUrl: "assets/images/product-electric.svg", sourceUrl: "https://www.bestbuy.com/product/pokemon-trading-card-game-mega-evolution-perfect-order-elite-trainer-box/JJG2TL3W86/sku/6668618" },
   { publicSlug: "perfect-order-booster-bundle-6", name: "Mega Evolution—Perfect Order Booster Bundle (6 Packs)", upc: "196214150478", category: "Booster Bundle", averageMsrpCents: 2694, imageUrl: "assets/images/product-electric.svg", sourceUrl: "https://www.bestbuy.com/product/pokemon-trading-card-game-mega-evolution-perfect-order-booster-bundle/JJG2TL3QK2/sku/6668627" }
 ];
+const EXTRA_STARTER_INVENTORY = [
+  { publicSlug: "destined-rivals-booster-box-36", name: "Scarlet & Violetâ€”Destined Rivals Booster Box (36 Packs)", upc: "196214123182", category: "Booster Box", averageMsrpCents: 18000, imageUrl: "assets/images/product-flame.svg", sourceUrl: "https://www.tcgplayer.com/search/pokemon/sv10-destined-rivals" },
+  { publicSlug: "destined-rivals-elite-trainer-box", name: "Scarlet & Violetâ€”Destined Rivals Elite Trainer Box", upc: null, category: "Elite Trainer Box", averageMsrpCents: 5999, imageUrl: "assets/images/product-flame.svg", sourceUrl: "https://www.tcgplayer.com/search/pokemon/sv10-destined-rivals" },
+  { publicSlug: "journey-together-booster-box-36", name: "Scarlet & Violetâ€”Journey Together Booster Box (36 Packs)", upc: null, category: "Booster Box", averageMsrpCents: 29314, imageUrl: "assets/images/product-aurora.svg", sourceUrl: "https://www.tcgplayer.com/search/pokemon/sv09-journey-together" },
+  { publicSlug: "journey-together-elite-trainer-box", name: "Scarlet & Violetâ€”Journey Together Elite Trainer Box", upc: null, category: "Elite Trainer Box", averageMsrpCents: 11000, imageUrl: "assets/images/product-aurora.svg", sourceUrl: "https://www.tcgplayer.com/search/pokemon/sv09-journey-together" },
+  { publicSlug: "journey-together-booster-bundle-6", name: "Scarlet & Violetâ€”Journey Together Booster Bundle (6 Packs)", upc: null, category: "Booster Bundle", averageMsrpCents: 4544, imageUrl: "assets/images/product-aurora.svg", sourceUrl: "https://www.tcgplayer.com/search/pokemon/sv09-journey-together" },
+  { publicSlug: "surging-sparks-booster-box-36", name: "Scarlet & Violetâ€”Surging Sparks Booster Box (36 Packs)", upc: null, category: "Booster Box", averageMsrpCents: 29315, imageUrl: "assets/images/product-electric.svg", sourceUrl: "https://www.tcgplayer.com/search/pokemon/sv08-surging-sparks" },
+  { publicSlug: "surging-sparks-elite-trainer-box", name: "Scarlet & Violetâ€”Surging Sparks Elite Trainer Box", upc: null, category: "Elite Trainer Box", averageMsrpCents: 12715, imageUrl: "assets/images/product-electric.svg", sourceUrl: "https://www.tcgplayer.com/search/pokemon/sv08-surging-sparks" },
+  { publicSlug: "surging-sparks-booster-bundle-6", name: "Scarlet & Violetâ€”Surging Sparks Booster Bundle (6 Packs)", upc: null, category: "Booster Bundle", averageMsrpCents: 6380, imageUrl: "assets/images/product-electric.svg", sourceUrl: "https://www.tcgplayer.com/search/pokemon/sv08-surging-sparks" },
+  { publicSlug: "prismatic-evolutions-elite-trainer-box", name: "Scarlet & Violetâ€”Prismatic Evolutions Elite Trainer Box", upc: "196214105133", category: "Elite Trainer Box", averageMsrpCents: 16050, imageUrl: "assets/images/product-aurora.svg", sourceUrl: "https://www.pricecharting.com/game/pokemon-prismatic-evolutions/elite-trainer-box" },
+  { publicSlug: "prismatic-evolutions-booster-bundle-6", name: "Scarlet & Violetâ€”Prismatic Evolutions Booster Bundle (6 Packs)", upc: null, category: "Booster Bundle", averageMsrpCents: 10339, imageUrl: "assets/images/product-aurora.svg", sourceUrl: "https://www.tcgplayer.com/search/pokemon/sv-prismatic-evolutions" },
+  { publicSlug: "japanese-mega-brave-booster-box", name: "Japanese MEGAâ€”Mega Brave Booster Box (30 Packs)", upc: null, category: "Japanese Booster Box", averageMsrpCents: 9408, imageUrl: "assets/images/product-electric.svg", sourceUrl: "https://www.pricecharting.com/game/pokemon-japanese-mega-brave/booster-box" },
+  { publicSlug: "japanese-mega-symphonia-booster-box", name: "Japanese MEGAâ€”Mega Symphonia Booster Box (30 Packs)", upc: null, category: "Japanese Booster Box", averageMsrpCents: 8615, imageUrl: "assets/images/product-aurora.svg", sourceUrl: "https://www.tcgplayer.com/product/647501" },
+  { publicSlug: "japanese-inferno-x-booster-box", name: "Japanese MEGAâ€”Inferno X Booster Box (30 Packs)", upc: null, category: "Japanese Booster Box", averageMsrpCents: 10021, imageUrl: "assets/images/product-flame.svg", sourceUrl: "https://www.pricecharting.com/game/pokemon-japanese-inferno-x/booster-box" },
+  { publicSlug: "japanese-mega-dream-ex-high-class-box", name: "Japanese MEGAâ€”MEGA Dream ex High Class Pack Box", upc: "9900000006808", category: "Japanese High Class Box", averageMsrpCents: 10400, imageUrl: "assets/images/product-cosmic.svg", sourceUrl: "https://www.pokemoncenter-online.com/9900000006808.html" },
+  { publicSlug: "japanese-battle-partners-booster-box", name: "Japanese Scarlet & Violetâ€”Battle Partners Booster Box (30 Packs)", upc: null, category: "Japanese Booster Box", averageMsrpCents: 8700, imageUrl: "assets/images/product-electric.svg", sourceUrl: "https://ichiba-japan.com/en-global/products/booster-box-battle-partners-sv9-scarlet-violet-pokemon-card-game" },
+  { publicSlug: "japanese-glory-of-team-rocket-booster-box", name: "Japanese Scarlet & Violetâ€”Glory of Team Rocket Booster Box (30 Packs)", upc: null, category: "Japanese Booster Box", averageMsrpCents: 12500, imageUrl: "assets/images/product-flame.svg", sourceUrl: "https://www.tcgplayer.com/search/pokemon/product?q=Glory%20of%20Team%20Rocket%20Booster%20Box" },
+  { publicSlug: "japanese-black-bolt-booster-box", name: "Japanese Scarlet & Violetâ€”Black Bolt Booster Box (20 Packs)", upc: null, category: "Japanese Booster Box", averageMsrpCents: 9000, imageUrl: "assets/images/product-cosmic.svg", sourceUrl: "https://www.tcgplayer.com/search/pokemon/product?q=Black%20Bolt%20Booster%20Box%20Japanese" },
+  { publicSlug: "japanese-white-flare-booster-box", name: "Japanese Scarlet & Violetâ€”White Flare Booster Box (20 Packs)", upc: null, category: "Japanese Booster Box", averageMsrpCents: 9000, imageUrl: "assets/images/product-aurora.svg", sourceUrl: "https://www.tcgplayer.com/search/pokemon/product?q=White%20Flare%20Booster%20Box%20Japanese" },
+  { publicSlug: "japanese-abyss-eye-booster-box", name: "Japanese MEGAâ€”Abyss Eye Booster Box (30 Packs)", upc: null, category: "Japanese Booster Box", averageMsrpCents: 13000, imageUrl: "assets/images/release-pitch-black-box.svg", sourceUrl: "https://www.samuraiswordtokyo.com/blogs/news/japanese-pokemon-mega-booster-box-price-index-2026" }
+  ,
+  { publicSlug: "twilight-masquerade-booster-box-36", name: "Scarlet & Violet - Twilight Masquerade Booster Box (36 Packs)", upc: null, category: "Booster Box", averageMsrpCents: 36278, imageUrl: "assets/images/product-aurora.svg", sourceUrl: "https://www.collectaio.com/item/sv06-twilight-masquerade-twilight-masquerade-booster-box" },
+  { publicSlug: "twilight-masquerade-elite-trainer-box", name: "Scarlet & Violet - Twilight Masquerade Elite Trainer Box", upc: null, category: "Elite Trainer Box", averageMsrpCents: 11101, imageUrl: "assets/images/product-aurora.svg", sourceUrl: "https://www.tcgplayer.com/content/article/Buyer-s-Guide-to-Pok%C3%A9mon-TCG-Twilight-Masquerade/5631cdf7-d3e2-48a2-b989-d6c6f9bb7ccc/" },
+  { publicSlug: "twilight-masquerade-booster-bundle-6", name: "Scarlet & Violet - Twilight Masquerade Booster Bundle (6 Packs)", upc: null, category: "Booster Bundle", averageMsrpCents: 7790, imageUrl: "assets/images/product-aurora.svg", sourceUrl: "https://www.tcgplayer.com/content/article/Buyer-s-Guide-to-Pok%C3%A9mon-TCG-Twilight-Masquerade/5631cdf7-d3e2-48a2-b989-d6c6f9bb7ccc/" },
+  { publicSlug: "temporal-forces-booster-box-36", name: "Scarlet & Violet - Temporal Forces Booster Box (36 Packs)", upc: null, category: "Booster Box", averageMsrpCents: 18000, imageUrl: "assets/images/product-cosmic.svg", sourceUrl: "https://www.tcgplayer.com/search/pokemon/sv05-temporal-forces" },
+  { publicSlug: "temporal-forces-elite-trainer-box", name: "Scarlet & Violet - Temporal Forces Elite Trainer Box", upc: null, category: "Elite Trainer Box", averageMsrpCents: 6500, imageUrl: "assets/images/product-cosmic.svg", sourceUrl: "https://www.tcgplayer.com/search/pokemon/sv05-temporal-forces" },
+  { publicSlug: "paldean-fates-elite-trainer-box", name: "Scarlet & Violet - Paldean Fates Elite Trainer Box", upc: null, category: "Elite Trainer Box", averageMsrpCents: 7000, imageUrl: "assets/images/product-cosmic.svg", sourceUrl: "https://www.tcgplayer.com/search/pokemon/sv-paldean-fates" },
+  { publicSlug: "paldean-fates-booster-bundle-6", name: "Scarlet & Violet - Paldean Fates Booster Bundle (6 Packs)", upc: null, category: "Booster Bundle", averageMsrpCents: 6500, imageUrl: "assets/images/product-cosmic.svg", sourceUrl: "https://www.tcgplayer.com/search/pokemon/sv-paldean-fates" },
+  { publicSlug: "obsidian-flames-booster-box-36", name: "Scarlet & Violet - Obsidian Flames Booster Box (36 Packs)", upc: null, category: "Booster Box", averageMsrpCents: 17000, imageUrl: "assets/images/product-flame.svg", sourceUrl: "https://www.tcgplayer.com/search/pokemon/sv03-obsidian-flames" },
+  { publicSlug: "obsidian-flames-elite-trainer-box", name: "Scarlet & Violet - Obsidian Flames Elite Trainer Box", upc: null, category: "Elite Trainer Box", averageMsrpCents: 5500, imageUrl: "assets/images/product-flame.svg", sourceUrl: "https://www.tcgplayer.com/search/pokemon/sv03-obsidian-flames" },
+  { publicSlug: "paldea-evolved-booster-box-36", name: "Scarlet & Violet - Paldea Evolved Booster Box (36 Packs)", upc: null, category: "Booster Box", averageMsrpCents: 19000, imageUrl: "assets/images/product-electric.svg", sourceUrl: "https://www.tcgplayer.com/search/pokemon/sv02-paldea-evolved" },
+  { publicSlug: "paldea-evolved-elite-trainer-box", name: "Scarlet & Violet - Paldea Evolved Elite Trainer Box", upc: null, category: "Elite Trainer Box", averageMsrpCents: 6500, imageUrl: "assets/images/product-electric.svg", sourceUrl: "https://www.tcgplayer.com/search/pokemon/sv02-paldea-evolved" },
+  { publicSlug: "scarlet-violet-base-booster-box-36", name: "Scarlet & Violet Base Booster Box (36 Packs)", upc: null, category: "Booster Box", averageMsrpCents: 33000, imageUrl: "assets/images/product-cosmic.svg", sourceUrl: "https://www.thetrainercourt.com/products/scarlet-violet-base-booster-box" },
+  { publicSlug: "crown-zenith-elite-trainer-box", name: "Sword & Shield - Crown Zenith Elite Trainer Box", upc: null, category: "Elite Trainer Box", averageMsrpCents: 7500, imageUrl: "assets/images/product-aurora.svg", sourceUrl: "https://www.tcgplayer.com/search/pokemon/crown-zenith" },
+  { publicSlug: "lost-origin-booster-box-36", name: "Sword & Shield - Lost Origin Booster Box (36 Packs)", upc: null, category: "Booster Box", averageMsrpCents: 27500, imageUrl: "assets/images/product-cosmic.svg", sourceUrl: "https://www.tcgplayer.com/search/pokemon/swsh11-lost-origin" },
+  { publicSlug: "brilliant-stars-booster-box-36", name: "Sword & Shield - Brilliant Stars Booster Box (36 Packs)", upc: null, category: "Booster Box", averageMsrpCents: 30000, imageUrl: "assets/images/product-electric.svg", sourceUrl: "https://www.tcgplayer.com/search/pokemon/swsh09-brilliant-stars" },
+  { publicSlug: "evolving-skies-booster-box-36", name: "Sword & Shield - Evolving Skies Booster Box (36 Packs)", upc: null, category: "Booster Box", averageMsrpCents: 150000, imageUrl: "assets/images/product-aurora.svg", sourceUrl: "https://www.tcgplayer.com/search/pokemon/swsh07-evolving-skies" },
+  { publicSlug: "japanese-terastal-festival-ex-booster-box", name: "Japanese Scarlet & Violet - Terastal Festival ex Booster Box", upc: null, category: "Japanese Booster Box", averageMsrpCents: 9000, imageUrl: "assets/images/product-aurora.svg", sourceUrl: "https://www.tcgplayer.com/search/pokemon/product?q=Terastal%20Festival%20ex%20Booster%20Box%20Japanese" },
+  { publicSlug: "japanese-shiny-treasure-ex-booster-box", name: "Japanese Scarlet & Violet - Shiny Treasure ex Booster Box", upc: null, category: "Japanese Booster Box", averageMsrpCents: 6500, imageUrl: "assets/images/product-cosmic.svg", sourceUrl: "https://www.tcgplayer.com/search/pokemon/product?q=Shiny%20Treasure%20ex%20Booster%20Box%20Japanese" },
+  { publicSlug: "japanese-vstar-universe-booster-box", name: "Japanese Sword & Shield - VSTAR Universe Booster Box", upc: null, category: "Japanese Booster Box", averageMsrpCents: 13000, imageUrl: "assets/images/product-electric.svg", sourceUrl: "https://www.tcgplayer.com/search/pokemon/product?q=VSTAR%20Universe%20Booster%20Box%20Japanese" },
+  { publicSlug: "japanese-151-booster-box", name: "Japanese Scarlet & Violet - Pokemon 151 Booster Box", upc: null, category: "Japanese Booster Box", averageMsrpCents: 18000, imageUrl: "assets/images/product-cosmic.svg", sourceUrl: "https://www.tcgplayer.com/search/pokemon/product?q=Pokemon%20151%20Booster%20Box%20Japanese" },
+  { publicSlug: "japanese-ruler-of-the-black-flame-booster-box", name: "Japanese Scarlet & Violet - Ruler of the Black Flame Booster Box", upc: null, category: "Japanese Booster Box", averageMsrpCents: 9000, imageUrl: "assets/images/product-flame.svg", sourceUrl: "https://www.tcgplayer.com/search/pokemon/product?q=Ruler%20of%20the%20Black%20Flame%20Booster%20Box%20Japanese" },
+  { publicSlug: "japanese-crimson-haze-booster-box", name: "Japanese Scarlet & Violet - Crimson Haze Booster Box", upc: null, category: "Japanese Booster Box", averageMsrpCents: 6500, imageUrl: "assets/images/product-flame.svg", sourceUrl: "https://www.tcgplayer.com/search/pokemon/product?q=Crimson%20Haze%20Booster%20Box%20Japanese" },
+  { publicSlug: "japanese-mask-of-change-booster-box", name: "Japanese Scarlet & Violet - Mask of Change Booster Box", upc: null, category: "Japanese Booster Box", averageMsrpCents: 8000, imageUrl: "assets/images/product-aurora.svg", sourceUrl: "https://www.tcgplayer.com/search/pokemon/product?q=Mask%20of%20Change%20Booster%20Box%20Japanese" }
+];
+const ALL_STARTER_INVENTORY = [...STARTER_INVENTORY, ...EXTRA_STARTER_INVENTORY];
+const STARTER_PACKING_NOTE = "Starter estimate: sealed product specs come from public retail/market listings; packed EasyPost weight adds the packaging allowance for shipping box, bubble wrap, label, business card, and slaps. Replace with real measured package data after the first shipment.";
+const STARTER_INVENTORY_DETAILS = {
+  "pitch-black-booster-box-36": {
+    averageMsrpCents: 21299, referencePriceLabel: "TCGPlayer market reference", referencePriceObservedAt: "2026-07-22",
+    description: "Factory-sealed Mega Evolutionâ€”Pitch Black booster display with 36 packs. Built for collectors chasing a sealed box rip or shelf piece.",
+    productWeightOz: 29.44, packagingWeightOz: 8, productLengthIn: 5.25, productWidthIn: 2.8, productHeightIn: 4.75, weightOz: 37.44, lengthIn: 7, widthIn: 5, heightIn: 6
+  },
+  "pitch-black-elite-trainer-box": {
+    averageMsrpCents: 8336, referencePriceLabel: "TCGPlayer market reference", referencePriceObservedAt: "2026-07-22",
+    description: "Factory-sealed Pitch Black Elite Trainer Box with 9 booster packs, promo card, sleeves, energy, dice, coin, guide, and collector box.",
+    productWeightOz: 24, packagingWeightOz: 10, productLengthIn: 7.4, productWidthIn: 3.4, productHeightIn: 6.8, weightOz: 34, lengthIn: 9, widthIn: 5, heightIn: 8
+  },
+  "pitch-black-booster-bundle-6": {
+    averageMsrpCents: 4029, referencePriceLabel: "TCGPlayer market reference", referencePriceObservedAt: "2026-07-22",
+    description: "Compact factory-sealed Pitch Black booster bundle with 6 booster packs and no extra accessories.",
+    productWeightOz: 5.3, packagingWeightOz: 6, productLengthIn: 4.63, productWidthIn: 2.94, productHeightIn: 1.94, weightOz: 11.3, lengthIn: 6, widthIn: 5, heightIn: 3
+  },
+  "pitch-black-three-pack-booster": {
+    averageMsrpCents: 2133, referencePriceLabel: "TCGPlayer market reference", referencePriceObservedAt: "2026-07-22",
+    description: "Factory-sealed Pitch Black three-booster blister with 3 packs and a foil promo card.",
+    productWeightOz: 3.52, packagingWeightOz: 5, productLengthIn: 7.5, productWidthIn: 7, productHeightIn: 0.41, weightOz: 8.52, lengthIn: 9, widthIn: 8, heightIn: 2
+  },
+  "pitch-black-sleeved-booster": {
+    averageMsrpCents: 938, referencePriceLabel: "TCGPlayer market reference", referencePriceObservedAt: "2026-07-22",
+    description: "Factory-sealed sleeved Pitch Black booster pack. Style/art may vary by supply.",
+    productWeightOz: 1.7, packagingWeightOz: 4, productLengthIn: 7.5, productWidthIn: 4.25, productHeightIn: 0.25, weightOz: 5.7, lengthIn: 9, widthIn: 6, heightIn: 1
+  },
+  "mega-greninja-ex-premium-collection": {
+    averageMsrpCents: 8499, referencePriceLabel: "Retail market reference", referencePriceObservedAt: "2026-07-22",
+    description: "Factory-sealed Mega Greninja ex Premium Collection with Mega Greninja ex promo, oversized lenticular promo, tech sticker, and 8 booster packs.",
+    productWeightOz: 15.04, packagingWeightOz: 12, productLengthIn: 15.09, productWidthIn: 1.65, productHeightIn: 9.02, weightOz: 27.04, lengthIn: 17, widthIn: 4, heightIn: 11
+  },
+  "pitch-black-build-and-battle": {
+    averageMsrpCents: 4651, referencePriceLabel: "TCGPlayer market reference", referencePriceObservedAt: "2026-07-22",
+    description: "Factory-sealed Pitch Black Build & Battle Box with a 40-card prerelease deck and 4 booster packs.",
+    productWeightOz: 7, packagingWeightOz: 6, productLengthIn: 4.24, productWidthIn: 2.94, productHeightIn: 2.04, weightOz: 13, lengthIn: 6, widthIn: 5, heightIn: 4
+  }
+};
+const STARTER_CATEGORY_PACKING_DEFAULTS = {
+  "Booster Box": { productWeightOz: 29.44, packagingWeightOz: 8, productLengthIn: 5.25, productWidthIn: 2.8, productHeightIn: 4.75, weightOz: 37.44, lengthIn: 7, widthIn: 5, heightIn: 6 },
+  "Elite Trainer Box": { productWeightOz: 24, packagingWeightOz: 10, productLengthIn: 7.4, productWidthIn: 3.4, productHeightIn: 6.8, weightOz: 34, lengthIn: 9, widthIn: 5, heightIn: 8 },
+  "Booster Bundle": { productWeightOz: 5.3, packagingWeightOz: 6, productLengthIn: 4.63, productWidthIn: 2.94, productHeightIn: 1.94, weightOz: 11.3, lengthIn: 6, widthIn: 5, heightIn: 3 },
+  "Blister": { productWeightOz: 3.52, packagingWeightOz: 5, productLengthIn: 7.5, productWidthIn: 7, productHeightIn: 0.41, weightOz: 8.52, lengthIn: 9, widthIn: 8, heightIn: 2 },
+  "Booster Pack": { productWeightOz: 1.7, packagingWeightOz: 4, productLengthIn: 7.5, productWidthIn: 4.25, productHeightIn: 0.25, weightOz: 5.7, lengthIn: 9, widthIn: 6, heightIn: 1 },
+  "Premium Collection": { productWeightOz: 15.04, packagingWeightOz: 12, productLengthIn: 15.09, productWidthIn: 1.65, productHeightIn: 9.02, weightOz: 27.04, lengthIn: 17, widthIn: 4, heightIn: 11 },
+  "Build & Battle": { productWeightOz: 7, packagingWeightOz: 6, productLengthIn: 4.24, productWidthIn: 2.94, productHeightIn: 2.04, weightOz: 13, lengthIn: 6, widthIn: 5, heightIn: 4 },
+  "Japanese Booster Box": { productWeightOz: 10.6, packagingWeightOz: 7, productLengthIn: 5.6, productWidthIn: 5.6, productHeightIn: 1.5, weightOz: 17.6, lengthIn: 7, widthIn: 7, heightIn: 3 },
+  "Japanese High Class Box": { productWeightOz: 6.7, packagingWeightOz: 6, productLengthIn: 5.47, productWidthIn: 2.91, productHeightIn: 1.69, weightOz: 12.7, lengthIn: 7, widthIn: 5, heightIn: 3 }
+};
+const starterInventoryDetails = item => {
+  const defaults = STARTER_CATEGORY_PACKING_DEFAULTS[item.category] || {};
+  const override = STARTER_INVENTORY_DETAILS[item.publicSlug] || {};
+  return {
+    ...item,
+    ...defaults,
+    ...override,
+    packingNotes: override.packingNotes || STARTER_PACKING_NOTE,
+    referencePriceLabel: override.referencePriceLabel || "Retail reference price",
+    referencePriceObservedAt: override.referencePriceObservedAt || "2026-07-22",
+    description: override.description || `${item.name} sealed product preview with starter packed-weight estimates ready for EasyPost testing.`
+  };
+};
 const TIERS = [
   { threshold: 0, name: "Starter", reward: "Member access" },
   { threshold: 3, name: "Crew", reward: "Bonus discount" },
@@ -40,9 +148,24 @@ const normalizeEmail = value => String(value || "").trim().toLowerCase().slice(0
 const clean = (value, max = 64) => String(value || "").trim().replace(/\s+/g, " ").slice(0, max);
 const optionalInteger = (value, min, max) => value === "" || value === null || value === undefined ? null : Number.isInteger(value) && value >= min && value <= max ? value : NaN;
 const optionalNumber = (value, min, max) => value === "" || value === null || value === undefined ? null : Number.isFinite(Number(value)) && Number(value) >= min && Number(value) <= max ? Number(value) : NaN;
+function parseStripePaylinkInput(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return { stripePaylinkUrl: "", stripeBuyButtonId: "", stripePublishableKey: "" };
+  if (raw.length > 2500) return { error: "Stripe Pay Link or embed code is too long." };
+  const urlMatch = raw.match(/https:\/\/(?:buy\.stripe\.com|checkout\.stripe\.com)\/[^\s"'<>]+/i);
+  const stripePaylinkUrl = urlMatch ? urlMatch[0].slice(0, 500) : "";
+  const buyButtonId = raw.match(/buy-button-id\s*=\s*["']([^"']+)["']/i)?.[1] || raw.match(/\b(buy_btn_[a-zA-Z0-9_]+)\b/)?.[1] || "";
+  const publishableKey = raw.match(/publishable-key\s*=\s*["']([^"']+)["']/i)?.[1] || raw.match(/\b(pk_(?:live|test)_[a-zA-Z0-9_]+)\b/)?.[1] || "";
+  if (stripePaylinkUrl) return { stripePaylinkUrl, stripeBuyButtonId: "", stripePublishableKey: "" };
+  if (buyButtonId && publishableKey && /^buy_btn_[a-zA-Z0-9_]+$/.test(buyButtonId) && /^pk_(?:live|test)_[a-zA-Z0-9_]+$/.test(publishableKey)) {
+    return { stripePaylinkUrl: "", stripeBuyButtonId: buyButtonId.slice(0, 120), stripePublishableKey: publishableKey.slice(0, 200) };
+  }
+  return { error: "Paste a Stripe Payment Link URL or Stripe Buy Button embed code." };
+}
 function parseInventoryItemInput(data) {
   const rawName = boundedString(data?.name, 120);
   const rawUpc = boundedString(data?.upc, 32);
+  const rawSku = boundedString(data?.sku, 64);
   const rawCategory = boundedString(data?.category, 64);
   const rawDescription = boundedString(data?.description, 1000);
   const rawImageUrl = boundedString(data?.imageUrl, 500);
@@ -51,13 +174,17 @@ function parseInventoryItemInput(data) {
   const rawOriginCountry = boundedString(data?.originCountry, 2);
   const rawHsCode = boundedString(data?.hsCode, 12);
   const rawReferenceLabel = boundedString(data?.referencePriceLabel, 80);
-  if ([rawName, rawUpc, rawCategory, rawDescription, rawImageUrl, rawSourceUrl, rawPackingNotes, rawOriginCountry, rawHsCode, rawReferenceLabel].includes(null)) return { error: "Inventory text is too long." };
+  if ([rawName, rawUpc, rawSku, rawCategory, rawDescription, rawImageUrl, rawSourceUrl, rawPackingNotes, rawOriginCountry, rawHsCode, rawReferenceLabel].includes(null)) return { error: "Inventory text is too long." };
+  const stripePaylink = parseStripePaylinkInput(data?.stripePaylink || data?.stripePaylinkUrl || data?.stripeBuyButtonEmbed || "");
+  if (stripePaylink.error) return { error: stripePaylink.error };
   const name = clean(rawName, 120);
   const upcInput = String(rawUpc || "").trim();
   if (upcInput && !/^[0-9\s-]+$/.test(upcInput)) return { error: "UPC must contain digits only." };
   const upc = upcInput.replace(/[\s-]/g, "");
+  const sku = normalizeSku(rawSku);
   if (!name || name.length < 2) return { error: "Enter an inventory product name from 2 to 120 characters." };
   if (upc && !/^\d{6,18}$/.test(upc)) return { error: "UPC must contain 6 to 18 digits." };
+  if (String(rawSku || "").trim() && (sku.length < 3 || sku.length > 64)) return { error: "SKU must contain 3 to 64 letters, numbers, dashes, underscores, or dots." };
   const imageUrl = String(rawImageUrl || "").trim();
   const sourceUrl = String(rawSourceUrl || "").trim();
   for (const [label, value] of [["Image URL", imageUrl], ["Source URL", sourceUrl]]) {
@@ -79,13 +206,19 @@ function parseInventoryItemInput(data) {
   const wholesaleSmallListPriceCents = optionalInteger(data?.wholesaleSmallListPriceCents, 0, 100000000);
   const wholesaleCaseListPriceCents = optionalInteger(data?.wholesaleCaseListPriceCents, 0, 100000000);
   const wholesalePalletListPriceCents = optionalInteger(data?.wholesalePalletListPriceCents, 0, 100000000);
-  const weightOz = optionalNumber(data?.weightOz, 0.01, 2400);
+  const productWeightOz = optionalNumber(data?.productWeightOz, 0.01, 2400);
+  const packagingWeightOz = optionalNumber(data?.packagingWeightOz, 0, 2400);
+  let weightOz = optionalNumber(data?.weightOz, 0.01, 2400);
+  if (weightOz === null && productWeightOz !== null && packagingWeightOz !== null) weightOz = Number((productWeightOz + packagingWeightOz).toFixed(2));
+  const productLengthIn = optionalNumber(data?.productLengthIn, 0.01, 120);
+  const productWidthIn = optionalNumber(data?.productWidthIn, 0.01, 120);
+  const productHeightIn = optionalNumber(data?.productHeightIn, 0.01, 120);
   const lengthIn = optionalNumber(data?.lengthIn, 0.01, 120);
   const widthIn = optionalNumber(data?.widthIn, 0.01, 120);
   const heightIn = optionalNumber(data?.heightIn, 0.01, 120);
   if ([quantity, averageMsrpCents, cogsCents, usShippingCents, profitCents, packagingCents, overheadCents, retailFixedFeeCents, wholesaleHandlingCents,
     retailListPriceCents, websiteListPriceCents, internationalListPriceCents, whatnotListPriceCents, wholesaleSmallListPriceCents,
-    wholesaleCaseListPriceCents, wholesalePalletListPriceCents, weightOz, lengthIn, widthIn, heightIn].some(Number.isNaN)) return { error: "Check the inventory quantity, pricing, weight, and package dimensions." };
+    wholesaleCaseListPriceCents, wholesalePalletListPriceCents, productWeightOz, packagingWeightOz, weightOz, productLengthIn, productWidthIn, productHeightIn, lengthIn, widthIn, heightIn].some(Number.isNaN)) return { error: "Check the inventory quantity, pricing, weight, and package dimensions." };
   const originCountry = String(rawOriginCountry || "").trim().toUpperCase();
   if (originCountry && !/^[A-Z]{2}$/.test(originCountry)) return { error: "Country of origin must be a two-letter code." };
   const hsCode = String(rawHsCode || "").trim();
@@ -93,13 +226,14 @@ function parseInventoryItemInput(data) {
   const referencePriceObservedAt = String(data?.referencePriceObservedAt || "").trim();
   if (referencePriceObservedAt && !/^\d{4}-\d{2}-\d{2}$/.test(referencePriceObservedAt)) return { error: "Reference-price date must use YYYY-MM-DD." };
   const item = {
-      name, upc: upc || null, category: clean(rawCategory, 64), description: String(rawDescription || "").trim(), imageUrl, sourceUrl,
+      name, upc: upc || null, sku, category: clean(rawCategory, 64), description: String(rawDescription || "").trim(), imageUrl, sourceUrl,
       quantity, averageMsrpCents, referencePriceLabel: clean(rawReferenceLabel || "Retail reference price", 80), referencePriceObservedAt: referencePriceObservedAt || null,
       cogsCents, usShippingCents, profitCents, packagingCents, overheadCents, retailFixedFeeCents, wholesaleHandlingCents,
       retailListPriceCents, websiteListPriceCents, internationalListPriceCents, whatnotListPriceCents,
       wholesaleSmallListPriceCents, wholesaleCaseListPriceCents, wholesalePalletListPriceCents,
-      weightOz, lengthIn, widthIn, heightIn,
+      productWeightOz, packagingWeightOz, weightOz, productLengthIn, productWidthIn, productHeightIn, lengthIn, widthIn, heightIn,
       originCountry, hsCode, packingNotes: String(rawPackingNotes || "").trim(),
+      stripePaylinkUrl: stripePaylink.stripePaylinkUrl, stripeBuyButtonId: stripePaylink.stripeBuyButtonId, stripePublishableKey: stripePaylink.stripePublishableKey,
       isStoreVisible: data?.isStoreVisible !== false, isActive: data?.isActive !== false
   };
   const pricingErrors = channelPricingErrors(item);
@@ -110,6 +244,9 @@ const boundedString = (value, max) => {
   return typeof value === "string" && value.length <= max ? value : null;
 };
 const slugify = value => clean(value, 120).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 120) || "product";
+const normalizeSku = value => String(value || "").trim().toUpperCase().replace(/[^A-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64);
+const starterSku = item => normalizeSku(`CP-${item.publicSlug}`);
+const generatedSku = (item, suffix = randomString(4)) => normalizeSku(`CP-${item.upc || slugify(item.name).slice(0, 42)}-${suffix}`);
 const escapeHtml = value => String(value || "").replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
 const randomString = (length, alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789") => Array.from(crypto.getRandomValues(new Uint8Array(length)), n => alphabet[n % alphabet.length]).join("");
 async function hash(value, secret = "") {
@@ -309,6 +446,7 @@ const inventoryItemView = row => {
   publicSlug: row.public_slug,
   name: row.name,
   upc: row.upc || "",
+  sku: row.sku || "",
   category: row.category || "",
   description: row.description || "",
   imageUrl: row.image_url || "",
@@ -336,15 +474,24 @@ const inventoryItemView = row => {
   channelPricing,
   usStorePriceCents: channelPricing.prices.websiteUs,
   internationalStorePriceCents: channelPricing.prices.websiteInternational,
+  productWeightOz: row.product_weight_oz === null || row.product_weight_oz === undefined ? null : Number(row.product_weight_oz),
+  packagingWeightOz: row.packaging_weight_oz === null || row.packaging_weight_oz === undefined ? null : Number(row.packaging_weight_oz),
   weightOz: row.weight_oz === null || row.weight_oz === undefined ? null : Number(row.weight_oz),
+  productLengthIn: row.product_length_in === null || row.product_length_in === undefined ? null : Number(row.product_length_in),
+  productWidthIn: row.product_width_in === null || row.product_width_in === undefined ? null : Number(row.product_width_in),
+  productHeightIn: row.product_height_in === null || row.product_height_in === undefined ? null : Number(row.product_height_in),
   lengthIn: row.length_in === null || row.length_in === undefined ? null : Number(row.length_in),
   widthIn: row.width_in === null || row.width_in === undefined ? null : Number(row.width_in),
   heightIn: row.height_in === null || row.height_in === undefined ? null : Number(row.height_in),
   originCountry: row.origin_country || "",
   hsCode: row.hs_code || "",
   packingNotes: row.packing_notes || "",
+  stripePaylinkUrl: row.stripe_paylink_url || "",
+  stripeBuyButtonId: row.stripe_buy_button_id || "",
+  stripePublishableKey: row.stripe_publishable_key || "",
   isStoreVisible: Number(row.is_store_visible) === 1,
   isActive: Number(row.is_active) === 1,
+  postReady: Number(row.is_active) === 1 && Number(row.is_store_visible) === 1 && availableQuantity > 0 && (!!row.stripe_paylink_url || (!!row.stripe_buy_button_id && !!row.stripe_publishable_key)),
   campaignReady: Number(row.is_active) === 1 && availableQuantity > 0,
   createdAt: row.created_at,
   updatedAt: row.updated_at
@@ -371,7 +518,12 @@ async function inventoryCommittedUnits(env, inventoryItemId, ownerMemberId, epoc
   `).bind(epochIso, inventoryItemId, ownerMemberId, excludedCampaignId, excludedCampaignId).first();
   return Math.max(0, Number(row?.total || 0));
 }
+const stockMovementStatement = (env, { inventoryItemId, ownerMemberId, orderId = null, reservationId = null, type, delta, resultingQuantity = null, note = "", createdAt = now() }) => env.DB.prepare(`
+  INSERT INTO inventory_stock_movements(id,inventory_item_id,owner_member_id,order_id,reservation_id,movement_type,delta_quantity,resulting_quantity,note,created_at)
+  VALUES(?,?,?,?,?,?,?,?,?,?)
+`).bind(id(), inventoryItemId, ownerMemberId, orderId, reservationId, type, delta, resultingQuantity, clean(note, 300), createdAt);
 const convertCents = (usdCents, rate) => usdCents === null || rate === null ? null : Math.round(usdCents * rate);
+const numberOrNull = value => value === null || value === undefined || value === "" || !Number.isFinite(Number(value)) ? null : Number(value);
 async function ecbFxQuote(currency) {
   if (currency === "USD") return { value: 1, source: "USD", asOf: new Date().toISOString().slice(0, 10) };
   const cache = globalThis.caches?.default;
@@ -403,8 +555,15 @@ function publicStoreItem(row, market, currency, fx) {
   const availableQuantity = Math.max(0, Number(row.quantity || 0) - Number(row.committed_units || 0));
   const dimensionsReady = [row.weight_oz, row.length_in, row.width_in, row.height_in].every(value => Number(value) > 0);
   const customsReady = market === "us" || (String(row.origin_country || "").length === 2 && String(row.hs_code || "").length >= 4);
+  const sealedDimensionsIn = [row.product_length_in, row.product_width_in, row.product_height_in].every(value => Number(value) > 0)
+    ? { length: Number(row.product_length_in), width: Number(row.product_width_in), height: Number(row.product_height_in) }
+    : null;
+  const packedDimensionsIn = [row.length_in, row.width_in, row.height_in].every(value => Number(value) > 0)
+    ? { length: Number(row.length_in), width: Number(row.width_in), height: Number(row.height_in) }
+    : null;
   return {
     slug: row.public_slug,
+    sku: row.sku || "",
     name: row.name,
     category: row.category || "Trading Card Product",
     description: row.description || "",
@@ -424,6 +583,19 @@ function publicStoreItem(row, market, currency, fx) {
       displayCents: convertCents(usdPrice, fx?.value ?? null),
       currency,
       includesUsShipping: false
+    },
+    paylink: row.stripe_paylink_url || row.stripe_buy_button_id ? {
+      url: row.stripe_paylink_url || "",
+      buyButtonId: row.stripe_buy_button_id || "",
+      publishableKey: row.stripe_publishable_key || ""
+    } : null,
+    productSpec: {
+      sealedWeightOz: numberOrNull(row.product_weight_oz),
+      packagingWeightOz: numberOrNull(row.packaging_weight_oz),
+      packedWeightOz: numberOrNull(row.weight_oz),
+      sealedDimensionsIn,
+      packedDimensionsIn,
+      packingNotes: row.packing_notes || ""
     },
     shippingReady: dimensionsReady && customsReady
   };
@@ -683,7 +855,17 @@ async function expireCheckoutReservation(env, sessionId) {
   const updatedAt = now();
   await env.DB.batch([
     env.DB.prepare(`UPDATE inventory_items SET quantity=quantity+?,updated_at=? WHERE id=?`).bind(Number(reservation.quantity), updatedAt, reservation.inventory_item_id),
-    env.DB.prepare(`UPDATE checkout_reservations SET status='expired',updated_at=? WHERE id=? AND status IN ('open','creating')`).bind(updatedAt, reservation.id)
+    env.DB.prepare(`UPDATE checkout_reservations SET status='expired',updated_at=? WHERE id=? AND status IN ('open','creating')`).bind(updatedAt, reservation.id),
+    stockMovementStatement(env, {
+      inventoryItemId: reservation.inventory_item_id,
+      ownerMemberId: reservation.owner_member_id,
+      reservationId: reservation.id,
+      type: "released",
+      delta: Number(reservation.quantity),
+      resultingQuantity: null,
+      note: "Stripe checkout expired; stock released",
+      createdAt: updatedAt
+    })
   ]);
 }
 async function markOrderRefunded(env, paymentIntentId, refundId, ctx) {
@@ -698,6 +880,17 @@ async function markOrderRefunded(env, paymentIntentId, refundId, ctx) {
   if (reservation?.status === "paid" && row.status === "processing") {
     operations.push(env.DB.prepare(`UPDATE inventory_items SET quantity=quantity+?,updated_at=? WHERE id=?`).bind(Number(reservation.quantity), updatedAt, reservation.inventory_item_id));
     operations.push(env.DB.prepare(`UPDATE checkout_reservations SET status='refunded',updated_at=? WHERE id=? AND status='paid'`).bind(updatedAt, reservation.id));
+    operations.push(stockMovementStatement(env, {
+      inventoryItemId: reservation.inventory_item_id,
+      ownerMemberId: reservation.owner_member_id,
+      orderId: row.id,
+      reservationId: reservation.id,
+      type: "refunded",
+      delta: Number(reservation.quantity),
+      resultingQuantity: null,
+      note: "Website order refunded/cancelled; stock restored",
+      createdAt: updatedAt
+    }));
   }
   await env.DB.batch(operations);
   const memberRow = await env.DB.prepare(`SELECT email FROM members WHERE id=?`).bind(row.member_id).first();
@@ -988,12 +1181,18 @@ async function route(request, env, cors, ctx) {
     try { fx = await ecbFxQuote(currency); }
     catch { currencyWarning = "Display conversion is temporarily unavailable; USD remains the source price."; }
     const liveRows = rows.results || [];
-    const storeRows = liveRows.length ? liveRows : STARTER_INVENTORY.map(item => ({
-      public_slug: item.publicSlug, name: item.name, category: item.category,
-      description: "Verified current-product preview. Availability, COGS, packed shipping details, and sale price have not been configured yet.",
+    const storeRows = liveRows.length ? liveRows : ALL_STARTER_INVENTORY.map(starterInventoryDetails).map(item => ({
+      public_slug: item.publicSlug, sku: starterSku(item), name: item.name, category: item.category,
+      description: item.description,
       image_url: item.imageUrl, source_url: item.sourceUrl, quantity: 0, average_msrp_cents: item.averageMsrpCents,
-      reference_price_label: "Retailer list price", reference_price_observed_at: "2026-07-18",
-      cogs_cents: null, us_shipping_cents: null, profit_cents: 1000, weight_oz: null, length_in: null, width_in: null, height_in: null,
+      reference_price_label: item.referencePriceLabel, reference_price_observed_at: item.referencePriceObservedAt,
+      cogs_cents: null, us_shipping_cents: null, profit_cents: 1000,
+      packaging_cents: null, overhead_cents: null, retail_fixed_fee_cents: null, wholesale_handling_cents: null,
+      retail_list_price_cents: null, website_list_price_cents: null, international_list_price_cents: null, whatnot_list_price_cents: null,
+      wholesale_small_list_price_cents: null, wholesale_case_list_price_cents: null, wholesale_pallet_list_price_cents: null,
+      product_weight_oz: item.productWeightOz, packaging_weight_oz: item.packagingWeightOz,
+      product_length_in: item.productLengthIn, product_width_in: item.productWidthIn, product_height_in: item.productHeightIn,
+      weight_oz: item.weightOz, length_in: item.lengthIn, width_in: item.widthIn, height_in: item.heightIn,
       origin_country: "", hs_code: ""
     }));
     const comingSoon = String(env.STORE_COMING_SOON || "true") !== "false";
@@ -1290,7 +1489,17 @@ async function route(request, env, cors, ctx) {
         env.DB.prepare(`INSERT INTO checkout_reservations(id,member_id,owner_member_id,inventory_item_id,shipping_quote_id,quantity,product_name,unit_amount_cents,shipping_amount_cents,currency,easypost_shipment_id,easypost_rate_id,carrier,service,address_json,status,expires_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
           reservationId, member.id, quote.owner_member_id, quote.inventory_item_id, quote.id, quantity, quote.name, unitAmountCents, Number(selectedRate.amountCents), "USD",
           quote.easypost_shipment_id, rateId, clean(selectedRate.carrier, 60), clean(selectedRate.service, 80), quote.address_json, "creating", sessionExpiresAt, createdAt, createdAt
-        )
+        ),
+        stockMovementStatement(env, {
+          inventoryItemId: quote.inventory_item_id,
+          ownerMemberId: quote.owner_member_id,
+          reservationId,
+          type: "reserved",
+          delta: -quantity,
+          resultingQuantity: Math.max(0, Number(quote.inventory_quantity || 0) - quantity),
+          note: "Website checkout reservation",
+          createdAt
+        })
       ]);
       if (Number(reserved[0].meta?.changes || 0) !== 1) throw new Error("OUT_OF_STOCK");
     } catch (error) {
@@ -1317,14 +1526,16 @@ async function route(request, env, cors, ctx) {
     } catch (error) {
       await env.DB.batch([
         env.DB.prepare(`UPDATE inventory_items SET quantity=quantity+?,updated_at=? WHERE id=?`).bind(quantity, now(), quote.inventory_item_id),
-        env.DB.prepare(`UPDATE checkout_reservations SET status='failed',updated_at=? WHERE id=?`).bind(now(), reservationId)
+        env.DB.prepare(`UPDATE checkout_reservations SET status='failed',updated_at=? WHERE id=?`).bind(now(), reservationId),
+        stockMovementStatement(env, { inventoryItemId: quote.inventory_item_id, ownerMemberId: quote.owner_member_id, reservationId, type: "released", delta: quantity, resultingQuantity: null, note: "Stripe checkout creation failed; stock released" })
       ]);
       return response({ error: error.message === "STRIPE_NOT_CONFIGURED" ? "Stripe checkout is not configured." : "Stripe could not open checkout. No payment was created; try again." }, 502, cors);
     }
     if (!stripeSession?.id || !/^https:\/\/checkout\.stripe\.com\//.test(stripeSession?.url || "")) {
       await env.DB.batch([
         env.DB.prepare(`UPDATE inventory_items SET quantity=quantity+?,updated_at=? WHERE id=?`).bind(quantity, now(), quote.inventory_item_id),
-        env.DB.prepare(`UPDATE checkout_reservations SET status='failed',updated_at=? WHERE id=?`).bind(now(), reservationId)
+        env.DB.prepare(`UPDATE checkout_reservations SET status='failed',updated_at=? WHERE id=?`).bind(now(), reservationId),
+        stockMovementStatement(env, { inventoryItemId: quote.inventory_item_id, ownerMemberId: quote.owner_member_id, reservationId, type: "released", delta: quantity, resultingQuantity: null, note: "Stripe checkout returned invalid session; stock released" })
       ]);
       return response({ error: "Stripe returned an invalid checkout session." }, 502, cors);
     }
@@ -1714,10 +1925,10 @@ async function route(request, env, cors, ctx) {
       ),0) committed_units
       FROM inventory_items inventory
       WHERE owner_member_id=? AND (?=0 OR (is_active=1 AND quantity>0))
-        AND (?='' OR lower(name) LIKE ? OR lower(COALESCE(upc,'')) LIKE ? OR lower(category) LIKE ?)
+        AND (?='' OR lower(name) LIKE ? OR lower(COALESCE(upc,'')) LIKE ? OR lower(COALESCE(sku,'')) LIKE ? OR lower(category) LIKE ?)
       ORDER BY is_active DESC,CASE WHEN quantity>0 THEN 0 ELSE 1 END,updated_at DESC,name COLLATE NOCASE
       LIMIT 150
-    `).bind(inventoryEpoch, member.id, availableOnly ? 1 : 0, query, search, search, search).all();
+    `).bind(inventoryEpoch, member.id, availableOnly ? 1 : 0, query, search, search, search, search).all();
     let inventory = (rows.results || []).map(inventoryItemView);
     if (availableOnly) inventory = inventory.filter(item => item.campaignReady);
     return response({ inventory }, 200, cors);
@@ -1725,17 +1936,38 @@ async function route(request, env, cors, ctx) {
   if (url.pathname === "/admin/inventory/catalog/import" && request.method === "POST") {
     if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
     const createdAt = now();
-    const statements = STARTER_INVENTORY.map(item => env.DB.prepare(`
-      INSERT OR IGNORE INTO inventory_items(
-        id,owner_member_id,public_slug,name,upc,category,description,image_url,source_url,quantity,average_msrp_cents,
-        reference_price_label,reference_price_observed_at,cogs_cents,us_shipping_cents,profit_cents,weight_oz,length_in,width_in,height_in,
-        origin_country,hs_code,packing_notes,is_store_visible,is_active,created_at,updated_at
-      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    const statements = ALL_STARTER_INVENTORY.map(starterInventoryDetails).map(item => env.DB.prepare(`
+      INSERT INTO inventory_items(
+        id,owner_member_id,public_slug,name,upc,sku,category,description,image_url,source_url,quantity,average_msrp_cents,
+        reference_price_label,reference_price_observed_at,cogs_cents,us_shipping_cents,profit_cents,
+        product_weight_oz,packaging_weight_oz,product_length_in,product_width_in,product_height_in,weight_oz,length_in,width_in,height_in,
+        origin_country,hs_code,packing_notes,stripe_paylink_url,stripe_buy_button_id,stripe_publishable_key,is_store_visible,is_active,created_at,updated_at
+      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      ON CONFLICT(public_slug) DO UPDATE SET
+        average_msrp_cents=excluded.average_msrp_cents,
+        reference_price_label=excluded.reference_price_label,
+        reference_price_observed_at=excluded.reference_price_observed_at,
+        description=CASE WHEN inventory_items.description='' OR inventory_items.description LIKE 'Verified current%' OR inventory_items.description LIKE '%starter%' THEN excluded.description ELSE inventory_items.description END,
+        image_url=COALESCE(NULLIF(inventory_items.image_url,''),excluded.image_url),
+        source_url=COALESCE(NULLIF(inventory_items.source_url,''),excluded.source_url),
+        sku=COALESCE(NULLIF(inventory_items.sku,''),excluded.sku),
+        product_weight_oz=COALESCE(inventory_items.product_weight_oz,excluded.product_weight_oz),
+        packaging_weight_oz=COALESCE(inventory_items.packaging_weight_oz,excluded.packaging_weight_oz),
+        product_length_in=COALESCE(inventory_items.product_length_in,excluded.product_length_in),
+        product_width_in=COALESCE(inventory_items.product_width_in,excluded.product_width_in),
+        product_height_in=COALESCE(inventory_items.product_height_in,excluded.product_height_in),
+        weight_oz=COALESCE(inventory_items.weight_oz,excluded.weight_oz),
+        length_in=COALESCE(inventory_items.length_in,excluded.length_in),
+        width_in=COALESCE(inventory_items.width_in,excluded.width_in),
+        height_in=COALESCE(inventory_items.height_in,excluded.height_in),
+        packing_notes=CASE WHEN inventory_items.packing_notes='' OR inventory_items.packing_notes LIKE 'Starter estimate:%' THEN excluded.packing_notes ELSE inventory_items.packing_notes END,
+        updated_at=excluded.updated_at
     `).bind(
-      id(), member.id, item.publicSlug, item.name, item.upc, item.category,
-      "Verified current product starter entry. Add actual stock, landed COGS, packed dimensions, and your own or licensed product photo before selling.",
-      item.imageUrl, item.sourceUrl, 0, item.averageMsrpCents, "Retailer list price", "2026-07-18", null, null, 1000,
-      null, null, null, null, "", "", "", 1, 1, createdAt, createdAt
+      id(), member.id, item.publicSlug, item.name, item.upc, starterSku(item), item.category,
+      item.description,
+      item.imageUrl, item.sourceUrl, 0, item.averageMsrpCents, item.referencePriceLabel, item.referencePriceObservedAt, null, null, 1000,
+      item.productWeightOz, item.packagingWeightOz, item.productLengthIn, item.productWidthIn, item.productHeightIn, item.weightOz, item.lengthIn, item.widthIn, item.heightIn,
+      "", "", item.packingNotes, "", "", "", 1, 1, createdAt, createdAt
     ));
     const results = await env.DB.batch(statements);
     const imported = results.reduce((total, result) => total + Number(result.meta?.changes || 0), 0);
@@ -1752,25 +1984,28 @@ async function route(request, env, cors, ctx) {
     const item = parsed.item;
     const inventoryId = id();
     const publicSlug = `${slugify(item.name)}-${randomString(6).toLowerCase()}`;
+    const sku = item.sku || generatedSku(item);
     const createdAt = now();
     try {
       await env.DB.prepare(`
         INSERT INTO inventory_items(
-          id,owner_member_id,public_slug,name,upc,category,description,image_url,source_url,quantity,average_msrp_cents,
+          id,owner_member_id,public_slug,name,upc,sku,category,description,image_url,source_url,quantity,average_msrp_cents,
           reference_price_label,reference_price_observed_at,cogs_cents,us_shipping_cents,profit_cents,
           packaging_cents,overhead_cents,retail_fixed_fee_cents,wholesale_handling_cents,
           retail_list_price_cents,website_list_price_cents,international_list_price_cents,whatnot_list_price_cents,
           wholesale_small_list_price_cents,wholesale_case_list_price_cents,wholesale_pallet_list_price_cents,
-          weight_oz,length_in,width_in,height_in,
-          origin_country,hs_code,packing_notes,is_store_visible,is_active,created_at,updated_at
-        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+          product_weight_oz,packaging_weight_oz,product_length_in,product_width_in,product_height_in,weight_oz,length_in,width_in,height_in,
+          origin_country,hs_code,packing_notes,stripe_paylink_url,stripe_buy_button_id,stripe_publishable_key,is_store_visible,is_active,created_at,updated_at
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
       `).bind(
-        inventoryId, member.id, publicSlug, item.name, item.upc, item.category, item.description, item.imageUrl, item.sourceUrl, item.quantity,
+        inventoryId, member.id, publicSlug, item.name, item.upc, sku, item.category, item.description, item.imageUrl, item.sourceUrl, item.quantity,
         item.averageMsrpCents, item.referencePriceLabel, item.referencePriceObservedAt, item.cogsCents, item.usShippingCents, item.profitCents,
         item.packagingCents, item.overheadCents, item.retailFixedFeeCents, item.wholesaleHandlingCents,
         item.retailListPriceCents, item.websiteListPriceCents, item.internationalListPriceCents, item.whatnotListPriceCents,
         item.wholesaleSmallListPriceCents, item.wholesaleCaseListPriceCents, item.wholesalePalletListPriceCents,
+        item.productWeightOz, item.packagingWeightOz, item.productLengthIn, item.productWidthIn, item.productHeightIn,
         item.weightOz, item.lengthIn, item.widthIn, item.heightIn, item.originCountry, item.hsCode, item.packingNotes,
+        item.stripePaylinkUrl, item.stripeBuyButtonId, item.stripePublishableKey,
         item.isStoreVisible ? 1 : 0, item.isActive ? 1 : 0, createdAt, createdAt
       ).run();
     } catch (error) {
@@ -1778,6 +2013,15 @@ async function route(request, env, cors, ctx) {
       throw error;
     }
     const saved = await env.DB.prepare(`SELECT * FROM inventory_items WHERE id=? AND owner_member_id=?`).bind(inventoryId, member.id).first();
+    if (Number(item.quantity || 0) > 0) await stockMovementStatement(env, {
+      inventoryItemId: inventoryId,
+      ownerMemberId: member.id,
+      type: "manual_set",
+      delta: Number(item.quantity),
+      resultingQuantity: Number(item.quantity),
+      note: "Initial product stock entered at creation",
+      createdAt
+    }).run();
     await audit(env, request, "inventory_created", member.id, `${inventoryId}|${item.upc || "no-upc"}`);
     return response({ item: inventoryItemView(saved) }, 201, cors);
   }
@@ -1791,20 +2035,24 @@ async function route(request, env, cors, ctx) {
     try {
       const updated = await env.DB.prepare(`
         UPDATE inventory_items SET
-          name=?,upc=?,category=?,description=?,image_url=?,source_url=?,quantity=?,average_msrp_cents=?,reference_price_label=?,reference_price_observed_at=?,
+          name=?,upc=?,sku=?,category=?,description=?,image_url=?,source_url=?,quantity=?,average_msrp_cents=?,reference_price_label=?,reference_price_observed_at=?,
           cogs_cents=?,us_shipping_cents=?,profit_cents=?,packaging_cents=?,overhead_cents=?,retail_fixed_fee_cents=?,wholesale_handling_cents=?,
           retail_list_price_cents=?,website_list_price_cents=?,international_list_price_cents=?,whatnot_list_price_cents=?,
           wholesale_small_list_price_cents=?,wholesale_case_list_price_cents=?,wholesale_pallet_list_price_cents=?,
+          product_weight_oz=?,packaging_weight_oz=?,product_length_in=?,product_width_in=?,product_height_in=?,
           weight_oz=?,length_in=?,width_in=?,height_in=?,origin_country=?,hs_code=?,packing_notes=?,
+          stripe_paylink_url=?,stripe_buy_button_id=?,stripe_publishable_key=?,
           is_store_visible=?,is_active=?,updated_at=?
         WHERE id=? AND owner_member_id=?
       `).bind(
-        item.name, item.upc, item.category, item.description, item.imageUrl, item.sourceUrl, item.quantity, item.averageMsrpCents,
+        item.name, item.upc, item.sku || generatedSku(item, adminInventoryMatch[1].slice(0, 4)), item.category, item.description, item.imageUrl, item.sourceUrl, item.quantity, item.averageMsrpCents,
         item.referencePriceLabel, item.referencePriceObservedAt, item.cogsCents, item.usShippingCents, item.profitCents,
         item.packagingCents, item.overheadCents, item.retailFixedFeeCents, item.wholesaleHandlingCents,
         item.retailListPriceCents, item.websiteListPriceCents, item.internationalListPriceCents, item.whatnotListPriceCents,
         item.wholesaleSmallListPriceCents, item.wholesaleCaseListPriceCents, item.wholesalePalletListPriceCents,
+        item.productWeightOz, item.packagingWeightOz, item.productLengthIn, item.productWidthIn, item.productHeightIn,
         item.weightOz, item.lengthIn, item.widthIn, item.heightIn, item.originCountry, item.hsCode, item.packingNotes,
+        item.stripePaylinkUrl, item.stripeBuyButtonId, item.stripePublishableKey,
         item.isStoreVisible ? 1 : 0, item.isActive ? 1 : 0, updatedAt, adminInventoryMatch[1], member.id
       ).run();
       if (Number(updated.meta?.changes || 0) !== 1) return response({ error: "Inventory item not found." }, 404, cors);
@@ -1816,6 +2064,87 @@ async function route(request, env, cors, ctx) {
     const saved = await env.DB.prepare(`SELECT * FROM inventory_items WHERE id=? AND owner_member_id=?`).bind(adminInventoryMatch[1], member.id).first();
     await audit(env, request, "inventory_updated", member.id, `${saved.id}|qty:${saved.quantity}|active:${saved.is_active}`);
     return response({ item: inventoryItemView(saved) }, 200, cors);
+  }
+  const adminInventoryStockMatch = url.pathname.match(/^\/admin\/inventory\/([0-9a-f-]{36})\/stock$/i);
+  if (adminInventoryStockMatch && request.method === "POST") {
+    if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
+    const data = await body(request);
+    const nextQuantity = data?.quantity;
+    if (!Number.isInteger(nextQuantity) || nextQuantity < 0 || nextQuantity > 100000) return response({ error: "Stock quantity must be a whole number from 0 to 100000." }, 400, cors);
+    const item = await env.DB.prepare(`SELECT * FROM inventory_items WHERE id=? AND owner_member_id=? LIMIT 1`).bind(adminInventoryStockMatch[1], member.id).first();
+    if (!item) return response({ error: "Inventory item not found." }, 404, cors);
+    const priorQuantity = Number(item.quantity || 0);
+    const delta = nextQuantity - priorQuantity;
+    const updatedAt = now();
+    try {
+      await env.DB.batch([
+        env.DB.prepare(`UPDATE inventory_items SET quantity=?,updated_at=? WHERE id=? AND owner_member_id=?`).bind(nextQuantity, updatedAt, item.id, member.id),
+        stockMovementStatement(env, {
+          inventoryItemId: item.id,
+          ownerMemberId: member.id,
+          type: delta >= 0 ? "manual_add" : "manual_set",
+          delta,
+          resultingQuantity: nextQuantity,
+          note: clean(data?.note || (delta >= 0 ? "Owner stock update / restock" : "Owner stock set / correction"), 300),
+          createdAt: updatedAt
+        })
+      ]);
+    } catch (error) {
+      if (/INVENTORY_COMMITMENT_CONFLICT/i.test(String(error?.message || ""))) return response({ error: "Stock cannot be lower than units already reserved by active campaigns or unfulfilled claims." }, 409, cors);
+      throw error;
+    }
+    const saved = await env.DB.prepare(`SELECT * FROM inventory_items WHERE id=? AND owner_member_id=?`).bind(item.id, member.id).first();
+    await audit(env, request, "inventory_stock_updated", member.id, `${item.id}|${priorQuantity}->${nextQuantity}`);
+    return response({ item: inventoryItemView(saved), priorQuantity, quantity: nextQuantity, delta }, 200, cors);
+  }
+  const adminInventoryPaylinkMatch = url.pathname.match(/^\/admin\/inventory\/([0-9a-f-]{36})\/post-with-paylink$/i);
+  if (adminInventoryPaylinkMatch && request.method === "POST") {
+    if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
+    const data = await body(request);
+    const parsedPaylink = parseStripePaylinkInput(data?.stripePaylink || data?.stripePaylinkUrl || data?.stripeBuyButtonEmbed || "");
+    if (parsedPaylink.error) return response({ error: parsedPaylink.error }, 400, cors);
+    const inventoryEpoch = now();
+    const row = await env.DB.prepare(`
+      SELECT inventory.*,COALESCE((
+        SELECT SUM(
+          CASE
+            WHEN campaign.is_active=1 AND campaign.expires_at>? THEN
+              MAX(campaign.max_redemptions - (
+                SELECT COUNT(*) FROM campaign_redemptions fulfilled
+                WHERE fulfilled.campaign_id=campaign.id AND fulfilled.redeemed_at IS NOT NULL
+              ),0)
+            ELSE (
+              SELECT COUNT(*) FROM campaign_redemptions promised
+              WHERE promised.campaign_id=campaign.id AND promised.redeemed_at IS NULL
+            )
+          END
+        ) FROM offer_campaigns campaign WHERE campaign.inventory_item_id=inventory.id
+      ),0) committed_units
+      FROM inventory_items inventory
+      WHERE inventory.id=? AND inventory.owner_member_id=?
+      LIMIT 1
+    `).bind(inventoryEpoch, adminInventoryPaylinkMatch[1], member.id).first();
+    if (!row) return response({ error: "Inventory item not found." }, 404, cors);
+    const view = inventoryItemView(row);
+    const missing = [];
+    if (view.availableQuantity < 1) missing.push("quantity on hand");
+    if (!parsedPaylink.stripePaylinkUrl && !parsedPaylink.stripeBuyButtonId) missing.push("Stripe Payment Link URL or Buy Button embed code");
+    if (missing.length) return response({ error: `Finalize ${missing.join(", ")} before posting this product for ordering.`, checks: missing }, 409, cors);
+    const updatedAt = now();
+    await env.DB.prepare(`
+      UPDATE inventory_items
+      SET stripe_paylink_url=?,stripe_buy_button_id=?,stripe_publishable_key=?,is_store_visible=1,is_active=1,updated_at=?
+      WHERE id=? AND owner_member_id=?
+    `).bind(parsedPaylink.stripePaylinkUrl, parsedPaylink.stripeBuyButtonId, parsedPaylink.stripePublishableKey, updatedAt, row.id, member.id).run();
+    const saved = await env.DB.prepare(`SELECT * FROM inventory_items WHERE id=? AND owner_member_id=?`).bind(row.id, member.id).first();
+    const paylinkUrl = parsedPaylink.stripePaylinkUrl || `${String(env.SITE_URL || "https://crackpacks.com").replace(/\/+$/, "")}/shop.html#${row.public_slug}`;
+    await audit(env, request, "inventory_posted_with_paylink", member.id, `${row.id}|${row.public_slug}`);
+    return response({
+      ok: true,
+      paylinkUrl,
+      checkoutEnabled: String(env.STORE_COMING_SOON || "true") === "false" && String(env.STORE_CHECKOUT_ENABLED || "false") === "true",
+      item: inventoryItemView(saved)
+    }, 200, cors);
   }
   if (url.pathname === "/admin/campaigns" && request.method === "POST") {
     if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);

@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.6.1">
   <link rel="stylesheet" href="assets/css/referral.css?v=2.6.0">
   <link rel="stylesheet" href="assets/css/rewards-modal.css?v=2.1.0">
-  <link rel="stylesheet" href="assets/css/admin.css?v=3.4.0">
+  <link rel="stylesheet" href="assets/css/admin.css?v=3.5.0">
 </head>
 <body>
   <header class="site-header">
@@ -222,7 +222,7 @@
             <span>Every channel price is the higher of its calculated minimum floor or your market/list price. Floors protect the selected contribution margin; they never cap a hot product's selling price. Review platform rates whenever a channel changes its fees.</span>
           </div>
           <div class="inventory-toolbar">
-            <label>Search inventory<input type="search" data-inventory-search placeholder="Guess a name, UPC, or category" autocomplete="off"></label>
+            <label class="inventory-search-field">Search inventory<input type="search" data-inventory-search placeholder="Guess a name, SKU, UPC, or category" autocomplete="off" aria-autocomplete="list" aria-expanded="false" aria-controls="inventory-search-suggestions"><div class="inventory-search-suggestions" id="inventory-search-suggestions" data-inventory-search-suggestions hidden></div></label>
             <label>Show<select data-inventory-status-filter><option value="all">All products</option><option value="active">Active only</option><option value="inactive">Deactivated only</option><option value="in_stock">In stock</option><option value="needs_pricing">Needs pricing</option></select></label>
             <button class="btn btn-outline btn-small" type="button" data-inventory-refresh>Refresh</button>
           </div>
@@ -339,6 +339,7 @@
           <div class="inventory-form-grid">
             <label class="inventory-span-2">Product name<input name="name" required maxlength="120" placeholder="Mega Evolution Booster Box"></label>
             <label>UPC<input name="upc" inputmode="numeric" maxlength="32" placeholder="Preserves leading zeros"></label>
+            <label>SKU<input name="sku" maxlength="64" placeholder="Auto if blank"></label>
             <label>Category<input name="category" maxlength="64" placeholder="Booster Box"></label>
             <label>Quantity on hand<input name="quantity" type="number" min="0" max="100000" step="1" value="0" required inputmode="numeric"></label>
             <label class="inventory-span-2">Image or local asset URL<input name="imageUrl" maxlength="500" placeholder="https://... or assets/images/product.svg"></label>
@@ -354,6 +355,13 @@
             <label>Reference source URL<input name="sourceUrl" maxlength="500" placeholder="https://retailer.example/product"></label>
           </div>
           <p class="fine-print">The reference price is comparison information only. It is not used as a floor or a cap.</p>
+        </fieldset>
+        <fieldset>
+          <legend>Create a Paylink</legend>
+          <div class="inventory-form-grid">
+            <label class="inventory-span-2">Stripe Payment Link URL or Buy Button embed code<textarea name="stripePaylink" maxlength="2500" rows="4" placeholder="Paste https://buy.stripe.com/... or <stripe-buy-button buy-button-id=&quot;buy_btn_...&quot; publishable-key=&quot;pk_live_...&quot;>"></textarea></label>
+          </div>
+          <p class="fine-print">Paste the Stripe code here, then save or use Create Paylink on the product card. The site stores the safe checkout URL or Stripe button ID/key, not arbitrary script code.</p>
         </fieldset>
         <fieldset>
           <legend>Channel cost inputs</legend>
@@ -392,11 +400,18 @@
         </fieldset>
         <fieldset>
           <legend>Packed shipment details</legend>
+          <p class="inventory-pricing-intro">Prefilled starter products include an estimated packaging allowance for the shipping box, bubble wrap, label, business card, and sticker slaps. Adjust these after the first measured shipment.</p>
+          <div class="inventory-packing-preview" data-inventory-packing-preview>Enter sealed weight and packaging allowance to calculate the packed EasyPost weight.</div>
           <div class="inventory-form-grid inventory-package-grid">
-            <label>Weight (oz)<input name="weightOz" type="number" min="0.01" max="2400" step="0.01" inputmode="decimal"></label>
-            <label>Length (in)<input name="lengthIn" type="number" min="0.01" max="120" step="0.01" inputmode="decimal"></label>
-            <label>Width (in)<input name="widthIn" type="number" min="0.01" max="120" step="0.01" inputmode="decimal"></label>
-            <label>Height (in)<input name="heightIn" type="number" min="0.01" max="120" step="0.01" inputmode="decimal"></label>
+            <label>Sealed weight (oz)<input name="productWeightOz" type="number" min="0.01" max="2400" step="0.01" inputmode="decimal" placeholder="Product only"></label>
+            <label>Packaging allowance (lb)<input name="packagingWeightLb" type="number" min="0" max="150" step="0.001" inputmode="decimal" placeholder="Box + fill"></label>
+            <label>Packed EasyPost weight (oz)<input name="weightOz" type="number" min="0.01" max="2400" step="0.01" inputmode="decimal" placeholder="Blank = sealed + packaging"></label>
+            <label>Shipping box length (in)<input name="lengthIn" type="number" min="0.01" max="120" step="0.01" inputmode="decimal"></label>
+            <label>Sealed length (in)<input name="productLengthIn" type="number" min="0.01" max="120" step="0.01" inputmode="decimal"></label>
+            <label>Sealed width (in)<input name="productWidthIn" type="number" min="0.01" max="120" step="0.01" inputmode="decimal"></label>
+            <label>Sealed height (in)<input name="productHeightIn" type="number" min="0.01" max="120" step="0.01" inputmode="decimal"></label>
+            <label>Shipping box width (in)<input name="widthIn" type="number" min="0.01" max="120" step="0.01" inputmode="decimal"></label>
+            <label>Shipping box height (in)<input name="heightIn" type="number" min="0.01" max="120" step="0.01" inputmode="decimal"></label>
             <label>Origin country<input name="originCountry" maxlength="2" placeholder="US" aria-describedby="origin-country-help"></label>
             <label>HS code<input name="hsCode" maxlength="12" inputmode="numeric" placeholder="9504.40"></label>
             <label class="inventory-span-2">Packing notes<textarea name="packingNotes" maxlength="500" rows="3" placeholder="Internal-only packing instructions"></textarea></label>
@@ -472,6 +487,6 @@
 
   <script src="assets/js/config.js?v=3.0.0"></script>
   <script src="assets/js/nav-profile.js?v=2.6.1"></script>
-  <script src="assets/js/admin.js?v=3.4.0"></script>
+  <script src="assets/js/admin.js?v=3.5.0"></script>
 </body>
 </html>

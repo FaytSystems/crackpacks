@@ -330,6 +330,8 @@
   const formatMoney = centsValue => centsValue === null || centsValue === undefined || !Number.isFinite(Number(centsValue)) ? "Not configured" : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(centsValue) / 100);
   const moneyInputValue = centsValue => centsValue === null || centsValue === undefined || !Number.isFinite(Number(centsValue)) ? "" : (Number(centsValue) / 100).toFixed(2);
   const optionalInputNumber = value => value === null || value === undefined || value === "" ? "" : String(value);
+  const paylinkInputValue = item => item?.stripePaylinkUrl || (item?.stripeBuyButtonId && item?.stripePublishableKey ? `<stripe-buy-button buy-button-id="${item.stripeBuyButtonId}" publishable-key="${item.stripePublishableKey}"></stripe-buy-button>` : "");
+  const packagingLbInputValue = value => value === null || value === undefined || value === "" ? "" : (Number(value) / 16).toFixed(3);
   const pricingFloor = (components, denominatorPermille) => components.every(value => Number.isFinite(value) && value >= 0)
     ? Math.ceil((components.reduce((total, value) => total + value, 0) * 1000) / denominatorPermille)
     : null;
@@ -378,6 +380,7 @@
     visible.forEach(item => {
       const card = document.createElement("article");
       card.className = `inventory-card${item.isActive ? "" : " is-inactive"}`;
+      card.id = item.id;
       const head = document.createElement("div");
       head.className = "inventory-card-head";
       const identity = document.createElement("div");
@@ -387,7 +390,7 @@
       const title = document.createElement("h3");
       title.textContent = item.name || "Unnamed product";
       const code = document.createElement("p");
-      code.textContent = item.upc ? `UPC ${item.upc}` : "UPC not entered";
+      code.textContent = [item.sku ? `SKU ${item.sku}` : "", item.upc ? `UPC ${item.upc}` : "UPC not entered"].filter(Boolean).join(" / ");
       identity.append(category, title, code);
       const state = document.createElement("span");
       state.className = `inventory-state ${item.isActive ? item.campaignReady ? "ready" : "empty" : "inactive"}`;
@@ -408,8 +411,19 @@
       const packageParts = [item.weightOz ? `${item.weightOz} oz` : "", item.lengthIn && item.widthIn && item.heightIn ? `${item.lengthIn} × ${item.widthIn} × ${item.heightIn} in` : ""].filter(Boolean);
       details.textContent = [item.isStoreVisible ? "Store visible" : "Hidden from store", packageParts.length ? packageParts.join(" · ") : "Package details incomplete", item.updatedAt ? `Updated ${new Date(item.updatedAt).toLocaleDateString()}` : ""].filter(Boolean).join(" · ");
 
+      {
+        const sealedParts = [item.productWeightOz ? `sealed ${item.productWeightOz} oz` : "", item.packagingWeightOz !== null && item.packagingWeightOz !== undefined ? `packing ${(Number(item.packagingWeightOz) / 16).toFixed(3)} lb` : ""].filter(Boolean);
+        const packedParts = [item.weightOz ? `ship ${item.weightOz} oz` : "", item.lengthIn && item.widthIn && item.heightIn ? `${item.lengthIn} x ${item.widthIn} x ${item.heightIn} in` : ""].filter(Boolean);
+        const paylinkState = item.postReady ? "Paylink live" : item.stripePaylinkUrl || item.stripeBuyButtonId ? "Paylink saved" : "No Paylink";
+        details.textContent = [item.isStoreVisible ? "Store visible" : "Hidden from store", sealedParts.length ? sealedParts.join(" + ") : "", packedParts.length ? packedParts.join(" / ") : "Package details incomplete", paylinkState, item.updatedAt ? `Updated ${new Date(item.updatedAt).toLocaleDateString()}` : ""].filter(Boolean).join(" / ");
+      }
+
       const actions = document.createElement("div");
       actions.className = "inventory-card-actions";
+      const stockControl = document.createElement("form");
+      stockControl.className = "inventory-stock-control";
+      stockControl.innerHTML = `<label>Current stock<input name="quantity" type="number" min="0" max="100000" step="1" value="${Number(item.quantity || 0)}" inputmode="numeric"></label><button class="btn btn-outline btn-small" type="submit">Update Stock</button>`;
+      stockControl.addEventListener("submit", event => updateInventoryStock(event, item, stockControl));
       if (item.sourceUrl) {
         const source = document.createElement("a");
         source.className = "btn btn-outline btn-small";
@@ -422,13 +436,76 @@
       const edit = document.createElement("button");
       edit.className = "btn btn-primary btn-small"; edit.type = "button"; edit.textContent = "Edit Product";
       edit.addEventListener("click", () => openInventoryModal(item));
+      const post = document.createElement("button");
+      post.className = "btn btn-outline btn-small"; post.type = "button"; post.textContent = item.stripePaylinkUrl || item.stripeBuyButtonId ? "Update Paylink" : "Create Paylink";
+      post.addEventListener("click", () => postInventoryWithPaylink(item, post));
       const toggle = document.createElement("button");
-      toggle.className = `btn ${item.isActive ? "btn-danger" : "btn-outline"} btn-small`; toggle.type = "button"; toggle.textContent = item.isActive ? "Deactivate" : "Reactivate";
+      toggle.className = `btn ${item.isActive ? "btn-danger" : "btn-outline"} btn-small`; toggle.type = "button"; toggle.textContent = item.isActive ? "Turn Product Off" : "Turn Product On";
       toggle.addEventListener("click", () => toggleInventoryItem(item, toggle));
-      actions.append(edit, toggle);
-      card.append(head, metrics, details, actions);
+      actions.append(edit, post, toggle);
+      card.append(head, metrics, details, stockControl, actions);
       container.append(card);
     });
+  }
+  function scoreInventorySuggestion(item, query) {
+    const q = String(query || "").trim().toLowerCase();
+    if (!q) return 0;
+    const fields = [item.name, item.sku, item.upc, item.category].map(value => String(value || "").toLowerCase());
+    let best = 0;
+    for (const field of fields) {
+      if (!field) continue;
+      if (field === q) best = Math.max(best, 100);
+      else if (field.startsWith(q)) best = Math.max(best, 86);
+      else if (field.includes(q)) best = Math.max(best, 64);
+      else {
+        const tokens = q.split(/\s+/).filter(Boolean);
+        const hits = tokens.filter(token => field.includes(token)).length;
+        if (hits) best = Math.max(best, 30 + hits * 10);
+      }
+    }
+    return best;
+  }
+  function renderInventorySearchSuggestions() {
+    const input = $("[data-inventory-search]");
+    const suggestions = $("[data-inventory-search-suggestions]");
+    if (!input || !suggestions) return;
+    const query = input.value.trim();
+    suggestions.replaceChildren();
+    if (query.length < 2) {
+      suggestions.hidden = true;
+      input.setAttribute("aria-expanded", "false");
+      return;
+    }
+    const matches = inventoryItems
+      .map(item => ({ item, score: scoreInventorySuggestion(item, query) }))
+      .filter(match => match.score > 0)
+      .sort((a, b) => b.score - a.score || String(a.item.name).localeCompare(String(b.item.name)))
+      .slice(0, 8);
+    if (!matches.length) {
+      const empty = document.createElement("div");
+      empty.className = "inventory-search-empty";
+      empty.textContent = "No product or SKU match yet.";
+      suggestions.append(empty);
+      suggestions.hidden = false;
+      input.setAttribute("aria-expanded", "true");
+      return;
+    }
+    matches.forEach(({ item }) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.innerHTML = `<strong>${item.name}</strong><span>${[item.sku ? `SKU ${item.sku}` : "", item.upc ? `UPC ${item.upc}` : "", item.category || ""].filter(Boolean).join(" / ")}</span>`;
+      button.addEventListener("click", () => {
+        input.value = item.name;
+        suggestions.hidden = true;
+        input.setAttribute("aria-expanded", "false");
+        renderInventory();
+        document.getElementById(item.id)?.scrollIntoView({ behavior: "smooth", block: "center" });
+        openInventoryModal(item);
+      });
+      suggestions.append(button);
+    });
+    suggestions.hidden = false;
+    input.setAttribute("aria-expanded", "true");
   }
   async function refreshInventory({ announce = false } = {}) {
     if (!memberToken || !adminToken) return;
@@ -438,6 +515,7 @@
     if (sequence !== inventoryRequestSequence) return;
     inventoryItems = Array.isArray(data.inventory) ? data.inventory : [];
     renderInventory();
+    renderInventorySearchSuggestions();
     if (announce) setInventoryStatus(`${inventoryItems.length} inventory product${inventoryItems.length === 1 ? "" : "s"} loaded.`, "success");
   }
   const setInventoryField = (form, name, value) => { const input = form.elements.namedItem(name); if (input) input.value = value ?? ""; };
@@ -484,6 +562,18 @@
     });
     $("[data-inventory-deactivate-note]").hidden = form.elements.namedItem("isActive").checked;
   }
+  function updateInventoryPackingPreview() {
+    const form = $("[data-inventory-form]");
+    const preview = $("[data-inventory-packing-preview]");
+    if (!form || !preview) return;
+    const sealedOz = inventoryNumber(form, "productWeightOz");
+    const packingLb = inventoryNumber(form, "packagingWeightLb");
+    const manualOz = inventoryNumber(form, "weightOz");
+    const estimatedOz = sealedOz !== null && packingLb !== null ? Number((sealedOz + packingLb * 16).toFixed(2)) : null;
+    if (manualOz === null && estimatedOz !== null) preview.textContent = `EasyPost packed-weight estimate: ${estimatedOz} oz (${(estimatedOz / 16).toFixed(3)} lb). Leave packed weight blank to use this.`;
+    else if (manualOz !== null) preview.textContent = `EasyPost packed weight is manually set to ${manualOz} oz (${(manualOz / 16).toFixed(3)} lb).`;
+    else preview.textContent = "Enter sealed weight and packaging allowance to calculate the packed EasyPost weight.";
+  }
   function openInventoryModal(item = null) {
     inventoryModalLastFocus = document.activeElement;
     editingInventoryId = String(item?.id || "");
@@ -493,6 +583,7 @@
     setInventoryField(form, "id", editingInventoryId);
     setInventoryField(form, "name", item?.name || "");
     setInventoryField(form, "upc", item?.upc || "");
+    setInventoryField(form, "sku", item?.sku || "");
     setInventoryField(form, "category", item?.category || "");
     setInventoryField(form, "quantity", item ? Number(item.quantity || 0) : 0);
     setInventoryField(form, "imageUrl", item?.imageUrl || "");
@@ -514,6 +605,12 @@
     setInventoryField(form, "wholesaleSmallListPrice", moneyInputValue(item?.wholesaleSmallListPriceCents));
     setInventoryField(form, "wholesaleCaseListPrice", moneyInputValue(item?.wholesaleCaseListPriceCents));
     setInventoryField(form, "wholesalePalletListPrice", moneyInputValue(item?.wholesalePalletListPriceCents));
+    setInventoryField(form, "stripePaylink", paylinkInputValue(item));
+    setInventoryField(form, "productWeightOz", optionalInputNumber(item?.productWeightOz));
+    setInventoryField(form, "packagingWeightLb", packagingLbInputValue(item?.packagingWeightOz));
+    setInventoryField(form, "productLengthIn", optionalInputNumber(item?.productLengthIn));
+    setInventoryField(form, "productWidthIn", optionalInputNumber(item?.productWidthIn));
+    setInventoryField(form, "productHeightIn", optionalInputNumber(item?.productHeightIn));
     setInventoryField(form, "weightOz", optionalInputNumber(item?.weightOz));
     setInventoryField(form, "lengthIn", optionalInputNumber(item?.lengthIn));
     setInventoryField(form, "widthIn", optionalInputNumber(item?.widthIn));
@@ -527,6 +624,7 @@
     $("[data-inventory-save]").textContent = item ? "Save Changes" : "Save Product";
     $("[data-inventory-modal]").hidden = false;
     updateInventoryPricePreview();
+    updateInventoryPackingPreview();
     form.elements.namedItem("name").focus();
   }
   function closeInventoryModal() {
@@ -543,9 +641,11 @@
     return value === null ? null : Math.round(value * 100);
   };
   function inventoryPayloadFromForm(form) {
+    const packagingWeightLb = inventoryNumber(form, "packagingWeightLb");
     return {
       name: String(form.elements.namedItem("name").value || "").trim(),
       upc: String(form.elements.namedItem("upc").value || "").trim(),
+      sku: String(form.elements.namedItem("sku").value || "").trim(),
       category: String(form.elements.namedItem("category").value || "").trim(),
       quantity: Number(form.elements.namedItem("quantity").value || 0),
       imageUrl: String(form.elements.namedItem("imageUrl").value || "").trim(),
@@ -567,6 +667,12 @@
       wholesaleSmallListPriceCents: inventoryMoneyCents(form, "wholesaleSmallListPrice"),
       wholesaleCaseListPriceCents: inventoryMoneyCents(form, "wholesaleCaseListPrice"),
       wholesalePalletListPriceCents: inventoryMoneyCents(form, "wholesalePalletListPrice"),
+      stripePaylink: String(form.elements.namedItem("stripePaylink").value || "").trim(),
+      productWeightOz: inventoryNumber(form, "productWeightOz"),
+      packagingWeightOz: packagingWeightLb === null ? null : Number((packagingWeightLb * 16).toFixed(2)),
+      productLengthIn: inventoryNumber(form, "productLengthIn"),
+      productWidthIn: inventoryNumber(form, "productWidthIn"),
+      productHeightIn: inventoryNumber(form, "productHeightIn"),
       weightOz: inventoryNumber(form, "weightOz"),
       lengthIn: inventoryNumber(form, "lengthIn"),
       widthIn: inventoryNumber(form, "widthIn"),
@@ -579,31 +685,79 @@
     };
   }
   const inventoryPayloadFromItem = (item, overrides = {}) => ({
-    name: item.name, upc: item.upc || "", category: item.category || "", quantity: Number(item.quantity || 0), imageUrl: item.imageUrl || "", description: item.description || "",
+    name: item.name, upc: item.upc || "", sku: item.sku || "", category: item.category || "", quantity: Number(item.quantity || 0), imageUrl: item.imageUrl || "", description: item.description || "",
     averageMsrpCents: item.averageMsrpCents ?? null, referencePriceLabel: item.referencePriceLabel || "Retail reference price", referencePriceObservedAt: item.referencePriceObservedAt || "", sourceUrl: item.sourceUrl || "",
     cogsCents: item.cogsCents ?? null, usShippingCents: item.usShippingCents ?? null, profitCents: item.profitCents ?? 1000,
     packagingCents: item.packagingCents ?? null, overheadCents: item.overheadCents ?? null, retailFixedFeeCents: item.retailFixedFeeCents ?? null, wholesaleHandlingCents: item.wholesaleHandlingCents ?? null,
     retailListPriceCents: item.retailListPriceCents ?? null, websiteListPriceCents: item.websiteListPriceCents ?? null, internationalListPriceCents: item.internationalListPriceCents ?? null, whatnotListPriceCents: item.whatnotListPriceCents ?? null,
     wholesaleSmallListPriceCents: item.wholesaleSmallListPriceCents ?? null, wholesaleCaseListPriceCents: item.wholesaleCaseListPriceCents ?? null, wholesalePalletListPriceCents: item.wholesalePalletListPriceCents ?? null,
+    productWeightOz: item.productWeightOz ?? null, packagingWeightOz: item.packagingWeightOz ?? null,
+    productLengthIn: item.productLengthIn ?? null, productWidthIn: item.productWidthIn ?? null, productHeightIn: item.productHeightIn ?? null,
     weightOz: item.weightOz ?? null, lengthIn: item.lengthIn ?? null, widthIn: item.widthIn ?? null, heightIn: item.heightIn ?? null,
-    originCountry: item.originCountry || "", hsCode: item.hsCode || "", packingNotes: item.packingNotes || "", isStoreVisible: item.isStoreVisible !== false, isActive: item.isActive !== false,
+    originCountry: item.originCountry || "", hsCode: item.hsCode || "", packingNotes: item.packingNotes || "", stripePaylink: paylinkInputValue(item), isStoreVisible: item.isStoreVisible !== false, isActive: item.isActive !== false,
     ...overrides
   });
+  async function postInventoryWithPaylink(item, button) {
+    const pasted = prompt(`Paste the Stripe Payment Link URL or Buy Button embed code for:\n\n${item.name}`, paylinkInputValue(item));
+    if (pasted === null) return;
+    button.disabled = true;
+    const original = button.textContent;
+    button.textContent = "Saving Paylink...";
+    try {
+      const data = await request(`/admin/inventory/${encodeURIComponent(item.id)}/post-with-paylink`, { method: "POST", body: JSON.stringify({ stripePaylink: pasted }) });
+      const index = inventoryItems.findIndex(candidate => candidate.id === item.id);
+      if (index !== -1 && data.item) inventoryItems[index] = data.item;
+      renderInventory();
+      await refreshCampaignInventory("").catch(() => {});
+      const checkoutState = data.checkoutEnabled ? "The product checkout button is live." : "The product Paylink is live even while native cart checkout remains prelaunch.";
+      setInventoryStatus(`${item.name} Paylink saved. ${checkoutState}`, "success");
+    } catch (error) {
+      setInventoryStatus(error.message, "error");
+      button.disabled = false;
+      button.textContent = original;
+    }
+  }
+  async function updateInventoryStock(event, item, form) {
+    event.preventDefault();
+    const input = form.elements.namedItem("quantity");
+    const button = form.querySelector("button");
+    const quantity = Number(input.value);
+    if (!Number.isInteger(quantity) || quantity < 0 || quantity > 100000) {
+      setInventoryStatus("Stock must be a whole number from 0 to 100000.", "error");
+      return;
+    }
+    button.disabled = true;
+    const original = button.textContent;
+    button.textContent = "Updating...";
+    try {
+      const data = await request(`/admin/inventory/${encodeURIComponent(item.id)}/stock`, { method: "POST", body: JSON.stringify({ quantity }) });
+      const index = inventoryItems.findIndex(candidate => candidate.id === item.id);
+      if (index !== -1 && data.item) inventoryItems[index] = data.item;
+      renderInventory();
+      await refreshCampaignInventory("").catch(() => {});
+      const delta = Number(data.delta || 0);
+      setInventoryStatus(`${item.name} stock updated to ${Number(data.quantity || quantity)} (${delta >= 0 ? "+" : ""}${delta}).`, "success");
+    } catch (error) {
+      setInventoryStatus(error.message, "error");
+      button.disabled = false;
+      button.textContent = original;
+    }
+  }
   async function toggleInventoryItem(item, button) {
     const activate = !item.isActive;
     if (!activate && !confirm(`Deactivate “${item.name}”? It will be removed from new product campaigns and the public catalog, while existing campaign records remain intact.`)) return;
     button.disabled = true;
-    button.textContent = activate ? "Reactivating..." : "Deactivating...";
+    button.textContent = activate ? "Turning on..." : "Turning off...";
     try {
       await request(`/admin/inventory/${encodeURIComponent(item.id)}`, { method: "POST", body: JSON.stringify(inventoryPayloadFromItem(item, { isActive: activate })) });
       await refreshInventory();
       await refreshCampaignInventory("").catch(() => {});
       closeCampaignInventoryOptions();
-      setInventoryStatus(`${item.name} ${activate ? "reactivated" : "deactivated"}.`, "success");
+      setInventoryStatus(`${item.name} ${activate ? "turned on" : "turned off for buying"}.`, "success");
     } catch (error) {
       setInventoryStatus(error.message, "error");
       button.disabled = false;
-      button.textContent = activate ? "Reactivate" : "Deactivate";
+      button.textContent = activate ? "Turn Product On" : "Turn Product Off";
     }
   }
   async function importStarterInventory() {
@@ -620,7 +774,7 @@
       await refreshCampaignInventory("").catch(() => {});
       closeCampaignInventoryOptions();
       const imported = Number(data.imported || 0);
-      setInventoryStatus(imported ? `${imported} starter product${imported === 1 ? "" : "s"} imported. Enter your actual stock, COGS, and packed dimensions before selling.` : "The starter catalog is already imported. No duplicates were added.", "success");
+      setInventoryStatus(imported ? `${imported} starter product${imported === 1 ? "" : "s"} imported or refreshed with starter specs. Enter actual stock, COGS, final measured packaging, and a Stripe Paylink before selling.` : "The starter catalog is already imported and refreshed. No duplicates were added.", "success");
     } catch (error) { setInventoryStatus(error.message, "error"); }
     finally { button.disabled = false; button.textContent = original; }
   }
@@ -1625,9 +1779,16 @@
   $("[data-inventory-import]").addEventListener("click", importStarterInventory);
   $("[data-inventory-refresh]").addEventListener("click", () => refreshInventory({ announce: true }).catch(error => setInventoryStatus(error.message, "error")));
   $("[data-inventory-search]").addEventListener("input", () => {
+    renderInventorySearchSuggestions();
     clearTimeout(inventorySearchTimer);
     inventorySearchTimer = setTimeout(() => refreshInventory().catch(error => setInventoryStatus(error.message, "error")), 220);
   });
+  $("[data-inventory-search]").addEventListener("focus", renderInventorySearchSuggestions);
+  $("[data-inventory-search]").addEventListener("blur", () => setTimeout(() => {
+    const suggestions = $("[data-inventory-search-suggestions]");
+    if (suggestions) suggestions.hidden = true;
+    $("[data-inventory-search]")?.setAttribute("aria-expanded", "false");
+  }, 140));
   $("[data-inventory-status-filter]").addEventListener("change", renderInventory);
   $("[data-tracking-member-search]").addEventListener("input", () => { clearTimeout(trackingMemberSearchTimer); trackingMemberSearchTimer = setTimeout(() => searchTrackingMembers().catch(error => showTrackingListError("[data-tracking-member-results]", error)), 220); });
   $("[data-tracking-member-search]").addEventListener("keydown", event => { if (event.key !== "Enter") return; event.preventDefault(); clearTimeout(trackingMemberSearchTimer); searchTrackingMembers().catch(error => showTrackingListError("[data-tracking-member-results]", error)); });
@@ -1661,6 +1822,7 @@
   });
   document.querySelectorAll("[data-inventory-close]").forEach(button => button.addEventListener("click", closeInventoryModal));
   ["cogs", "usShipping", "packaging", "overhead", "retailFixedFee", "wholesaleHandling", "retailListPrice", "websiteListPrice", "internationalListPrice", "whatnotListPrice", "wholesaleSmallListPrice", "wholesaleCaseListPrice", "wholesalePalletListPrice"].forEach(name => $("[data-inventory-form]").elements.namedItem(name).addEventListener("input", updateInventoryPricePreview));
+  ["productWeightOz", "packagingWeightLb", "weightOz", "productLengthIn", "productWidthIn", "productHeightIn", "lengthIn", "widthIn", "heightIn"].forEach(name => $("[data-inventory-form]").elements.namedItem(name)?.addEventListener("input", updateInventoryPackingPreview));
   $("[data-inventory-form]").elements.namedItem("isActive").addEventListener("change", updateInventoryPricePreview);
   $("[data-inventory-form]").addEventListener("submit", async event => {
     event.preventDefault();
