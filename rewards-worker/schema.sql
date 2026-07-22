@@ -219,6 +219,11 @@ CREATE TABLE IF NOT EXISTS breaker_sales (
   clip_ended_at TEXT,
   clip_url TEXT NOT NULL DEFAULT '' CHECK(length(clip_url) <= 500),
   stream_recording_url TEXT NOT NULL DEFAULT '' CHECK(length(stream_recording_url) <= 500),
+  cloudflare_video_uid TEXT NOT NULL DEFAULT '' CHECK(length(cloudflare_video_uid) <= 64),
+  cloudflare_clipped_video_uid TEXT NOT NULL DEFAULT '' CHECK(length(cloudflare_clipped_video_uid) <= 64),
+  clip_method TEXT NOT NULL DEFAULT 'pending' CHECK(clip_method IN ('pending','instant','api_clip','manual','unavailable','error')),
+  clip_duration_seconds INTEGER CHECK(clip_duration_seconds IS NULL OR clip_duration_seconds BETWEEN 0 AND 36000),
+  clip_error TEXT NOT NULL DEFAULT '' CHECK(length(clip_error) <= 500),
   buyer_verify_token_hash TEXT UNIQUE,
   buyer_verify_sent_at TEXT,
   verification_status TEXT NOT NULL DEFAULT 'pending_recording' CHECK(verification_status IN ('pending_recording','recording_attached','verified','disputed')),
@@ -231,6 +236,7 @@ CREATE TABLE IF NOT EXISTS breaker_sales (
 CREATE INDEX IF NOT EXISTS idx_breaker_sales_member_sale_time ON breaker_sales(member_id, sale_occurred_at DESC);
 CREATE INDEX IF NOT EXISTS idx_breaker_sales_item_sale_time ON breaker_sales(breaker_inventory_item_id, sale_occurred_at DESC);
 CREATE INDEX IF NOT EXISTS idx_breaker_sales_buyer ON breaker_sales(buyer_email, sale_occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_breaker_sales_clip_method ON breaker_sales(clip_method, created_at DESC);
 CREATE TABLE IF NOT EXISTS breaker_reorder_requests (
   id TEXT PRIMARY KEY,
   member_id TEXT NOT NULL,

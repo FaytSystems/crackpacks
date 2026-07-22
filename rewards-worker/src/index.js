@@ -5,7 +5,7 @@ import { calculateChannelPricing, channelPricingErrors } from "./channel-pricing
 import { sanitizeEasyPostTracker, verifyEasyPostWebhook } from "./easypost-tracking.js";
 import { stripeRequest, verifyStripeWebhook } from "./stripe-commerce.js";
 
-const VERSION = "4.6.0";
+const VERSION = "4.7.0";
 const CAMPAIGN_REWARD_TYPES = new Set(["percent", "free_shipping", "pick_a_pack", "pack_draft", "free_single", "product"]);
 const MAX_CAMPAIGN_REDEMPTIONS = 500;
 const STORE_CURRENCIES = new Set(["USD", "CAD", "EUR", "GBP", "AUD", "NZD", "JPY", "CHF", "SEK", "NOK", "DKK", "PLN", "CZK", "HUF", "RON"]);
@@ -630,11 +630,64 @@ const breakerSaleView = row => ({
   clipEndedAt: row.clip_ended_at || null,
   clipUrl: row.clip_url || "",
   streamRecordingUrl: row.stream_recording_url || "",
+  cloudflareVideoUid: row.cloudflare_video_uid || "",
+  cloudflareClippedVideoUid: row.cloudflare_clipped_video_uid || "",
+  clipMethod: row.clip_method || "pending",
+  clipDurationSeconds: row.clip_duration_seconds === null || row.clip_duration_seconds === undefined ? null : Number(row.clip_duration_seconds),
+  clipError: row.clip_error || "",
   buyerVerifySentAt: row.buyer_verify_sent_at || null,
   verificationStatus: row.verification_status || "pending_recording",
   note: row.note || "",
   createdAt: row.created_at
 });
+const cloudflareStreamBase = env => {
+  const supplied = String(env.CLOUDFLARE_STREAM_CUSTOMER_CODE || env.STREAM_CUSTOMER_CODE || "").trim();
+  if (!supplied) return "";
+  return supplied.startsWith("http") ? supplied.replace(/\/+$/, "") : `https://customer-${supplied}.cloudflarestream.com`;
+};
+const secondsBetween = (startIso, endIso) => {
+  const start = Date.parse(startIso || "");
+  const end = Date.parse(endIso || "");
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null;
+  return Math.min(36000, Math.max(1, Math.ceil((end - start) / 1000)));
+};
+async function cloudflareStreamClip(env, videoUid, startSeconds, endSeconds, meta = {}) {
+  if (!env.CLOUDFLARE_ACCOUNT_ID || !env.CLOUDFLARE_STREAM_API_TOKEN) throw new Error("CLOUDFLARE_STREAM_NOT_CONFIGURED");
+  const result = await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/stream/clip`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${env.CLOUDFLARE_STREAM_API_TOKEN}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      clippedFromVideoUID: videoUid,
+      startTimeSeconds: startSeconds,
+      endTimeSeconds: endSeconds,
+      allowedOrigins: ["crackpacks.com", "www.crackpacks.com"],
+      meta
+    })
+  });
+  const payload = await result.json().catch(() => ({}));
+  if (!result.ok || payload.success === false) throw new Error(payload?.errors?.[0]?.message || "Cloudflare Stream could not create the clip.");
+  return payload.result || payload;
+}
+async function resolveBreakerClip(env, { videoUid, recordingUrl, clipStartIso, clipEndIso, streamStartIso, saleId, orderReference }) {
+  const duration = secondsBetween(clipStartIso, clipEndIso);
+  const streamOffset = streamStartIso ? secondsBetween(streamStartIso, clipStartIso) : null;
+  const base = cloudflareStreamBase(env);
+  const cleanVideoUid = clean(videoUid || "", 64).replace(/[^a-z0-9_-]/gi, "");
+  if (!duration || !cleanVideoUid || streamOffset === null) {
+    return { method: recordingUrl ? "manual" : "pending", clipUrl: clean(recordingUrl || "", 500), clippedVideoUid: "", durationSeconds: duration, error: cleanVideoUid ? "" : "Cloudflare video UID is required for automatic clipping." };
+  }
+  if (duration <= 60 && base) {
+    return { method: "instant", clipUrl: `${base}/${cleanVideoUid}/clip.mp4?time=${streamOffset}s&duration=${duration}s&filename=crackpacks-${saleId}.mp4`, clippedVideoUid: "", durationSeconds: duration, error: "" };
+  }
+  try {
+    const clip = await cloudflareStreamClip(env, cleanVideoUid, streamOffset, streamOffset + duration, { saleId, orderReference: clean(orderReference || "", 120), source: "crackpacks-breaker-verify" });
+    const clippedUid = String(clip.uid || clip.id || "").trim();
+    const clipUrl = clip?.playback?.hls || (base && clippedUid ? `${base}/${clippedUid}/manifest/video.m3u8` : "");
+    return { method: "api_clip", clipUrl: clean(clipUrl, 500), clippedVideoUid: clean(clippedUid, 64), durationSeconds: duration, error: "" };
+  } catch (error) {
+    return { method: "error", clipUrl: clean(recordingUrl || "", 500), clippedVideoUid: "", durationSeconds: duration, error: clean(error?.message || "Cloudflare Stream clipping failed.", 500) };
+  }
+}
 async function sendBreakerSaleVerificationEmail(env, sale, token) {
   if (!sale?.buyer_email || !token) return false;
   const site = String(env.SITE_URL || "https://crackpacks.com").replace(/\/+$/, "");
@@ -1816,11 +1869,18 @@ async function route(request, env, cors, ctx) {
         const verifyToken = buyerEmail ? `VFY${randomString(61)}` : "";
         const movementId = id();
         const saleId = id();
+        const cloudflareVideoUid = clean(data?.cloudflareVideoUid || data?.videoUid || "", 64).replace(/[^a-z0-9_-]/gi, "");
+        const streamRecordingUrl = clean(data?.streamRecordingUrl || "", 500);
+        const clipDecision = data?.clipUrl
+          ? { method: "manual", clipUrl: clean(data.clipUrl, 500), clippedVideoUid: "", durationSeconds: secondsBetween(clipStartedAt, clipEndedAt), error: "" }
+          : await resolveBreakerClip(env, { videoUid: cloudflareVideoUid, recordingUrl: streamRecordingUrl, clipStartIso: clipStartedAt, clipEndIso: clipEndedAt, streamStartIso: streamStartedAt, saleId, orderReference: data?.orderReference || "" });
         await env.DB.batch([
           env.DB.prepare(`UPDATE breaker_inventory_items SET quantity=quantity-?,sold_7d=sold_7d+?,sold_30d=sold_30d+?,last_sale_at=?,updated_at=? WHERE id=? AND member_id=? AND quantity>=?`).bind(quantity, quantity, quantity, saleOccurredAt, updatedAt, item.id, member.id, quantity),
           env.DB.prepare(`INSERT INTO breaker_inventory_movements(id,breaker_inventory_item_id,member_id,movement_type,delta_quantity,resulting_quantity,note,created_at) VALUES(?,?,?,?,?,?,?,?)`).bind(movementId, item.id, member.id, "sale", -quantity, Number(item.quantity) - quantity, clean(data?.note || "Live sale deducted from breaker inventory", 300), saleOccurredAt),
-          env.DB.prepare(`INSERT INTO breaker_sales(id,member_id,breaker_inventory_item_id,movement_id,buyer_email,order_reference,quantity,sale_occurred_at,stream_started_at,stream_offset_seconds,clip_started_at,clip_ended_at,clip_url,stream_recording_url,buyer_verify_token_hash,verification_status,note,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
-            saleId, member.id, item.id, movementId, buyerEmail, clean(data?.orderReference || "", 120), quantity, saleOccurredAt, streamStartedAt, offsetSeconds, clipStartedAt, clipEndedAt, clean(data?.clipUrl || "", 500), clean(data?.streamRecordingUrl || "", 500), verifyToken ? await hash(verifyToken, env.AUTH_SECRET) : null, clean(data?.clipUrl || data?.streamRecordingUrl || "", 500) ? "recording_attached" : "pending_recording", clean(data?.note || "", 500), updatedAt
+          env.DB.prepare(`INSERT INTO breaker_sales(id,member_id,breaker_inventory_item_id,movement_id,buyer_email,order_reference,quantity,sale_occurred_at,stream_started_at,stream_offset_seconds,clip_started_at,clip_ended_at,clip_url,stream_recording_url,cloudflare_video_uid,cloudflare_clipped_video_uid,clip_method,clip_duration_seconds,clip_error,buyer_verify_token_hash,verification_status,note,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
+            saleId, member.id, item.id, movementId, buyerEmail, clean(data?.orderReference || "", 120), quantity, saleOccurredAt, streamStartedAt, offsetSeconds, clipStartedAt, clipEndedAt,
+            clean(clipDecision.clipUrl || "", 500), streamRecordingUrl, cloudflareVideoUid, clean(clipDecision.clippedVideoUid || "", 64), clipDecision.method || "pending", clipDecision.durationSeconds ?? null, clean(clipDecision.error || "", 500),
+            verifyToken ? await hash(verifyToken, env.AUTH_SECRET) : null, (clipDecision.clipUrl || streamRecordingUrl) ? "recording_attached" : "pending_recording", clean(data?.note || "", 500), updatedAt
           )
         ]);
         if (buyerEmail && verifyToken) {

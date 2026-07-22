@@ -27,6 +27,8 @@
       ["Stream offset", offsetLabel(sale.streamOffsetSeconds)],
       ["Clip starts", dateLabel(sale.clipStartedAt || sale.saleOccurredAt)],
       ["Clip ends", dateLabel(sale.clipEndedAt)],
+      ["Clip method", String(sale.clipMethod || "pending").replace(/_/g, " ")],
+      ["Clip length", sale.clipDurationSeconds ? `${sale.clipDurationSeconds}s` : "Pending"],
       ["Breaker", sale.whatnotUsername ? `@${sale.whatnotUsername}` : sale.email || "Crack Packs breaker"]
     ].forEach(([labelText, valueText]) => {
       const item = document.createElement("div");
@@ -44,7 +46,7 @@
       const link = document.createElement("a"); link.className = "btn btn-outline"; link.href = sale.streamRecordingUrl; link.target = "_blank"; link.rel = "noopener"; link.textContent = "Open Stream Recording";
       actions.append(link);
     }
-    showStatus(sale.clipUrl || sale.streamRecordingUrl ? "Recording proof is attached to this sale." : "This sale is timestamped. The clip will appear after the recording is uploaded.", sale.clipUrl || sale.streamRecordingUrl ? "success" : "");
+    showStatus(sale.clipUrl || sale.streamRecordingUrl ? "Recording proof is attached to this sale." : sale.clipError || "This sale is timestamped. The clip will appear after the recording is uploaded.", sale.clipUrl || sale.streamRecordingUrl ? "success" : "error");
   }
   loadVerification().then(render).catch(error => showStatus(error.message, "error"));
 })();
