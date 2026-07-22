@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.6.1">
   <link rel="stylesheet" href="assets/css/referral.css?v=2.6.0">
   <link rel="stylesheet" href="assets/css/rewards-modal.css?v=2.1.0">
-    <link rel="stylesheet" href="assets/css/admin.css?v=3.6.0">
+    <link rel="stylesheet" href="assets/css/admin.css?v=3.7.0">
 </head>
 <body>
   <header class="site-header">
@@ -78,6 +78,7 @@
           <button type="button" data-master-section-button="email"><span>05</span><strong>Email</strong><small>Message members</small></button>
           <button type="button" data-master-section-button="inventory"><span>06</span><strong>Inventory</strong><small>Products &amp; store pricing</small></button>
           <button type="button" data-master-section-button="tracking"><span>07</span><strong>Orders</strong><small>Member tracking</small></button>
+          <button type="button" data-master-section-button="breakers"><span>08</span><strong>Breakers</strong><small>Access &amp; auto-orders</small></button>
         </nav>
         <section class="reward-card owner-referral-card" data-owner-referral data-master-section="create_link">
           <div class="owner-referral-grid">
@@ -262,6 +263,70 @@
               <div class="admin-order-list" data-admin-order-list aria-live="polite"></div>
             </div>
           </div>
+        </section>
+        <section class="breaker-admin-workspace" data-master-section="breakers" hidden>
+          <div class="dashboard-head tracking-workspace-head">
+            <div>
+              <p class="eyebrow">Breaker account control</p>
+              <h2>Breaker access &amp; reorder queue</h2>
+              <p>Breaker Profiles stay locked until you authorize the applicant with a one-time activation link tied to their email or user ID.</p>
+            </div>
+            <button class="btn btn-outline btn-small" type="button" data-breaker-refresh>Refresh Breakers</button>
+          </div>
+          <div class="breaker-admin-grid">
+            <form class="reward-card breaker-activation-form" data-breaker-activation-form>
+              <p class="eyebrow">One-time activation</p>
+              <h3>Authorize Breaker Applicant</h3>
+              <p>Enter the applicant's email or existing Crack Packs user ID. The generated code can only activate that exact account/email once.</p>
+              <label>Email / User ID<input name="target" required maxlength="254" placeholder="collector@email.com or member UUID"></label>
+              <div class="field-grid">
+                <label>Expires in hours<input name="expiresHours" type="number" min="1" max="168" value="72" step="1" inputmode="numeric"></label>
+                <label class="check-line"><input name="sendEmail" type="checkbox" checked> Send activation email</label>
+              </div>
+              <label>Internal note<textarea name="note" rows="3" maxlength="300" placeholder="Optional reason or show name"></textarea></label>
+              <div class="campaign-form-status" data-breaker-activation-status aria-live="polite"></div>
+              <button class="btn btn-primary" type="submit">Generate Breaker Code Link</button>
+              <div class="breaker-generated-link" data-breaker-generated hidden>
+                <strong>Activation link ready</strong>
+                <input data-breaker-generated-url readonly aria-label="Breaker activation link">
+                <button class="btn btn-outline btn-small" type="button" data-breaker-copy-link>Copy Link</button>
+              </div>
+            </form>
+            <section class="reward-card breaker-review-card">
+              <p class="eyebrow">Generated access links</p>
+              <h3>Breaker activation history</h3>
+              <label class="campaign-claim-search">Search email, user ID, or username<input type="search" data-breaker-activation-search placeholder="Guess an applicant..." autocomplete="off"></label>
+              <div class="breaker-list" data-breaker-activation-list aria-live="polite"></div>
+            </section>
+          </div>
+          <section class="reward-card breaker-review-card">
+            <div class="campaign-history-head">
+              <div><p class="eyebrow">Auto-order backup</p><h3>Breaker reorder requests</h3></div>
+              <label>Status<select data-breaker-reorder-status><option value="pending_review">Pending review</option><option value="approved">Approved</option><option value="ordered">Ordered</option><option value="cancelled">Cancelled</option><option value="rejected">Rejected</option><option value="all">All</option></select></label>
+            </div>
+            <label class="campaign-claim-search">Search breaker, email, username, or product<input type="search" data-breaker-reorder-search placeholder="Guess product or breaker..." autocomplete="off"></label>
+            <div class="breaker-list" data-breaker-reorder-list aria-live="polite"></div>
+          </section>
+          <section class="reward-card breaker-review-card">
+            <div class="campaign-history-head">
+              <div><p class="eyebrow">Usage rate</p><h3>Inventory burn and low-stock alerts</h3></div>
+            </div>
+            <p>Products below PAR create a reorder request and can email the breaker. SMS is tracked here and ready for a provider when connected.</p>
+            <label class="campaign-claim-search">Search breaker usage<input type="search" data-breaker-usage-search placeholder="Guess product, SKU, email, or username..." autocomplete="off"></label>
+            <div class="breaker-list" data-breaker-usage-list aria-live="polite"></div>
+          </section>
+          <section class="reward-card breaker-review-card">
+            <div class="campaign-history-head">
+              <div><p class="eyebrow">Sales verification</p><h3>Timestamped breaker sales</h3></div>
+            </div>
+            <div class="campaign-library-filters">
+              <label>Search sales<input type="search" data-breaker-sales-search placeholder="Buyer, order, breaker, product..." autocomplete="off"></label>
+              <label>From<input type="date" data-breaker-sales-from></label>
+              <label>Through<input type="date" data-breaker-sales-to></label>
+              <button class="btn btn-outline btn-small" type="button" data-breaker-sales-refresh>Refresh sales</button>
+            </div>
+            <div class="breaker-list" data-breaker-sales-list aria-live="polite"></div>
+          </section>
         </section>
       </section>
     </section>
@@ -498,6 +563,6 @@
 
   <script src="assets/js/config.js?v=3.0.0"></script>
   <script src="assets/js/nav-profile.js?v=2.6.1"></script>
-  <script src="assets/js/admin.js?v=3.6.0"></script>
+  <script src="assets/js/admin.js?v=3.7.0"></script>
 </body>
 </html>

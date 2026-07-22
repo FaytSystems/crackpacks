@@ -8,7 +8,7 @@
   <meta name="theme-color" content="#07091b">
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/css/styles.css?v=1.9.2">
-  <link rel="stylesheet" href="assets/css/referral.css?v=3.3.1">
+  <link rel="stylesheet" href="assets/css/referral.css?v=3.4.0">
   <link rel="stylesheet" href="assets/css/rewards-modal.css?v=2.2.0">
   <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.6.1">
 </head>
@@ -121,6 +121,7 @@
           <button class="choice-card" type="button" data-view="discount"><span>01</span><strong>Rewards</strong><small>Claim and track your available one-time offer.</small></button>
           <button class="choice-card choice-card-invites" type="button" data-view="invite"><span>02</span><strong>Invites</strong><small>Copy your personal invite link and open sharing tools.</small></button>
           <button class="choice-card choice-card-orders" type="button" data-view="orders"><span>03</span><strong>Orders</strong><small>See purchases and open live carrier tracking.</small></button>
+          <button class="choice-card" type="button" data-view="breaker"><span>04</span><strong>Breaker Profile</strong><small>Locked until MASTER authorizes your one-time activation link.</small></button>
         </div>
         <section class="reward-card action-panel" data-discount-panel hidden>
           <p class="eyebrow">Member discount</p><h3>Your offer</h3>
@@ -144,6 +145,21 @@
           </div>
           <p>Every order attached to your member account appears here. Use Tracking to open the private Crack Packs carrier page.</p>
           <div class="member-orders-list" data-orders-list aria-live="polite"></div>
+        </section>
+        <section class="reward-card breaker-profile-card" data-breaker-panel hidden id="breaker-profile">
+          <div class="campaign-history-head">
+            <div><p class="eyebrow">Breaker Profile</p><h3>Account lock &amp; stream inventory</h3></div>
+            <button class="btn btn-outline btn-small" type="button" data-breaker-profile-refresh>Refresh</button>
+          </div>
+          <p data-breaker-profile-copy>Your Breaker Profile starts locked. MASTER must generate a one-time activation link for your email/user ID before card, bank, inventory, and sales tools unlock.</p>
+          <div class="campaign-form-status" data-breaker-profile-status aria-live="polite"></div>
+          <div class="breaker-profile-summary" data-breaker-profile-summary></div>
+          <form class="breaker-profile-form" data-breaker-profile-form>
+            <label>Breaker display / business name<input name="businessName" maxlength="100" placeholder="Crack Packs Breaker"></label>
+            <button class="btn btn-primary" type="submit">Start Breaker Application</button>
+          </form>
+          <button class="btn btn-primary" type="button" data-breaker-activate hidden>Activate with MASTER Link</button>
+          <p class="fine-print">After activation, complete the $1 card authorization hold and ACH bank verification before managing sellable inventory.</p>
         </section>
         <section class="reward-card action-panel" data-invite-panel hidden>
           <div class="owner-dashboard-referral" data-owner-dashboard-referral hidden>
@@ -250,6 +266,6 @@
   <script src="assets/js/config.js?v=3.0.0"></script>
   <script src="assets/js/app.js?v=1.9.3"></script>
   <script src="assets/js/nav-profile.js?v=2.6.1"></script>
-  <script src="assets/js/referral.js?v=3.3.1"></script>
+  <script src="assets/js/referral.js?v=3.4.0"></script>
 </body>
 </html>

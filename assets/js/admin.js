@@ -48,6 +48,11 @@
   let selectedTrackingMember = null;
   let trackingMemberSearchTimer = null;
   let trackingOrderSearchTimer = null;
+  let breakerActivationSearchTimer = null;
+  let breakerReorderSearchTimer = null;
+  let breakerUsageSearchTimer = null;
+  let breakerSalesSearchTimer = null;
+  let latestBreakerActivationUrl = "";
   const menuButton = $(".menu-toggle");
   const navigation = $("#admin-site-nav");
   menuButton?.addEventListener("click", () => {
@@ -69,6 +74,7 @@
     if (section === "redeemed") Promise.all([refreshDashboard(), refreshCampaigns()]).catch(error => showStatus(error.message, "error"));
     if (section === "inventory") refreshInventory().catch(error => setInventoryStatus(error.message, "error"));
     if (section === "tracking") Promise.all([searchTrackingMembers(), refreshAdminOrders()]).catch(error => setTrackingStatus(error.message, "error"));
+    if (section === "breakers") refreshBreakers().catch(error => showStatus(error.message, "error"));
   }
 
   const request = async (path, options = {}) => {
@@ -1812,6 +1818,145 @@
     });
   }
 
+  function setBreakerActivationStatus(message = "", kind = "") {
+    const node = $("[data-breaker-activation-status]");
+    if (!node) return;
+    node.textContent = message;
+    node.dataset.kind = kind;
+  }
+  const breakerDate = value => value ? new Date(value).toLocaleString([], { dateStyle: "short", timeStyle: "short" }) : "—";
+  function renderBreakerActivations(activations = []) {
+    const container = $("[data-breaker-activation-list]");
+    if (!container) return;
+    container.replaceChildren();
+    if (!activations.length) {
+      const empty = document.createElement("div"); empty.className = "campaign-empty"; empty.textContent = "No breaker activation links match this search.";
+      container.append(empty); return;
+    }
+    activations.forEach(activation => {
+      const state = activation.usedAt ? "used" : activation.expired ? "expired" : "active";
+      const row = document.createElement("article"); row.className = "breaker-row";
+      row.innerHTML = `<div class="breaker-row-head"><div><h4>${activation.email}</h4><p>${[activation.targetWhatnotUsername ? `@${activation.targetWhatnotUsername}` : "", activation.targetMemberId ? `User ID ${activation.targetMemberId}` : "Email-only approval", activation.note || ""].filter(Boolean).join(" / ")}</p></div><span class="breaker-chip ${state}">${state}</span></div><p>Created ${breakerDate(activation.createdAt)} / Expires ${breakerDate(activation.expiresAt)}${activation.usedAt ? ` / Used ${breakerDate(activation.usedAt)}` : ""}</p>`;
+      container.append(row);
+    });
+  }
+  async function refreshBreakerActivations() {
+    if (!memberToken || !adminToken) return;
+    const query = encodeURIComponent($("[data-breaker-activation-search]")?.value.trim() || "");
+    const container = $("[data-breaker-activation-list]");
+    if (container) { container.replaceChildren(); const loading = document.createElement("div"); loading.className = "campaign-empty"; loading.textContent = "Loading breaker activation links..."; container.append(loading); }
+    const data = await request(`/admin/breaker-activations?q=${query}`);
+    renderBreakerActivations(Array.isArray(data.activations) ? data.activations : []);
+  }
+  function renderBreakerReorders(reorders = []) {
+    const container = $("[data-breaker-reorder-list]");
+    if (!container) return;
+    container.replaceChildren();
+    if (!reorders.length) {
+      const empty = document.createElement("div"); empty.className = "campaign-empty"; empty.textContent = "No breaker reorder requests match these filters.";
+      container.append(empty); return;
+    }
+    reorders.forEach(reorder => {
+      const row = document.createElement("article"); row.className = "breaker-row";
+      const head = document.createElement("div"); head.className = "breaker-row-head";
+      const main = document.createElement("div");
+      const title = document.createElement("h4"); title.textContent = `${reorder.requestedQuantity} × ${reorder.productName}`;
+      const meta = document.createElement("p"); meta.textContent = [reorder.whatnotUsername ? `@${reorder.whatnotUsername}` : "", reorder.email, reorder.unitType, `PAR ${reorder.parQuantity}`, `Triggered at ${reorder.triggerQuantity}`].filter(Boolean).join(" / ");
+      main.append(title, meta);
+      const chip = document.createElement("span"); chip.className = `breaker-chip ${reorder.status}`; chip.textContent = String(reorder.status || "").replace(/_/g, " ");
+      head.append(main, chip);
+      const note = document.createElement("p"); note.textContent = [reorder.note || "", `Created ${breakerDate(reorder.createdAt)}`].filter(Boolean).join(" / ");
+      const actions = document.createElement("div"); actions.className = "breaker-row-actions";
+      ["approved", "ordered", "cancelled", "rejected"].forEach(status => {
+        const button = document.createElement("button"); button.type = "button"; button.className = status === "ordered" ? "btn btn-primary btn-small" : status === "cancelled" || status === "rejected" ? "btn btn-danger btn-small" : "btn btn-outline btn-small";
+        button.textContent = status.replace(/^\w/, char => char.toUpperCase());
+        button.disabled = reorder.status === status;
+        button.addEventListener("click", () => updateBreakerReorderStatus(reorder, status, button).catch(error => showStatus(error.message, "error")));
+        actions.append(button);
+      });
+      row.append(head, note, actions);
+      container.append(row);
+    });
+  }
+  async function refreshBreakerReorders() {
+    if (!memberToken || !adminToken) return;
+    const status = encodeURIComponent($("[data-breaker-reorder-status]")?.value || "pending_review");
+    const query = encodeURIComponent($("[data-breaker-reorder-search]")?.value.trim() || "");
+    const container = $("[data-breaker-reorder-list]");
+    if (container) { container.replaceChildren(); const loading = document.createElement("div"); loading.className = "campaign-empty"; loading.textContent = "Loading breaker auto-order queue..."; container.append(loading); }
+    const data = await request(`/admin/breaker-reorders?status=${status}&q=${query}`);
+    renderBreakerReorders(Array.isArray(data.reorders) ? data.reorders : []);
+  }
+  async function refreshBreakers() {
+    await Promise.all([refreshBreakerActivations(), refreshBreakerReorders(), refreshBreakerUsage(), refreshBreakerSales()]);
+  }
+  async function updateBreakerReorderStatus(reorder, status, button) {
+    if (!confirm(`Mark this breaker reorder request as ${status.replace(/_/g, " ")}?`)) return;
+    const original = button.textContent; button.disabled = true; button.textContent = "Saving...";
+    try {
+      await request(`/admin/breaker-reorders/${encodeURIComponent(reorder.id)}/status`, { method: "POST", body: JSON.stringify({ status }) });
+      await refreshBreakerReorders();
+      showStatus(`Breaker reorder marked ${status.replace(/_/g, " ")}.`, "success");
+    } finally {
+      button.disabled = false; button.textContent = original;
+    }
+  }
+  async function copyBreakerActivationLink() {
+    if (!latestBreakerActivationUrl) throw new Error("Generate a breaker activation link first.");
+    await copyCampaignText(latestBreakerActivationUrl);
+    setBreakerActivationStatus("Breaker activation link copied.", "success");
+  }
+  function renderBreakerUsage(rows = []) {
+    const container = $("[data-breaker-usage-list]");
+    if (!container) return;
+    container.replaceChildren();
+    if (!rows.length) {
+      const empty = document.createElement("div"); empty.className = "campaign-empty"; empty.textContent = "No breaker usage rows match this search.";
+      container.append(empty); return;
+    }
+    rows.forEach(row => {
+      const available = Number(row.quantity || 0) + Number(row.inboundQuantity || 0) + Number(row.pendingReorderQuantity || 0);
+      const low = Boolean(row.lowUsage);
+      const card = document.createElement("article"); card.className = "breaker-row";
+      card.innerHTML = `<div class="breaker-row-head"><div><h4>${row.productName}</h4><p>${[row.whatnotUsername ? `@${row.whatnotUsername}` : "", row.email, row.sku ? `SKU ${row.sku}` : "", row.unitType].filter(Boolean).join(" / ")}</p></div><span class="breaker-chip ${low ? "expired" : "active"}">${low ? "below par" : "healthy"}</span></div><p>Available ${available} / On hand ${row.quantity} / Inbound ${row.inboundQuantity} / Pending reorder ${row.pendingReorderQuantity} / PAR ${row.parQuantity}</p><p>Usage: ${Number(row.sold7d || 0)} sold in 7d, ${Number(row.sold30d || 0)} sold in 30d${row.lastSaleAt ? ` / Last sale ${breakerDate(row.lastSaleAt)}` : ""}</p><p>Alerts: email ${row.usageAlertEmailEnabled ? "on" : "off"} / SMS ${row.usageAlertSmsEnabled ? "on (provider pending)" : "off"}${row.alertPhone ? ` / ${row.alertPhone}` : ""}${row.usageAlertLastSentAt ? ` / Last sent ${breakerDate(row.usageAlertLastSentAt)}` : ""}</p>`;
+      container.append(card);
+    });
+  }
+  async function refreshBreakerUsage() {
+    if (!memberToken || !adminToken) return;
+    const query = encodeURIComponent($("[data-breaker-usage-search]")?.value.trim() || "");
+    const container = $("[data-breaker-usage-list]");
+    if (container) { container.replaceChildren(); const loading = document.createElement("div"); loading.className = "campaign-empty"; loading.textContent = "Loading breaker usage..."; container.append(loading); }
+    const data = await request(`/admin/breaker-usage?q=${query}`);
+    renderBreakerUsage(Array.isArray(data.usage) ? data.usage : []);
+  }
+  const offsetLabel = seconds => seconds === null || seconds === undefined ? "No stream offset" : `${Math.floor(Number(seconds) / 60)}m ${Number(seconds) % 60}s into stream`;
+  function renderBreakerSales(rows = []) {
+    const container = $("[data-breaker-sales-list]");
+    if (!container) return;
+    container.replaceChildren();
+    if (!rows.length) {
+      const empty = document.createElement("div"); empty.className = "campaign-empty"; empty.textContent = "No timestamped breaker sales match this search.";
+      container.append(empty); return;
+    }
+    rows.forEach(sale => {
+      const status = sale.clipUrl || sale.streamRecordingUrl ? "recording_attached" : sale.verificationStatus;
+      const row = document.createElement("article"); row.className = "breaker-row";
+      row.innerHTML = `<div class="breaker-row-head"><div><h4>${sale.quantity} × ${sale.productName}</h4><p>${[sale.whatnotUsername ? `@${sale.whatnotUsername}` : "", sale.email, sale.buyerEmail ? `Buyer ${sale.buyerEmail}` : "No buyer email", sale.orderReference ? `Order ${sale.orderReference}` : ""].filter(Boolean).join(" / ")}</p></div><span class="breaker-chip ${status === "recording_attached" || status === "verified" ? "active" : "expired"}">${String(status || "").replace(/_/g, " ")}</span></div><p>Auction won: ${breakerDate(sale.saleOccurredAt)} / ${offsetLabel(sale.streamOffsetSeconds)}</p><p>Clip window: ${sale.clipStartedAt ? breakerDate(sale.clipStartedAt) : "sale timestamp"} → ${sale.clipEndedAt ? breakerDate(sale.clipEndedAt) : "next auction start pending"}</p><div class="breaker-row-actions">${sale.clipUrl ? `<a class="btn btn-primary btn-small" href="${sale.clipUrl}" target="_blank" rel="noopener">Open Clip</a>` : ""}${sale.streamRecordingUrl ? `<a class="btn btn-outline btn-small" href="${sale.streamRecordingUrl}" target="_blank" rel="noopener">Open Recording</a>` : ""}<span class="breaker-chip ${sale.buyerVerifySentAt ? "used" : "expired"}">${sale.buyerVerifySentAt ? "buyer emailed" : "email pending"}</span></div>`;
+      container.append(row);
+    });
+  }
+  async function refreshBreakerSales() {
+    if (!memberToken || !adminToken) return;
+    const query = encodeURIComponent($("[data-breaker-sales-search]")?.value.trim() || "");
+    const from = encodeURIComponent($("[data-breaker-sales-from]")?.value || "");
+    const to = encodeURIComponent($("[data-breaker-sales-to]")?.value || "");
+    const container = $("[data-breaker-sales-list]");
+    if (container) { container.replaceChildren(); const loading = document.createElement("div"); loading.className = "campaign-empty"; loading.textContent = "Loading breaker sales..."; container.append(loading); }
+    const data = await request(`/admin/breaker-sales?q=${query}&from=${from}&to=${to}`);
+    renderBreakerSales(Array.isArray(data.sales) ? data.sales : []);
+  }
+
   async function boot() {
     show("[data-admin-login]", false); show("[data-admin-setup]", false); show("[data-admin-step-up]", false); show("[data-admin-denied]", false); show("[data-admin-dashboard]", false);
     if (verificationToken) await confirmMagicLink();
@@ -1850,6 +1995,41 @@
   }));
   document.querySelectorAll("[data-admin-email-close]").forEach(button => button.addEventListener("click", () => { $("[data-admin-email-modal]").hidden = true; }));
   document.querySelectorAll("[data-master-section-button]").forEach(button => button.addEventListener("click", () => openMasterSection(button.dataset.masterSectionButton)));
+  $("[data-breaker-activation-form]")?.addEventListener("submit", async event => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const values = new FormData(form);
+    const payload = {
+      target: String(values.get("target") || "").trim(),
+      expiresHours: Number(values.get("expiresHours") || 72),
+      sendEmail: values.get("sendEmail") === "on",
+      note: String(values.get("note") || "").trim()
+    };
+    const button = form.querySelector("button[type='submit']");
+    button.disabled = true; button.textContent = "Generating...";
+    setBreakerActivationStatus("");
+    try {
+      const data = await request("/admin/breaker-activations", { method: "POST", body: JSON.stringify(payload) });
+      latestBreakerActivationUrl = String(data.activationUrl || "");
+      $("[data-breaker-generated-url]").value = latestBreakerActivationUrl;
+      $("[data-breaker-generated]").hidden = !latestBreakerActivationUrl;
+      setBreakerActivationStatus(data.emailSent ? "One-time breaker activation link generated and emailed." : "One-time breaker activation link generated. Copy and send it manually.", "success");
+      await refreshBreakerActivations();
+    } catch (error) {
+      setBreakerActivationStatus(error.message, "error");
+    } finally {
+      button.disabled = false; button.textContent = "Generate Breaker Code Link";
+    }
+  });
+  $("[data-breaker-copy-link]")?.addEventListener("click", () => copyBreakerActivationLink().catch(error => setBreakerActivationStatus(error.message, "error")));
+  $("[data-breaker-refresh]")?.addEventListener("click", () => refreshBreakers().then(() => showStatus("Breaker dashboard refreshed.", "success")).catch(error => showStatus(error.message, "error")));
+  $("[data-breaker-activation-search]")?.addEventListener("input", () => { clearTimeout(breakerActivationSearchTimer); breakerActivationSearchTimer = setTimeout(() => refreshBreakerActivations().catch(error => showStatus(error.message, "error")), 220); });
+  $("[data-breaker-reorder-search]")?.addEventListener("input", () => { clearTimeout(breakerReorderSearchTimer); breakerReorderSearchTimer = setTimeout(() => refreshBreakerReorders().catch(error => showStatus(error.message, "error")), 220); });
+  $("[data-breaker-reorder-status]")?.addEventListener("change", () => refreshBreakerReorders().catch(error => showStatus(error.message, "error")));
+  $("[data-breaker-usage-search]")?.addEventListener("input", () => { clearTimeout(breakerUsageSearchTimer); breakerUsageSearchTimer = setTimeout(() => refreshBreakerUsage().catch(error => showStatus(error.message, "error")), 220); });
+  $("[data-breaker-sales-search]")?.addEventListener("input", () => { clearTimeout(breakerSalesSearchTimer); breakerSalesSearchTimer = setTimeout(() => refreshBreakerSales().catch(error => showStatus(error.message, "error")), 220); });
+  ["[data-breaker-sales-from]", "[data-breaker-sales-to]"].forEach(selector => $(selector)?.addEventListener("change", () => refreshBreakerSales().catch(error => showStatus(error.message, "error"))));
+  $("[data-breaker-sales-refresh]")?.addEventListener("click", () => refreshBreakerSales().catch(error => showStatus(error.message, "error")));
   $("[data-inventory-new]").addEventListener("click", () => openInventoryModal());
   $("[data-inventory-shipping-test]").addEventListener("click", event => testEasyPost(event.currentTarget));
   $("[data-inventory-import]").addEventListener("click", importStarterInventory);

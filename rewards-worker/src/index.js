@@ -5,7 +5,7 @@ import { calculateChannelPricing, channelPricingErrors } from "./channel-pricing
 import { sanitizeEasyPostTracker, verifyEasyPostWebhook } from "./easypost-tracking.js";
 import { stripeRequest, verifyStripeWebhook } from "./stripe-commerce.js";
 
-const VERSION = "4.5.0";
+const VERSION = "4.6.0";
 const CAMPAIGN_REWARD_TYPES = new Set(["percent", "free_shipping", "pick_a_pack", "pack_draft", "free_single", "product"]);
 const MAX_CAMPAIGN_REDEMPTIONS = 500;
 const STORE_CURRENCIES = new Set(["USD", "CAD", "EUR", "GBP", "AUD", "NZD", "JPY", "CHF", "SEK", "NOK", "DKK", "PLN", "CZK", "HUF", "RON"]);
@@ -526,6 +526,177 @@ const stockMovementStatement = (env, { inventoryItemId, ownerMemberId, orderId =
   INSERT INTO inventory_stock_movements(id,inventory_item_id,owner_member_id,order_id,reservation_id,movement_type,delta_quantity,resulting_quantity,note,created_at)
   VALUES(?,?,?,?,?,?,?,?,?,?)
 `).bind(id(), inventoryItemId, ownerMemberId, orderId, reservationId, type, delta, resultingQuantity, clean(note, 300), createdAt);
+const breakerUnitTypes = new Set(["sealed_box", "pack", "single", "supply"]);
+const breakerProfileView = row => ({
+  active: Boolean(row),
+  businessName: row?.business_name || "",
+  status: row?.status || "not_started",
+  activationRequired: row?.status === "pending_activation",
+  locked: Boolean(row && row.status !== "active"),
+  autoReorderEnabled: Boolean(row?.auto_reorder_enabled ?? true),
+  bankVerificationStatus: row?.bank_verification_status || "not_started",
+  bankVerificationLockedUntil: row?.bank_verification_locked_until || null,
+  cardHoldStatus: row?.card_hold_status || "not_started",
+  cardHoldVerifiedAt: row?.card_hold_verified_at || null,
+  usageAlertEmailEnabled: Boolean(row?.usage_alert_email_enabled ?? true),
+  usageAlertSmsEnabled: Boolean(row?.usage_alert_sms_enabled),
+  alertPhone: row?.alert_phone || "",
+  usageAlertLastSentAt: row?.usage_alert_last_sent_at || null,
+  securityComplete: (row?.status === "active") && (row?.bank_verification_status === "verified") && (row?.card_hold_status === "verified")
+});
+async function ensureBreakerProfile(env, member, data = {}) {
+  const createdAt = now();
+  const businessName = clean(data?.businessName || data?.business_name || member.whatnot_username || member.email.split("@")[0], 100);
+  await env.DB.prepare(`
+    INSERT OR IGNORE INTO breaker_profiles(member_id,business_name,status,auto_reorder_enabled,created_at,updated_at)
+    VALUES(?,?,?,?,?,?)
+  `).bind(member.id, businessName, "pending_activation", 1, createdAt, createdAt).run();
+  if (businessName) await env.DB.prepare(`UPDATE breaker_profiles SET business_name=COALESCE(NULLIF(?,''),business_name),updated_at=? WHERE member_id=?`).bind(businessName, createdAt, member.id).run();
+  return env.DB.prepare(`SELECT * FROM breaker_profiles WHERE member_id=?`).bind(member.id).first();
+}
+const breakerLockedResponse = (profile, cors) => profile?.status !== "active"
+  ? response({ error: "Breaker Profile is locked until MASTER sends and you use your one-time activation link.", profile: breakerProfileView(profile) }, 423, cors)
+  : null;
+async function requireActiveBreakerProfile(env, member, cors) {
+  const profile = await env.DB.prepare(`SELECT * FROM breaker_profiles WHERE member_id=?`).bind(member.id).first();
+  if (!profile) return { blocked: response({ error: "Create your Breaker Profile application first." }, 404, cors), profile: null };
+  const locked = breakerLockedResponse(profile, cors);
+  if (locked) return { blocked: locked, profile };
+  return { blocked: null, profile };
+}
+const breakerActivationView = row => ({
+  id: row.id,
+  email: row.target_email,
+  targetMemberId: row.target_member_id || "",
+  usedAt: row.used_at || null,
+  usedByMemberId: row.used_by_member_id || "",
+  expiresAt: row.expires_at,
+  note: row.note || "",
+  createdAt: row.created_at
+});
+async function sendBreakerActivationEmail(env, email, activationUrl, expiresAt, note = "") {
+  return sendEmail(env, email, "Activate your Crack Packs Breaker Profile", `<h1>Activate your Breaker Profile</h1><p>MASTER approved your Crack Packs Breaker application. Use this one-time link while signed in with <strong>${escapeHtml(email)}</strong>.</p><p><a href="${escapeHtml(activationUrl)}" style="display:inline-block;padding:14px 22px;background:#f8ff46;color:#070815;text-decoration:none;font-weight:bold;border-radius:10px">Activate Breaker Profile</a></p><p>This link expires at ${escapeHtml(expiresAt)} and can only be used once by the matching account.</p>${note ? `<p>${escapeHtml(note)}</p>` : ""}`, `breaker-activation-${email}-${Date.now()}`, { email: env.REWARDS_FROM_EMAIL || "rewards@crackpacks.com", name: "Crack Packs Rewards" });
+}
+const breakerInventoryView = row => ({
+  id: row.id,
+  sourceInventoryItemId: row.source_inventory_item_id || "",
+  sku: row.sku || "",
+  productName: row.product_name,
+  unitType: row.unit_type,
+  packsPerUnit: row.packs_per_unit === null || row.packs_per_unit === undefined ? null : Number(row.packs_per_unit),
+  quantity: Number(row.quantity || 0),
+  inboundQuantity: Number(row.inbound_quantity || 0),
+  parQuantity: Number(row.par_quantity || 0),
+  reorderQuantity: Number(row.reorder_quantity || 0),
+  autoReorderEnabled: Boolean(row.auto_reorder_enabled),
+  pendingReorderQuantity: Number(row.pending_reorder_quantity || 0),
+  sold7d: Number(row.sold_7d || row.sold7d || 0),
+  sold30d: Number(row.sold_30d || row.sold30d || 0),
+  lastSaleAt: row.last_sale_at || row.lastSaleAt || null,
+  usageRate: Number(row.sold_7d || row.sold7d || 0) > 0 ? Number(row.sold_7d || row.sold7d || 0) / 7 : 0,
+  lowUsage: Number(row.par_quantity || 0) > 0 && (Number(row.quantity || 0) + Number(row.inbound_quantity || 0) + Number(row.pending_reorder_quantity || 0)) < Number(row.par_quantity || 0),
+  updatedAt: row.updated_at
+});
+const breakerReorderView = row => ({
+  id: row.id,
+  memberId: row.member_id,
+  email: row.email || "",
+  whatnotUsername: row.whatnot_username || "",
+  productName: row.product_name,
+  unitType: row.unit_type,
+  requestedQuantity: Number(row.requested_quantity || 0),
+  triggerQuantity: Number(row.trigger_quantity || 0),
+  parQuantity: Number(row.par_quantity || 0),
+  status: row.status,
+  source: row.source,
+  note: row.note || "",
+  createdAt: row.created_at,
+  updatedAt: row.updated_at
+});
+const breakerSaleView = row => ({
+  id: row.id,
+  memberId: row.member_id,
+  email: row.email || "",
+  whatnotUsername: row.whatnot_username || "",
+  productName: row.product_name,
+  unitType: row.unit_type || "",
+  buyerEmail: row.buyer_email || "",
+  orderReference: row.order_reference || "",
+  quantity: Number(row.quantity || 0),
+  saleOccurredAt: row.sale_occurred_at,
+  streamStartedAt: row.stream_started_at || null,
+  streamOffsetSeconds: row.stream_offset_seconds === null || row.stream_offset_seconds === undefined ? null : Number(row.stream_offset_seconds),
+  clipStartedAt: row.clip_started_at || null,
+  clipEndedAt: row.clip_ended_at || null,
+  clipUrl: row.clip_url || "",
+  streamRecordingUrl: row.stream_recording_url || "",
+  buyerVerifySentAt: row.buyer_verify_sent_at || null,
+  verificationStatus: row.verification_status || "pending_recording",
+  note: row.note || "",
+  createdAt: row.created_at
+});
+async function sendBreakerSaleVerificationEmail(env, sale, token) {
+  if (!sale?.buyer_email || !token) return false;
+  const site = String(env.SITE_URL || "https://crackpacks.com").replace(/\/+$/, "");
+  const verifyUrl = `${site}/verify-order.html?sale=${encodeURIComponent(sale.id)}&token=${encodeURIComponent(token)}`;
+  const clipText = sale.clip_url ? "Your clip is attached to the Verify Order page." : sale.stream_recording_url ? "The Verify Order page opens the stream recording at your rip timestamp." : "The clip will appear there after the stream recording is uploaded.";
+  await sendOrderEmail(env, sale.buyer_email, `Verify your rip: ${sale.order_reference || sale.product_name}`, `<h1>Verify your Crack Packs rip</h1><p>Your breaker sale for <strong>${escapeHtml(sale.product_name)}</strong> was timestamped at ${escapeHtml(sale.sale_occurred_at)}.</p><p>${escapeHtml(clipText)}</p><p><a href="${escapeHtml(verifyUrl)}" style="display:inline-block;padding:14px 22px;background:#f8ff46;color:#070815;text-decoration:none;font-weight:bold;border-radius:10px">Open Verify Order</a></p><p>This private link is for confirming that the cards ripped on stream match what was shipped.</p>`, `breaker-sale-verify-${sale.id}`);
+  return true;
+}
+async function maybeCreateBreakerReorder(env, breakerItem, source = "auto_par", note = "") {
+  if (!breakerItem || Number(breakerItem.auto_reorder_enabled) !== 1) return null;
+  const availableSoon = Number(breakerItem.quantity || 0) + Number(breakerItem.inbound_quantity || 0) + Number(breakerItem.pending_reorder_quantity || 0);
+  const par = Number(breakerItem.par_quantity || 0);
+  if (par <= 0 || availableSoon >= par) return null;
+  const requested = Math.max(Number(breakerItem.reorder_quantity || 0), par - availableSoon, 1);
+  const createdAt = now();
+  const requestId = id();
+  const inserted = await env.DB.prepare(`
+    INSERT OR IGNORE INTO breaker_reorder_requests(id,member_id,breaker_inventory_item_id,source_inventory_item_id,product_name,unit_type,requested_quantity,trigger_quantity,par_quantity,status,source,note,created_at,updated_at)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+  `).bind(requestId, breakerItem.member_id, breakerItem.id, breakerItem.source_inventory_item_id || null, breakerItem.product_name, breakerItem.unit_type, requested, Number(breakerItem.quantity || 0), par, "pending_review", source, clean(note || "PAR auto-order request pending MASTER review", 500), createdAt, createdAt).run();
+  if (Number(inserted.meta?.changes || 0) !== 1) return null;
+  await env.DB.batch([
+    env.DB.prepare(`UPDATE breaker_inventory_items SET pending_reorder_quantity=pending_reorder_quantity+?,updated_at=? WHERE id=?`).bind(requested, createdAt, breakerItem.id),
+    env.DB.prepare(`INSERT INTO breaker_inventory_movements(id,breaker_inventory_item_id,member_id,movement_type,delta_quantity,resulting_quantity,note,created_at) VALUES(?,?,?,?,?,?,?,?)`).bind(id(), breakerItem.id, breakerItem.member_id, "reorder_requested", 0, Number(breakerItem.quantity || 0), `Requested ${requested} via ${source}`, createdAt)
+  ]);
+  try {
+    const alertRow = await env.DB.prepare(`
+      SELECT p.usage_alert_email_enabled,p.usage_alert_sms_enabled,p.alert_phone,p.usage_alert_last_sent_at,m.email,m.whatnot_username
+      FROM breaker_profiles p JOIN members m ON m.id=p.member_id WHERE p.member_id=?
+    `).bind(breakerItem.member_id).first();
+    const lastAlertMs = alertRow?.usage_alert_last_sent_at ? Date.parse(alertRow.usage_alert_last_sent_at) : 0;
+    if (alertRow?.usage_alert_email_enabled && (!lastAlertMs || Date.now() - lastAlertMs > 12 * 3600e3)) {
+      await sendEmail(env, alertRow.email, "Breaker inventory is below PAR", `<h1>Breaker inventory alert</h1><p>Your Crack Packs breaker inventory for <strong>${escapeHtml(breakerItem.product_name)}</strong> is below PAR.</p><p>Current sellable: ${Number(breakerItem.quantity || 0)} / PAR: ${par}. A reorder request for ${requested} is waiting for MASTER review.</p><p>SMS alert setting: ${alertRow.usage_alert_sms_enabled ? "enabled, pending SMS provider connection" : "off"}${alertRow.alert_phone ? ` (${escapeHtml(alertRow.alert_phone)})` : ""}.</p>`, `breaker-low-usage-${breakerItem.id}-${createdAt}`, memberEmailSender(env, "alerts"));
+      await env.DB.prepare(`UPDATE breaker_profiles SET usage_alert_last_sent_at=?,updated_at=? WHERE member_id=?`).bind(createdAt, createdAt, breakerItem.member_id).run();
+    }
+  } catch (error) {
+    console.error("Breaker low-usage alert failed", { memberId: breakerItem.member_id, itemId: breakerItem.id });
+  }
+  return requestId;
+}
+async function syncBreakerPurchase(env, reservation, orderId, createdAt = now()) {
+  const profile = await env.DB.prepare(`SELECT * FROM breaker_profiles WHERE member_id=? AND status='active'`).bind(reservation.member_id).first();
+  if (!profile) return;
+  const source = await env.DB.prepare(`SELECT id,sku,name,category FROM inventory_items WHERE id=?`).bind(reservation.inventory_item_id).first();
+  if (!source) return;
+  const unitType = /pack/i.test(String(source.category || "")) && !/box|bundle|collection|tin/i.test(String(source.category || "")) ? "pack" : "sealed_box";
+  const inventoryId = id();
+  await env.DB.prepare(`
+    INSERT INTO breaker_inventory_items(id,member_id,source_inventory_item_id,sku,product_name,unit_type,packs_per_unit,quantity,inbound_quantity,par_quantity,reorder_quantity,auto_reorder_enabled,pending_reorder_quantity,created_at,updated_at)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    ON CONFLICT(member_id,source_inventory_item_id,unit_type) DO UPDATE SET inbound_quantity=inbound_quantity+excluded.inbound_quantity,updated_at=excluded.updated_at
+  `).bind(inventoryId, reservation.member_id, source.id, source.sku || "", source.name, unitType, null, 0, Number(reservation.quantity || 1), 0, 0, 0, 0, createdAt, createdAt).run();
+  const item = await env.DB.prepare(`SELECT * FROM breaker_inventory_items WHERE member_id=? AND source_inventory_item_id=? AND unit_type=?`).bind(reservation.member_id, source.id, unitType).first();
+  if (item) await env.DB.prepare(`INSERT INTO breaker_inventory_movements(id,breaker_inventory_item_id,member_id,source_order_id,movement_type,delta_quantity,resulting_quantity,note,created_at) VALUES(?,?,?,?,?,?,?,?,?)`).bind(id(), item.id, reservation.member_id, orderId, "order_pending", Number(reservation.quantity || 1), Number(item.quantity || 0), "Crack Packs order paid; awaiting receive confirmation", createdAt).run();
+}
+async function ensureStripeCustomer(env, member, profile) {
+  if (profile?.stripe_customer_id) return profile.stripe_customer_id;
+  const customer = await stripeRequest(env.STRIPE_SECRET_KEY, "/customers", [["email", member.email], ["name", `${member.first_name || ""} ${member.last_name || ""}`.trim()], ["metadata[member_id]", member.id]], `breaker-customer-${member.id}`);
+  if (!customer?.id) throw new Error("STRIPE_PROVIDER_ERROR");
+  await env.DB.prepare(`UPDATE breaker_profiles SET stripe_customer_id=?,updated_at=? WHERE member_id=?`).bind(customer.id, now(), member.id).run();
+  return customer.id;
+}
 const convertCents = (usdCents, rate) => usdCents === null || rate === null ? null : Math.round(usdCents * rate);
 const numberOrNull = value => value === null || value === undefined || value === "" || !Number.isFinite(Number(value)) ? null : Number(value);
 async function ecbFxQuote(currency) {
@@ -850,6 +1021,7 @@ async function finalizeStripeCheckout(env, session, ctx) {
   const saved = await env.DB.prepare(`${orderSelectSql} WHERE orders.id=? LIMIT 1`).bind(orderId).first();
   let address = {}; try { address = JSON.parse(reservation.address_json || "{}"); } catch {}
   const publicOrder = orderView(saved, env);
+  await syncBreakerPurchase(env, reservation, orderId, createdAt);
   ctx.waitUntil(notifyPaidOrder(env, publicOrder, memberRow?.email || session?.customer_details?.email || "", address));
   return orderId;
 }
@@ -1143,7 +1315,22 @@ async function route(request, env, cors, ctx) {
     if (existing?.processed_at) return response({ ok: true, duplicate: true }, 200, cors);
     await env.DB.prepare(`INSERT OR IGNORE INTO stripe_webhook_events(event_id,event_type,livemode,received_at) VALUES(?,?,?,?)`).bind(eventId, eventType, event?.livemode === true ? 1 : 0, now()).run();
     const object = event?.data?.object || {};
-    if (["checkout.session.completed", "checkout.session.async_payment_succeeded"].includes(eventType)) await finalizeStripeCheckout(env, object, ctx);
+    const stripePurpose = String(object?.metadata?.purpose || object?.payment_intent_data?.metadata?.purpose || "");
+    if (["checkout.session.completed", "checkout.session.async_payment_succeeded"].includes(eventType) && stripePurpose !== "breaker_card_hold") await finalizeStripeCheckout(env, object, ctx);
+    if (eventType === "setup_intent.succeeded" && object?.metadata?.purpose === "breaker_bank") {
+      const memberId = clean(object?.metadata?.member_id, 80);
+      const paymentMethod = typeof object.payment_method === "string" ? object.payment_method : String(object.payment_method?.id || "");
+      if (/^[0-9a-f-]{36}$/i.test(memberId)) {
+        await env.DB.prepare(`UPDATE breaker_profiles SET bank_setup_intent_id=?,bank_payment_method_id=?,bank_verification_status='verified',bank_verification_locked_until=NULL,updated_at=? WHERE member_id=?`).bind(clean(object.id, 120), clean(paymentMethod, 120), now(), memberId).run();
+      }
+    }
+    if (eventType === "payment_intent.amount_capturable_updated" && object?.metadata?.purpose === "breaker_card_hold") {
+      const memberId = clean(object?.metadata?.member_id, 80);
+      if (/^[0-9a-f-]{36}$/i.test(memberId)) {
+        await env.DB.prepare(`UPDATE breaker_profiles SET card_hold_payment_intent_id=?,card_hold_status='verified',card_hold_verified_at=?,updated_at=? WHERE member_id=?`).bind(clean(object.id, 120), now(), now(), memberId).run();
+        if (env.STRIPE_SECRET_KEY && /^pi_[a-z0-9_]+$/i.test(String(object.id || ""))) ctx.waitUntil(stripeRequest(env.STRIPE_SECRET_KEY, `/payment_intents/${object.id}/cancel`, [["cancellation_reason", "requested_by_customer"]], `breaker-card-hold-release-${object.id}`).catch(error => console.error("Breaker card hold release failed", error?.message || "")));
+      }
+    }
     if (eventType === "checkout.session.expired") await expireCheckoutReservation(env, clean(object?.id, 120));
     if (eventType === "charge.refunded" && object?.refunded === true) {
       const refundId = Array.isArray(object?.refunds?.data) ? String(object.refunds.data[0]?.id || "") : "";
@@ -1456,9 +1643,201 @@ async function route(request, env, cors, ctx) {
     }
     return response({ ok: true }, 200, cors);
   }
+  if (url.pathname === "/verify-order/sale" && request.method === "GET") {
+    const saleId = String(url.searchParams.get("sale") || "");
+    const token = String(url.searchParams.get("token") || "");
+    if (!/^[0-9a-f-]{36}$/i.test(saleId) || !/^[A-Z0-9]{24,96}$/i.test(token)) return response({ error: "That Verify Order link is invalid." }, 400, cors);
+    const sale = await env.DB.prepare(`
+      SELECT s.*,i.product_name,i.unit_type,m.whatnot_username,m.email
+      FROM breaker_sales s
+      JOIN breaker_inventory_items i ON i.id=s.breaker_inventory_item_id
+      JOIN members m ON m.id=s.member_id
+      WHERE s.id=? AND s.buyer_verify_token_hash=? LIMIT 1
+    `).bind(saleId, await hash(token, env.AUTH_SECRET)).first();
+    if (!sale) return response({ error: "That Verify Order link was not found." }, 404, cors);
+    return response({ sale: breakerSaleView(sale) }, 200, cors);
+  }
   const member = await memberFromRequest(request, env);
   if (!member) return response({ error: "Sign in is required." }, 401, cors);
   if (url.pathname === "/me" && request.method === "GET") return response(await accountFor(member, env), 200, cors);
+  if (url.pathname === "/breaker/activate" && request.method === "POST") {
+    if (!member.email_verified_at || !member.device_verified || member.identity_status !== "verified") return response({ error: "Complete identity and passkey verification before activating Breaker Profile." }, 403, cors);
+    const data = await body(request);
+    const token = String(data?.token || "").trim();
+    if (!/^[A-Z0-9]{24,96}$/i.test(token)) return response({ error: "That breaker activation link is invalid." }, 400, cors);
+    const tokenHash = await hash(token, env.AUTH_SECRET);
+    const record = await env.DB.prepare(`SELECT * FROM breaker_activation_codes WHERE code_hash=? AND used_at IS NULL LIMIT 1`).bind(tokenHash).first();
+    if (!record || record.expires_at < now()) return response({ error: "That breaker activation link is invalid, expired, or already used." }, 401, cors);
+    if (record.target_member_id && record.target_member_id !== member.id) return response({ error: "This breaker activation link belongs to a different user ID." }, 403, cors);
+    if (normalizeEmail(record.target_email) !== normalizeEmail(member.email)) return response({ error: "Sign in with the exact email that MASTER approved for this breaker activation link." }, 403, cors);
+    const profile = await ensureBreakerProfile(env, member, {});
+    const usedAt = now();
+    await env.DB.batch([
+      env.DB.prepare(`UPDATE breaker_activation_codes SET used_at=?,used_by_member_id=? WHERE id=? AND used_at IS NULL`).bind(usedAt, member.id, record.id),
+      env.DB.prepare(`UPDATE breaker_profiles SET status='active',updated_at=? WHERE member_id=?`).bind(usedAt, member.id)
+    ]);
+    await audit(env, request, "breaker_profile_activated", member.id, record.id);
+    return response({ activated: true, profile: breakerProfileView(await env.DB.prepare(`SELECT * FROM breaker_profiles WHERE member_id=?`).bind(member.id).first()) }, 200, cors);
+  }
+  if (url.pathname === "/breaker/profile" && request.method === "GET") {
+    const profile = await env.DB.prepare(`SELECT * FROM breaker_profiles WHERE member_id=?`).bind(member.id).first();
+    const items = profile ? await env.DB.prepare(`SELECT * FROM breaker_inventory_items WHERE member_id=? ORDER BY updated_at DESC,product_name COLLATE NOCASE LIMIT 200`).bind(member.id).all() : { results: [] };
+    const reorders = profile ? await env.DB.prepare(`SELECT r.*,m.email,m.whatnot_username FROM breaker_reorder_requests r JOIN members m ON m.id=r.member_id WHERE r.member_id=? ORDER BY r.created_at DESC LIMIT 50`).bind(member.id).all() : { results: [] };
+    return response({ profile: breakerProfileView(profile), inventory: (items.results || []).map(breakerInventoryView), reorders: (reorders.results || []).map(breakerReorderView) }, 200, cors);
+  }
+  if (url.pathname === "/breaker/profile" && request.method === "POST") {
+    if (!member.email_verified_at || !member.device_verified || member.identity_status !== "verified") return response({ error: "Complete identity and passkey verification before creating a Breaker Profile." }, 403, cors);
+    const data = await body(request);
+    const profile = await ensureBreakerProfile(env, member, data);
+    await audit(env, request, "breaker_profile_started", member.id, profile.business_name || "");
+    return response({ profile: breakerProfileView(profile) }, 201, cors);
+  }
+  if (url.pathname === "/breaker/security/card-hold" && request.method === "POST") {
+    if (!member.email_verified_at || !member.device_verified || member.identity_status !== "verified") return response({ error: "Complete identity and passkey verification before card verification." }, 403, cors);
+    if (!env.STRIPE_SECRET_KEY) return response({ error: "Stripe is not configured for breaker card verification." }, 503, cors);
+    const profile = await ensureBreakerProfile(env, member);
+    const locked = breakerLockedResponse(profile, cors);
+    if (locked) return locked;
+    if (profile.card_hold_status === "verified") return response({ verified: true, profile: breakerProfileView(profile) }, 200, cors);
+    const customerId = await ensureStripeCustomer(env, member, profile);
+    const site = String(env.SITE_URL || "https://crackpacks.com").replace(/\/+$/, "");
+    const session = await stripeRequest(env.STRIPE_SECRET_KEY, "/checkout/sessions", [
+      ["mode", "payment"], ["customer", customerId], ["success_url", `${site}/referral.html#breaker-profile`], ["cancel_url", `${site}/referral.html#breaker-profile`],
+      ["line_items[0][price_data][currency]", "usd"], ["line_items[0][price_data][unit_amount]", "100"], ["line_items[0][price_data][product_data][name]", "Breaker card verification hold"], ["line_items[0][quantity]", "1"],
+      ["payment_method_types[]", "card"], ["payment_intent_data[capture_method]", "manual"], ["payment_intent_data[metadata][purpose]", "breaker_card_hold"], ["payment_intent_data[metadata][member_id]", member.id],
+      ["metadata[purpose]", "breaker_card_hold"], ["metadata[member_id]", member.id]
+    ], `breaker-card-hold-${member.id}-${Date.now()}`);
+    await env.DB.prepare(`UPDATE breaker_profiles SET card_hold_status='pending',updated_at=? WHERE member_id=?`).bind(now(), member.id).run();
+    return response({ checkoutUrl: session.url, profile: breakerProfileView(await env.DB.prepare(`SELECT * FROM breaker_profiles WHERE member_id=?`).bind(member.id).first()) }, 201, cors);
+  }
+  if (url.pathname === "/breaker/security/bank-setup" && request.method === "POST") {
+    if (!member.email_verified_at || !member.device_verified || member.identity_status !== "verified") return response({ error: "Complete identity and passkey verification before bank verification." }, 403, cors);
+    if (!env.STRIPE_SECRET_KEY || !env.STRIPE_PUBLISHABLE_KEY) return response({ error: "Stripe ACH verification is not configured." }, 503, cors);
+    const profile = await ensureBreakerProfile(env, member);
+    const locked = breakerLockedResponse(profile, cors);
+    if (locked) return locked;
+    if (profile.bank_verification_locked_until && profile.bank_verification_locked_until > now()) return response({ error: `Bank verification is locked until ${profile.bank_verification_locked_until}.` }, 423, cors);
+    if (profile.bank_verification_status === "verified") return response({ verified: true, profile: breakerProfileView(profile) }, 200, cors);
+    const customerId = await ensureStripeCustomer(env, member, profile);
+    const setup = await stripeRequest(env.STRIPE_SECRET_KEY, "/setup_intents", [
+      ["customer", customerId], ["usage", "off_session"], ["payment_method_types[]", "us_bank_account"],
+      ["payment_method_options[us_bank_account][verification_method]", "automatic"],
+      ["metadata[purpose]", "breaker_bank"], ["metadata[member_id]", member.id]
+    ], `breaker-bank-setup-${member.id}-${Date.now()}`);
+    await env.DB.prepare(`UPDATE breaker_profiles SET bank_setup_intent_id=?,bank_verification_status='pending',bank_verification_locked_until=NULL,updated_at=? WHERE member_id=?`).bind(clean(setup.id, 120), now(), member.id).run();
+    return response({ publishableKey: env.STRIPE_PUBLISHABLE_KEY, clientSecret: setup.client_secret, setupIntentId: setup.id, profile: breakerProfileView(await env.DB.prepare(`SELECT * FROM breaker_profiles WHERE member_id=?`).bind(member.id).first()) }, 201, cors);
+  }
+  if (url.pathname === "/breaker/security/bank-microdeposits" && request.method === "POST") {
+    if (!env.STRIPE_SECRET_KEY) return response({ error: "Stripe ACH verification is not configured." }, 503, cors);
+    const data = await body(request);
+    const profile = await env.DB.prepare(`SELECT * FROM breaker_profiles WHERE member_id=?`).bind(member.id).first();
+    if (!profile?.bank_setup_intent_id) return response({ error: "Start bank verification first." }, 409, cors);
+    const locked = breakerLockedResponse(profile, cors);
+    if (locked) return locked;
+    if (profile.bank_verification_locked_until && profile.bank_verification_locked_until > now()) return response({ error: `Bank verification is locked until ${profile.bank_verification_locked_until}.` }, 423, cors);
+    const descriptorCode = String(data?.descriptorCode || "").trim().toUpperCase();
+    const amountOne = Number(data?.amountOne);
+    const amountTwo = Number(data?.amountTwo);
+    const entries = [];
+    if (/^SM[A-Z0-9]{4,8}$/.test(descriptorCode)) entries.push(["descriptor_code", descriptorCode]);
+    else if (Number.isInteger(amountOne) && Number.isInteger(amountTwo) && amountOne >= 1 && amountOne <= 99 && amountTwo >= 1 && amountTwo <= 99) { entries.push(["amounts[]", amountOne]); entries.push(["amounts[]", amountTwo]); }
+    else return response({ error: "Enter the SM descriptor code or the two microdeposit amounts in cents." }, 400, cors);
+    try {
+      const setup = await stripeRequest(env.STRIPE_SECRET_KEY, `/setup_intents/${profile.bank_setup_intent_id}/verify_microdeposits`, entries, `breaker-bank-verify-${member.id}-${Date.now()}`);
+      const paymentMethod = typeof setup.payment_method === "string" ? setup.payment_method : String(setup.payment_method?.id || "");
+      if (setup.status !== "succeeded") return response({ error: "Bank verification is still pending." }, 409, cors);
+      await env.DB.prepare(`UPDATE breaker_profiles SET bank_payment_method_id=?,bank_verification_status='verified',bank_verification_locked_until=NULL,updated_at=? WHERE member_id=?`).bind(clean(paymentMethod, 120), now(), member.id).run();
+      return response({ verified: true, profile: breakerProfileView(await env.DB.prepare(`SELECT * FROM breaker_profiles WHERE member_id=?`).bind(member.id).first()) }, 200, cors);
+    } catch (error) {
+      const lockedUntil = new Date(Date.now() + 7 * 86400e3).toISOString();
+      await env.DB.prepare(`UPDATE breaker_profiles SET bank_verification_status='locked',bank_verification_failed_at=?,bank_verification_locked_until=?,updated_at=? WHERE member_id=?`).bind(now(), lockedUntil, now(), member.id).run();
+      await audit(env, request, "breaker_bank_microdeposit_failed_locked", member.id, lockedUntil);
+      return response({ error: `Microdeposit verification failed. Bank verification is locked for one week, until ${lockedUntil}.` }, 423, cors);
+    }
+  }
+  if (url.pathname === "/breaker/inventory" && request.method === "GET") {
+    const profile = await env.DB.prepare(`SELECT * FROM breaker_profiles WHERE member_id=?`).bind(member.id).first();
+    if (!profile) return response({ profile: breakerProfileView(null), inventory: [] }, 200, cors);
+    const rows = await env.DB.prepare(`SELECT * FROM breaker_inventory_items WHERE member_id=? ORDER BY updated_at DESC,product_name COLLATE NOCASE LIMIT 200`).bind(member.id).all();
+    return response({ profile: breakerProfileView(profile), inventory: (rows.results || []).map(breakerInventoryView) }, 200, cors);
+  }
+  if (url.pathname === "/breaker/inventory" && request.method === "POST") {
+    const { blocked, profile } = await requireActiveBreakerProfile(env, member, cors);
+    if (blocked) return blocked;
+    if (profile.bank_verification_status !== "verified" || profile.card_hold_status !== "verified") return response({ error: "Complete breaker bank and card verification before managing sellable inventory." }, 403, cors);
+    const data = await body(request);
+    const productName = clean(data?.productName, 160);
+    const unitType = breakerUnitTypes.has(String(data?.unitType || "")) ? String(data.unitType) : "sealed_box";
+    const quantity = Number(data?.quantity ?? 0);
+    const par = Number(data?.parQuantity ?? 0);
+    const reorder = Number(data?.reorderQuantity ?? 0);
+    const auto = data?.autoReorderEnabled === true ? 1 : 0;
+    if (!productName || !Number.isInteger(quantity) || quantity < 0 || quantity > 100000 || !Number.isInteger(par) || par < 0 || par > 100000 || !Number.isInteger(reorder) || reorder < 0 || reorder > 100000) return response({ error: "Check product name, quantity, PAR, and reorder quantity." }, 400, cors);
+    const createdAt = now(); const itemId = id();
+    await env.DB.prepare(`INSERT INTO breaker_inventory_items(id,member_id,source_inventory_item_id,sku,product_name,unit_type,packs_per_unit,quantity,inbound_quantity,par_quantity,reorder_quantity,auto_reorder_enabled,pending_reorder_quantity,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(itemId, member.id, null, normalizeSku(data?.sku), productName, unitType, Number.isInteger(Number(data?.packsPerUnit)) ? Number(data.packsPerUnit) : null, quantity, 0, par, reorder, auto, 0, createdAt, createdAt).run();
+    await env.DB.prepare(`INSERT INTO breaker_inventory_movements(id,breaker_inventory_item_id,member_id,movement_type,delta_quantity,resulting_quantity,note,created_at) VALUES(?,?,?,?,?,?,?,?)`).bind(id(), itemId, member.id, "manual_set", quantity, quantity, "Breaker product created", createdAt).run();
+    const saved = await env.DB.prepare(`SELECT * FROM breaker_inventory_items WHERE id=? AND member_id=?`).bind(itemId, member.id).first();
+    await maybeCreateBreakerReorder(env, saved, "auto_par", "Created below PAR with auto-order enabled");
+    return response({ item: breakerInventoryView(await env.DB.prepare(`SELECT * FROM breaker_inventory_items WHERE id=?`).bind(itemId).first()) }, 201, cors);
+  }
+  const breakerInventoryMatch = url.pathname.match(/^\/breaker\/inventory\/([0-9a-f-]{36})\/(settings|receive|sale)$/i);
+  if (breakerInventoryMatch && request.method === "POST") {
+    const activeProfile = await requireActiveBreakerProfile(env, member, cors);
+    if (activeProfile.blocked) return activeProfile.blocked;
+    if (activeProfile.profile.bank_verification_status !== "verified" || activeProfile.profile.card_hold_status !== "verified") return response({ error: "Complete breaker bank and card verification before managing sellable inventory." }, 403, cors);
+    const item = await env.DB.prepare(`SELECT * FROM breaker_inventory_items WHERE id=? AND member_id=?`).bind(breakerInventoryMatch[1], member.id).first();
+    if (!item) return response({ error: "Breaker inventory item not found." }, 404, cors);
+    const data = await body(request);
+    const action = breakerInventoryMatch[2].toLowerCase();
+    const updatedAt = now();
+    if (action === "settings") {
+      const par = Number(data?.parQuantity ?? item.par_quantity);
+      const reorder = Number(data?.reorderQuantity ?? item.reorder_quantity);
+      const auto = data?.autoReorderEnabled === true ? 1 : 0;
+      if (!Number.isInteger(par) || par < 0 || par > 100000 || !Number.isInteger(reorder) || reorder < 0 || reorder > 100000) return response({ error: "PAR and reorder quantity must be whole numbers." }, 400, cors);
+      await env.DB.prepare(`UPDATE breaker_inventory_items SET par_quantity=?,reorder_quantity=?,auto_reorder_enabled=?,updated_at=? WHERE id=? AND member_id=?`).bind(par, reorder, auto, updatedAt, item.id, member.id).run();
+    } else {
+      const quantity = Number(data?.quantity);
+      if (!Number.isInteger(quantity) || quantity < 1 || quantity > 100000) return response({ error: "Quantity must be a whole number." }, 400, cors);
+      if (action === "receive") {
+        const breakIntoPacks = data?.breakIntoPacks === true;
+        const deltaPacks = breakIntoPacks ? quantity * Math.max(1, Number(item.packs_per_unit || data?.packsPerUnit || 1)) : 0;
+        await env.DB.prepare(`UPDATE breaker_inventory_items SET quantity=quantity+?,inbound_quantity=MAX(inbound_quantity-?,0),updated_at=? WHERE id=? AND member_id=?`).bind(breakIntoPacks ? deltaPacks : quantity, quantity, updatedAt, item.id, member.id).run();
+        await env.DB.prepare(`INSERT INTO breaker_inventory_movements(id,breaker_inventory_item_id,member_id,movement_type,delta_quantity,resulting_quantity,note,created_at) VALUES(?,?,?,?,?,?,?,?)`).bind(id(), item.id, member.id, breakIntoPacks ? "break_packs_added" : "received", breakIntoPacks ? deltaPacks : quantity, null, breakIntoPacks ? "Received sealed product and added packs to break inventory" : "Received Crack Packs supply order", updatedAt).run();
+      } else if (action === "sale") {
+        if (Number(item.quantity || 0) < quantity) return response({ error: "Not enough breaker inventory to record that sale." }, 409, cors);
+        const buyerEmail = normalizeEmail(data?.buyerEmail || "");
+        if (buyerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(buyerEmail)) return response({ error: "Buyer email is invalid." }, 400, cors);
+        const saleOccurredAt = /^\d{4}-\d{2}-\d{2}T/.test(String(data?.saleOccurredAt || "")) ? new Date(data.saleOccurredAt).toISOString() : updatedAt;
+        const streamStartedAt = /^\d{4}-\d{2}-\d{2}T/.test(String(data?.streamStartedAt || "")) ? new Date(data.streamStartedAt).toISOString() : null;
+        const clipStartedAt = /^\d{4}-\d{2}-\d{2}T/.test(String(data?.clipStartedAt || "")) ? new Date(data.clipStartedAt).toISOString() : saleOccurredAt;
+        const clipEndedAt = /^\d{4}-\d{2}-\d{2}T/.test(String(data?.clipEndedAt || "")) ? new Date(data.clipEndedAt).toISOString() : null;
+        const offsetSeconds = streamStartedAt ? Math.max(0, Math.min(86400, Math.round((Date.parse(saleOccurredAt) - Date.parse(streamStartedAt)) / 1000))) : null;
+        const verifyToken = buyerEmail ? `VFY${randomString(61)}` : "";
+        const movementId = id();
+        const saleId = id();
+        await env.DB.batch([
+          env.DB.prepare(`UPDATE breaker_inventory_items SET quantity=quantity-?,sold_7d=sold_7d+?,sold_30d=sold_30d+?,last_sale_at=?,updated_at=? WHERE id=? AND member_id=? AND quantity>=?`).bind(quantity, quantity, quantity, saleOccurredAt, updatedAt, item.id, member.id, quantity),
+          env.DB.prepare(`INSERT INTO breaker_inventory_movements(id,breaker_inventory_item_id,member_id,movement_type,delta_quantity,resulting_quantity,note,created_at) VALUES(?,?,?,?,?,?,?,?)`).bind(movementId, item.id, member.id, "sale", -quantity, Number(item.quantity) - quantity, clean(data?.note || "Live sale deducted from breaker inventory", 300), saleOccurredAt),
+          env.DB.prepare(`INSERT INTO breaker_sales(id,member_id,breaker_inventory_item_id,movement_id,buyer_email,order_reference,quantity,sale_occurred_at,stream_started_at,stream_offset_seconds,clip_started_at,clip_ended_at,clip_url,stream_recording_url,buyer_verify_token_hash,verification_status,note,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
+            saleId, member.id, item.id, movementId, buyerEmail, clean(data?.orderReference || "", 120), quantity, saleOccurredAt, streamStartedAt, offsetSeconds, clipStartedAt, clipEndedAt, clean(data?.clipUrl || "", 500), clean(data?.streamRecordingUrl || "", 500), verifyToken ? await hash(verifyToken, env.AUTH_SECRET) : null, clean(data?.clipUrl || data?.streamRecordingUrl || "", 500) ? "recording_attached" : "pending_recording", clean(data?.note || "", 500), updatedAt
+          )
+        ]);
+        if (buyerEmail && verifyToken) {
+          const sale = await env.DB.prepare(`SELECT s.*,i.product_name,i.unit_type FROM breaker_sales s JOIN breaker_inventory_items i ON i.id=s.breaker_inventory_item_id WHERE s.id=?`).bind(saleId).first();
+          try {
+            await sendBreakerSaleVerificationEmail(env, sale, verifyToken);
+            await env.DB.prepare(`UPDATE breaker_sales SET buyer_verify_sent_at=? WHERE id=?`).bind(now(), saleId).run();
+          } catch (error) {
+            console.error("Breaker sale verification email failed", { saleId });
+          }
+        }
+      }
+    }
+    const saved = await env.DB.prepare(`SELECT * FROM breaker_inventory_items WHERE id=? AND member_id=?`).bind(item.id, member.id).first();
+    await maybeCreateBreakerReorder(env, saved, action === "sale" ? "live_sale" : "auto_par", action === "sale" ? "Live sale moved below PAR" : "Breaker inventory update moved below PAR");
+    return response({ item: breakerInventoryView(await env.DB.prepare(`SELECT * FROM breaker_inventory_items WHERE id=?`).bind(item.id).first()) }, 200, cors);
+  }
   if (url.pathname === "/store/checkout" && request.method === "POST") {
     if (String(env.STORE_COMING_SOON || "true") !== "false" || String(env.STORE_CHECKOUT_ENABLED || "false") !== "true") return response({ error: "Checkout is not open yet." }, 503, cors);
     if (!member.email_verified_at || !member.device_verified || member.identity_status !== "verified") return response({ error: "Complete your verified profile before checkout." }, 403, cors);
@@ -2371,6 +2750,131 @@ async function route(request, env, cors, ctx) {
       ORDER BY created_at DESC LIMIT 250
     `).bind(includeOwner ? 1 : 0, normalizeEmail(env.ADMIN_EMAIL), from, from, to, to, query, search, search, search).all();
     return response({ members: (rows.results || []).map(row => ({ id: row.id, email: row.email, firstName: row.first_name || "", lastName: row.last_name || "", whatnotUsername: row.whatnot_username || "", createdAt: row.created_at, qualifiedAt: row.referral_qualified_at || null, isOwner: normalizeEmail(row.email) === normalizeEmail(env.ADMIN_EMAIL) })) }, 200, cors);
+  }
+  if (url.pathname === "/admin/breaker-activations" && request.method === "GET") {
+    if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
+    const query = clean(url.searchParams.get("q"), 100).toLowerCase().replace(/[^a-z0-9@._+ -]/g, "");
+    const search = `%${query}%`;
+    const rows = await env.DB.prepare(`
+      SELECT a.*,target.email resolved_email,target.whatnot_username target_whatnot,used.email used_email
+      FROM breaker_activation_codes a
+      LEFT JOIN members target ON target.id=a.target_member_id
+      LEFT JOIN members used ON used.id=a.used_by_member_id
+      WHERE (?='' OR lower(a.target_email) LIKE ? OR lower(COALESCE(a.target_member_id,'')) LIKE ? OR lower(COALESCE(target.whatnot_username,'')) LIKE ?)
+      ORDER BY a.created_at DESC LIMIT 100
+    `).bind(query, search, search, search).all();
+    return response({ activations: (rows.results || []).map(row => ({ ...breakerActivationView(row), targetWhatnotUsername: row.target_whatnot || "", usedEmail: row.used_email || "", expired: row.expires_at < now() })) }, 200, cors);
+  }
+  if (url.pathname === "/admin/breaker-activations" && request.method === "POST") {
+    if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
+    const data = await body(request);
+    const rawTarget = clean(data?.target || data?.email || data?.userId, 254).trim();
+    const note = clean(data?.note || "", 300);
+    const send = data?.sendEmail !== false;
+    const hours = Math.min(168, Math.max(1, Number(data?.expiresHours || 72)));
+    if (!rawTarget) return response({ error: "Enter the breaker applicant email or user ID." }, 400, cors);
+    let targetMember = null;
+    let targetEmail = "";
+    if (/^[0-9a-f-]{36}$/i.test(rawTarget)) {
+      targetMember = await env.DB.prepare(`SELECT id,email,whatnot_username FROM members WHERE id=?`).bind(rawTarget).first();
+      if (!targetMember) return response({ error: "That user ID was not found." }, 404, cors);
+      targetEmail = normalizeEmail(targetMember.email);
+    } else {
+      targetEmail = normalizeEmail(rawTarget);
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(targetEmail)) return response({ error: "Enter a valid email or existing user ID." }, 400, cors);
+      targetMember = await env.DB.prepare(`SELECT id,email,whatnot_username FROM members WHERE email=?`).bind(targetEmail).first();
+    }
+    if (targetEmail === normalizeEmail(env.ADMIN_EMAIL)) return response({ error: "MASTER account does not need a breaker activation link." }, 400, cors);
+    const token = `BRK${randomString(61)}`;
+    const createdAt = now();
+    const expiresAt = new Date(Date.now() + hours * 3600e3).toISOString();
+    const activationUrl = `${String(env.SITE_URL || "https://crackpacks.com").replace(/\/+$/, "")}/referral.html?breaker_activate=${encodeURIComponent(token)}#breaker-profile`;
+    const activationId = id();
+    await env.DB.prepare(`
+      INSERT INTO breaker_activation_codes(id,target_email,target_member_id,code_hash,created_by_member_id,expires_at,note,created_at)
+      VALUES(?,?,?,?,?,?,?,?)
+    `).bind(activationId, targetEmail, targetMember?.id || null, await hash(token, env.AUTH_SECRET), member.id, expiresAt, note, createdAt).run();
+    if (targetMember) await ensureBreakerProfile(env, targetMember, {});
+    if (send) {
+      try { await sendBreakerActivationEmail(env, targetEmail, activationUrl, expiresAt, note); }
+      catch (error) {
+        console.error("Breaker activation email failed", { activationId, targetEmail });
+        await audit(env, request, "breaker_activation_email_failed", member.id, activationId);
+        return response({ activation: breakerActivationView({ id: activationId, target_email: targetEmail, target_member_id: targetMember?.id || "", expires_at: expiresAt, note, created_at: createdAt }), activationUrl, emailSent: false, warning: "Activation link was created, but email delivery failed. Copy and send the link manually." }, 201, cors);
+      }
+    }
+    await audit(env, request, "breaker_activation_created", member.id, `${activationId}|${targetEmail}|send:${send ? "1" : "0"}`);
+    return response({ activation: breakerActivationView({ id: activationId, target_email: targetEmail, target_member_id: targetMember?.id || "", expires_at: expiresAt, note, created_at: createdAt }), activationUrl, emailSent: send }, 201, cors);
+  }
+  if (url.pathname === "/admin/breaker-reorders" && request.method === "GET") {
+    if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
+    const status = ["pending_review", "approved", "ordered", "cancelled", "rejected", "all"].includes(url.searchParams.get("status") || "") ? url.searchParams.get("status") : "pending_review";
+    const query = clean(url.searchParams.get("q"), 100).toLowerCase().replace(/[^a-z0-9@._+ -]/g, "");
+    const search = `%${query}%`;
+    const rows = await env.DB.prepare(`
+      SELECT r.*,m.email,m.whatnot_username
+      FROM breaker_reorder_requests r JOIN members m ON m.id=r.member_id
+      WHERE (?='all' OR r.status=?) AND (?='' OR lower(r.product_name) LIKE ? OR lower(m.email) LIKE ? OR lower(COALESCE(m.whatnot_username,'')) LIKE ?)
+      ORDER BY r.created_at DESC LIMIT 200
+    `).bind(status, status, query, search, search, search).all();
+    return response({ reorders: (rows.results || []).map(breakerReorderView) }, 200, cors);
+  }
+  const breakerReorderAdminMatch = url.pathname.match(/^\/admin\/breaker-reorders\/([0-9a-f-]{36})\/status$/i);
+  if (breakerReorderAdminMatch && request.method === "POST") {
+    if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
+    const data = await body(request);
+    const status = ["approved", "ordered", "cancelled", "rejected"].includes(data?.status) ? data.status : "";
+    if (!status) return response({ error: "Choose approved, ordered, cancelled, or rejected." }, 400, cors);
+    const note = clean(data?.note || "", 500);
+    const existing = await env.DB.prepare(`SELECT * FROM breaker_reorder_requests WHERE id=?`).bind(breakerReorderAdminMatch[1]).first();
+    if (!existing) return response({ error: "Breaker reorder request not found." }, 404, cors);
+    const updatedAt = now();
+    await env.DB.prepare(`UPDATE breaker_reorder_requests SET status=?,note=COALESCE(NULLIF(?,''),note),reviewed_by_member_id=?,reviewed_at=?,updated_at=? WHERE id=?`).bind(status, note, member.id, updatedAt, updatedAt, existing.id).run();
+    if (["cancelled", "rejected"].includes(status)) await env.DB.prepare(`UPDATE breaker_inventory_items SET pending_reorder_quantity=MAX(pending_reorder_quantity-?,0),updated_at=? WHERE id=?`).bind(Number(existing.requested_quantity || 0), updatedAt, existing.breaker_inventory_item_id).run();
+    await audit(env, request, "breaker_reorder_status_updated", member.id, `${existing.id}|${status}`);
+    const saved = await env.DB.prepare(`SELECT r.*,m.email,m.whatnot_username FROM breaker_reorder_requests r JOIN members m ON m.id=r.member_id WHERE r.id=?`).bind(existing.id).first();
+    return response({ reorder: breakerReorderView(saved) }, 200, cors);
+  }
+  if (url.pathname === "/admin/breaker-usage" && request.method === "GET") {
+    if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
+    const query = clean(url.searchParams.get("q"), 100).toLowerCase().replace(/[^a-z0-9@._+ -]/g, "");
+    const search = `%${query}%`;
+    const rows = await env.DB.prepare(`
+      SELECT i.*,m.email,m.whatnot_username,p.usage_alert_email_enabled,p.usage_alert_sms_enabled,p.alert_phone,p.usage_alert_last_sent_at
+      FROM breaker_inventory_items i
+      JOIN members m ON m.id=i.member_id
+      JOIN breaker_profiles p ON p.member_id=i.member_id
+      WHERE p.status='active' AND (?='' OR lower(i.product_name) LIKE ? OR lower(i.sku) LIKE ? OR lower(m.email) LIKE ? OR lower(COALESCE(m.whatnot_username,'')) LIKE ?)
+      ORDER BY (CASE WHEN i.par_quantity>0 AND (i.quantity+i.inbound_quantity+i.pending_reorder_quantity)<i.par_quantity THEN 0 ELSE 1 END), i.last_sale_at DESC, i.updated_at DESC
+      LIMIT 250
+    `).bind(query, search, search, search, search).all();
+    return response({ usage: (rows.results || []).map(row => ({
+      ...breakerInventoryView(row),
+      memberId: row.member_id,
+      email: row.email || "",
+      whatnotUsername: row.whatnot_username || "",
+      usageAlertEmailEnabled: Boolean(row.usage_alert_email_enabled),
+      usageAlertSmsEnabled: Boolean(row.usage_alert_sms_enabled),
+      alertPhone: row.alert_phone || "",
+      usageAlertLastSentAt: row.usage_alert_last_sent_at || null
+    })) }, 200, cors);
+  }
+  if (url.pathname === "/admin/breaker-sales" && request.method === "GET") {
+    if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
+    const query = clean(url.searchParams.get("q"), 100).toLowerCase().replace(/[^a-z0-9@._+ -]/g, "");
+    const search = `%${query}%`;
+    const from = /^\d{4}-\d{2}-\d{2}$/.test(url.searchParams.get("from") || "") ? `${url.searchParams.get("from")}T00:00:00.000Z` : "";
+    const to = /^\d{4}-\d{2}-\d{2}$/.test(url.searchParams.get("to") || "") ? `${url.searchParams.get("to")}T23:59:59.999Z` : "";
+    const rows = await env.DB.prepare(`
+      SELECT s.*,i.product_name,i.unit_type,m.email,m.whatnot_username
+      FROM breaker_sales s
+      JOIN breaker_inventory_items i ON i.id=s.breaker_inventory_item_id
+      JOIN members m ON m.id=s.member_id
+      WHERE (?='' OR s.sale_occurred_at>=?) AND (?='' OR s.sale_occurred_at<=?)
+        AND (?='' OR lower(i.product_name) LIKE ? OR lower(s.buyer_email) LIKE ? OR lower(s.order_reference) LIKE ? OR lower(m.email) LIKE ? OR lower(COALESCE(m.whatnot_username,'')) LIKE ?)
+      ORDER BY s.sale_occurred_at DESC LIMIT 250
+    `).bind(from, from, to, to, query, search, search, search, search, search).all();
+    return response({ sales: (rows.results || []).map(breakerSaleView) }, 200, cors);
   }
   if (url.pathname === "/admin/orders" && request.method === "GET") {
     if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);

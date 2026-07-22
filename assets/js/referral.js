@@ -9,6 +9,13 @@
   const signupIntent = qs.get("intent") === "alerts" ? "alerts" : "";
   const hasAttachedReferral = Boolean(referralCode || ownerReferralToken);
   const verificationToken = String(qs.get("verify") || "");
+  const normalizeBreakerActivationToken = value => {
+    const candidate = String(value || "").trim().toUpperCase().slice(0, 96);
+    return /^BRK[A-HJ-NP-Z2-9]{24,93}$/.test(candidate) ? candidate : "";
+  };
+  const queryBreakerActivationToken = normalizeBreakerActivationToken(qs.get("breaker_activate"));
+  if (queryBreakerActivationToken) localStorage.setItem("cp_breaker_activation_token", queryBreakerActivationToken);
+  let breakerActivationToken = queryBreakerActivationToken || normalizeBreakerActivationToken(localStorage.getItem("cp_breaker_activation_token"));
   const normalizeOfferToken = value => {
     const candidate = String(value || "").trim().toUpperCase().slice(0, 64);
     return /^OFR[A-HJ-NP-Z2-9]{32}$/.test(candidate) ? candidate : "";
@@ -496,6 +503,57 @@
       const empty = document.createElement("div"); empty.className = "member-orders-empty"; empty.textContent = error.message; container.append(empty);
     }
   }
+  function setBreakerProfileStatus(message = "", kind = "") {
+    const node = $("[data-breaker-profile-status]");
+    if (!node) return;
+    node.textContent = message;
+    node.dataset.kind = kind;
+  }
+  function renderBreakerProfile(data = {}) {
+    const profile = data.profile || {};
+    const summary = $("[data-breaker-profile-summary]");
+    if (!summary) return;
+    summary.replaceChildren();
+    [
+      ["Status", String(profile.status || "not_started").replace(/_/g, " ")],
+      ["Activation", profile.activationRequired ? "MASTER link required" : profile.status === "active" ? "active" : "not started"],
+      ["Security", profile.securityComplete ? "complete" : "card/bank pending"]
+    ].forEach(([labelText, valueText]) => {
+      const item = document.createElement("div");
+      const label = document.createElement("span"); label.textContent = labelText;
+      const value = document.createElement("strong"); value.textContent = valueText;
+      item.append(label, value); summary.append(item);
+    });
+    const form = $("[data-breaker-profile-form]");
+    if (form) {
+      form.hidden = Boolean(profile.active);
+      form.elements.namedItem("businessName").value = profile.businessName || "";
+    }
+    const activateButton = $("[data-breaker-activate]");
+    if (activateButton) activateButton.hidden = !(breakerActivationToken && accountState?.deviceVerified && accountState?.profileComplete && profile.status !== "active");
+    if (profile.status === "pending_activation") setBreakerProfileStatus("Breaker Profile is locked until MASTER activation is used.", "error");
+    else if (profile.status === "active") setBreakerProfileStatus("Breaker Profile is active. Card hold, ACH bank verification, inventory, and sale tools can unlock from here.", "success");
+    else setBreakerProfileStatus("Start the Breaker Application, then wait for MASTER to send your one-time activation link.", "");
+  }
+  async function loadBreakerProfile() {
+    if (!token || !accountState?.deviceVerified || !accountState?.profileComplete) return;
+    try {
+      const data = await request("/breaker/profile");
+      renderBreakerProfile(data);
+      return data;
+    } catch (error) {
+      setBreakerProfileStatus(error.message, "error");
+    }
+  }
+  async function activateBreakerProfile() {
+    if (!breakerActivationToken) throw new Error("No MASTER breaker activation token was found on this device.");
+    const data = await request("/breaker/activate", { method: "POST", body: JSON.stringify({ token: breakerActivationToken }) });
+    localStorage.removeItem("cp_breaker_activation_token");
+    breakerActivationToken = "";
+    renderBreakerProfile(data);
+    showStatus("Breaker Profile activated.", "success");
+    return data;
+  }
   function renderAccount(data) {
     accountState = data;
     show("[data-auth-panel]", false);
@@ -533,6 +591,7 @@
     syncOfferClaimAvailability();
     loadMyCampaigns();
     loadMyOrders();
+    loadBreakerProfile();
     if (data.referredSignup && !welcomeDiscountLoaded && !offerToken && !activeOffer) {
       welcomeDiscountLoaded = true;
       show("[data-discount-panel]", true);
@@ -736,12 +795,19 @@
     showStatus("Invitation link copied.", "success");
   }
   document.querySelectorAll("[data-view]").forEach(button => button.addEventListener("click", async () => {
-    const inviteView = button.dataset.view === "invite";
-    show("[data-discount-panel]", button.dataset.view === "discount");
+    const view = button.dataset.view;
+    const inviteView = view === "invite";
+    show("[data-discount-panel]", view === "discount");
     show("[data-invite-panel]", inviteView);
-    if (button.dataset.view === "orders") {
+    show("[data-orders-panel]", view === "orders");
+    show("[data-breaker-panel]", view === "breaker");
+    if (view === "orders") {
       await loadMyOrders();
       $("[data-orders-panel]").scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    if (view === "breaker") {
+      await loadBreakerProfile();
+      $("[data-breaker-panel]").scrollIntoView({ behavior: "smooth", block: "start" });
     }
     if (inviteView && !accountState?.ownerReferralDashboardOnly) {
       try { await copyInviteLink(); }
@@ -912,6 +978,32 @@
   $("[data-offer-pack-number]").addEventListener("change", syncOfferClaimAvailability);
   $("[data-campaign-mine-refresh]").addEventListener("click", () => loadMyCampaigns());
   $("[data-orders-refresh]").addEventListener("click", () => loadMyOrders());
+  $("[data-breaker-profile-refresh]")?.addEventListener("click", () => loadBreakerProfile());
+  $("[data-breaker-profile-form]")?.addEventListener("submit", async event => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const button = form.querySelector("button[type='submit']");
+    button.disabled = true; button.textContent = "Starting...";
+    setBreakerProfileStatus("");
+    try {
+      const data = await request("/breaker/profile", { method: "POST", body: JSON.stringify({ businessName: new FormData(form).get("businessName") }) });
+      renderBreakerProfile(data);
+      showStatus("Breaker application started. MASTER can now authorize your email/user ID.", "success");
+    } catch (error) {
+      setBreakerProfileStatus(error.message, "error");
+    } finally {
+      button.disabled = false; button.textContent = "Start Breaker Application";
+    }
+  });
+  $("[data-breaker-activate]")?.addEventListener("click", event => {
+    const button = event.currentTarget;
+    button.disabled = true; button.textContent = "Activating...";
+    activateBreakerProfile().catch(error => {
+      button.disabled = false;
+      button.textContent = "Activate with MASTER Link";
+      setBreakerProfileStatus(error.message, "error");
+    });
+  });
   configureSocialLinks();
   loadOfferStatus();
   confirmEmailLink();
