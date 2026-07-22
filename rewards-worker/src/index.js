@@ -638,7 +638,7 @@ const breakerSaleView = row => ({
 async function sendBreakerSaleVerificationEmail(env, sale, token) {
   if (!sale?.buyer_email || !token) return false;
   const site = String(env.SITE_URL || "https://crackpacks.com").replace(/\/+$/, "");
-  const verifyUrl = `${site}/verify-order.html?sale=${encodeURIComponent(sale.id)}&token=${encodeURIComponent(token)}`;
+  const verifyUrl = `${site}/verify-order?sale=${encodeURIComponent(sale.id)}&token=${encodeURIComponent(token)}`;
   const clipText = sale.clip_url ? "Your clip is attached to the Verify Order page." : sale.stream_recording_url ? "The Verify Order page opens the stream recording at your rip timestamp." : "The clip will appear there after the stream recording is uploaded.";
   await sendOrderEmail(env, sale.buyer_email, `Verify your rip: ${sale.order_reference || sale.product_name}`, `<h1>Verify your Crack Packs rip</h1><p>Your breaker sale for <strong>${escapeHtml(sale.product_name)}</strong> was timestamped at ${escapeHtml(sale.sale_occurred_at)}.</p><p>${escapeHtml(clipText)}</p><p><a href="${escapeHtml(verifyUrl)}" style="display:inline-block;padding:14px 22px;background:#f8ff46;color:#070815;text-decoration:none;font-weight:bold;border-radius:10px">Open Verify Order</a></p><p>This private link is for confirming that the cards ripped on stream match what was shipped.</p>`, `breaker-sale-verify-${sale.id}`);
   return true;
