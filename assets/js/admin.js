@@ -397,6 +397,20 @@
       state.textContent = item.isActive ? item.campaignReady ? "Campaign ready" : Number(item.quantity || 0) > 0 ? "Fully reserved" : "No stock" : "Deactivated";
       head.append(identity, state);
 
+      const media = document.createElement("div");
+      media.className = "inventory-card-media";
+      if (item.imageDataUrl || item.imageUrl) {
+        const image = document.createElement("img");
+        image.src = item.imageDataUrl || item.imageUrl;
+        image.alt = `${item.name || "Product"} image`;
+        image.loading = "lazy";
+        const tag = document.createElement("span");
+        tag.textContent = item.imageDataUrl ? "Your photo" : "Placeholder / URL";
+        media.append(image, tag);
+      } else {
+        media.textContent = "No product image";
+      }
+
       const metrics = document.createElement("div");
       metrics.className = "inventory-card-metrics";
       [["On hand", String(Number(item.quantity || 0))], ["Campaign reserved", String(Number(item.committedUnits || 0))], ["Reference", formatMoney(item.averageMsrpCents)], ["Retail", formatMoney(item.channelPricing?.prices?.retail)], ["USA website", formatMoney(item.channelPricing?.prices?.websiteUs)], ["Whatnot", formatMoney(item.channelPricing?.prices?.whatnot)], ["Wholesale small", formatMoney(item.channelPricing?.prices?.wholesaleSmall)], ["Case", formatMoney(item.channelPricing?.prices?.wholesaleCase)], ["Pallet / large", formatMoney(item.channelPricing?.prices?.wholesalePallet)]].forEach(([labelText, valueText]) => {
@@ -443,7 +457,7 @@
       toggle.className = `btn ${item.isActive ? "btn-danger" : "btn-outline"} btn-small`; toggle.type = "button"; toggle.textContent = item.isActive ? "Turn Product Off" : "Turn Product On";
       toggle.addEventListener("click", () => toggleInventoryItem(item, toggle));
       actions.append(edit, post, toggle);
-      card.append(head, metrics, details, stockControl, actions);
+      card.append(head, media, metrics, details, stockControl, actions);
       container.append(card);
     });
   }
@@ -519,6 +533,65 @@
     if (announce) setInventoryStatus(`${inventoryItems.length} inventory product${inventoryItems.length === 1 ? "" : "s"} loaded.`, "success");
   }
   const setInventoryField = (form, name, value) => { const input = form.elements.namedItem(name); if (input) input.value = value ?? ""; };
+  function updateInventoryImagePreview() {
+    const form = $("[data-inventory-form]");
+    const preview = $("[data-inventory-image-preview]");
+    if (!form || !preview) return;
+    const imageDataUrl = String(form.elements.namedItem("imageDataUrl")?.value || "").trim();
+    const imageUrl = String(form.elements.namedItem("imageUrl")?.value || "").trim();
+    preview.replaceChildren();
+    const src = imageDataUrl || imageUrl;
+    if (!src) {
+      const empty = document.createElement("span");
+      empty.textContent = "No device photo uploaded yet.";
+      preview.append(empty);
+      preview.dataset.hasImage = "false";
+      return;
+    }
+    const img = document.createElement("img");
+    img.src = src;
+    img.alt = "Product image preview";
+    img.loading = "lazy";
+    const badge = document.createElement("strong");
+    badge.textContent = imageDataUrl ? "Uploaded device photo" : "URL preview";
+    preview.append(img, badge);
+    preview.dataset.hasImage = "true";
+  }
+  function resizeInventoryImage(file) {
+    return new Promise((resolve, reject) => {
+      if (!file || !/^image\/(png|jpe?g|webp)$/i.test(file.type)) return reject(new Error("Choose a JPG, PNG, or WebP product photo."));
+      if (file.size > 12 * 1024 * 1024) return reject(new Error("Choose a photo under 12 MB."));
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error("Could not read that image."));
+      reader.onload = () => {
+        const image = new Image();
+        image.onerror = () => reject(new Error("Could not load that image."));
+        image.onload = () => {
+          const maxSide = 900;
+          const scale = Math.min(1, maxSide / Math.max(image.naturalWidth || 1, image.naturalHeight || 1));
+          const width = Math.max(1, Math.round((image.naturalWidth || 1) * scale));
+          const height = Math.max(1, Math.round((image.naturalHeight || 1) * scale));
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          const context = canvas.getContext("2d", { alpha: false });
+          context.fillStyle = "#07091c";
+          context.fillRect(0, 0, width, height);
+          context.drawImage(image, 0, 0, width, height);
+          let quality = 0.82;
+          let dataUrl = canvas.toDataURL("image/jpeg", quality);
+          while (dataUrl.length > 235000 && quality > 0.48) {
+            quality -= 0.08;
+            dataUrl = canvas.toDataURL("image/jpeg", quality);
+          }
+          if (dataUrl.length > 240000) reject(new Error("That image is still too large after compression. Try cropping it smaller first."));
+          else resolve(dataUrl);
+        };
+        image.src = String(reader.result || "");
+      };
+      reader.readAsDataURL(file);
+    });
+  }
   function updateInventoryPricePreview() {
     const form = $("[data-inventory-form]");
     const readMoney = name => {
@@ -587,6 +660,7 @@
     setInventoryField(form, "category", item?.category || "");
     setInventoryField(form, "quantity", item ? Number(item.quantity || 0) : 0);
     setInventoryField(form, "imageUrl", item?.imageUrl || "");
+    setInventoryField(form, "imageDataUrl", item?.imageDataUrl || "");
     setInventoryField(form, "description", item?.description || "");
     setInventoryField(form, "averageMsrp", moneyInputValue(item?.averageMsrpCents));
     setInventoryField(form, "referencePriceLabel", item?.referencePriceLabel || "Retail reference price");
@@ -625,6 +699,7 @@
     $("[data-inventory-modal]").hidden = false;
     updateInventoryPricePreview();
     updateInventoryPackingPreview();
+    updateInventoryImagePreview();
     form.elements.namedItem("name").focus();
   }
   function closeInventoryModal() {
@@ -649,6 +724,7 @@
       category: String(form.elements.namedItem("category").value || "").trim(),
       quantity: Number(form.elements.namedItem("quantity").value || 0),
       imageUrl: String(form.elements.namedItem("imageUrl").value || "").trim(),
+      imageDataUrl: String(form.elements.namedItem("imageDataUrl").value || "").trim(),
       description: String(form.elements.namedItem("description").value || "").trim(),
       averageMsrpCents: inventoryMoneyCents(form, "averageMsrp"),
       referencePriceLabel: String(form.elements.namedItem("referencePriceLabel").value || "").trim(),
@@ -685,7 +761,7 @@
     };
   }
   const inventoryPayloadFromItem = (item, overrides = {}) => ({
-    name: item.name, upc: item.upc || "", sku: item.sku || "", category: item.category || "", quantity: Number(item.quantity || 0), imageUrl: item.imageUrl || "", description: item.description || "",
+    name: item.name, upc: item.upc || "", sku: item.sku || "", category: item.category || "", quantity: Number(item.quantity || 0), imageUrl: item.imageUrl || "", imageDataUrl: item.imageDataUrl || "", description: item.description || "",
     averageMsrpCents: item.averageMsrpCents ?? null, referencePriceLabel: item.referencePriceLabel || "Retail reference price", referencePriceObservedAt: item.referencePriceObservedAt || "", sourceUrl: item.sourceUrl || "",
     cogsCents: item.cogsCents ?? null, usShippingCents: item.usShippingCents ?? null, profitCents: item.profitCents ?? 1000,
     packagingCents: item.packagingCents ?? null, overheadCents: item.overheadCents ?? null, retailFixedFeeCents: item.retailFixedFeeCents ?? null, wholesaleHandlingCents: item.wholesaleHandlingCents ?? null,
@@ -1821,6 +1897,28 @@
     finally { button.disabled = false; button.textContent = "Create Order + Tracking"; }
   });
   document.querySelectorAll("[data-inventory-close]").forEach(button => button.addEventListener("click", closeInventoryModal));
+  $("[data-inventory-image-upload]")?.addEventListener("change", async event => {
+    const file = event.currentTarget.files?.[0];
+    if (!file) return;
+    const form = $("[data-inventory-form]");
+    setInventoryFormStatus("Compressing product photo...", "");
+    try {
+      form.elements.namedItem("imageDataUrl").value = await resizeInventoryImage(file);
+      updateInventoryImagePreview();
+      setInventoryFormStatus("Product photo loaded. Save the product to publish it.", "success");
+    } catch (error) {
+      setInventoryFormStatus(error.message, "error");
+    } finally {
+      event.currentTarget.value = "";
+    }
+  });
+  $("[data-inventory-image-clear]")?.addEventListener("click", () => {
+    const form = $("[data-inventory-form]");
+    form.elements.namedItem("imageDataUrl").value = "";
+    updateInventoryImagePreview();
+    setInventoryFormStatus("Uploaded product photo removed. Save the product to keep this change.", "success");
+  });
+  $("[data-inventory-form]").elements.namedItem("imageUrl")?.addEventListener("input", updateInventoryImagePreview);
   ["cogs", "usShipping", "packaging", "overhead", "retailFixedFee", "wholesaleHandling", "retailListPrice", "websiteListPrice", "internationalListPrice", "whatnotListPrice", "wholesaleSmallListPrice", "wholesaleCaseListPrice", "wholesalePalletListPrice"].forEach(name => $("[data-inventory-form]").elements.namedItem(name).addEventListener("input", updateInventoryPricePreview));
   ["productWeightOz", "packagingWeightLb", "weightOz", "productLengthIn", "productWidthIn", "productHeightIn", "lengthIn", "widthIn", "heightIn"].forEach(name => $("[data-inventory-form]").elements.namedItem(name)?.addEventListener("input", updateInventoryPackingPreview));
   $("[data-inventory-form]").elements.namedItem("isActive").addEventListener("change", updateInventoryPricePreview);

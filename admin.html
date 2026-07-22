@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.6.1">
   <link rel="stylesheet" href="assets/css/referral.css?v=2.6.0">
   <link rel="stylesheet" href="assets/css/rewards-modal.css?v=2.1.0">
-  <link rel="stylesheet" href="assets/css/admin.css?v=3.5.0">
+    <link rel="stylesheet" href="assets/css/admin.css?v=3.6.0">
 </head>
 <body>
   <header class="site-header">
@@ -343,6 +343,17 @@
             <label>Category<input name="category" maxlength="64" placeholder="Booster Box"></label>
             <label>Quantity on hand<input name="quantity" type="number" min="0" max="100000" step="1" value="0" required inputmode="numeric"></label>
             <label class="inventory-span-2">Image or local asset URL<input name="imageUrl" maxlength="500" placeholder="https://... or assets/images/product.svg"></label>
+            <div class="inventory-image-uploader inventory-span-2" data-inventory-image-uploader>
+              <input name="imageDataUrl" type="hidden">
+              <div class="inventory-image-preview" data-inventory-image-preview>
+                <span>No device photo uploaded yet.</span>
+              </div>
+              <div class="inventory-image-actions">
+                <label class="btn btn-outline btn-small">Upload product photo from device<input type="file" accept="image/png,image/jpeg,image/webp" data-inventory-image-upload hidden></label>
+                <button class="btn btn-outline btn-small" type="button" data-inventory-image-clear>Remove uploaded photo</button>
+              </div>
+              <p class="fine-print">Use your own photos here. The dashboard compresses the image for the storefront before saving.</p>
+            </div>
             <label class="inventory-span-2">Description<textarea name="description" maxlength="1000" rows="3" placeholder="Collector-facing product description"></textarea></label>
           </div>
         </fieldset>
@@ -487,6 +498,6 @@
 
   <script src="assets/js/config.js?v=3.0.0"></script>
   <script src="assets/js/nav-profile.js?v=2.6.1"></script>
-  <script src="assets/js/admin.js?v=3.5.0"></script>
+  <script src="assets/js/admin.js?v=3.6.0"></script>
 </body>
 </html>

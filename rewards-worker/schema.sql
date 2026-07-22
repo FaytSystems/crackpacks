@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS inventory_items (
   category TEXT NOT NULL DEFAULT '' CHECK(length(category) <= 64),
   description TEXT NOT NULL DEFAULT '' CHECK(length(description) <= 1000),
   image_url TEXT NOT NULL DEFAULT '' CHECK(length(image_url) <= 500),
+  image_data_url TEXT NOT NULL DEFAULT '' CHECK(length(image_data_url) <= 240000),
   source_url TEXT NOT NULL DEFAULT '' CHECK(length(source_url) <= 500),
   quantity INTEGER NOT NULL DEFAULT 0 CHECK(quantity BETWEEN 0 AND 100000),
   average_msrp_cents INTEGER CHECK(average_msrp_cents IS NULL OR average_msrp_cents BETWEEN 0 AND 100000000),

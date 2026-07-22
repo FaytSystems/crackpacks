@@ -5,7 +5,7 @@ import { calculateChannelPricing, channelPricingErrors } from "./channel-pricing
 import { sanitizeEasyPostTracker, verifyEasyPostWebhook } from "./easypost-tracking.js";
 import { stripeRequest, verifyStripeWebhook } from "./stripe-commerce.js";
 
-const VERSION = "4.4.0";
+const VERSION = "4.5.0";
 const CAMPAIGN_REWARD_TYPES = new Set(["percent", "free_shipping", "pick_a_pack", "pack_draft", "free_single", "product"]);
 const MAX_CAMPAIGN_REDEMPTIONS = 500;
 const STORE_CURRENCIES = new Set(["USD", "CAD", "EUR", "GBP", "AUD", "NZD", "JPY", "CHF", "SEK", "NOK", "DKK", "PLN", "CZK", "HUF", "RON"]);
@@ -169,12 +169,13 @@ function parseInventoryItemInput(data) {
   const rawCategory = boundedString(data?.category, 64);
   const rawDescription = boundedString(data?.description, 1000);
   const rawImageUrl = boundedString(data?.imageUrl, 500);
+  const rawImageDataUrl = boundedString(data?.imageDataUrl, 240000);
   const rawSourceUrl = boundedString(data?.sourceUrl, 500);
   const rawPackingNotes = boundedString(data?.packingNotes, 500);
   const rawOriginCountry = boundedString(data?.originCountry, 2);
   const rawHsCode = boundedString(data?.hsCode, 12);
   const rawReferenceLabel = boundedString(data?.referencePriceLabel, 80);
-  if ([rawName, rawUpc, rawSku, rawCategory, rawDescription, rawImageUrl, rawSourceUrl, rawPackingNotes, rawOriginCountry, rawHsCode, rawReferenceLabel].includes(null)) return { error: "Inventory text is too long." };
+  if ([rawName, rawUpc, rawSku, rawCategory, rawDescription, rawImageUrl, rawImageDataUrl, rawSourceUrl, rawPackingNotes, rawOriginCountry, rawHsCode, rawReferenceLabel].includes(null)) return { error: "Inventory text is too long." };
   const stripePaylink = parseStripePaylinkInput(data?.stripePaylink || data?.stripePaylinkUrl || data?.stripeBuyButtonEmbed || "");
   if (stripePaylink.error) return { error: stripePaylink.error };
   const name = clean(rawName, 120);
@@ -186,10 +187,12 @@ function parseInventoryItemInput(data) {
   if (upc && !/^\d{6,18}$/.test(upc)) return { error: "UPC must contain 6 to 18 digits." };
   if (String(rawSku || "").trim() && (sku.length < 3 || sku.length > 64)) return { error: "SKU must contain 3 to 64 letters, numbers, dashes, underscores, or dots." };
   const imageUrl = String(rawImageUrl || "").trim();
+  const imageDataUrl = String(rawImageDataUrl || "").trim();
   const sourceUrl = String(rawSourceUrl || "").trim();
   for (const [label, value] of [["Image URL", imageUrl], ["Source URL", sourceUrl]]) {
     if (value && !/^https:\/\//i.test(value) && !/^assets\/images\/[a-z0-9._/-]+$/i.test(value)) return { error: `${label} must use HTTPS or a local assets/images path.` };
   }
+  if (imageDataUrl && !/^data:image\/(?:jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$/i.test(imageDataUrl)) return { error: "Uploaded product image must be a compressed JPG, PNG, or WebP image." };
   const quantity = optionalInteger(data?.quantity ?? 0, 0, 100000);
   const averageMsrpCents = optionalInteger(data?.averageMsrpCents, 0, 100000000);
   const cogsCents = optionalInteger(data?.cogsCents, 0, 100000000);
@@ -226,7 +229,7 @@ function parseInventoryItemInput(data) {
   const referencePriceObservedAt = String(data?.referencePriceObservedAt || "").trim();
   if (referencePriceObservedAt && !/^\d{4}-\d{2}-\d{2}$/.test(referencePriceObservedAt)) return { error: "Reference-price date must use YYYY-MM-DD." };
   const item = {
-      name, upc: upc || null, sku, category: clean(rawCategory, 64), description: String(rawDescription || "").trim(), imageUrl, sourceUrl,
+      name, upc: upc || null, sku, category: clean(rawCategory, 64), description: String(rawDescription || "").trim(), imageUrl, imageDataUrl, sourceUrl,
       quantity, averageMsrpCents, referencePriceLabel: clean(rawReferenceLabel || "Retail reference price", 80), referencePriceObservedAt: referencePriceObservedAt || null,
       cogsCents, usShippingCents, profitCents, packagingCents, overheadCents, retailFixedFeeCents, wholesaleHandlingCents,
       retailListPriceCents, websiteListPriceCents, internationalListPriceCents, whatnotListPriceCents,
@@ -450,6 +453,7 @@ const inventoryItemView = row => {
   category: row.category || "",
   description: row.description || "",
   imageUrl: row.image_url || "",
+  imageDataUrl: row.image_data_url || "",
   sourceUrl: row.source_url || "",
   quantity,
   committedUnits,
@@ -567,7 +571,7 @@ function publicStoreItem(row, market, currency, fx) {
     name: row.name,
     category: row.category || "Trading Card Product",
     description: row.description || "",
-    imageUrl: row.image_url || "assets/images/product-cosmic.svg",
+    imageUrl: row.image_data_url || row.image_url || "assets/images/product-cosmic.svg",
     sourceUrl: row.source_url || "",
     available: availableQuantity > 0,
     quantityLabel: availableQuantity > 0 ? "Available" : "Coming Soon",
@@ -1938,11 +1942,11 @@ async function route(request, env, cors, ctx) {
     const createdAt = now();
     const statements = ALL_STARTER_INVENTORY.map(starterInventoryDetails).map(item => env.DB.prepare(`
       INSERT INTO inventory_items(
-        id,owner_member_id,public_slug,name,upc,sku,category,description,image_url,source_url,quantity,average_msrp_cents,
+        id,owner_member_id,public_slug,name,upc,sku,category,description,image_url,image_data_url,source_url,quantity,average_msrp_cents,
         reference_price_label,reference_price_observed_at,cogs_cents,us_shipping_cents,profit_cents,
         product_weight_oz,packaging_weight_oz,product_length_in,product_width_in,product_height_in,weight_oz,length_in,width_in,height_in,
         origin_country,hs_code,packing_notes,stripe_paylink_url,stripe_buy_button_id,stripe_publishable_key,is_store_visible,is_active,created_at,updated_at
-      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
       ON CONFLICT(public_slug) DO UPDATE SET
         average_msrp_cents=excluded.average_msrp_cents,
         reference_price_label=excluded.reference_price_label,
@@ -1965,7 +1969,7 @@ async function route(request, env, cors, ctx) {
     `).bind(
       id(), member.id, item.publicSlug, item.name, item.upc, starterSku(item), item.category,
       item.description,
-      item.imageUrl, item.sourceUrl, 0, item.averageMsrpCents, item.referencePriceLabel, item.referencePriceObservedAt, null, null, 1000,
+      item.imageUrl, "", item.sourceUrl, 0, item.averageMsrpCents, item.referencePriceLabel, item.referencePriceObservedAt, null, null, 1000,
       item.productWeightOz, item.packagingWeightOz, item.productLengthIn, item.productWidthIn, item.productHeightIn, item.weightOz, item.lengthIn, item.widthIn, item.heightIn,
       "", "", item.packingNotes, "", "", "", 1, 1, createdAt, createdAt
     ));
@@ -1978,7 +1982,7 @@ async function route(request, env, cors, ctx) {
   if (url.pathname === "/admin/inventory" && request.method === "POST") {
     if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
     const contentLength = Number(request.headers.get("Content-Length") || 0);
-    if (Number.isFinite(contentLength) && contentLength > 16000) return response({ error: "Inventory request is too large." }, 413, cors);
+    if (Number.isFinite(contentLength) && contentLength > 260000) return response({ error: "Inventory request is too large. Upload a smaller product image." }, 413, cors);
     const parsed = parseInventoryItemInput(await body(request));
     if (parsed.error) return response({ error: parsed.error }, 400, cors);
     const item = parsed.item;
@@ -1989,16 +1993,16 @@ async function route(request, env, cors, ctx) {
     try {
       await env.DB.prepare(`
         INSERT INTO inventory_items(
-          id,owner_member_id,public_slug,name,upc,sku,category,description,image_url,source_url,quantity,average_msrp_cents,
+          id,owner_member_id,public_slug,name,upc,sku,category,description,image_url,image_data_url,source_url,quantity,average_msrp_cents,
           reference_price_label,reference_price_observed_at,cogs_cents,us_shipping_cents,profit_cents,
           packaging_cents,overhead_cents,retail_fixed_fee_cents,wholesale_handling_cents,
           retail_list_price_cents,website_list_price_cents,international_list_price_cents,whatnot_list_price_cents,
           wholesale_small_list_price_cents,wholesale_case_list_price_cents,wholesale_pallet_list_price_cents,
           product_weight_oz,packaging_weight_oz,product_length_in,product_width_in,product_height_in,weight_oz,length_in,width_in,height_in,
           origin_country,hs_code,packing_notes,stripe_paylink_url,stripe_buy_button_id,stripe_publishable_key,is_store_visible,is_active,created_at,updated_at
-        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
       `).bind(
-        inventoryId, member.id, publicSlug, item.name, item.upc, sku, item.category, item.description, item.imageUrl, item.sourceUrl, item.quantity,
+        inventoryId, member.id, publicSlug, item.name, item.upc, sku, item.category, item.description, item.imageUrl, item.imageDataUrl, item.sourceUrl, item.quantity,
         item.averageMsrpCents, item.referencePriceLabel, item.referencePriceObservedAt, item.cogsCents, item.usShippingCents, item.profitCents,
         item.packagingCents, item.overheadCents, item.retailFixedFeeCents, item.wholesaleHandlingCents,
         item.retailListPriceCents, item.websiteListPriceCents, item.internationalListPriceCents, item.whatnotListPriceCents,
@@ -2028,6 +2032,8 @@ async function route(request, env, cors, ctx) {
   const adminInventoryMatch = url.pathname.match(/^\/admin\/inventory\/([0-9a-f-]{36})$/i);
   if (adminInventoryMatch && request.method === "POST") {
     if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
+    const contentLength = Number(request.headers.get("Content-Length") || 0);
+    if (Number.isFinite(contentLength) && contentLength > 260000) return response({ error: "Inventory request is too large. Upload a smaller product image." }, 413, cors);
     const parsed = parseInventoryItemInput(await body(request));
     if (parsed.error) return response({ error: parsed.error }, 400, cors);
     const item = parsed.item;
@@ -2035,7 +2041,7 @@ async function route(request, env, cors, ctx) {
     try {
       const updated = await env.DB.prepare(`
         UPDATE inventory_items SET
-          name=?,upc=?,sku=?,category=?,description=?,image_url=?,source_url=?,quantity=?,average_msrp_cents=?,reference_price_label=?,reference_price_observed_at=?,
+          name=?,upc=?,sku=?,category=?,description=?,image_url=?,image_data_url=?,source_url=?,quantity=?,average_msrp_cents=?,reference_price_label=?,reference_price_observed_at=?,
           cogs_cents=?,us_shipping_cents=?,profit_cents=?,packaging_cents=?,overhead_cents=?,retail_fixed_fee_cents=?,wholesale_handling_cents=?,
           retail_list_price_cents=?,website_list_price_cents=?,international_list_price_cents=?,whatnot_list_price_cents=?,
           wholesale_small_list_price_cents=?,wholesale_case_list_price_cents=?,wholesale_pallet_list_price_cents=?,
@@ -2045,7 +2051,7 @@ async function route(request, env, cors, ctx) {
           is_store_visible=?,is_active=?,updated_at=?
         WHERE id=? AND owner_member_id=?
       `).bind(
-        item.name, item.upc, item.sku || generatedSku(item, adminInventoryMatch[1].slice(0, 4)), item.category, item.description, item.imageUrl, item.sourceUrl, item.quantity, item.averageMsrpCents,
+        item.name, item.upc, item.sku || generatedSku(item, adminInventoryMatch[1].slice(0, 4)), item.category, item.description, item.imageUrl, item.imageDataUrl, item.sourceUrl, item.quantity, item.averageMsrpCents,
         item.referencePriceLabel, item.referencePriceObservedAt, item.cogsCents, item.usShippingCents, item.profitCents,
         item.packagingCents, item.overheadCents, item.retailFixedFeeCents, item.wholesaleHandlingCents,
         item.retailListPriceCents, item.websiteListPriceCents, item.internationalListPriceCents, item.whatnotListPriceCents,
