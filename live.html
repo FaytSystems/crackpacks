@@ -38,9 +38,20 @@
           <button type="button" data-slide-handle aria-label="Slide to bid">SLIDE TO BID</button>
         </div>
         <form class="custom-bid-form" data-custom-bid-form>
+          <div class="custom-bid-live">
+            <div>
+              <span>Live current bid</span>
+              <strong data-custom-live-current>$0.00</strong>
+            </div>
+            <div>
+              <span>Minimum next bid</span>
+              <strong data-custom-live-min>$0.00</strong>
+            </div>
+          </div>
           <label>Set Your Bid
             <input name="bidAmount" type="number" min="1" step="0.01" inputmode="decimal" placeholder="Enter your max bid">
           </label>
+          <p class="custom-bid-help" data-custom-bid-help>Enter the amount you want to bid. This updates live while the auction moves.</p>
           <button class="btn btn-primary" type="submit">Set Your Bid</button>
         </form>
         <p class="bid-state-copy" data-bid-state-copy>Sign in to your Profile before bidding.</p>
