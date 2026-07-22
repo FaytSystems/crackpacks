@@ -5,7 +5,7 @@ import { calculateChannelPricing, channelPricingErrors } from "./channel-pricing
 import { sanitizeEasyPostTracker, verifyEasyPostWebhook } from "./easypost-tracking.js";
 import { stripeRequest, verifyStripeWebhook } from "./stripe-commerce.js";
 
-const VERSION = "4.7.0";
+const VERSION = "4.8.0";
 const CAMPAIGN_REWARD_TYPES = new Set(["percent", "free_shipping", "pick_a_pack", "pack_draft", "free_single", "product"]);
 const MAX_CAMPAIGN_REDEMPTIONS = 500;
 const STORE_CURRENCIES = new Set(["USD", "CAD", "EUR", "GBP", "AUD", "NZD", "JPY", "CHF", "SEK", "NOK", "DKK", "PLN", "CZK", "HUF", "RON"]);
@@ -668,6 +668,92 @@ async function cloudflareStreamClip(env, videoUid, startSeconds, endSeconds, met
   if (!result.ok || payload.success === false) throw new Error(payload?.errors?.[0]?.message || "Cloudflare Stream could not create the clip.");
   return payload.result || payload;
 }
+async function cloudflareStreamRequest(env, path, init = {}) {
+  if (!env.CLOUDFLARE_ACCOUNT_ID || !env.CLOUDFLARE_STREAM_API_TOKEN) throw new Error("CLOUDFLARE_STREAM_NOT_CONFIGURED");
+  const result = await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}${path}`, {
+    ...init,
+    headers: { Authorization: `Bearer ${env.CLOUDFLARE_STREAM_API_TOKEN}`, "Content-Type": "application/json", ...(init.headers || {}) }
+  });
+  const payload = await result.json().catch(() => ({}));
+  if (!result.ok || payload.success === false) throw new Error(payload?.errors?.[0]?.message || "Cloudflare Stream request failed.");
+  return payload.result || payload;
+}
+async function createCloudflareLiveInput(env, member, adminMember) {
+  const name = `Crack Packs Breaker - ${member.whatnot_username || member.email}`;
+  return cloudflareStreamRequest(env, "/stream/live_inputs", {
+    method: "POST",
+    body: JSON.stringify({
+      meta: { name, memberId: member.id, email: member.email, createdBy: adminMember?.email || "" },
+      enabled: true,
+      preferLowLatency: true,
+      recording: { mode: "automatic", timeoutSeconds: 0, requireSignedURLs: false, allowedOrigins: ["crackpacks.com", "www.crackpacks.com"], hideLiveViewerCount: true }
+    })
+  });
+}
+const breakerStreamInputView = row => row ? ({
+  memberId: row.member_id,
+  liveInputUid: row.cloudflare_live_input_uid || "",
+  rtmpsUrl: row.rtmps_url || "",
+  rtmpsStreamKey: row.rtmps_stream_key || "",
+  srtUrl: row.srt_url || "",
+  srtStreamId: row.srt_stream_id || "",
+  srtPassphrase: row.srt_passphrase || "",
+  status: row.status || "created",
+  createdAt: row.created_at,
+  updatedAt: row.updated_at
+}) : null;
+const breakerStreamSessionView = row => row ? ({
+  id: row.id,
+  memberId: row.member_id,
+  liveInputUid: row.cloudflare_live_input_uid || "",
+  recordingVideoUid: row.cloudflare_recording_video_uid || "",
+  title: row.title || "",
+  status: row.status || "open",
+  startedAt: row.started_at,
+  endedAt: row.ended_at || null,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at
+}) : null;
+const breakerStreamEventView = row => row ? ({
+  id: row.id,
+  sessionId: row.session_id,
+  memberId: row.member_id,
+  type: row.event_type,
+  at: row.event_at,
+  buyerEmail: row.buyer_email || "",
+  orderReference: row.order_reference || "",
+  note: row.note || "",
+  createdAt: row.created_at
+}) : null;
+const auctionLotView = (row, viewerMemberId = "") => {
+  if (!row) return null;
+  const current = Number(row.current_bid_cents ?? row.starting_bid_cents ?? 0);
+  const minNext = row.current_bid_cents ? current + Number(row.bid_increment_cents || 100) : Number(row.starting_bid_cents || 100);
+  const viewerWinning = Boolean(viewerMemberId && row.winning_member_id === viewerMemberId && row.status === "live");
+  const soldAtMs = row.sold_at ? Date.parse(row.sold_at) : 0;
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    breakerMemberId: row.member_id,
+    title: row.title,
+    description: row.description || "",
+    status: row.status,
+    startingBidCents: Number(row.starting_bid_cents || 0),
+    bidIncrementCents: Number(row.bid_increment_cents || 0),
+    currentBidCents: row.current_bid_cents === null || row.current_bid_cents === undefined ? null : Number(row.current_bid_cents),
+    minNextBidCents: minNext,
+    winningMemberId: row.winning_member_id || "",
+    winningDisplay: row.winning_display || row.winning_email || "",
+    viewerWinning,
+    viewerBidState: row.status !== "live" ? row.status : viewerWinning ? "winning" : row.winning_member_id ? "losing" : "ready",
+    openedAt: row.opened_at || null,
+    closesAt: row.closes_at || null,
+    soldAt: row.sold_at || null,
+    winnerBannerUntil: soldAtMs ? new Date(soldAtMs + 5000).toISOString() : null,
+    showWinnerBanner: Boolean(soldAtMs && Date.now() - soldAtMs <= 5000),
+    updatedAt: row.updated_at
+  };
+};
 async function resolveBreakerClip(env, { videoUid, recordingUrl, clipStartIso, clipEndIso, streamStartIso, saleId, orderReference }) {
   const duration = secondsBetween(clipStartIso, clipEndIso);
   const streamOffset = streamStartIso ? secondsBetween(streamStartIso, clipStartIso) : null;
@@ -1745,6 +1831,123 @@ async function route(request, env, cors, ctx) {
     await audit(env, request, "breaker_profile_started", member.id, profile.business_name || "");
     return response({ profile: breakerProfileView(profile) }, 201, cors);
   }
+  if (url.pathname === "/breaker/stream" && request.method === "GET") {
+    const { blocked, profile } = await requireActiveBreakerProfile(env, member, cors);
+    if (blocked) return blocked;
+    const input = await env.DB.prepare(`SELECT * FROM breaker_stream_inputs WHERE member_id=?`).bind(member.id).first();
+    const session = await env.DB.prepare(`SELECT * FROM breaker_stream_sessions WHERE member_id=? ORDER BY started_at DESC LIMIT 1`).bind(member.id).first();
+    const events = session ? await env.DB.prepare(`SELECT * FROM breaker_stream_events WHERE session_id=? ORDER BY event_at ASC`).bind(session.id).all() : { results: [] };
+    return response({ profile: breakerProfileView(profile), streamInput: breakerStreamInputView(input), session: breakerStreamSessionView(session), events: (events.results || []).map(breakerStreamEventView) }, 200, cors);
+  }
+  if (url.pathname === "/breaker/stream/session" && request.method === "POST") {
+    const { blocked } = await requireActiveBreakerProfile(env, member, cors);
+    if (blocked) return blocked;
+    const input = await env.DB.prepare(`SELECT * FROM breaker_stream_inputs WHERE member_id=?`).bind(member.id).first();
+    if (!input) return response({ error: "MASTER must create your OBS stream key before you can start a stream session." }, 409, cors);
+    const open = await env.DB.prepare(`SELECT * FROM breaker_stream_sessions WHERE member_id=? AND status IN ('open','live') ORDER BY started_at DESC LIMIT 1`).bind(member.id).first();
+    if (open) return response({ session: breakerStreamSessionView(open), streamInput: breakerStreamInputView(input) }, 200, cors);
+    const data = await body(request);
+    const createdAt = now();
+    const sessionId = id();
+    await env.DB.batch([
+      env.DB.prepare(`INSERT INTO breaker_stream_sessions(id,member_id,cloudflare_live_input_uid,title,status,started_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)`).bind(sessionId, member.id, input.cloudflare_live_input_uid, clean(data?.title || `Breaker stream ${new Date().toLocaleDateString("en-US")}`, 160), "live", createdAt, createdAt, createdAt),
+      env.DB.prepare(`INSERT INTO breaker_stream_events(id,session_id,member_id,event_type,event_at,note,created_at) VALUES(?,?,?,?,?,?,?)`).bind(id(), sessionId, member.id, "stream_start", createdAt, "Breaker stream session started", createdAt)
+    ]);
+    await audit(env, request, "breaker_stream_session_started", member.id, sessionId);
+    return response({ session: breakerStreamSessionView(await env.DB.prepare(`SELECT * FROM breaker_stream_sessions WHERE id=?`).bind(sessionId).first()), streamInput: breakerStreamInputView(input) }, 201, cors);
+  }
+  if (url.pathname === "/breaker/stream/event" && request.method === "POST") {
+    const { blocked } = await requireActiveBreakerProfile(env, member, cors);
+    if (blocked) return blocked;
+    const data = await body(request);
+    const eventType = ["auction_start", "auction_won", "next_auction_start", "stream_end", "recording_ready"].includes(data?.type) ? data.type : "";
+    if (!eventType) return response({ error: "Choose auction_start, auction_won, next_auction_start, stream_end, or recording_ready." }, 400, cors);
+    const session = await env.DB.prepare(`SELECT * FROM breaker_stream_sessions WHERE member_id=? AND status IN ('open','live','ended') ORDER BY started_at DESC LIMIT 1`).bind(member.id).first();
+    if (!session) return response({ error: "Start a Breaker stream session first." }, 409, cors);
+    const eventAt = /^\d{4}-\d{2}-\d{2}T/.test(String(data?.eventAt || "")) ? new Date(data.eventAt).toISOString() : now();
+    const buyerEmail = normalizeEmail(data?.buyerEmail || "");
+    if (buyerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(buyerEmail)) return response({ error: "Buyer email is invalid." }, 400, cors);
+    const eventId = id();
+    const nextStatus = eventType === "stream_end" ? "ended" : eventType === "recording_ready" ? "recording_ready" : "live";
+    const recordingUid = clean(data?.recordingVideoUid || data?.cloudflareVideoUid || "", 64).replace(/[^a-z0-9_-]/gi, "");
+    await env.DB.batch([
+      env.DB.prepare(`INSERT INTO breaker_stream_events(id,session_id,member_id,event_type,event_at,buyer_email,order_reference,note,created_at) VALUES(?,?,?,?,?,?,?,?,?)`).bind(eventId, session.id, member.id, eventType, eventAt, buyerEmail, clean(data?.orderReference || "", 120), clean(data?.note || "", 500), now()),
+      env.DB.prepare(`UPDATE breaker_stream_sessions SET status=?,ended_at=CASE WHEN ?='stream_end' THEN ? ELSE ended_at END,cloudflare_recording_video_uid=COALESCE(NULLIF(?,''),cloudflare_recording_video_uid),updated_at=? WHERE id=? AND member_id=?`).bind(nextStatus, eventType, eventAt, recordingUid, now(), session.id, member.id)
+    ]);
+    await audit(env, request, "breaker_stream_event", member.id, `${session.id}|${eventType}`);
+    const saved = await env.DB.prepare(`SELECT * FROM breaker_stream_sessions WHERE id=?`).bind(session.id).first();
+    const events = await env.DB.prepare(`SELECT * FROM breaker_stream_events WHERE session_id=? ORDER BY event_at ASC`).bind(session.id).all();
+    return response({ session: breakerStreamSessionView(saved), events: (events.results || []).map(breakerStreamEventView) }, 201, cors);
+  }
+  if (url.pathname === "/breaker/auction/lot" && request.method === "POST") {
+    const { blocked } = await requireActiveBreakerProfile(env, member, cors);
+    if (blocked) return blocked;
+    const session = await env.DB.prepare(`SELECT * FROM breaker_stream_sessions WHERE member_id=? AND status IN ('open','live') ORDER BY started_at DESC LIMIT 1`).bind(member.id).first();
+    if (!session) return response({ error: "Start a Breaker stream session before opening an auction." }, 409, cors);
+    const data = await body(request);
+    const title = clean(data?.title, 160);
+    const starting = Math.round(Number(data?.startingBidCents ?? data?.startingBid ?? 100));
+    const increment = Math.round(Number(data?.bidIncrementCents ?? data?.bidIncrement ?? 100));
+    if (!title || !Number.isInteger(starting) || starting < 1 || !Number.isInteger(increment) || increment < 1) return response({ error: "Enter an auction title, starting bid cents, and bid increment cents." }, 400, cors);
+    const createdAt = now();
+    const lotId = id();
+    await env.DB.prepare(`INSERT INTO breaker_auction_lots(id,session_id,member_id,title,description,status,starting_bid_cents,bid_increment_cents,opened_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`).bind(lotId, session.id, member.id, title, clean(data?.description || "", 1000), "live", starting, increment, createdAt, createdAt, createdAt).run();
+    await audit(env, request, "breaker_auction_lot_opened", member.id, lotId);
+    const lot = await env.DB.prepare(`SELECT lot.*,winner.email winning_email,winner.whatnot_username winning_display FROM breaker_auction_lots lot LEFT JOIN members winner ON winner.id=lot.winning_member_id WHERE lot.id=?`).bind(lotId).first();
+    return response({ lot: auctionLotView(lot, member.id) }, 201, cors);
+  }
+  const breakerLotCloseMatch = url.pathname.match(/^\/breaker\/auction\/lots\/([0-9a-f-]{36})\/close$/i);
+  if (breakerLotCloseMatch && request.method === "POST") {
+    const { blocked } = await requireActiveBreakerProfile(env, member, cors);
+    if (blocked) return blocked;
+    const lot = await env.DB.prepare(`SELECT * FROM breaker_auction_lots WHERE id=? AND member_id=?`).bind(breakerLotCloseMatch[1], member.id).first();
+    if (!lot) return response({ error: "Auction lot was not found." }, 404, cors);
+    if (lot.status !== "live") return response({ error: "Only a live auction can be closed." }, 409, cors);
+    const soldAt = now();
+    await env.DB.batch([
+      env.DB.prepare(`UPDATE breaker_auction_lots SET status='sold',sold_at=?,updated_at=? WHERE id=? AND member_id=?`).bind(soldAt, soldAt, lot.id, member.id),
+      env.DB.prepare(`UPDATE breaker_auction_bids SET status=CASE WHEN bidder_member_id=? THEN 'winning' ELSE 'outbid' END WHERE lot_id=?`).bind(lot.winning_member_id || "", lot.id),
+      env.DB.prepare(`INSERT INTO breaker_stream_events(id,session_id,member_id,event_type,event_at,buyer_email,order_reference,note,created_at) VALUES(?,?,?,?,?,?,?,?,?)`).bind(id(), lot.session_id, member.id, "next_auction_start", soldAt, "", "", `Auction closed: ${lot.title}`, soldAt)
+    ]);
+    await audit(env, request, "breaker_auction_lot_closed", member.id, lot.id);
+    const saved = await env.DB.prepare(`SELECT lot.*,winner.email winning_email,winner.whatnot_username winning_display FROM breaker_auction_lots lot LEFT JOIN members winner ON winner.id=lot.winning_member_id WHERE lot.id=?`).bind(lot.id).first();
+    return response({ lot: auctionLotView(saved, member.id) }, 200, cors);
+  }
+  if (url.pathname === "/live/auction" && request.method === "GET") {
+    const lot = await env.DB.prepare(`
+      SELECT lot.*,winner.email winning_email,winner.whatnot_username winning_display
+      FROM breaker_auction_lots lot
+      LEFT JOIN members winner ON winner.id=lot.winning_member_id
+      WHERE lot.status='live' OR (lot.status='sold' AND lot.sold_at>?)
+      ORDER BY CASE WHEN lot.status='live' THEN 0 ELSE 1 END, lot.updated_at DESC LIMIT 1
+    `).bind(new Date(Date.now() - 5000).toISOString()).first();
+    return response({ lot: auctionLotView(lot, member.id), serverNow: now() }, 200, cors);
+  }
+  const liveBidMatch = url.pathname.match(/^\/live\/auction\/lots\/([0-9a-f-]{36})\/bid$/i);
+  if (liveBidMatch && request.method === "POST") {
+    if (!member.email_verified_at || !member.device_verified || member.identity_status !== "verified") return response({ error: "Complete verified Profile before bidding." }, 403, cors);
+    const lot = await env.DB.prepare(`SELECT * FROM breaker_auction_lots WHERE id=? AND status='live'`).bind(liveBidMatch[1]).first();
+    if (!lot) return response({ error: "That auction is not live." }, 404, cors);
+    if (lot.member_id === member.id) return response({ error: "Breakers cannot bid on their own auction." }, 403, cors);
+    const data = await body(request).catch(() => ({}));
+    const nextAmount = Number(lot.current_bid_cents ?? 0) > 0 ? Number(lot.current_bid_cents) + Number(lot.bid_increment_cents || 100) : Number(lot.starting_bid_cents || 100);
+    const rawCustomBid = data?.amountCents ?? data?.customBidCents ?? data?.bidAmountCents;
+    const rawDollarBid = data?.bidAmount ?? data?.amountDollars ?? data?.customBid;
+    let customAmount = null;
+    if (rawCustomBid !== undefined && rawCustomBid !== null && rawCustomBid !== "") customAmount = Math.round(Number(rawCustomBid));
+    else if (rawDollarBid !== undefined && rawDollarBid !== null && rawDollarBid !== "") customAmount = Math.round(Number(rawDollarBid) * 100);
+    if (customAmount !== null && (!Number.isInteger(customAmount) || customAmount < nextAmount)) return response({ error: `Set Your Bid must be at least ${money(nextAmount)}.` }, 400, cors);
+    if (customAmount !== null && customAmount > 100000000) return response({ error: "Set Your Bid is too high. Enter a smaller amount." }, 400, cors);
+    const bidAmount = customAmount || nextAmount;
+    const createdAt = now();
+    await env.DB.batch([
+      env.DB.prepare(`UPDATE breaker_auction_bids SET status='outbid' WHERE lot_id=? AND status='leading'`).bind(lot.id),
+      env.DB.prepare(`INSERT INTO breaker_auction_bids(id,lot_id,bidder_member_id,amount_cents,status,created_at) VALUES(?,?,?,?,?,?)`).bind(id(), lot.id, member.id, bidAmount, "leading", createdAt),
+      env.DB.prepare(`UPDATE breaker_auction_lots SET current_bid_cents=?,winning_member_id=?,updated_at=? WHERE id=? AND status='live'`).bind(bidAmount, member.id, createdAt, lot.id)
+    ]);
+    const saved = await env.DB.prepare(`SELECT lot.*,winner.email winning_email,winner.whatnot_username winning_display FROM breaker_auction_lots lot LEFT JOIN members winner ON winner.id=lot.winning_member_id WHERE lot.id=?`).bind(lot.id).first();
+    return response({ lot: auctionLotView(saved, member.id) }, 201, cors);
+  }
   if (url.pathname === "/breaker/security/card-hold" && request.method === "POST") {
     if (!member.email_verified_at || !member.device_verified || member.identity_status !== "verified") return response({ error: "Complete identity and passkey verification before card verification." }, 403, cors);
     if (!env.STRIPE_SECRET_KEY) return response({ error: "Stripe is not configured for breaker card verification." }, 503, cors);
@@ -1861,15 +2064,21 @@ async function route(request, env, cors, ctx) {
         if (Number(item.quantity || 0) < quantity) return response({ error: "Not enough breaker inventory to record that sale." }, 409, cors);
         const buyerEmail = normalizeEmail(data?.buyerEmail || "");
         if (buyerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(buyerEmail)) return response({ error: "Buyer email is invalid." }, 400, cors);
-        const saleOccurredAt = /^\d{4}-\d{2}-\d{2}T/.test(String(data?.saleOccurredAt || "")) ? new Date(data.saleOccurredAt).toISOString() : updatedAt;
-        const streamStartedAt = /^\d{4}-\d{2}-\d{2}T/.test(String(data?.streamStartedAt || "")) ? new Date(data.streamStartedAt).toISOString() : null;
-        const clipStartedAt = /^\d{4}-\d{2}-\d{2}T/.test(String(data?.clipStartedAt || "")) ? new Date(data.clipStartedAt).toISOString() : saleOccurredAt;
-        const clipEndedAt = /^\d{4}-\d{2}-\d{2}T/.test(String(data?.clipEndedAt || "")) ? new Date(data.clipEndedAt).toISOString() : null;
+        const requestedSessionId = /^[0-9a-f-]{36}$/i.test(String(data?.streamSessionId || "")) ? String(data.streamSessionId) : "";
+        const session = requestedSessionId
+          ? await env.DB.prepare(`SELECT * FROM breaker_stream_sessions WHERE id=? AND member_id=?`).bind(requestedSessionId, member.id).first()
+          : await env.DB.prepare(`SELECT * FROM breaker_stream_sessions WHERE member_id=? AND status IN ('open','live','ended','recording_ready') ORDER BY started_at DESC LIMIT 1`).bind(member.id).first();
+        const wonEvent = session ? await env.DB.prepare(`SELECT * FROM breaker_stream_events WHERE session_id=? AND event_type='auction_won' ORDER BY event_at DESC LIMIT 1`).bind(session.id).first() : null;
+        const nextAuctionEvent = session && wonEvent ? await env.DB.prepare(`SELECT * FROM breaker_stream_events WHERE session_id=? AND event_type='next_auction_start' AND event_at>? ORDER BY event_at ASC LIMIT 1`).bind(session.id, wonEvent.event_at).first() : null;
+        const saleOccurredAt = /^\d{4}-\d{2}-\d{2}T/.test(String(data?.saleOccurredAt || "")) ? new Date(data.saleOccurredAt).toISOString() : wonEvent?.event_at || updatedAt;
+        const streamStartedAt = /^\d{4}-\d{2}-\d{2}T/.test(String(data?.streamStartedAt || "")) ? new Date(data.streamStartedAt).toISOString() : session?.started_at || null;
+        const clipStartedAt = /^\d{4}-\d{2}-\d{2}T/.test(String(data?.clipStartedAt || "")) ? new Date(data.clipStartedAt).toISOString() : wonEvent?.event_at || saleOccurredAt;
+        const clipEndedAt = /^\d{4}-\d{2}-\d{2}T/.test(String(data?.clipEndedAt || "")) ? new Date(data.clipEndedAt).toISOString() : nextAuctionEvent?.event_at || null;
         const offsetSeconds = streamStartedAt ? Math.max(0, Math.min(86400, Math.round((Date.parse(saleOccurredAt) - Date.parse(streamStartedAt)) / 1000))) : null;
         const verifyToken = buyerEmail ? `VFY${randomString(61)}` : "";
         const movementId = id();
         const saleId = id();
-        const cloudflareVideoUid = clean(data?.cloudflareVideoUid || data?.videoUid || "", 64).replace(/[^a-z0-9_-]/gi, "");
+        const cloudflareVideoUid = clean(data?.cloudflareVideoUid || data?.videoUid || session?.cloudflare_recording_video_uid || "", 64).replace(/[^a-z0-9_-]/gi, "");
         const streamRecordingUrl = clean(data?.streamRecordingUrl || "", 500);
         const clipDecision = data?.clipUrl
           ? { method: "manual", clipUrl: clean(data.clipUrl, 500), clippedVideoUid: "", durationSeconds: secondsBetween(clipStartedAt, clipEndedAt), error: "" }
@@ -1877,10 +2086,10 @@ async function route(request, env, cors, ctx) {
         await env.DB.batch([
           env.DB.prepare(`UPDATE breaker_inventory_items SET quantity=quantity-?,sold_7d=sold_7d+?,sold_30d=sold_30d+?,last_sale_at=?,updated_at=? WHERE id=? AND member_id=? AND quantity>=?`).bind(quantity, quantity, quantity, saleOccurredAt, updatedAt, item.id, member.id, quantity),
           env.DB.prepare(`INSERT INTO breaker_inventory_movements(id,breaker_inventory_item_id,member_id,movement_type,delta_quantity,resulting_quantity,note,created_at) VALUES(?,?,?,?,?,?,?,?)`).bind(movementId, item.id, member.id, "sale", -quantity, Number(item.quantity) - quantity, clean(data?.note || "Live sale deducted from breaker inventory", 300), saleOccurredAt),
-          env.DB.prepare(`INSERT INTO breaker_sales(id,member_id,breaker_inventory_item_id,movement_id,buyer_email,order_reference,quantity,sale_occurred_at,stream_started_at,stream_offset_seconds,clip_started_at,clip_ended_at,clip_url,stream_recording_url,cloudflare_video_uid,cloudflare_clipped_video_uid,clip_method,clip_duration_seconds,clip_error,buyer_verify_token_hash,verification_status,note,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
+          env.DB.prepare(`INSERT INTO breaker_sales(id,member_id,breaker_inventory_item_id,movement_id,buyer_email,order_reference,quantity,sale_occurred_at,stream_started_at,stream_offset_seconds,clip_started_at,clip_ended_at,clip_url,stream_recording_url,cloudflare_video_uid,cloudflare_clipped_video_uid,clip_method,clip_duration_seconds,clip_error,stream_session_id,auction_won_event_id,next_auction_event_id,buyer_verify_token_hash,verification_status,note,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
             saleId, member.id, item.id, movementId, buyerEmail, clean(data?.orderReference || "", 120), quantity, saleOccurredAt, streamStartedAt, offsetSeconds, clipStartedAt, clipEndedAt,
             clean(clipDecision.clipUrl || "", 500), streamRecordingUrl, cloudflareVideoUid, clean(clipDecision.clippedVideoUid || "", 64), clipDecision.method || "pending", clipDecision.durationSeconds ?? null, clean(clipDecision.error || "", 500),
-            verifyToken ? await hash(verifyToken, env.AUTH_SECRET) : null, (clipDecision.clipUrl || streamRecordingUrl) ? "recording_attached" : "pending_recording", clean(data?.note || "", 500), updatedAt
+            session?.id || null, wonEvent?.id || null, nextAuctionEvent?.id || null, verifyToken ? await hash(verifyToken, env.AUTH_SECRET) : null, (clipDecision.clipUrl || streamRecordingUrl) ? "recording_attached" : "pending_recording", clean(data?.note || "", 500), updatedAt
           )
         ]);
         if (buyerEmail && verifyToken) {
@@ -2935,6 +3144,54 @@ async function route(request, env, cors, ctx) {
       ORDER BY s.sale_occurred_at DESC LIMIT 250
     `).bind(from, from, to, to, query, search, search, search, search, search).all();
     return response({ sales: (rows.results || []).map(breakerSaleView) }, 200, cors);
+  }
+  if (url.pathname === "/admin/breaker-streams" && request.method === "GET") {
+    if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
+    const query = clean(url.searchParams.get("q"), 100).toLowerCase().replace(/[^a-z0-9@._+ -]/g, "");
+    const search = `%${query}%`;
+    const rows = await env.DB.prepare(`
+      SELECT p.member_id,m.email,m.whatnot_username,m.first_name,m.last_name,p.business_name,p.status profile_status,
+             input.cloudflare_live_input_uid,input.rtmps_url,input.rtmps_stream_key,input.srt_url,input.srt_stream_id,input.srt_passphrase,input.status,input.created_at,input.updated_at,
+             session.id session_id,session.title session_title,session.status session_status,session.started_at session_started_at,session.ended_at session_ended_at,session.cloudflare_recording_video_uid
+      FROM breaker_profiles p
+      JOIN members m ON m.id=p.member_id
+      LEFT JOIN breaker_stream_inputs input ON input.member_id=p.member_id
+      LEFT JOIN breaker_stream_sessions session ON session.id=(SELECT id FROM breaker_stream_sessions latest WHERE latest.member_id=p.member_id ORDER BY latest.started_at DESC LIMIT 1)
+      WHERE (?='' OR lower(m.email) LIKE ? OR lower(COALESCE(m.whatnot_username,'')) LIKE ? OR lower(COALESCE(p.business_name,'')) LIKE ?)
+      ORDER BY input.updated_at DESC,p.updated_at DESC LIMIT 200
+    `).bind(query, search, search, search).all();
+    return response({ streams: (rows.results || []).map(row => ({
+      member: { id: row.member_id, email: row.email, whatnotUsername: row.whatnot_username || "", name: `${row.first_name || ""} ${row.last_name || ""}`.trim(), businessName: row.business_name || "", profileStatus: row.profile_status },
+      streamInput: breakerStreamInputView(row.cloudflare_live_input_uid ? row : null),
+      latestSession: row.session_id ? { id: row.session_id, title: row.session_title || "", status: row.session_status || "", startedAt: row.session_started_at, endedAt: row.session_ended_at || null, recordingVideoUid: row.cloudflare_recording_video_uid || "" } : null
+    })) }, 200, cors);
+  }
+  if (url.pathname === "/admin/breaker-streams" && request.method === "POST") {
+    if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
+    const data = await body(request);
+    const memberId = String(data?.memberId || "");
+    if (!/^[0-9a-f-]{36}$/i.test(memberId)) return response({ error: "Choose a breaker member ID." }, 400, cors);
+    const breaker = await env.DB.prepare(`
+      SELECT m.*,p.status profile_status,p.business_name FROM members m JOIN breaker_profiles p ON p.member_id=m.id
+      WHERE m.id=? AND p.status='active' AND m.email_verified_at IS NOT NULL AND m.identity_status='verified'
+    `).bind(memberId).first();
+    if (!breaker) return response({ error: "That active verified breaker was not found." }, 404, cors);
+    const existing = await env.DB.prepare(`SELECT * FROM breaker_stream_inputs WHERE member_id=?`).bind(memberId).first();
+    if (existing && data?.rotate !== true) return response({ streamInput: breakerStreamInputView(existing), existing: true }, 200, cors);
+    let liveInput;
+    try { liveInput = await createCloudflareLiveInput(env, breaker, member); }
+    catch (error) {
+      if (error.message === "CLOUDFLARE_STREAM_NOT_CONFIGURED") return response({ error: "Cloudflare Stream secrets are not configured." }, 503, cors);
+      return response({ error: `Cloudflare Stream could not create a live input: ${error.message}` }, 502, cors);
+    }
+    const createdAt = now();
+    await env.DB.prepare(`
+      INSERT INTO breaker_stream_inputs(member_id,cloudflare_live_input_uid,rtmps_url,rtmps_stream_key,srt_url,srt_stream_id,srt_passphrase,status,created_by_member_id,created_at,updated_at)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?)
+      ON CONFLICT(member_id) DO UPDATE SET cloudflare_live_input_uid=excluded.cloudflare_live_input_uid,rtmps_url=excluded.rtmps_url,rtmps_stream_key=excluded.rtmps_stream_key,srt_url=excluded.srt_url,srt_stream_id=excluded.srt_stream_id,srt_passphrase=excluded.srt_passphrase,status='enabled',created_by_member_id=excluded.created_by_member_id,updated_at=excluded.updated_at
+    `).bind(memberId, clean(liveInput.uid, 64), clean(liveInput.rtmps?.url || "", 300), clean(liveInput.rtmps?.streamKey || "", 500), clean(liveInput.srt?.url || "", 500), clean(liveInput.srt?.streamId || "", 300), clean(liveInput.srt?.passphrase || "", 300), "enabled", member.id, createdAt, createdAt).run();
+    await audit(env, request, "breaker_stream_input_created", member.id, `${memberId}|${liveInput.uid}`);
+    return response({ streamInput: breakerStreamInputView(await env.DB.prepare(`SELECT * FROM breaker_stream_inputs WHERE member_id=?`).bind(memberId).first()) }, 201, cors);
   }
   if (url.pathname === "/admin/orders" && request.method === "GET") {
     if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
