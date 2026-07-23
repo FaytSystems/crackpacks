@@ -30,6 +30,7 @@
   let authRequestSent = false;
   let authRequestPending = false;
   let authMode = hasAttachedReferral || qs.get("mode") === "signup" ? "signup" : "signin";
+  const returnTarget = String(qs.get("return") || "").trim().toLowerCase();
   let accountState = null;
   let welcomeDiscountLoaded = false;
   let attachedReferralValid = !hasAttachedReferral;
@@ -1162,12 +1163,25 @@
       const signedIn = data.authFlow === "signin" || data.authFlow === "admin" || data.authFlow === "legacy";
       showStatus(accountReady ? "Signed in to your Profile." : signedIn ? "Signed in. Continue account verification." : "Email verified. Continue secure account verification.", "success");
       renderAccount(data.account);
+      if (returnTarget === "store" && signedIn && accountReady) {
+        if (data.account.isAdmin || data.account.sellerAccess) {
+          localStorage.setItem("cp_portal_mode", "seller");
+          sessionStorage.setItem("cp_portal_mode", "seller");
+          window.location.replace("streams.html");
+          return;
+        }
+        localStorage.setItem("cp_portal_mode", "buyer");
+        sessionStorage.setItem("cp_portal_mode", "buyer");
+        window.location.replace("shop.html");
+        return;
+      }
     } catch (error) {
       const preserved = new URLSearchParams();
       if (ownerReferralToken) preserved.set("owner_ref", ownerReferralToken);
       else if (referralCode) preserved.set("ref", referralCode);
       if (offerToken) preserved.set("offer", offerToken);
       if (authMode === "signup") preserved.set("mode", "signup");
+      if (returnTarget) preserved.set("return", returnTarget);
       const query = preserved.toString();
       history.replaceState({}, document.title, `${location.pathname}${query ? `?${query}` : ""}`);
       showStatus(error.message, "error");
