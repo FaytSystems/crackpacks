@@ -80,6 +80,7 @@
           <button type="button" data-master-section-button="tracking"><span>07</span><strong>Orders</strong><small>Member tracking</small></button>
           <button type="button" data-master-section-button="identity"><span>08</span><strong>Identity Review</strong><small>Resolve account collisions</small></button>
           <button type="button" data-master-section-button="sellers"><span>09</span><strong>Sellers</strong><small>Issue one-time access</small></button>
+          <button type="button" data-master-section-button="streaming"><span>10</span><strong>Streaming</strong><small>Plans &amp; credit pricing</small></button>
         </nav>
         <section class="reward-card owner-referral-card" data-owner-referral data-master-section="create_link">
           <div class="owner-referral-grid">
@@ -284,6 +285,56 @@
           <div class="dashboard-head"><div><p class="eyebrow">Seller supply queue</p><h3>PAR-triggered reorders</h3></div><button class="btn btn-outline btn-small" type="button" data-admin-reorders-refresh>Refresh</button></div>
           <div class="campaign-form-status" data-admin-reorders-status aria-live="polite"></div>
           <div class="admin-results" data-admin-reorders-list></div>
+        </section>
+        <section class="reward-card" data-master-section="streaming" hidden>
+          <div class="dashboard-head">
+            <div><p class="eyebrow">Seller billing controls</p><h2>Stream Credits configuration</h2></div>
+            <button class="btn btn-outline btn-small" type="button" data-stream-config-refresh>Refresh</button>
+          </div>
+          <p>Versioned pricing and credit conversions control the seller plan calculator, dashboard projections, rebates, and overage comparisons.</p>
+          <form class="inventory-form" data-stream-config-form>
+            <fieldset>
+              <legend>Credit conversion</legend>
+              <div class="inventory-form-grid inventory-money-grid">
+                <label>Delivered minutes per credit<input name="deliveryMinutesPerCredit" type="number" min="1" step="1" inputmode="numeric" required></label>
+                <label>Stored minutes per credit<input name="storageMinutesPerCredit" type="number" min="1" step="1" inputmode="numeric" required></label>
+                <label>Replay reserve %<input name="replayReservePercentage" type="number" min="0" step="0.01" inputmode="decimal" required></label>
+                <label>Safety buffer %<input name="safetyBufferPercentage" type="number" min="0" step="0.01" inputmode="decimal" required></label>
+                <label>Retention days<input name="recordingRetentionDays" type="number" min="0" step="1" inputmode="numeric" required></label>
+                <label>Finalization delay hours<input name="finalizationDelayHours" type="number" min="0" step="1" inputmode="numeric" required></label>
+              </div>
+            </fieldset>
+            <fieldset>
+              <legend>Prices and rebate value</legend>
+              <div class="inventory-form-grid inventory-money-grid">
+                <label>Underlying credit value ($)<input name="streamCreditUnderlyingValue" type="number" min="0" step="0.01" inputmode="decimal" required></label>
+                <label>Prepaid extra credit price ($)<input name="prepaidExtraCreditPrice" type="number" min="0" step="0.01" inputmode="decimal" required></label>
+                <label>Pay-as-you-go overage ($)<input name="paygOveragePrice" type="number" min="0" step="0.01" inputmode="decimal" required></label>
+                <label>Unused-credit rebate ($)<input name="unusedCreditRebateRate" type="number" min="0" step="0.01" inputmode="decimal" required></label>
+                <label>Cash-out threshold ($)<input name="cashOutThreshold" type="number" min="0" step="0.01" inputmode="decimal" required></label>
+                <label>Default spend limit ($)<input name="spendingLimitDefault" type="number" min="0" step="0.01" inputmode="decimal" required></label>
+              </div>
+            </fieldset>
+            <fieldset>
+              <legend>Public plans</legend>
+              <div class="inventory-form-grid inventory-money-grid">
+                <label>Starter price ($)<input name="starterPrice" type="number" min="0" step="0.01" inputmode="decimal" required></label>
+                <label>Starter credits<input name="starterCredits" type="number" min="0" step="0.01" inputmode="decimal" required></label>
+                <label>Growth price ($)<input name="growthPrice" type="number" min="0" step="0.01" inputmode="decimal" required></label>
+                <label>Growth credits<input name="growthCredits" type="number" min="0" step="0.01" inputmode="decimal" required></label>
+                <label>Pro price ($)<input name="proPrice" type="number" min="0" step="0.01" inputmode="decimal" required></label>
+                <label>Pro credits<input name="proCredits" type="number" min="0" step="0.01" inputmode="decimal" required></label>
+                <label>Power price ($)<input name="powerPrice" type="number" min="0" step="0.01" inputmode="decimal" required></label>
+                <label>Power credits<input name="powerCredits" type="number" min="0" step="0.01" inputmode="decimal" required></label>
+              </div>
+            </fieldset>
+            <label>Owner note<textarea name="notes" maxlength="300" rows="3" placeholder="Why this pricing version changed"></textarea></label>
+            <div class="campaign-form-status" data-stream-config-status aria-live="polite"></div>
+            <div class="campaign-modal-actions">
+              <button class="btn btn-primary" type="submit">Save new pricing version</button>
+              <button class="btn btn-outline" type="button" data-stream-cycle-run>Run alerts + finalization now</button>
+            </div>
+          </form>
         </section>
       </section>
     </section>

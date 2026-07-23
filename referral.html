@@ -185,6 +185,40 @@
             <a class="btn btn-outline" href="streams.html">Open live hub</a>
           </div>
         </section>
+        <section class="reward-card" data-seller-only data-stream-credits-panel hidden>
+          <div class="campaign-history-head">
+            <div><p class="eyebrow">Streaming plans</p><h3>Find the right streaming plan</h3></div>
+            <button class="btn btn-outline btn-small" type="button" data-stream-credits-refresh>Refresh</button>
+          </div>
+          <p>Tell Crack Packs how often you expect to stream and the size of your usual live audience. We’ll estimate your Stream Credit usage and recommend the plan projected to cost the least.</p>
+          <form class="username-settings-form" data-stream-credits-form>
+            <div class="field-grid">
+              <label>Average concurrent viewers<input name="averageConcurrentViewers" type="number" min="0" step="1" inputmode="numeric" required></label>
+              <label>Average hours per show<input name="hoursPerShow" type="number" min="0" step="0.25" inputmode="decimal" required></label>
+              <label>Shows per month<input name="showsPerMonth" type="number" min="0" step="1" inputmode="numeric" required></label>
+            </div>
+            <div class="field-grid">
+              <label>Retention days<input name="recordingRetentionDays" type="number" min="0" step="1" inputmode="numeric" placeholder="90"></label>
+              <label>Replay reserve %<input name="replayReservePercentage" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.10"></label>
+              <label>Safety buffer %<input name="safetyBufferPercentage" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.20"></label>
+            </div>
+            <div class="campaign-form-status" data-stream-credits-status aria-live="polite"></div>
+            <div class="actions">
+              <button class="btn btn-outline" type="button" data-stream-credits-calculate>Calculate</button>
+              <button class="btn btn-primary" type="submit">Save seller plan</button>
+              <button class="btn btn-outline" type="button" data-stream-plan-checkout>Start plan checkout</button>
+              <button class="btn btn-outline" type="button" data-stream-credit-buy>Buy 25 credits</button>
+            </div>
+          </form>
+          <div class="progress-summary" data-stream-credits-summary hidden>
+            <div><span>Recommended plan</span><strong data-stream-plan-name>-</strong></div>
+            <div><span>Included credits</span><strong data-stream-plan-credits>-</strong></div>
+            <div><span>Projected usage</span><strong data-stream-project-base>-</strong></div>
+            <div><span>Buffered capacity</span><strong data-stream-project-buffer>-</strong></div>
+          </div>
+          <div class="campaign-claims" data-stream-credits-comparison aria-live="polite"></div>
+          <div class="campaign-claims" data-stream-credits-dashboard aria-live="polite"></div>
+        </section>
         <section class="reward-card progress-card">
           <div class="progress-summary"><div><span>Verified friends</span><strong data-referral-count>0</strong></div><div><span>Current tier</span><strong data-tier-name>Starter</strong></div></div>
           <div class="tier-track" data-tier-track></div>

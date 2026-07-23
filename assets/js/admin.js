@@ -47,6 +47,7 @@
   let selectedTrackingMember = null;
   let trackingMemberSearchTimer = null;
   let trackingOrderSearchTimer = null;
+  let streamConfigState = null;
   const menuButton = $(".menu-toggle");
   const navigation = $("#admin-site-nav");
   menuButton?.addEventListener("click", () => {
@@ -70,6 +71,7 @@
     if (section === "tracking") Promise.all([searchTrackingMembers(), refreshAdminOrders()]).catch(error => setTrackingStatus(error.message, "error"));
     if (section === "identity") refreshIdentityReviews().catch(error => setIdentityReviewStatus(error.message, "error"));
     if (section === "sellers") refreshAdminReorders().catch(error => setAdminReordersStatus(error.message, "error"));
+    if (section === "streaming") refreshStreamConfig().catch(error => setStreamConfigStatus(error.message, "error"));
   }
 
   const request = async (path, options = {}) => {
@@ -175,6 +177,73 @@
   }
 
   function setAdminReordersStatus(message = "", kind = "") { const node = $("[data-admin-reorders-status]"); if (node) { node.textContent = message; node.dataset.kind = kind; } }
+  function setStreamConfigStatus(message = "", kind = "") { const node = $("[data-stream-config-status]"); if (node) { node.textContent = message; node.dataset.kind = kind; } }
+  function setStreamConfigForm(payload) {
+    streamConfigState = payload;
+    const config = payload?.config || {};
+    const form = $("[data-stream-config-form]");
+    if (!form) return;
+    form.deliveryMinutesPerCredit.value = config.deliveryMinutesPerCredit ?? 1000;
+    form.storageMinutesPerCredit.value = config.storageMinutesPerCredit ?? 200;
+    form.replayReservePercentage.value = config.replayReservePercentage ?? 0.10;
+    form.safetyBufferPercentage.value = config.safetyBufferPercentage ?? 0.20;
+    form.recordingRetentionDays.value = config.recordingRetentionDays ?? 90;
+    form.finalizationDelayHours.value = config.finalizationDelayHours ?? 72;
+    form.streamCreditUnderlyingValue.value = config.streamCreditUnderlyingValue ?? 1;
+    form.prepaidExtraCreditPrice.value = config.prepaidExtraCreditPrice ?? 1.85;
+    form.paygOveragePrice.value = config.paygOveragePrice ?? 2.25;
+    form.unusedCreditRebateRate.value = config.unusedCreditRebateRate ?? 1;
+    form.cashOutThreshold.value = config.cashOutThreshold ?? 25;
+    form.spendingLimitDefault.value = config.spendingLimitDefault ?? 250;
+    const planByCode = Object.fromEntries((payload?.plans || []).map(plan => [String(plan.code || "").toLowerCase(), plan]));
+    form.starterPrice.value = planByCode.starter?.monthlyPrice ?? 49;
+    form.starterCredits.value = planByCode.starter?.includedCredits ?? 30;
+    form.growthPrice.value = planByCode.growth?.monthlyPrice ?? 109;
+    form.growthCredits.value = planByCode.growth?.includedCredits ?? 65;
+    form.proPrice.value = planByCode.pro?.monthlyPrice ?? 219;
+    form.proCredits.value = planByCode.pro?.includedCredits ?? 130;
+    form.powerPrice.value = planByCode.power?.monthlyPrice ?? 439;
+    form.powerCredits.value = planByCode.power?.includedCredits ?? 260;
+  }
+  async function refreshStreamConfig() {
+    const payload = await request("/admin/stream-credits/config");
+    setStreamConfigForm(payload);
+    setStreamConfigStatus(`Loaded pricing version${payload.config?.effectiveAt ? ` effective ${new Date(payload.config.effectiveAt).toLocaleString()}` : ""}.`, "success");
+  }
+  async function saveStreamConfig(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const configPayload = {
+      deliveryMinutesPerCredit: Number(data.get("deliveryMinutesPerCredit") || 0),
+      storageMinutesPerCredit: Number(data.get("storageMinutesPerCredit") || 0),
+      replayReservePercentage: Number(data.get("replayReservePercentage") || 0),
+      safetyBufferPercentage: Number(data.get("safetyBufferPercentage") || 0),
+      recordingRetentionDays: Number(data.get("recordingRetentionDays") || 0),
+      finalizationDelayHours: Number(data.get("finalizationDelayHours") || 0),
+      streamCreditUnderlyingValue: Number(data.get("streamCreditUnderlyingValue") || 0),
+      prepaidExtraCreditPrice: Number(data.get("prepaidExtraCreditPrice") || 0),
+      paygOveragePrice: Number(data.get("paygOveragePrice") || 0),
+      unusedCreditRebateRate: Number(data.get("unusedCreditRebateRate") || 0),
+      cashOutThreshold: Number(data.get("cashOutThreshold") || 0),
+      spendingLimitDefault: Number(data.get("spendingLimitDefault") || 0)
+    };
+    const plans = [
+      { code: "starter", name: "Starter", monthlyPrice: Number(data.get("starterPrice") || 0), includedCredits: Number(data.get("starterCredits") || 0), sortOrder: 1, isPublic: true },
+      { code: "growth", name: "Growth", monthlyPrice: Number(data.get("growthPrice") || 0), includedCredits: Number(data.get("growthCredits") || 0), sortOrder: 2, isPublic: true },
+      { code: "pro", name: "Pro", monthlyPrice: Number(data.get("proPrice") || 0), includedCredits: Number(data.get("proCredits") || 0), sortOrder: 3, isPublic: true },
+      { code: "power", name: "Power", monthlyPrice: Number(data.get("powerPrice") || 0), includedCredits: Number(data.get("powerCredits") || 0), sortOrder: 4, isPublic: true },
+      { code: "enterprise", name: "Enterprise", monthlyPrice: null, includedCredits: null, sortOrder: 5, isPublic: true }
+    ];
+    setStreamConfigStatus("Saving a new versioned pricing set...");
+    try {
+      await request("/admin/stream-credits/config", { method: "POST", body: JSON.stringify({ config: configPayload, plans, notes: data.get("notes") }) });
+      setStreamConfigStatus("New streaming-pricing version saved.", "success");
+      await refreshStreamConfig();
+    } catch (error) {
+      setStreamConfigStatus(error.message, "error");
+    }
+  }
   async function refreshAdminReorders() {
     const payload = await request("/admin/reorders"); const rows = payload.reorders || []; const list = $("[data-admin-reorders-list]"); list.replaceChildren();
     if (!rows.length) { const empty = document.createElement("div"); empty.className = "inventory-empty"; empty.textContent = "No seller reorders are waiting."; list.append(empty); return; }
@@ -1589,6 +1658,17 @@
   }));
   document.querySelectorAll("[data-admin-email-close]").forEach(button => button.addEventListener("click", () => { $("[data-admin-email-modal]").hidden = true; }));
   document.querySelectorAll("[data-master-section-button]").forEach(button => button.addEventListener("click", () => openMasterSection(button.dataset.masterSectionButton)));
+  $("[data-stream-config-refresh]")?.addEventListener("click", () => refreshStreamConfig().catch(error => setStreamConfigStatus(error.message, "error")));
+  $("[data-stream-config-form]")?.addEventListener("submit", saveStreamConfig);
+  $("[data-stream-cycle-run]")?.addEventListener("click", async () => {
+    try {
+      setStreamConfigStatus("Running stream-credit alerts and finalization...");
+      const result = await request("/admin/stream-credits/run-cycle", { method: "POST", body: "{}" });
+      setStreamConfigStatus(`Cycle finished. Finalized ${Number(result.finalizedUsageCount || 0)} usage month(s) and sent ${Number(result.alertsSent || 0)} alert batch(es).`, "success");
+    } catch (error) {
+      setStreamConfigStatus(error.message, "error");
+    }
+  });
   $("[data-seller-activation-form]")?.addEventListener("submit", createSellerActivation);
   $("[data-seller-activation-copy]")?.addEventListener("click", async () => {
     const value = $("[data-seller-activation-url]")?.value || "";

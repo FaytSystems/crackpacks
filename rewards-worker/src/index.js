@@ -3,7 +3,7 @@ import { issueOwnerReferral, ownerReferralSlotAt, verifyOwnerReferral } from "./
 import { campaignWeekAt, parseCampaignExpiryHours } from "./campaign-time.js";
 import { calculateChannelPricing, channelPricingErrors } from "./channel-pricing.js";
 import { sanitizeEasyPostTracker, verifyEasyPostWebhook } from "./easypost-tracking.js";
-import { handlePlatformRoute, usernameKey } from "./platform-routes.js";
+import { handlePlatformRoute, runStreamCreditCycle, usernameKey } from "./platform-routes.js";
 
 const VERSION = "5.0.0";
 const CAMPAIGN_REWARD_TYPES = new Set(["percent", "free_shipping", "pick_a_pack", "pack_draft", "free_single", "product"]);
@@ -2075,10 +2075,15 @@ async function route(request, env, cors, ctx) {
   }
   return response({ error: "Not found." }, 404, cors);
 }
-export default { async fetch(request, env, ctx) {
-  const cors = corsFor(request, env); if (!cors) return response({ error: "Origin not allowed." }, 403);
-  if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
-  try { return await route(request, env, cors, ctx); } catch (error) { console.error(error); return response({ error: error.message === "INVALID_JSON" ? "Invalid request body." : "The rewards service encountered an error." }, 500, cors); }
-}};
+export default {
+  async fetch(request, env, ctx) {
+    const cors = corsFor(request, env); if (!cors) return response({ error: "Origin not allowed." }, 403);
+    if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
+    try { return await route(request, env, cors, ctx); } catch (error) { console.error(error); return response({ error: error.message === "INVALID_JSON" ? "Invalid request body." : "The rewards service encountered an error." }, 500, cors); }
+  },
+  async scheduled(controller, env, ctx) {
+    ctx.waitUntil(runStreamCreditCycle(env, { notify: true }).catch(error => console.error("Scheduled stream credit cycle failed", error)));
+  }
+};
 import { generateAuthenticationOptions, generateRegistrationOptions, verifyAuthenticationResponse, verifyRegistrationResponse } from "@simplewebauthn/server";
 import { EmailMessage } from "cloudflare:email";

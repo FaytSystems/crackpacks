@@ -497,6 +497,103 @@
       const empty = document.createElement("div"); empty.className = "member-orders-empty"; empty.textContent = error.message; container.append(empty);
     }
   }
+  const streamCreditStatus = (message = "", kind = "") => {
+    const node = $("[data-stream-credits-status]");
+    if (!node) return;
+    node.textContent = message;
+    node.dataset.kind = kind;
+  };
+  const readStreamCreditForm = () => {
+    const form = new FormData($("[data-stream-credits-form]"));
+    return {
+      averageConcurrentViewers: Number(form.get("averageConcurrentViewers") || 0),
+      hoursPerShow: Number(form.get("hoursPerShow") || 0),
+      showsPerMonth: Number(form.get("showsPerMonth") || 0),
+      recordingRetentionDays: Number(form.get("recordingRetentionDays") || 0) || undefined,
+      replayReservePercentage: Number(form.get("replayReservePercentage") || 0) || undefined,
+      safetyBufferPercentage: Number(form.get("safetyBufferPercentage") || 0) || undefined
+    };
+  };
+  function renderStreamCreditComparison(result) {
+    const container = $("[data-stream-credits-comparison]");
+    container.replaceChildren();
+    const comparisons = Array.isArray(result?.comparison) ? result.comparison : [];
+    comparisons.forEach(plan => {
+      const card = document.createElement("article");
+      card.className = "campaign-member-claim";
+      const main = document.createElement("div");
+      const title = document.createElement("h4");
+      title.textContent = `${plan.name} - $${Number(plan.monthlyPrice || 0).toFixed(2)}/mo`;
+      const reward = document.createElement("p");
+      reward.textContent = `${Number(plan.includedCredits || 0).toFixed(2)} included credits`;
+      const detail = document.createElement("p");
+      detail.textContent = `Overage ${Number(plan.projectedOverageCredits || 0).toFixed(2)} | Rebate $${Number(plan.projectedUnusedRebate || 0).toFixed(2)} | Net $${Number(plan.projectedNetCost || 0).toFixed(2)}`;
+      main.append(title, reward, detail);
+      if (plan.projectedSavings > 0) {
+        const warning = document.createElement("p");
+        warning.textContent = `${plan.name} could cost $${Number(plan.projectedSavings).toFixed(2)} more than the recommendation.`;
+        main.append(warning);
+      }
+      card.append(main);
+      container.append(card);
+    });
+  }
+  function renderStreamCreditDashboard(data) {
+    const dashboard = data?.dashboard;
+    const projection = data?.projection;
+    const summary = $("[data-stream-credits-summary]");
+    if (!dashboard || !projection?.recommendedPlan) {
+      summary.hidden = true;
+      return;
+    }
+    summary.hidden = false;
+    $("[data-stream-plan-name]").textContent = projection.recommendedPlan.name;
+    $("[data-stream-plan-credits]").textContent = Number(dashboard.includedCredits || projection.recommendedPlan.includedCredits || 0).toFixed(2);
+    $("[data-stream-project-base]").textContent = Number(dashboard.projectedEndOfMonthUsage || 0).toFixed(2);
+    $("[data-stream-project-buffer]").textContent = Number(projection.metrics?.recommendedCreditCapacity || 0).toFixed(2);
+    const panel = $("[data-stream-credits-dashboard]");
+    panel.replaceChildren();
+    const card = document.createElement("article");
+    card.className = "campaign-member-claim";
+    const main = document.createElement("div");
+    const title = document.createElement("h4");
+    title.textContent = `Plan: ${projection.recommendedPlan.name}`;
+    const lines = [
+      `Monthly credits used: ${Number(dashboard.actualCreditsUsed || 0).toFixed(2)}`,
+      `Credits remaining: ${Number(dashboard.creditsRemaining || 0).toFixed(2)}`,
+      `Projected unused credits: ${Number(dashboard.projectedUnusedCredits || 0).toFixed(2)}`,
+      `Projected rebate: $${Number(dashboard.projectedRebate || 0).toFixed(2)}`,
+      `Projected overage: ${Number(dashboard.projectedOverage || 0).toFixed(2)}`
+    ];
+    main.append(title);
+    lines.forEach(text => {
+      const row = document.createElement("p");
+      row.textContent = text;
+      main.append(row);
+    });
+    card.append(main);
+    panel.append(card);
+    renderStreamCreditComparison({ comparison: projection.comparison });
+  }
+  async function refreshStreamCreditDashboard() {
+    if (!accountState?.sellerAccess && !accountState?.isAdmin) return;
+    try {
+      const data = await request("/seller/stream-credits/dashboard");
+      const subscription = data.subscription || {};
+      const form = $("[data-stream-credits-form]");
+      if (form) {
+        form.averageConcurrentViewers.value = subscription.averageConcurrentViewers ?? "";
+        form.hoursPerShow.value = subscription.hoursPerShow ?? "";
+        form.showsPerMonth.value = subscription.showsPerMonth ?? "";
+        form.recordingRetentionDays.value = subscription.recordingRetentionDays ?? "";
+        form.replayReservePercentage.value = subscription.replayReservePercentage ?? "";
+        form.safetyBufferPercentage.value = subscription.safetyBufferPercentage ?? "";
+      }
+      renderStreamCreditDashboard(data);
+    } catch (error) {
+      streamCreditStatus(error.message, "error");
+    }
+  }
   function renderAccount(data) {
     accountState = data;
     const sellerAllowed = Boolean(data.isAdmin || data.sellerAccess);
@@ -519,6 +616,7 @@
     show("[data-profile-panel]", false); show("[data-dashboard]", true);
     $("[data-member-name]").textContent = data.firstName || "Collector";
     $("[data-admin-link]").hidden = !data.isAdmin;
+    document.querySelectorAll("[data-seller-only]").forEach(node => { node.hidden = !sellerAllowed; });
     $("[data-referral-count]").textContent = data.referralCount;
     $("[data-tier-name]").textContent = data.tier.name;
     const ownerDashboardOnly = Boolean(data.ownerReferralDashboardOnly);
@@ -557,6 +655,7 @@
     syncOfferClaimAvailability();
     loadMyCampaigns();
     loadMyOrders();
+    if (sellerAllowed) refreshStreamCreditDashboard();
     if (data.referredSignup && !welcomeDiscountLoaded && !offerToken && !activeOffer) {
       welcomeDiscountLoaded = true;
       show("[data-discount-panel]", true);
@@ -903,6 +1002,52 @@
       if (!result.url) throw new Error("Stripe did not return a secure setup page.");
       location.href = result.url;
     } catch (error) { button.disabled = false; showContactStatus(error.message, "error"); }
+  });
+  $("[data-stream-credits-refresh]")?.addEventListener("click", () => refreshStreamCreditDashboard());
+  $("[data-stream-credits-calculate]")?.addEventListener("click", async () => {
+    try {
+      streamCreditStatus("Calculating seller plan...");
+      const result = await request("/seller/stream-credits/calculate", { method: "POST", body: JSON.stringify(readStreamCreditForm()) });
+      renderStreamCreditDashboard({ dashboard: { includedCredits: result.recommendedPlan?.includedCredits || 0, actualCreditsUsed: 0, creditsRemaining: result.recommendedPlan?.includedCredits || 0, projectedEndOfMonthUsage: result.metrics?.projectedBaseCredits || 0, projectedUnusedCredits: Math.max(0, Number(result.recommendedPlan?.includedCredits || 0) - Number(result.metrics?.projectedBaseCredits || 0)), projectedRebate: Math.max(0, Number(result.recommendedPlan?.includedCredits || 0) - Number(result.metrics?.projectedBaseCredits || 0)) * Number(result.config?.unusedCreditRebateRate || 0), projectedOverage: Math.max(0, Number(result.metrics?.projectedBaseCredits || 0) - Number(result.recommendedPlan?.includedCredits || 0)) }, projection: result });
+      streamCreditStatus(`Recommended plan: ${result.recommendedPlan?.name || "Unavailable"}.`, "success");
+    } catch (error) {
+      streamCreditStatus(error.message, "error");
+    }
+  });
+  $("[data-stream-credits-form]")?.addEventListener("submit", async event => {
+    event.preventDefault();
+    try {
+      streamCreditStatus("Saving seller plan...");
+      const base = readStreamCreditForm();
+      const recommendation = await request("/seller/stream-credits/calculate", { method: "POST", body: JSON.stringify(base) });
+      await request("/seller/stream-credits/subscription", { method: "POST", body: JSON.stringify({ ...base, selectedPlanCode: recommendation.recommendedPlan?.code }) });
+      streamCreditStatus(`Saved ${recommendation.recommendedPlan?.name || "seller"} plan inputs.`, "success");
+      await refreshStreamCreditDashboard();
+    } catch (error) {
+      streamCreditStatus(error.message, "error");
+    }
+  });
+  $("[data-stream-plan-checkout]")?.addEventListener("click", async () => {
+    try {
+      streamCreditStatus("Opening Stripe checkout for your seller plan...");
+      const base = readStreamCreditForm();
+      const recommendation = await request("/seller/stream-credits/calculate", { method: "POST", body: JSON.stringify(base) });
+      const result = await request("/seller/stream-credits/checkout-plan", { method: "POST", body: JSON.stringify({ ...base, selectedPlanCode: recommendation.recommendedPlan?.code }) });
+      if (!result.checkoutUrl) throw new Error("Stripe did not return a plan checkout page.");
+      location.href = result.checkoutUrl;
+    } catch (error) {
+      streamCreditStatus(error.message, "error");
+    }
+  });
+  $("[data-stream-credit-buy]")?.addEventListener("click", async () => {
+    try {
+      streamCreditStatus("Opening Stripe checkout for prepaid Stream Credits...");
+      const result = await request("/seller/stream-credits/checkout-credits", { method: "POST", body: JSON.stringify({ creditQuantity: 25 }) });
+      if (!result.checkoutUrl) throw new Error("Stripe did not return a prepaid-credit checkout page.");
+      location.href = result.checkoutUrl;
+    } catch (error) {
+      streamCreditStatus(error.message, "error");
+    }
   });
   $("[data-sign-out]").addEventListener("click", async () => {
     try { await request("/auth/logout", { method: "POST" }); } catch {}
