@@ -68,6 +68,12 @@ const dateOnly = iso => String(iso || "").slice(0, 10);
 const parseJsonSafe = (value, fallback) => {
   try { return JSON.parse(String(value || "")); } catch { return fallback; }
 };
+const money = cents => Math.max(0, Number(cents || 0));
+const crackPacksBidFloorCents = ({ landedCents = 0, packagingCents = 0, overheadCents = 0, fixedFeeCents = 30, margin = 0, feeRate = 0.029 } = {}) => {
+  const base = money(landedCents) + money(packagingCents) + money(overheadCents) + money(fixedFeeCents);
+  const denominator = 1 - Number(feeRate || 0) - Number(margin || 0);
+  return denominator > 0 ? Math.ceil(base / denominator) : base;
+};
 
 async function latestStreamCreditConfig(env) {
   const row = await env.DB.prepare(`SELECT * FROM stream_credit_config_versions ORDER BY effective_at DESC, created_at DESC LIMIT 1`).first();
@@ -1272,6 +1278,73 @@ async function sellerInventory(request, env, cors) {
   return json({ item }, existing ? 200 : 201, cors);
 }
 
+async function sellerCogsOrders(request, env, cors) {
+  const auth = await requireMember(request, env, cors, { seller: true });
+  if (auth.error) return auth.error;
+  const rows = await env.DB.prepare(`
+    SELECT orders.id order_id,orders.order_number,orders.status,orders.payment_status,orders.placed_at,
+      orders.subtotal_cents,orders.shipping_cents,orders.tax_cents,orders.total_cents,orders.currency,orders.items_json,
+      reservation.inventory_item_id,reservation.quantity reservation_quantity,reservation.unit_amount_cents,reservation.shipping_amount_cents,
+      inventory.name inventory_name,inventory.sku inventory_sku,inventory.cogs_cents,inventory.packaging_cents,inventory.overhead_cents,
+      inventory.live_list_price_cents,inventory.website_list_price_cents,inventory.us_shipping_cents,
+      breaker.id breaker_inventory_item_id,breaker.product_name breaker_product_name,breaker.sku breaker_sku,breaker.unit_type,breaker.packs_per_unit,
+      breaker.quantity current_quantity,breaker.inbound_quantity
+    FROM member_orders orders
+    LEFT JOIN checkout_reservations reservation ON reservation.order_id=orders.id
+    LEFT JOIN inventory_items inventory ON inventory.id=reservation.inventory_item_id
+    LEFT JOIN breaker_inventory_items breaker ON breaker.member_id=orders.member_id
+      AND breaker.source_inventory_item_id=reservation.inventory_item_id
+      AND breaker.unit_type='sealed_box'
+    WHERE orders.member_id=? AND orders.channel='website' AND orders.payment_status='paid'
+    ORDER BY orders.placed_at DESC, orders.created_at DESC
+    LIMIT 100
+  `).bind(auth.member.id).all();
+  const orders = (rows.results || []).map(row => {
+    const orderedUnits = Math.max(1, Number(row.reservation_quantity || 0) || Number(parseJsonSafe(row.items_json, [])[0]?.quantity || 1));
+    const subtotalCents = money(row.subtotal_cents || Number(row.unit_amount_cents || 0) * orderedUnits);
+    const shippingCents = money(row.shipping_cents || row.shipping_amount_cents);
+    const taxCents = money(row.tax_cents);
+    const totalCents = money(row.total_cents || subtotalCents + shippingCents + taxCents);
+    const catalogCogsCents = row.cogs_cents == null ? null : money(row.cogs_cents) * orderedUnits;
+    const landedCents = totalCents || subtotalCents + shippingCents + taxCents;
+    const perUnitCents = Math.ceil(landedCents / orderedUnits);
+    const packsPerUnit = Number(row.packs_per_unit || 0);
+    const perPackCents = packsPerUnit > 0 ? Math.ceil(perUnitCents / packsPerUnit) : null;
+    const suggestedMinimumBidCents = crackPacksBidFloorCents({
+      landedCents: perUnitCents,
+      packagingCents: row.packaging_cents,
+      overheadCents: row.overhead_cents
+    });
+    return {
+      orderId: row.order_id,
+      orderNumber: row.order_number,
+      status: row.status,
+      paymentStatus: row.payment_status,
+      placedAt: row.placed_at,
+      productName: row.breaker_product_name || row.inventory_name || parseJsonSafe(row.items_json, [])[0]?.name || "Seller Store order",
+      sku: row.breaker_sku || row.inventory_sku || "",
+      unitType: row.unit_type || "sealed_box",
+      orderedUnits,
+      currentQuantity: Number(row.current_quantity || 0),
+      inboundQuantity: Number(row.inbound_quantity || 0),
+      packsPerUnit: packsPerUnit || null,
+      subtotalCents,
+      shippingCents,
+      taxCents,
+      totalCents,
+      catalogCogsCents,
+      landedCents,
+      perUnitCents,
+      perPackCents,
+      suggestedMinimumBidCents,
+      sourceLiveListPriceCents: row.live_list_price_cents == null ? null : money(row.live_list_price_cents),
+      sourceWebsiteListPriceCents: row.website_list_price_cents == null ? null : money(row.website_list_price_cents),
+      currency: row.currency || "USD"
+    };
+  });
+  return json({ orders }, 200, cors);
+}
+
 async function adjustSellerInventory(request, env, cors, itemId) {
   const auth = await requireMember(request, env, cors, { seller: true });
   if (auth.error) return auth.error;
@@ -1899,6 +1972,7 @@ export async function handlePlatformRoute(request, env, cors) {
   if (url.pathname === "/gifted-giveaways/catalog" && request.method === "GET") return giftCatalog(request, env, cors, url);
   if (url.pathname === "/seller/giveaways" && ["GET", "POST"].includes(request.method)) return sellerGiveaways(request, env, cors);
   if (url.pathname === "/seller/inventory" && ["GET", "POST"].includes(request.method)) return sellerInventory(request, env, cors);
+  if (url.pathname === "/seller/cogs-orders" && request.method === "GET") return sellerCogsOrders(request, env, cors);
   if (url.pathname === "/seller/store-listings" && ["GET", "POST"].includes(request.method)) return sellerStoreListings(request, env, cors);
   const sellerStoreListingMatch = url.pathname.match(/^\/seller\/store-listings\/([0-9a-f-]{36})\/status$/i);
   if (sellerStoreListingMatch && request.method === "POST") return sellerStoreListings(request, env, cors, sellerStoreListingMatch[1]);

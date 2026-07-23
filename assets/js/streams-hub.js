@@ -11,10 +11,12 @@
   let sellerShows = [];
   let sellerInventoryItems = [];
   let sellerStoreListings = [];
+  let sellerCogsOrders = [];
   let sellerContextAuthorized = false;
   let activeTab = "watchlist";
 
   const escapeHtml = value => String(value ?? "").replace(/[&<>'"]/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character]);
+  const dollars = cents => `$${(Number(cents || 0) / 100).toFixed(2)}`;
   const api = async (path, options = {}) => {
     if (!base) throw new Error("The live service is not configured.");
     const response = await fetch(`${base}${path}`, {
@@ -194,10 +196,50 @@
     if (reorderList) reorderList.innerHTML = reorders.length ? reorders.map(item => `<article class="seller-giveaway-item"><strong>${escapeHtml(item.product_name)}</strong><p>${Number(item.requested_quantity)} requested · ${escapeHtml(item.status)}</p></article>`).join("") : `<div class="stream-empty">No reorders are waiting for owner review.</div>`;
   }
 
+  function cogsOrderCard(item) {
+    const packsPerUnit = Number(item.packsPerUnit || 0);
+    const perPack = item.perPackCents == null ? "Set packs/unit for per-pack math" : dollars(item.perPackCents);
+    const catalogCogs = item.catalogCogsCents == null ? "No catalog COGS stored" : dollars(item.catalogCogsCents);
+    return `
+      <article class="seller-cogs-card">
+        <header>
+          <div>
+            <strong>${escapeHtml(item.productName)}</strong>
+            <p>${escapeHtml(item.orderNumber)} · ${escapeHtml(dateLabel(item.placedAt))}</p>
+          </div>
+          <span class="seller-cogs-bid">Min bid ${dollars(item.suggestedMinimumBidCents)}</span>
+        </header>
+        <div class="seller-cogs-metrics">
+          <span><small>Ordered</small><strong>${Number(item.orderedUnits || 0)} unit(s)</strong></span>
+          <span><small>Total landed</small><strong>${dollars(item.landedCents)}</strong></span>
+          <span><small>Per unit</small><strong>${dollars(item.perUnitCents)}</strong></span>
+          <span><small>Per pack/card</small><strong>${perPack}</strong></span>
+        </div>
+        <details class="seller-cogs-details">
+          <summary>Cost breakdown</summary>
+          <p>Item ${dollars(item.subtotalCents)} · shipping ${dollars(item.shippingCents)} · tax ${dollars(item.taxCents)} · catalog COGS ${catalogCogs}</p>
+          <p>Seller stock now shows ${Number(item.currentQuantity || 0)} available and ${Number(item.inboundQuantity || 0)} inbound. ${packsPerUnit ? `${packsPerUnit} pack/card count is being used for per-pack math.` : "Add packs per unit in seller inventory when you want pack-level floors."}</p>
+        </details>
+      </article>
+    `;
+  }
+
+  function renderSellerCogsOrders() {
+    const list = $("[data-seller-cogs-list]");
+    if (!list) return;
+    list.innerHTML = sellerCogsOrders.length ? sellerCogsOrders.map(cogsOrderCard).join("") : `<div class="stream-empty">No paid Seller Store orders are ready for COGS yet.</div>`;
+  }
+
   async function loadSellerInventory() {
     const payload = await api("/seller/inventory");
     sellerInventoryItems = payload.items || [];
     renderSellerInventory(payload.reorders || []);
+  }
+
+  async function loadSellerCogsOrders() {
+    const payload = await api("/seller/cogs-orders");
+    sellerCogsOrders = payload.orders || [];
+    renderSellerCogsOrders();
   }
 
   async function loadSellerStoreListings() {
@@ -228,7 +270,7 @@
         const streamInput = await api("/seller/stream/input");
         renderStreamInput(streamInput.input);
       } catch {}
-      await Promise.all([loadSellerGiveaways(), loadSellerShows(), loadSellerInventory(), loadSellerStoreListings()]);
+      await Promise.all([loadSellerGiveaways(), loadSellerShows(), loadSellerInventory(), loadSellerStoreListings(), loadSellerCogsOrders()]);
     } catch {}
   }
 
@@ -460,6 +502,18 @@
       form.reset(); await loadSellerInventory(); setStatus("[data-seller-inventory-status]", "Seller inventory saved.", "success");
     } catch (error) { setStatus("[data-seller-inventory-status]", error.message, "error"); }
     finally { button.disabled = false; }
+  });
+
+  $("[data-seller-cogs-refresh]")?.addEventListener("click", async event => {
+    const button = event.currentTarget; button.disabled = true;
+    try {
+      await loadSellerCogsOrders();
+      setStatus("[data-seller-cogs-status]", "Order COGS refreshed.", "success");
+    } catch (error) {
+      setStatus("[data-seller-cogs-status]", error.message, "error");
+    } finally {
+      button.disabled = false;
+    }
   });
 
   $("[data-seller-inventory-list]")?.addEventListener("click", async event => {
