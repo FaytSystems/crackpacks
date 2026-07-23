@@ -1472,6 +1472,47 @@ async function route(request, env, cors, ctx) {
     const rows = await env.DB.prepare(`SELECT * FROM inventory_items WHERE owner_member_id=? ORDER BY updated_at DESC,name COLLATE NOCASE`).bind(member.id).all();
     return response({ imported, inventory: (rows.results || []).map(inventoryItemView) }, imported ? 201 : 200, cors);
   }
+  if (url.pathname === "/admin/store-listings" && request.method === "POST") {
+    if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
+    const data = await body(request);
+    const title = clean(data?.title, 120);
+    const description = clean(data?.description, 1000);
+    const condition = clean(data?.condition, 80);
+    const imageUrl = clean(data?.imageUrl, 500);
+    const shippingPayer = ["buyer", "seller"].includes(String(data?.shippingPayer || "")) ? String(data.shippingPayer) : "buyer";
+    const saleType = ["cards","breaks","singles","sealed","rip_ship","rtyh","buy_ship"].includes(String(data?.saleType || "")) ? String(data.saleType) : "singles";
+    const series = ["pokemon", "magic"].includes(String(data?.series || "").toLowerCase()) ? String(data.series).toLowerCase() : "pokemon";
+    const quantity = Number(data?.quantity || 1);
+    const price = Math.round(Number(data?.price || 0) * 100);
+    if (!title || !Number.isInteger(quantity) || quantity < 1 || quantity > 100000 || !Number.isInteger(price) || price < 1 || price > 100000000) {
+      return response({ error: "Enter a title, price, and quantity for the Buyer Store listing." }, 400, cors);
+    }
+    if (imageUrl && !/^https:\/\//i.test(imageUrl) && !/^assets\/images\/[a-z0-9._/-]+$/i.test(imageUrl)) return response({ error: "Listing image must use HTTPS or a local assets/images path." }, 400, cors);
+    const createdAt = now();
+    const inventoryId = id();
+    const listingId = id();
+    const publicSlug = `${slugify(title)}-${randomString(6).toLowerCase()}`;
+    await env.DB.batch([
+      env.DB.prepare(`
+        INSERT INTO inventory_items(
+          id,owner_member_id,public_slug,name,upc,category,series,description,image_url,source_url,quantity,average_msrp_cents,
+          reference_price_label,reference_price_observed_at,cogs_cents,us_shipping_cents,profit_cents,weight_oz,length_in,width_in,height_in,
+          origin_country,hs_code,packing_notes,is_store_visible,is_active,created_at,updated_at
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      `).bind(
+        inventoryId, member.id, publicSlug, title, null, saleType, series, description, imageUrl, "", quantity, null,
+        "Buyer Store listing", "", null, null, 1000, null, null, null, null, "", "", "", 0, 1, createdAt, createdAt
+      ),
+      env.DB.prepare(`
+        INSERT INTO seller_store_listings(
+          id,member_id,show_id,inventory_item_id,title,description,sale_type,item_condition,quantity,price_cents,shipping_payer,image_url,status,created_at,updated_at
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,'active',?,?)
+      `).bind(listingId, member.id, "", inventoryId, title, description, saleType, condition, quantity, price, shippingPayer, imageUrl, createdAt, createdAt)
+    ]);
+    const savedInventory = await env.DB.prepare(`SELECT * FROM inventory_items WHERE id=? AND owner_member_id=?`).bind(inventoryId, member.id).first();
+    await audit(env, request, "admin_store_listing_created", member.id, `${listingId}|${inventoryId}|${series}`);
+    return response({ item: inventoryItemView(savedInventory), listingId, marketplace: true }, 201, cors);
+  }
   if (url.pathname === "/admin/inventory" && request.method === "POST") {
     if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
     const contentLength = Number(request.headers.get("Content-Length") || 0);

@@ -634,6 +634,7 @@
     const form = $("[data-inventory-form]");
     form.reset();
     setInventoryFormStatus("");
+    form.elements.namedItem("storeTarget").value = item ? "seller_store" : "buyer_store";
     setInventoryField(form, "id", editingInventoryId);
     setInventoryField(form, "name", item?.name || "");
     setInventoryField(form, "upc", item?.upc || "");
@@ -668,11 +669,21 @@
     setInventoryField(form, "packingNotes", item?.packingNotes || "");
     form.elements.namedItem("isStoreVisible").checked = item ? item.isStoreVisible !== false : true;
     form.elements.namedItem("isActive").checked = item ? item.isActive !== false : true;
+    setInventoryField(form, "buyerTitle", item?.name || "");
+    setInventoryField(form, "buyerPrice", moneyInputValue(item?.websiteListPriceCents));
+    setInventoryField(form, "buyerCondition", "");
+    setInventoryField(form, "buyerDescription", item?.description || "");
+    form.elements.namedItem("buyerShippingPayer").value = "buyer";
+    form.elements.namedItem("buyerSeries").value = item?.series || "pokemon";
+    form.elements.namedItem("buyerSaleType").value = "singles";
+    form.elements.namedItem("buyerQuantity").value = item ? Math.max(1, Number(item.quantity || 1)) : 1;
+    setInventoryField(form, "buyerImageUrl", item?.imageUrl || "");
     $("[data-inventory-modal-title]").textContent = item ? "Edit inventory product" : "Add an inventory product";
     $("[data-inventory-save]").textContent = item ? "Save Changes" : "Save Product";
     $("[data-inventory-modal]").hidden = false;
+    syncInventoryTargetUi();
     updateInventoryPricePreview();
-    form.elements.namedItem("name").focus();
+    (form.elements.namedItem(form.elements.namedItem("storeTarget").value === "buyer_store" ? "buyerTitle" : "name"))?.focus();
   }
   function closeInventoryModal() {
     $("[data-inventory-modal]").hidden = true;
@@ -687,6 +698,29 @@
     const value = inventoryNumber(form, name);
     return value === null ? null : Math.round(value * 100);
   };
+  function syncInventoryTargetUi() {
+    const form = $("[data-inventory-form]");
+    if (!form) return;
+    const buyerStore = String(form.elements.namedItem("storeTarget")?.value || "buyer_store") === "buyer_store";
+    document.querySelectorAll("[data-inventory-buyer-simple]").forEach(node => { node.hidden = !buyerStore; });
+    document.querySelectorAll("[data-inventory-seller-fields]").forEach(node => { node.hidden = buyerStore; });
+    ["name","upc","category","quantity","imageUrl","series","description","averageMsrp","referencePriceLabel","referencePriceObservedAt","sourceUrl","cogs","usShipping","packaging","overhead","retailFixedFee","wholesaleHandling","retailListPrice","websiteListPrice","internationalListPrice","liveListPrice","wholesaleSmallListPrice","wholesaleCaseListPrice","wholesalePalletListPrice","weightOz","lengthIn","widthIn","heightIn","originCountry","hsCode","packingNotes","isStoreVisible","isActive"].forEach(name => {
+      const field = form.elements.namedItem(name);
+      if (field) field.disabled = buyerStore;
+    });
+    ["buyerTitle","buyerPrice","buyerCondition","buyerDescription","buyerShippingPayer","buyerSeries","buyerSaleType","buyerQuantity","buyerImageUrl"].forEach(name => {
+      const field = form.elements.namedItem(name);
+      if (field) field.disabled = !buyerStore;
+    });
+    form.elements.namedItem("name").required = !buyerStore;
+    form.elements.namedItem("quantity").required = !buyerStore;
+    form.elements.namedItem("buyerTitle").required = buyerStore;
+    form.elements.namedItem("buyerPrice").required = buyerStore;
+    form.elements.namedItem("buyerCondition").required = buyerStore;
+    form.elements.namedItem("buyerDescription").required = buyerStore;
+    $("[data-inventory-modal-title]").textContent = buyerStore ? "Add a Buyer Store product" : (editingInventoryId ? "Edit inventory product" : "Add an inventory product");
+    $("[data-inventory-save]").textContent = buyerStore ? "Post to Buyer Store" : (editingInventoryId ? "Save Changes" : "Save Product");
+  }
   function inventoryPayloadFromForm(form) {
     return {
       name: String(form.elements.namedItem("name").value || "").trim(),
@@ -722,6 +756,19 @@
       packingNotes: String(form.elements.namedItem("packingNotes").value || "").trim(),
       isStoreVisible: form.elements.namedItem("isStoreVisible").checked,
       isActive: form.elements.namedItem("isActive").checked
+    };
+  }
+  function buyerStorePayloadFromForm(form) {
+    return {
+      title: String(form.elements.namedItem("buyerTitle").value || "").trim(),
+      price: inventoryNumber(form, "buyerPrice"),
+      condition: String(form.elements.namedItem("buyerCondition").value || "").trim(),
+      description: String(form.elements.namedItem("buyerDescription").value || "").trim(),
+      shippingPayer: String(form.elements.namedItem("buyerShippingPayer").value || "buyer"),
+      series: String(form.elements.namedItem("buyerSeries").value || "pokemon").trim().toLowerCase(),
+      saleType: String(form.elements.namedItem("buyerSaleType").value || "singles").trim(),
+      quantity: Number(form.elements.namedItem("buyerQuantity").value || 1),
+      imageUrl: String(form.elements.namedItem("buyerImageUrl").value || "").trim()
     };
   }
   const inventoryPayloadFromItem = (item, overrides = {}) => ({
@@ -1601,6 +1648,32 @@
     const data = await request(`/admin/orders?q=${query}`);
     renderAdminOrders(Array.isArray(data.orders) ? data.orders : []);
   }
+  async function saveInventoryProduct(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const button = $("[data-inventory-save]");
+    button.disabled = true;
+    setInventoryFormStatus("Saving product...");
+    try {
+      const buyerStore = String(form.elements.namedItem("storeTarget")?.value || "buyer_store") === "buyer_store";
+      if (buyerStore) {
+        const payload = buyerStorePayloadFromForm(form);
+        await request("/admin/store-listings", { method: "POST", body: JSON.stringify(payload) });
+        setInventoryStatus(`Buyer Store listing “${payload.title}” published.`, "success");
+      } else {
+        const payload = inventoryPayloadFromForm(form);
+        const path = editingInventoryId ? `/admin/inventory/${encodeURIComponent(editingInventoryId)}` : "/admin/inventory";
+        await request(path, { method: "POST", body: JSON.stringify(payload) });
+        setInventoryStatus(`Seller Store product “${payload.name}” saved.`, "success");
+        await refreshInventory();
+      }
+      closeInventoryModal();
+    } catch (error) {
+      setInventoryFormStatus(error.message, "error");
+    } finally {
+      button.disabled = false;
+    }
+  }
   $("[data-admin-order-list]").addEventListener("click", async event => {
     const button = event.target.closest("[data-order-label]");
     if (!button) return;
@@ -1736,25 +1809,31 @@
   document.querySelectorAll("[data-inventory-close]").forEach(button => button.addEventListener("click", closeInventoryModal));
   ["cogs", "usShipping", "packaging", "overhead", "retailFixedFee", "wholesaleHandling", "retailListPrice", "websiteListPrice", "internationalListPrice", "liveListPrice", "wholesaleSmallListPrice", "wholesaleCaseListPrice", "wholesalePalletListPrice"].forEach(name => $("[data-inventory-form]").elements.namedItem(name)?.addEventListener("input", updateInventoryPricePreview));
   $("[data-inventory-form]").elements.namedItem("isActive").addEventListener("change", updateInventoryPricePreview);
+  $("[data-inventory-form]").elements.namedItem("storeTarget")?.addEventListener("change", syncInventoryTargetUi);
   $("[data-inventory-form]").addEventListener("submit", async event => {
     event.preventDefault();
     const form = event.currentTarget;
-    const payload = inventoryPayloadFromForm(form);
-    const previous = inventoryItems.find(item => String(item.id) === editingInventoryId);
+    const buyerStore = String(form.elements.namedItem("storeTarget")?.value || "buyer_store") === "buyer_store";
+    const payload = buyerStore ? buyerStorePayloadFromForm(form) : inventoryPayloadFromForm(form);
+    const previous = buyerStore ? null : inventoryItems.find(item => String(item.id) === editingInventoryId);
     if (previous?.isActive && !payload.isActive && !confirm(`Deactivate “${previous.name}”? It will stop appearing in new product campaigns and the public catalog.`)) return;
     const button = $("[data-inventory-save]");
     button.disabled = true; button.textContent = "Saving..."; setInventoryFormStatus("");
     try {
-      const path = editingInventoryId ? `/admin/inventory/${encodeURIComponent(editingInventoryId)}` : "/admin/inventory";
+      const path = buyerStore ? "/admin/store-listings" : (editingInventoryId ? `/admin/inventory/${encodeURIComponent(editingInventoryId)}` : "/admin/inventory");
       const data = await request(path, { method: "POST", body: JSON.stringify(payload) });
-      const savedName = String(data.item?.name || payload.name || "Product");
+      const savedName = String(data.item?.name || data.item?.title || payload.name || payload.title || "Product");
       closeInventoryModal();
-      await refreshInventory();
-      await refreshCampaignInventory("").catch(() => {});
-      closeCampaignInventoryOptions();
-      setInventoryStatus(`${savedName} saved. Product campaign search is now up to date.`, "success");
+      if (!buyerStore) {
+        await refreshInventory();
+        await refreshCampaignInventory("").catch(() => {});
+        closeCampaignInventoryOptions();
+        setInventoryStatus(`${savedName} saved. Product campaign search is now up to date.`, "success");
+      } else {
+        setInventoryStatus(`${savedName} posted to Buyer Store.`, "success");
+      }
     } catch (error) { setInventoryFormStatus(error.message, "error"); }
-    finally { button.disabled = false; button.textContent = editingInventoryId ? "Save Changes" : "Save Product"; }
+    finally { button.disabled = false; button.textContent = buyerStore ? "Post to Buyer Store" : (editingInventoryId ? "Save Changes" : "Save Product"); }
   });
   $("[data-email-all]").addEventListener("click", () => { emailAudience = "all"; selectedEmailMembers.clear(); syncEmailComposer(); setMasterEmailStatus("Message All selected. Review your subject and message before sending.", "success"); });
   $("[data-email-tier-select]").addEventListener("click", () => { emailAudience = "tier"; selectedEmailMembers.clear(); syncEmailComposer(); setMasterEmailStatus(`Referral tier ${$("[data-email-tier]").selectedOptions[0].textContent} selected.`, "success"); });
