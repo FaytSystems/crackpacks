@@ -166,7 +166,7 @@
         <div>
           <strong>${escapeHtml(item.title)}</strong>
           <p>${escapeHtml(item.status)} · ${escapeHtml(item.condition || "Condition pending")} · $${(Number(item.priceCents || 0) / 100).toFixed(2)} · ${Number(item.quantity || 0)} listed</p>
-          <small>@${escapeHtml(item.sellerUsername || "seller")} · ${escapeHtml(item.saleType || "sealed")}</small>
+          <small>@${escapeHtml(item.sellerUsername || "seller")} · ${escapeHtml(item.saleType || "sealed")} · ${escapeHtml(item.shippingPayer === "seller" ? "Seller pays shipping" : "Buyer pays shipping")}</small>
         </div>
         <div class="stream-card-actions">
           <button class="btn btn-outline btn-small" type="button" data-store-status="${item.id}" data-store-next-status="${item.status === "active" ? "inactive" : "active"}">${item.status === "active" ? "Turn off" : "Turn on"}</button>
@@ -210,6 +210,8 @@
     const destination = $("[data-listing-destination]")?.value || "show";
     $$("[data-listing-show-field]").forEach(node => { node.hidden = destination !== "show"; });
     $$("[data-listing-store-field]").forEach(node => { node.hidden = destination !== "store"; });
+    const advanced = $("[data-listing-advanced]");
+    if (advanced) advanced.hidden = destination !== "store" && destination !== "show" ? false : false;
     const submit = $("[data-listing-submit-label]");
     if (submit) submit.textContent = destination === "store" ? "Add to store" : "Add auction lot";
   }
@@ -397,10 +399,11 @@
           method: "POST",
           body: JSON.stringify({
             title: data.get("title"),
-            saleType: data.get("saleType"),
+            saleType: data.get("saleTypeStore") || "singles",
             price: Number(data.get("storePrice") || 0),
             quantity: Number(data.get("storeQuantity") || 0),
             condition: data.get("condition"),
+            shippingPayer: data.get("shippingPayer") || "buyer",
             imageUrl: data.get("imageUrl"),
             description: data.get("description"),
             showId
@@ -413,7 +416,7 @@
         await loadSellerLots(showId);
         setStatus("[data-seller-lot-status]", "Auction lot added.", "success");
       }
-      form.reset(); form.elements.startingBid.value = "1.00"; form.elements.bidIncrement.value = "1.00"; form.elements.storePrice.value = "1.00"; form.elements.storeQuantity.value = "1";
+      form.reset(); form.elements.startingBid.value = "1.00"; form.elements.bidIncrement.value = "1.00"; form.elements.storePrice.value = "1.00"; form.elements.storeQuantity.value = "1"; form.elements.shippingPayer.value = "buyer"; form.elements.saleTypeStore.value = "singles";
       syncListingDestinationUi();
     } catch (error) { setStatus("[data-seller-lot-status]", error.message, "error"); }
     finally { button.disabled = false; }

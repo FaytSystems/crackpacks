@@ -227,6 +227,7 @@ CREATE TABLE IF NOT EXISTS seller_store_listings (
   item_condition TEXT NOT NULL DEFAULT '' CHECK(length(item_condition) <= 80),
   quantity INTEGER NOT NULL DEFAULT 1 CHECK(quantity BETWEEN 0 AND 100000),
   price_cents INTEGER NOT NULL CHECK(price_cents BETWEEN 1 AND 100000000),
+  shipping_payer TEXT NOT NULL DEFAULT 'buyer' CHECK(shipping_payer IN ('buyer','seller')),
   image_url TEXT NOT NULL DEFAULT '' CHECK(length(image_url) <= 500),
   status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','inactive','sold_out')),
   created_at TEXT NOT NULL,

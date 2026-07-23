@@ -1308,6 +1308,7 @@ function storeListingView(row) {
     condition: row.item_condition || "",
     quantity: Number(row.quantity || 0),
     priceCents: Number(row.price_cents || 0),
+    shippingPayer: row.shipping_payer || "buyer",
     imageUrl: row.image_url || "",
     status: row.status || "active",
     createdAt: row.created_at,
@@ -1371,6 +1372,7 @@ async function sellerStoreListings(request, env, cors, listingId = "") {
   const saleType = ["cards", "breaks", "singles", "sealed", "rip_ship", "rtyh", "buy_ship"].includes(data.saleType) ? data.saleType : "sealed";
   const quantity = Number(data.quantity || 0);
   const price = Math.round(Number(data.price || 0) * 100);
+  const shippingPayer = ["buyer", "seller"].includes(String(data.shippingPayer || "")) ? String(data.shippingPayer) : "buyer";
   const imageUrl = clean(data.imageUrl, 500);
   const showId = clean(data.showId, 80);
   if (!title || !Number.isInteger(quantity) || quantity < 1 || quantity > 100000 || !Number.isInteger(price) || price < 1 || price > 100000000) {
@@ -1391,9 +1393,9 @@ async function sellerStoreListings(request, env, cors, listingId = "") {
   const stamp = now();
   await env.DB.prepare(`
     INSERT INTO seller_store_listings(
-      id,member_id,show_id,inventory_item_id,title,description,sale_type,item_condition,quantity,price_cents,image_url,status,created_at,updated_at
-    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,'active',?,?)
-  `).bind(listingRowId, auth.member.id, showId, inventoryItemId || null, title, description, saleType, condition, quantity, price, imageUrl, stamp, stamp).run();
+      id,member_id,show_id,inventory_item_id,title,description,sale_type,item_condition,quantity,price_cents,shipping_payer,image_url,status,created_at,updated_at
+    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,'active',?,?)
+  `).bind(listingRowId, auth.member.id, showId, inventoryItemId || null, title, description, saleType, condition, quantity, price, shippingPayer, imageUrl, stamp, stamp).run();
   const created = await env.DB.prepare(`
     SELECT listing.*,member.live_username,member.first_name,member.last_name,? inventory_series
     FROM seller_store_listings listing JOIN members member ON member.id=listing.member_id

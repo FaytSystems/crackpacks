@@ -112,7 +112,8 @@
         isFallback: false,
         sellerUsername: String(item?.sellerUsername || "").trim(),
         condition: String(item?.condition || "").trim(),
-        saleType: String(item?.saleType || "").trim()
+        saleType: String(item?.saleType || "").trim(),
+        shippingPayer: String(item?.shippingPayer || "buyer").trim()
       };
     }
     const category = classifyCategory(item?.category);
@@ -218,7 +219,7 @@
         <div class="product-body">
           <p class="card-kicker">${escapeHtml(item.categoryLabel)}</p>
           <h3>${escapeHtml(item.name)}</h3>
-          <p class="store-market-meta"><strong>@${escapeHtml(item.sellerUsername || "crackpacks")}</strong>${item.condition ? `<span>${escapeHtml(item.condition)}</span>` : ""}</p>
+          <p class="store-market-meta"><strong>@${escapeHtml(item.sellerUsername || "crackpacks")}</strong>${item.condition ? `<span>${escapeHtml(item.condition)}</span>` : ""}${item.sellerUsername ? `<span>${escapeHtml(item.shippingPayer === "seller" ? "Seller pays shipping" : "Buyer pays shipping")}</span>` : ""}</p>
           <p class="product-description">${escapeHtml(item.description)}</p>
           <div class="store-msrp-row">${msrpMarkup(item)}</div>
           ${sourceLink}
