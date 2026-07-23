@@ -1395,7 +1395,7 @@ async function sellerStoreListings(request, env, cors, listingId = "") {
     INSERT INTO seller_store_listings(
       id,member_id,show_id,inventory_item_id,title,description,sale_type,item_condition,quantity,price_cents,shipping_payer,image_url,status,created_at,updated_at
     ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,'active',?,?)
-  `).bind(listingRowId, auth.member.id, showId, inventoryItemId || null, title, description, saleType, condition, quantity, price, shippingPayer, imageUrl, stamp, stamp).run();
+  `).bind(listingRowId, auth.member.id, showId || null, inventoryItemId || null, title, description, saleType, condition, quantity, price, shippingPayer, imageUrl, stamp, stamp).run();
   const created = await env.DB.prepare(`
     SELECT listing.*,member.live_username,member.first_name,member.last_name,? inventory_series
     FROM seller_store_listings listing JOIN members member ON member.id=listing.member_id
@@ -1783,7 +1783,13 @@ export async function handlePlatformRoute(request, env, cors) {
     if (auth.error) return auth.error;
     const profile = await sellerProfile(env, auth.member.id);
     const owner = normalizeEmail(auth.member.email) === normalizeEmail(env.ADMIN_EMAIL);
-    return json({ activePortal: auth.member.active_portal || "buyer", sellerAccess: owner || profile?.status === "active", sellerStatus: owner ? "owner" : profile?.status || "not_applied" }, 200, cors);
+    return json({
+      activePortal: auth.member.active_portal || "buyer",
+      sellerAccess: owner || profile?.status === "active",
+      sellerStatus: owner ? "owner" : profile?.status || "not_applied",
+      isMaster: owner,
+      roles: owner ? ["buyer", "seller", "master"] : ((profile?.status === "active") ? ["buyer", "seller"] : ["buyer"])
+    }, 200, cors);
   }
   if (url.pathname === "/portal/mode" && request.method === "POST") {
     const auth = await requireMember(request, env, cors);

@@ -677,11 +677,15 @@ async function account(member, count, env, seller = null) {
   const tier = [...TIERS].reverse().find(t => count >= t.threshold);
   const next = TIERS.find(t => t.threshold > count);
   const invite = await inviteDetailsFor(member, env);
+  const admin = isAdmin(member, env);
+  const sellerAccess = admin || seller?.status === "active";
+  const sellerStatus = admin ? "owner" : (seller?.status || "not_applied");
+  const roles = admin ? ["buyer", "seller", "master"] : (sellerAccess ? ["buyer", "seller"] : ["buyer"]);
   return {
     deviceVerified: Boolean(member.device_verified), profileComplete: member.identity_status === "verified", identityStatus: member.identity_status,
     stripeIdentityStatus: member.stripe_identity_status || "not_started", firstName: member.first_name,
-    liveUsername: member.live_username || "", referredSignup: Boolean(member.referred_by_member_id), isAdmin: isAdmin(member, env),
-    sellerAccess: seller?.status === "active", sellerStatus: seller?.status || "not_applied", activePortal: member.active_portal || "buyer",
+    liveUsername: member.live_username || "", referredSignup: Boolean(member.referred_by_member_id), isAdmin: admin, isMaster: admin,
+    sellerAccess, sellerStatus, roles, activePortal: member.active_portal || "buyer",
     phone: member.phone || "", shippingAddress: (() => { try { return JSON.parse(member.shipping_address_json || "{}"); } catch { return {}; } })(),
     paymentMethod: member.stripe_payment_method_id ? { brand: member.stripe_payment_method_brand || "card", last4: member.stripe_payment_method_last4 || "" } : null,
     inviteCode: invite.ownerDashboardOnly ? "" : member.invite_code, inviteDisplayCode: invite.displayCode, inviteUrl: invite.url,
@@ -1491,6 +1495,7 @@ async function route(request, env, cors, ctx) {
     const createdAt = now();
     const inventoryId = id();
     const listingId = id();
+    const showId = null;
     const publicSlug = `${slugify(title)}-${randomString(6).toLowerCase()}`;
     await env.DB.batch([
       env.DB.prepare(`
@@ -1507,7 +1512,7 @@ async function route(request, env, cors, ctx) {
         INSERT INTO seller_store_listings(
           id,member_id,show_id,inventory_item_id,title,description,sale_type,item_condition,quantity,price_cents,shipping_payer,image_url,status,created_at,updated_at
         ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,'active',?,?)
-      `).bind(listingId, member.id, "", inventoryId, title, description, saleType, condition, quantity, price, shippingPayer, imageUrl, createdAt, createdAt)
+      `).bind(listingId, member.id, showId, inventoryId, title, description, saleType, condition, quantity, price, shippingPayer, imageUrl, createdAt, createdAt)
     ]);
     const savedInventory = await env.DB.prepare(`SELECT * FROM inventory_items WHERE id=? AND owner_member_id=?`).bind(inventoryId, member.id).first();
     await audit(env, request, "admin_store_listing_created", member.id, `${listingId}|${inventoryId}|${series}`);

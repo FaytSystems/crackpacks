@@ -219,7 +219,7 @@ CREATE INDEX IF NOT EXISTS idx_gifted_giveaways_owner_updated ON gifted_giveaway
 CREATE TABLE IF NOT EXISTS seller_store_listings (
   id TEXT PRIMARY KEY,
   member_id TEXT NOT NULL,
-  show_id TEXT NOT NULL DEFAULT '',
+  show_id TEXT,
   inventory_item_id TEXT,
   title TEXT NOT NULL CHECK(length(title) BETWEEN 1 AND 120),
   description TEXT NOT NULL DEFAULT '' CHECK(length(description) <= 1000),
