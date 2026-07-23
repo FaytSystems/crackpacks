@@ -11,6 +11,7 @@
   const suggestions = document.querySelector("[data-product-suggestions]");
   const sortSelect = document.querySelector("[data-marketplace-sort]");
   const currencySelect = document.querySelector("[data-store-currency]");
+  const authGate = document.querySelector("[data-store-auth-gate]");
   const inventoryEndpoint = "/marketplace/listings";
   const quoteEndpoint = "/store/shipping-quote";
   const checkoutEndpoint = "/store/checkout";
@@ -35,6 +36,13 @@
   let shippingTurnstileWidgetId = null;
   let shippingTurnstileScriptAdded = false;
 
+  const requireStoreAccount = () => {
+    const signedIn = Boolean(authToken());
+    document.body.classList.toggle("store-auth-required", !signedIn);
+    if (authGate) authGate.hidden = signedIn;
+    return signedIn;
+  };
+
   const escapeHtml = value => String(value ?? "").replace(/[&<>'"]/g, character => ({
     "&": "&amp;",
     "<": "&lt;",
@@ -47,6 +55,8 @@
     const base = String(config.rewardsApiUrl || "").trim().replace(/\/+$/, "");
     return base ? `${base}${path}` : "";
   };
+
+  requireStoreAccount();
 
   const centsValue = value => {
     if (value === null || value === undefined || value === "") return null;

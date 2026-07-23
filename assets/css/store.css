@@ -3,6 +3,56 @@
   --store-warning-ink: #070815;
 }
 
+body.store-auth-required main {
+  position: relative;
+}
+
+body.store-auth-required .store-coming-soon-tape,
+body.store-auth-required .visual-marquee,
+body.store-auth-required main > section:not(.store-auth-gate) {
+  filter: blur(10px) saturate(.8);
+  pointer-events: none;
+  user-select: none;
+}
+
+.store-auth-gate {
+  position: sticky;
+  top: 92px;
+  z-index: 25;
+  padding: 20px 0 0;
+}
+
+.store-auth-gate-card {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: clamp(24px, 4vw, 38px);
+  border: 1px solid rgba(255,255,255,.18);
+  border-radius: 24px;
+  background: linear-gradient(145deg, rgba(9,11,31,.96), rgba(19,24,62,.96));
+  box-shadow: 0 30px 80px rgba(0,0,0,.45), 0 0 34px rgba(56,232,255,.1);
+  text-align: center;
+}
+
+.store-auth-gate-card h1 {
+  margin: 0 0 12px;
+  font-size: clamp(2rem, 5vw, 3.7rem);
+  line-height: .95;
+}
+
+.store-auth-gate-card p:not(.eyebrow):not(.fine-print) {
+  max-width: 640px;
+  margin: 0 auto;
+  color: var(--muted);
+}
+
+.store-auth-gate-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  margin: 22px 0 10px;
+}
+
 .store-coming-soon-tape {
   position: relative;
   z-index: 8;
