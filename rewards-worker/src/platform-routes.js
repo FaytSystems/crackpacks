@@ -64,6 +64,10 @@ const randomToken = (length = 40) => Array.from(crypto.getRandomValues(new Uint8
 const orderNumber = () => `CP-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
 const siteUrl = env => String(env.SITE_URL || "https://crackpacks.com").replace(/\/$/, "");
 const monthKeyAt = (iso = now()) => String(iso).slice(0, 7);
+const dateOnly = iso => String(iso || "").slice(0, 10);
+const parseJsonSafe = (value, fallback) => {
+  try { return JSON.parse(String(value || "")); } catch { return fallback; }
+};
 
 async function latestStreamCreditConfig(env) {
   const row = await env.DB.prepare(`SELECT * FROM stream_credit_config_versions ORDER BY effective_at DESC, created_at DESC LIMIT 1`).first();
@@ -773,6 +777,10 @@ async function sendStreamCreditEmail(env, to, subject, html, key) {
 
 async function runStreamCreditCycle(env, { notify = true } = {}) {
   await seedStreamCreditDefaults(env);
+  const sync = await syncStreamUsageFromCloudflare(env).catch(error => {
+    console.error("Cloudflare Stream usage sync failed", error);
+    return { syncedMembers: 0, syncedVideos: 0, syncFailed: true };
+  });
   const { config } = await latestStreamCreditConfig(env);
   const plans = await latestStreamCreditPlans(env);
   const stamp = now();
@@ -837,7 +845,7 @@ async function runStreamCreditCycle(env, { notify = true } = {}) {
       }
     }
   }
-  return { finalizedUsageCount: (finalizable.results || []).length, alertsSent };
+  return { finalizedUsageCount: (finalizable.results || []).length, alertsSent, syncedMembers: sync.syncedMembers || 0, syncedVideos: sync.syncedVideos || 0, syncFailed: Boolean(sync.syncFailed) };
 }
 
 async function expireSession(env, session) {
@@ -1317,6 +1325,189 @@ async function cloudflareRequest(env, path, options = {}) {
   return payload.result || payload;
 }
 
+async function cloudflareGraphqlRequest(env, query, variables) {
+  if (!env.CLOUDFLARE_ACCOUNT_ID || !env.CLOUDFLARE_STREAM_API_TOKEN) throw new Error("STREAM_NOT_CONFIGURED");
+  const response = await fetch("https://api.cloudflare.com/client/v4/graphql", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.CLOUDFLARE_STREAM_API_TOKEN}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ query, variables })
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload.errors?.length) throw new Error("STREAM_ANALYTICS_PROVIDER_ERROR");
+  return payload.data;
+}
+
+function chooseBestRecordingForSession(session, videos) {
+  const startedMs = Date.parse(session.started_at || "");
+  const endedMs = Date.parse(session.ended_at || session.updated_at || session.started_at || "");
+  const maxAheadMs = 6 * 3600e3;
+  const candidates = (videos || []).filter(video => {
+    const createdMs = Date.parse(video.created || video.readyToStreamAt || "");
+    if (!Number.isFinite(createdMs)) return false;
+    if (!Number.isFinite(startedMs)) return true;
+    return createdMs >= startedMs - 15 * 60e3 && createdMs <= endedMs + maxAheadMs;
+  });
+  const ranked = candidates.sort((left, right) => {
+    const leftMs = Date.parse(left.created || left.readyToStreamAt || "");
+    const rightMs = Date.parse(right.created || right.readyToStreamAt || "");
+    return Math.abs(leftMs - startedMs) - Math.abs(rightMs - startedMs);
+  });
+  return ranked[0] || null;
+}
+
+async function listLiveInputVideos(env, liveInputUid) {
+  const result = await cloudflareRequest(env, `/live_inputs/${encodeURIComponent(liveInputUid)}/videos`, { method: "GET" });
+  if (Array.isArray(result)) return result;
+  if (Array.isArray(result?.result)) return result.result;
+  return [];
+}
+
+async function getLiveInputLifecycle(env, liveInputUid) {
+  const customer = String(env.CLOUDFLARE_STREAM_CUSTOMER_CODE || "").trim().replace(/^https?:\/\//, "").replace(/\/$/, "");
+  if (!customer) throw new Error("STREAM_CUSTOMER_CODE_MISSING");
+  const host = customer.includes(".") ? customer : `${customer}.cloudflarestream.com`;
+  const response = await fetch(`https://${host}/${encodeURIComponent(liveInputUid)}/lifecycle`);
+  if (!response.ok) throw new Error("STREAM_LIFECYCLE_PROVIDER_ERROR");
+  return response.json();
+}
+
+async function fetchDeliveredMinutesByVideo(env, videoUid, startDate, endDate) {
+  const data = await cloudflareGraphqlRequest(env, `
+    query CrackPacksStreamMinutes($accountTag: string!, $start: Date!, $end: Date!, $uid: string!) {
+      viewer {
+        accounts(filter: { accountTag: $accountTag }) {
+          streamMinutesViewedAdaptiveGroups(
+            filter: { date_geq: $start, date_lt: $end, uid: $uid }
+            limit: 100
+          ) {
+            sum { minutesViewed }
+            dimensions { uid }
+          }
+        }
+      }
+    }
+  `, { accountTag: env.CLOUDFLARE_ACCOUNT_ID, start: startDate, end: endDate, uid: videoUid });
+  const groups = data?.viewer?.accounts?.[0]?.streamMinutesViewedAdaptiveGroups || [];
+  return round2(groups.reduce((sum, row) => sum + Number(row?.sum?.minutesViewed || 0), 0));
+}
+
+async function syncStreamUsageFromCloudflare(env, { memberId = "", showId = "" } = {}) {
+  await seedStreamCreditDefaults(env);
+  const { config } = await latestStreamCreditConfig(env);
+  const currentMonth = monthKeyAt();
+  const monthStart = `${currentMonth}-01`;
+  const nextMonthDate = new Date(`${currentMonth}-01T00:00:00.000Z`);
+  nextMonthDate.setUTCMonth(nextMonthDate.getUTCMonth() + 1);
+  const monthEnd = dateOnly(nextMonthDate.toISOString());
+  const retentionCutoff = new Date(Date.now() - Number(config.recordingRetentionDays || 90) * 86400e3).toISOString();
+  const sessionFilters = [`(session.started_at>=? OR session.updated_at>=?)`];
+  const sessionParams = [retentionCutoff, retentionCutoff];
+  if (memberId) {
+    sessionFilters.push(`session.member_id=?`);
+    sessionParams.push(memberId);
+  }
+  if (showId) {
+    sessionFilters.push(`session.id=?`);
+    sessionParams.push(showId);
+  }
+  const sessions = await env.DB.prepare(`
+    SELECT session.*,member.live_username
+    FROM breaker_stream_sessions session
+    JOIN members member ON member.id=session.member_id
+    WHERE ${sessionFilters.join(" AND ")}
+    ORDER BY session.started_at DESC
+  `).bind(...sessionParams).all();
+  const byMember = new Map();
+  for (const session of sessions.results || []) {
+    let videoUid = String(session.cloudflare_recording_video_uid || "");
+    let video = null;
+    const liveInputUid = String(session.cloudflare_live_input_uid || "");
+    try {
+      if (!videoUid && liveInputUid) {
+        const lifecycle = ["open", "live"].includes(session.status) ? await getLiveInputLifecycle(env, liveInputUid).catch(() => null) : null;
+        if (lifecycle?.videoUID) videoUid = String(lifecycle.videoUID);
+        const videos = await listLiveInputVideos(env, liveInputUid);
+        video = videoUid ? videos.find(entry => String(entry.uid || "") === videoUid) || null : chooseBestRecordingForSession(session, videos);
+        if (!videoUid && video?.uid) videoUid = String(video.uid);
+      } else if (videoUid) {
+        video = await cloudflareRequest(env, `/${encodeURIComponent(videoUid)}`, { method: "GET" }).catch(() => null);
+      }
+    } catch {}
+    if (!videoUid && !video) continue;
+    if (!video && videoUid) video = await cloudflareRequest(env, `/${encodeURIComponent(videoUid)}`, { method: "GET" }).catch(() => null);
+    if (!video) continue;
+    const createdAt = String(video.created || session.started_at || "");
+    const readyAt = String(video.readyToStreamAt || video.readyToStreamAt || "");
+    const durationSeconds = Number(video.duration || 0);
+    const recordingMinutes = round2(durationSeconds > 0 ? durationSeconds / 60 : 0);
+    const deliveredMinutes = await fetchDeliveredMinutesByVideo(env, String(video.uid || videoUid), monthStart, monthEnd).catch(() => 0);
+    const stillStored = !video.scheduledDeletion || Date.parse(video.scheduledDeletion) > Date.now();
+    const storedMinutes = stillStored ? recordingMinutes : 0;
+    const usageMonthKey = monthKeyAt(createdAt || session.started_at || now());
+    const payloadJson = JSON.stringify({
+      uid: video.uid || videoUid,
+      created: video.created || null,
+      readyToStreamAt: video.readyToStreamAt || null,
+      scheduledDeletion: video.scheduledDeletion || null,
+      duration: video.duration || null,
+      status: video.status || null
+    });
+    const stamp = now();
+    await env.DB.prepare(`
+      INSERT INTO seller_stream_video_sources(
+        id,member_id,stream_session_id,month_key,cloudflare_live_input_uid,cloudflare_video_uid,video_created_at,video_ready_at,video_duration_seconds,delivered_minutes,stored_minutes,recording_minutes,analytics_window_start,analytics_window_end,raw_payload_json,last_synced_at,created_at,updated_at
+      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      ON CONFLICT(member_id,cloudflare_video_uid,month_key) DO UPDATE SET
+        stream_session_id=excluded.stream_session_id,
+        video_created_at=excluded.video_created_at,
+        video_ready_at=excluded.video_ready_at,
+        video_duration_seconds=excluded.video_duration_seconds,
+        delivered_minutes=excluded.delivered_minutes,
+        stored_minutes=excluded.stored_minutes,
+        recording_minutes=excluded.recording_minutes,
+        analytics_window_start=excluded.analytics_window_start,
+        analytics_window_end=excluded.analytics_window_end,
+        raw_payload_json=excluded.raw_payload_json,
+        last_synced_at=excluded.last_synced_at,
+        updated_at=excluded.updated_at
+    `).bind(uid(), session.member_id, session.id, usageMonthKey, liveInputUid, String(video.uid || videoUid), createdAt || null, readyAt || null, durationSeconds, deliveredMinutes, storedMinutes, recordingMinutes, monthStart, monthEnd, payloadJson, stamp, stamp, stamp).run();
+    if (videoUid && videoUid !== session.cloudflare_recording_video_uid) {
+      await env.DB.prepare(`UPDATE breaker_stream_sessions SET cloudflare_recording_video_uid=?,status=CASE WHEN status='ended' THEN 'recording_ready' ELSE status END,updated_at=? WHERE id=?`)
+        .bind(videoUid, stamp, session.id).run();
+    }
+    const bucket = byMember.get(session.member_id) || { delivered: 0, stored: 0, recording: 0, buyer: 0, protectedEvidence: 0, live: 0, sessions: 0 };
+    bucket.delivered += deliveredMinutes;
+    bucket.stored += storedMinutes;
+    bucket.recording += recordingMinutes;
+    bucket.sessions += 1;
+    byMember.set(session.member_id, bucket);
+  }
+  for (const [memberId, totals] of byMember) {
+    const finalizedCreditsUsed = calculateActualCredits({ actualDeliveredMinutes: totals.delivered, actualStoredMinutes: totals.stored }, config);
+    const stamp = now();
+    await env.DB.prepare(`
+      INSERT INTO seller_stream_usage_snapshots(
+        id,member_id,month_key,actual_live_viewer_minutes,actual_replay_minutes,actual_buyer_video_minutes,actual_protected_evidence_minutes,actual_delivered_minutes,actual_recorded_minutes,actual_stored_minutes,finalized_credits_used,source,created_at,updated_at
+      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      ON CONFLICT(member_id,month_key) DO UPDATE SET
+        actual_live_viewer_minutes=excluded.actual_live_viewer_minutes,
+        actual_replay_minutes=excluded.actual_replay_minutes,
+        actual_buyer_video_minutes=excluded.actual_buyer_video_minutes,
+        actual_protected_evidence_minutes=excluded.actual_protected_evidence_minutes,
+        actual_delivered_minutes=excluded.actual_delivered_minutes,
+        actual_recorded_minutes=excluded.actual_recorded_minutes,
+        actual_stored_minutes=excluded.actual_stored_minutes,
+        finalized_credits_used=excluded.finalized_credits_used,
+        source='system',
+        updated_at=excluded.updated_at
+    `).bind(uid(), memberId, currentMonth, totals.delivered, 0, totals.buyer, totals.protectedEvidence, totals.delivered, totals.recording, totals.stored, finalizedCreditsUsed, "system", stamp, stamp).run();
+  }
+  return { syncedMembers: byMember.size, syncedVideos: [...byMember.values()].reduce((sum, row) => sum + row.sessions, 0) };
+}
+
 async function sellerStreamInput(request, env, cors) {
   const auth = await requireMember(request, env, cors, { seller: true });
   if (auth.error) return auth.error;
@@ -1380,7 +1571,11 @@ async function endSellerShow(request, env, cors, showId) {
   if (Number(changed.meta?.changes || 0) !== 1) return json({ error: "That show is already ended or was not found." }, 409, cors);
   await env.DB.prepare(`UPDATE breaker_auction_lots SET status='cancelled',updated_at=? WHERE session_id=? AND member_id=? AND status IN ('scheduled','live')`)
     .bind(stamp, showId, auth.member.id).run();
-  return json({ ended: true, endedAt: stamp }, 200, cors);
+  const streamCreditSync = await syncStreamUsageFromCloudflare(env, { memberId: auth.member.id, showId }).catch(error => {
+    console.error("Post-show Stream Credit sync failed", error);
+    return { syncedMembers: 0, syncedVideos: 0, syncFailed: true };
+  });
+  return json({ ended: true, endedAt: stamp, streamCreditSync }, 200, cors);
 }
 
 async function createAuctionLot(request, env, cors, showId) {
@@ -1573,4 +1768,4 @@ export async function handlePlatformRoute(request, env, cors) {
   return null;
 }
 
-export { runStreamCreditCycle, usernameKey };
+export { chooseBestRecordingForSession, runStreamCreditCycle, usernameKey };

@@ -100,6 +100,23 @@
         <div class="campaign-form-status" data-seller-lot-status aria-live="polite"></div>
         <div class="seller-lot-list" data-seller-lot-list></div>
       </div>
+      <div class="holo-panel seller-social-launcher">
+        <div class="seller-show-manager-head"><h3>Show social launcher</h3><button class="btn btn-outline btn-small" type="button" data-seller-social-refresh>Use selected show</button></div>
+        <label>Show link<input data-seller-social-link readonly placeholder="Choose a show above"></label>
+        <label>Post message<textarea data-seller-social-message rows="4" maxlength="500" placeholder="I'm live on Crack Packs. Come watch, bid, and hang out."></textarea></label>
+        <div class="seller-social-options" aria-label="Social pages to post this show link">
+          <label><input type="checkbox" data-seller-social-target="facebook" checked> Facebook</label>
+          <label><input type="checkbox" data-seller-social-target="x" checked> X</label>
+          <label><input type="checkbox" data-seller-social-target="instagram"> Instagram</label>
+          <label><input type="checkbox" data-seller-social-target="youtube"> YouTube</label>
+        </div>
+        <div class="seller-social-actions">
+          <button class="btn btn-primary" type="button" data-seller-social-post>Post selected socials</button>
+          <button class="btn btn-outline" type="button" data-seller-social-native>Share from device</button>
+          <button class="btn btn-outline" type="button" data-seller-social-copy>Copy message + link</button>
+        </div>
+        <div class="campaign-form-status" data-seller-social-status aria-live="polite"></div>
+      </div>
     </section>
 
     <section class="container section seller-show-tools" data-seller-only hidden>

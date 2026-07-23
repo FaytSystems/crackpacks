@@ -1,0 +1,25 @@
+CREATE TABLE IF NOT EXISTS seller_stream_video_sources (
+  id TEXT PRIMARY KEY,
+  member_id TEXT NOT NULL,
+  stream_session_id TEXT,
+  month_key TEXT NOT NULL CHECK(length(month_key) = 7),
+  cloudflare_live_input_uid TEXT NOT NULL CHECK(length(cloudflare_live_input_uid) BETWEEN 1 AND 64),
+  cloudflare_video_uid TEXT NOT NULL CHECK(length(cloudflare_video_uid) BETWEEN 1 AND 64),
+  video_created_at TEXT,
+  video_ready_at TEXT,
+  video_duration_seconds REAL NOT NULL DEFAULT 0,
+  delivered_minutes REAL NOT NULL DEFAULT 0,
+  stored_minutes REAL NOT NULL DEFAULT 0,
+  recording_minutes REAL NOT NULL DEFAULT 0,
+  analytics_window_start TEXT,
+  analytics_window_end TEXT,
+  sync_source TEXT NOT NULL DEFAULT 'cloudflare' CHECK(sync_source IN ('cloudflare','manual')),
+  raw_payload_json TEXT NOT NULL DEFAULT '{}',
+  last_synced_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(member_id, cloudflare_video_uid, month_key),
+  FOREIGN KEY(member_id) REFERENCES members(id),
+  FOREIGN KEY(stream_session_id) REFERENCES breaker_stream_sessions(id)
+);
+CREATE INDEX IF NOT EXISTS idx_seller_stream_video_sources_member_month ON seller_stream_video_sources(member_id, month_key DESC, last_synced_at DESC);

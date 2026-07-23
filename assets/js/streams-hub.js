@@ -25,6 +25,25 @@
     return payload;
   };
   const dateLabel = value => value ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "Schedule pending";
+  const showShareUrl = show => new URL(`live.html?show=${encodeURIComponent(show?.id || "")}`, location.href).href;
+  const selectedSellerShow = () => {
+    const showId = $("[data-seller-show-select]")?.value || "";
+    return sellerShows.find(show => show.id === showId) || null;
+  };
+  const sellerSocialCaption = show => {
+    if (!show) throw new Error("Choose a show first.");
+    const message = String($("[data-seller-social-message]")?.value || "").trim() || `I'm live on Crack Packs: ${show.title}`;
+    return `${message}\n\n${showShareUrl(show)}`;
+  };
+  const copyText = async text => {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+    const area = document.createElement("textarea");
+    area.value = text; area.setAttribute("readonly", ""); area.style.position = "fixed"; area.style.opacity = "0";
+    document.body.append(area); area.select(); document.execCommand("copy"); area.remove();
+  };
 
   const calendarDownload = show => {
     const start = new Date(show.startsAt || Date.now());
@@ -97,7 +116,20 @@
     select.innerHTML = `<option value="">${active.length ? "Choose a show" : "Create a show first"}</option>${active.map(show => `<option value="${show.id}">${escapeHtml(show.title)} · ${escapeHtml(show.status)}</option>`).join("")}`;
     if (active.some(show => show.id === current)) select.value = current;
     else if (active.length) select.value = active[0].id;
+    updateSellerSocialComposer();
     loadSellerLots(select.value).catch(error => setStatus("[data-seller-lot-status]", error.message, "error"));
+  }
+
+  function updateSellerSocialComposer() {
+    const show = selectedSellerShow();
+    const link = $("[data-seller-social-link]");
+    const message = $("[data-seller-social-message]");
+    if (!link || !message) return;
+    link.value = show ? showShareUrl(show) : "";
+    if (show && !message.value.trim()) {
+      const when = show.scheduled_at ? ` on ${dateLabel(show.scheduled_at)}` : "";
+      message.value = `I'm ${show.status === "live" ? "live" : "going live"} on Crack Packs${when}: ${show.title}. Come watch, bid, and hang out.`;
+    }
   }
 
   function renderSellerLots(lots = [], show) {
@@ -240,8 +272,44 @@
     finally { button.disabled = false; }
   });
 
-  $("[data-seller-show-select]")?.addEventListener("change", event => loadSellerLots(event.currentTarget.value).catch(error => setStatus("[data-seller-lot-status]", error.message, "error")));
+  $("[data-seller-show-select]")?.addEventListener("change", event => {
+    updateSellerSocialComposer();
+    loadSellerLots(event.currentTarget.value).catch(error => setStatus("[data-seller-lot-status]", error.message, "error"));
+  });
   $("[data-seller-shows-refresh]")?.addEventListener("click", () => loadSellerShows().catch(error => setStatus("[data-seller-show-status]", error.message, "error")));
+  $("[data-seller-social-refresh]")?.addEventListener("click", () => { updateSellerSocialComposer(); setStatus("[data-seller-social-status]", "Selected show link loaded.", "success"); });
+  $("[data-seller-social-copy]")?.addEventListener("click", async () => {
+    try { await copyText(sellerSocialCaption(selectedSellerShow())); setStatus("[data-seller-social-status]", "Show message and link copied.", "success"); }
+    catch (error) { setStatus("[data-seller-social-status]", error.message, "error"); }
+  });
+  $("[data-seller-social-native]")?.addEventListener("click", async () => {
+    try {
+      const show = selectedSellerShow();
+      if (!show) throw new Error("Choose a show first.");
+      const caption = sellerSocialCaption(show);
+      if (!navigator.share) throw new Error("Device sharing is not available in this browser.");
+      await navigator.share({ title: show.title, text: caption, url: showShareUrl(show) });
+      setStatus("[data-seller-social-status]", "Device share opened.", "success");
+    } catch (error) { setStatus("[data-seller-social-status]", error.message, "error"); }
+  });
+  $("[data-seller-social-post]")?.addEventListener("click", async () => {
+    try {
+      const show = selectedSellerShow();
+      if (!show) throw new Error("Choose a show first.");
+      const caption = sellerSocialCaption(show);
+      const checked = $$("[data-seller-social-target]:checked").map(node => node.dataset.sellerSocialTarget);
+      if (!checked.length) throw new Error("Select at least one social page.");
+      const destinations = {
+        facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(showShareUrl(show))}`,
+        x: `https://x.com/intent/post?text=${encodeURIComponent(caption)}`,
+        instagram: "https://www.instagram.com/",
+        youtube: "https://www.youtube.com/"
+      };
+      checked.forEach(platform => window.open(destinations[platform], "_blank", "noopener,noreferrer"));
+      await copyText(caption);
+      setStatus("[data-seller-social-status]", "Selected social pages opened. Message and show link copied for paste.", "success");
+    } catch (error) { setStatus("[data-seller-social-status]", error.message, "error"); }
+  });
 
   $("[data-seller-lot-form]")?.addEventListener("submit", async event => {
     event.preventDefault(); const showId = $("[data-seller-show-select]").value;
@@ -264,8 +332,10 @@
         await loadSellerLots($("[data-seller-show-select]").value);
       } else if (end && confirm("End this show and cancel every open or scheduled auction lot?")) {
         end.disabled = true;
-        await api(`/seller/shows/${encodeURIComponent(end.dataset.endShow)}/end`, { method: "POST", body: "{}" });
-        await loadSellerShows(); setStatus("[data-seller-lot-status]", "Show ended.", "success");
+        const result = await api(`/seller/shows/${encodeURIComponent(end.dataset.endShow)}/end`, { method: "POST", body: "{}" });
+        await loadSellerShows();
+        const synced = result.streamCreditSync?.syncedVideos ? ` ${Number(result.streamCreditSync.syncedVideos)} recording source(s) synced.` : " Usage will also refresh on the next hourly cycle.";
+        setStatus("[data-seller-lot-status]", `Show ended. Stream Credits are syncing.${synced}`, "success");
       }
     } catch (error) { setStatus("[data-seller-lot-status]", error.message, "error"); }
   });

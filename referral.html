@@ -191,6 +191,19 @@
             <button class="btn btn-outline btn-small" type="button" data-stream-credits-refresh>Refresh</button>
           </div>
           <p>Tell Crack Packs how often you expect to stream and the size of your usual live audience. We’ll estimate your Stream Credit usage and recommend the plan projected to cost the least.</p>
+          <p class="fine-print" data-stream-credits-sync-note>Credits Remaining updates when you refresh.</p>
+          <div class="stream-credit-meter" data-stream-credit-meter hidden>
+            <div class="stream-credit-meter-main">
+              <span>Credits Remaining</span>
+              <strong data-stream-credits-remaining>0.00</strong>
+            </div>
+            <div class="stream-credit-meter-track" aria-hidden="true"><span data-stream-credits-fill></span></div>
+            <div class="stream-credit-meter-meta">
+              <span><b data-stream-credits-used>0.00</b> used</span>
+              <span><b data-stream-credits-included>0.00</b> included</span>
+              <span><b data-stream-credits-utilization>0%</b> utilization</span>
+            </div>
+          </div>
           <form class="username-settings-form" data-stream-credits-form>
             <div class="field-grid">
               <label>Average concurrent viewers<input name="averageConcurrentViewers" type="number" min="0" step="1" inputmode="numeric" required></label>

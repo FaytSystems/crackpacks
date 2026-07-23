@@ -40,6 +40,10 @@
   let offerClaimBlocked = false;
   let campaignClockOffset = 0;
   let campaignCountdownTimer = null;
+  let streamCreditsNextRefreshTimer = null;
+  let streamCreditsLastLoadedAt = 0;
+  let streamCreditsRefreshInFlight = false;
+  const STREAM_CREDITS_REFRESH_FOCUS_GRACE_MS = 2 * 60 * 1000;
   const authModeCopy = {
     signin: {
       kicker: "Returning collector",
@@ -544,7 +548,24 @@
     const summary = $("[data-stream-credits-summary]");
     if (!dashboard || !projection?.recommendedPlan) {
       summary.hidden = true;
+      const meter = $("[data-stream-credit-meter]");
+      if (meter) meter.hidden = true;
       return;
+    }
+    const meter = $("[data-stream-credit-meter]");
+    if (meter) {
+      const included = Number(dashboard.includedCredits || projection.recommendedPlan.includedCredits || 0);
+      const used = Number(dashboard.actualCreditsUsed || 0);
+      const remaining = Number(dashboard.creditsRemaining || 0);
+      const utilization = included > 0 ? Math.min(100, Math.max(0, (used / included) * 100)) : 0;
+      meter.hidden = false;
+      $("[data-stream-credits-remaining]").textContent = remaining.toFixed(2);
+      $("[data-stream-credits-used]").textContent = used.toFixed(2);
+      $("[data-stream-credits-included]").textContent = included.toFixed(2);
+      $("[data-stream-credits-utilization]").textContent = `${utilization.toFixed(0)}%`;
+      const fill = $("[data-stream-credits-fill]");
+      if (fill) fill.style.width = `${utilization}%`;
+      meter.dataset.state = utilization >= 100 ? "empty" : utilization >= 90 ? "critical" : utilization >= 75 ? "warning" : "healthy";
     }
     summary.hidden = false;
     $("[data-stream-plan-name]").textContent = projection.recommendedPlan.name;
@@ -575,9 +596,41 @@
     panel.append(card);
     renderStreamCreditComparison({ comparison: projection.comparison });
   }
-  async function refreshStreamCreditDashboard() {
+  function updateStreamCreditSyncNote(message = "", kind = "") {
+    const node = $("[data-stream-credits-sync-note]");
+    if (!node) return;
+    node.textContent = message;
+    if (kind) node.dataset.kind = kind;
+    else delete node.dataset.kind;
+  }
+  function clearStreamCreditRefreshTimer() {
+    if (!streamCreditsNextRefreshTimer) return;
+    clearTimeout(streamCreditsNextRefreshTimer);
+    streamCreditsNextRefreshTimer = null;
+  }
+  function scheduleTopOfHourStreamCreditRefresh() {
+    clearStreamCreditRefreshTimer();
     if (!accountState?.sellerAccess && !accountState?.isAdmin) return;
+    const panel = $("[data-stream-credits-panel]");
+    if (!panel || panel.hidden) return;
+    const nowTime = Date.now();
+    const nextHour = new Date(nowTime);
+    nextHour.setHours(nextHour.getHours() + 1, 0, 5, 0);
+    const delay = Math.max(5000, nextHour.getTime() - nowTime);
+    const lastSyncLabel = streamCreditsLastLoadedAt
+      ? `Last synced ${new Date(streamCreditsLastLoadedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.`
+      : "Waiting for first seller credit sync.";
+    updateStreamCreditSyncNote(`${lastSyncLabel} Auto-refreshes at the top of every hour or when you return to this tab.`);
+    streamCreditsNextRefreshTimer = setTimeout(() => {
+      refreshStreamCreditDashboard({ silent: true, trigger: "hourly" });
+    }, delay);
+  }
+  async function refreshStreamCreditDashboard({ silent = false, trigger = "manual" } = {}) {
+    if (!accountState?.sellerAccess && !accountState?.isAdmin) return;
+    if (streamCreditsRefreshInFlight) return;
+    streamCreditsRefreshInFlight = true;
     try {
+      if (!silent) streamCreditStatus("Refreshing Credits Remaining...");
       const data = await request("/seller/stream-credits/dashboard");
       const subscription = data.subscription || {};
       const form = $("[data-stream-credits-form]");
@@ -590,8 +643,19 @@
         form.safetyBufferPercentage.value = subscription.safetyBufferPercentage ?? "";
       }
       renderStreamCreditDashboard(data);
+      streamCreditsLastLoadedAt = Date.now();
+      scheduleTopOfHourStreamCreditRefresh();
+      if (!silent) {
+        const refreshedAt = new Date(streamCreditsLastLoadedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+        streamCreditStatus(`Credits Remaining updated at ${refreshedAt}.`, "success");
+      } else if (trigger === "hourly") {
+        updateStreamCreditSyncNote(`Credits Remaining auto-updated at ${new Date(streamCreditsLastLoadedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}. Next sync is scheduled for the top of the next hour.`);
+      }
     } catch (error) {
       streamCreditStatus(error.message, "error");
+      updateStreamCreditSyncNote(`Credits Remaining could not refresh automatically. ${error.message}`, "error");
+    } finally {
+      streamCreditsRefreshInFlight = false;
     }
   }
   function renderAccount(data) {
@@ -617,6 +681,11 @@
     $("[data-member-name]").textContent = data.firstName || "Collector";
     $("[data-admin-link]").hidden = !data.isAdmin;
     document.querySelectorAll("[data-seller-only]").forEach(node => { node.hidden = !sellerAllowed; });
+    if (sellerAllowed) scheduleTopOfHourStreamCreditRefresh();
+    else {
+      clearStreamCreditRefreshTimer();
+      updateStreamCreditSyncNote("Credits Remaining updates when you refresh.");
+    }
     $("[data-referral-count]").textContent = data.referralCount;
     $("[data-tier-name]").textContent = data.tier.name;
     const ownerDashboardOnly = Boolean(data.ownerReferralDashboardOnly);
@@ -1051,9 +1120,19 @@
   });
   $("[data-sign-out]").addEventListener("click", async () => {
     try { await request("/auth/logout", { method: "POST" }); } catch {}
+    clearStreamCreditRefreshTimer();
     localStorage.removeItem("cp_rewards_token");
     sessionStorage.removeItem("cp_admin_token");
     location.href = "referral.html";
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) return;
+    if (!accountState?.sellerAccess && !accountState?.isAdmin) return;
+    if (!streamCreditsLastLoadedAt || (Date.now() - streamCreditsLastLoadedAt) >= STREAM_CREDITS_REFRESH_FOCUS_GRACE_MS) {
+      refreshStreamCreditDashboard({ silent: true, trigger: "resume" });
+    } else {
+      scheduleTopOfHourStreamCreditRefresh();
+    }
   });
   async function confirmEmailLink() {
     if (!verificationToken) {
