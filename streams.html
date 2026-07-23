@@ -112,22 +112,27 @@
         </article>
       </div>
       <div class="holo-panel seller-show-manager">
-        <div class="seller-show-manager-head"><h3>Your shows and auction lots</h3><button class="btn btn-outline btn-small" type="button" data-seller-shows-refresh>Refresh</button></div>
+        <div class="seller-show-manager-head"><h3>Your shows, auction lots, and store listings</h3><button class="btn btn-outline btn-small" type="button" data-seller-shows-refresh>Refresh</button></div>
         <label>Manage show<select data-seller-show-select><option value="">Create a show first</option></select></label>
         <form class="seller-lot-form" data-seller-lot-form>
           <div class="field-grid">
-            <label>Auction title<input name="title" required maxlength="160" placeholder="Holographic single"></label>
+            <label>Listing destination<select name="listingDestination" data-listing-destination><option value="show">Add to show</option><option value="store">Add to store</option></select></label>
+            <label>Listing title<input name="title" required maxlength="160" placeholder="Holographic single"></label>
             <label>Sale type<select name="saleType"><option value="singles">Singles</option><option value="cards">Cards</option><option value="breaks">Breaks</option><option value="sealed">Sealed</option><option value="rip_ship">Rip &amp; Ship</option><option value="rtyh">RTYH</option><option value="buy_ship">Buy &amp; Ship</option></select></label>
-            <label>Starting bid ($)<input name="startingBid" type="number" min="0.01" max="100000" step="0.01" value="1.00" required></label>
-            <label>Bid increment ($)<input name="bidIncrement" type="number" min="0.01" max="10000" step="0.01" value="1.00" required></label>
+            <label data-listing-show-field>Starting bid ($)<input name="startingBid" type="number" min="0.01" max="100000" step="0.01" value="1.00" required></label>
+            <label data-listing-show-field>Bid increment ($)<input name="bidIncrement" type="number" min="0.01" max="10000" step="0.01" value="1.00" required></label>
+            <label data-listing-store-field hidden>Store price ($)<input name="storePrice" type="number" min="0.01" max="100000" step="0.01" value="1.00"></label>
+            <label data-listing-store-field hidden>Quantity<input name="storeQuantity" type="number" min="1" max="100000" step="1" value="1"></label>
             <label>Condition<input name="condition" maxlength="80" placeholder="Near Mint"></label>
             <label>Item image URL<input name="imageUrl" type="url" maxlength="500" placeholder="https://..."></label>
           </div>
           <label>Description<textarea name="description" rows="3" maxlength="1000"></textarea></label>
-          <button class="btn btn-primary" type="submit">Add auction lot</button>
+          <button class="btn btn-primary" type="submit" data-listing-submit-label>Add auction lot</button>
         </form>
         <div class="campaign-form-status" data-seller-lot-status aria-live="polite"></div>
         <div class="seller-lot-list" data-seller-lot-list></div>
+        <div class="campaign-form-status" data-seller-store-status aria-live="polite"></div>
+        <div class="seller-lot-list" data-seller-store-list></div>
       </div>
       <div class="holo-panel seller-social-launcher">
         <div class="seller-show-manager-head"><h3>Show social launcher</h3><button class="btn btn-outline btn-small" type="button" data-seller-social-refresh>Use selected show</button></div>

@@ -43,7 +43,7 @@
     document.querySelectorAll("[data-portal-mode-label]").forEach(node => { node.textContent = nextMode === "seller" ? "Seller Portal" : "Buyer Portal"; });
     document.querySelectorAll("[data-buyer-only]").forEach(node => { node.hidden = nextMode === "seller"; });
     document.querySelectorAll("[data-seller-only]").forEach(node => { node.hidden = nextMode !== "seller"; });
-    document.querySelectorAll("[data-hide-store-link]").forEach(node => { node.hidden = nextMode !== "seller"; });
+    document.querySelectorAll("[data-hide-store-link]").forEach(node => { node.hidden = false; });
     if (body.dataset.sellerPage === "true") {
       document.querySelectorAll("[data-seller-gate]").forEach(node => { node.hidden = nextMode === "seller"; });
       document.querySelectorAll("[data-seller-page-content]").forEach(node => { node.hidden = nextMode !== "seller"; });

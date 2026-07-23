@@ -1295,6 +1295,113 @@ async function adjustSellerInventory(request, env, cors, itemId) {
   return json({ item: updated }, 200, cors);
 }
 
+function storeListingView(row) {
+  return {
+    id: row.id,
+    sellerId: row.member_id,
+    sellerUsername: row.live_username || clean(`${row.first_name || ""} ${row.last_name || ""}`, 120) || "Seller",
+    showId: row.show_id || "",
+    series: row.inventory_series || "pokemon",
+    title: row.title || "Store listing",
+    description: row.description || "",
+    saleType: row.sale_type || "sealed",
+    condition: row.item_condition || "",
+    quantity: Number(row.quantity || 0),
+    priceCents: Number(row.price_cents || 0),
+    imageUrl: row.image_url || "",
+    status: row.status || "active",
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+async function publicMarketplaceListings(request, env, cors) {
+  const url = new URL(request.url);
+  const series = ["pokemon", "magic"].includes(String(url.searchParams.get("series") || "").toLowerCase())
+    ? String(url.searchParams.get("series") || "").toLowerCase()
+    : "";
+  const rows = await env.DB.prepare(`
+    SELECT listing.*,member.live_username,member.first_name,member.last_name,inventory.series inventory_series
+    FROM seller_store_listings listing
+    JOIN members member ON member.id=listing.member_id
+    LEFT JOIN inventory_items inventory ON inventory.id=listing.inventory_item_id
+    WHERE listing.status='active' AND listing.quantity>0
+      AND (?='' OR lower(COALESCE(inventory.series,''))=?)
+    ORDER BY listing.updated_at DESC, listing.created_at DESC
+    LIMIT 500
+  `).bind(series, series).all();
+  return json({
+    ok: true,
+    items: (rows.results || []).map(storeListingView),
+    series: series || "all"
+  }, 200, cors);
+}
+
+async function sellerStoreListings(request, env, cors, listingId = "") {
+  const auth = await requireMember(request, env, cors, { seller: true });
+  if (auth.error) return auth.error;
+  if (request.method === "GET") {
+    const rows = await env.DB.prepare(`
+      SELECT listing.*,member.live_username,member.first_name,member.last_name
+      FROM seller_store_listings listing
+      JOIN members member ON member.id=listing.member_id
+      WHERE listing.member_id=?
+      ORDER BY listing.updated_at DESC, listing.created_at DESC
+      LIMIT 250
+    `).bind(auth.member.id).all();
+    return json({ items: (rows.results || []).map(storeListingView) }, 200, cors);
+  }
+  const data = await boundedJson(request, 6000);
+  if (request.method === "POST" && listingId) {
+    const status = ["active", "inactive", "sold_out"].includes(String(data.status || "")) ? String(data.status) : "";
+    if (!status) return json({ error: "Choose a valid listing status." }, 400, cors);
+    const listing = await env.DB.prepare(`SELECT * FROM seller_store_listings WHERE id=? AND member_id=?`).bind(listingId, auth.member.id).first();
+    if (!listing) return json({ error: "Store listing not found." }, 404, cors);
+    await env.DB.prepare(`UPDATE seller_store_listings SET status=?,updated_at=? WHERE id=? AND member_id=?`).bind(status, now(), listing.id, auth.member.id).run();
+    const updated = await env.DB.prepare(`
+      SELECT listing.*,member.live_username,member.first_name,member.last_name
+      FROM seller_store_listings listing JOIN members member ON member.id=listing.member_id
+      WHERE listing.id=?
+    `).bind(listing.id).first();
+    return json({ item: storeListingView(updated) }, 200, cors);
+  }
+  const title = clean(data.title, 120);
+  const description = clean(data.description, 1000);
+  const condition = clean(data.condition, 80);
+  const saleType = ["cards", "breaks", "singles", "sealed", "rip_ship", "rtyh", "buy_ship"].includes(data.saleType) ? data.saleType : "sealed";
+  const quantity = Number(data.quantity || 0);
+  const price = Math.round(Number(data.price || 0) * 100);
+  const imageUrl = clean(data.imageUrl, 500);
+  const showId = clean(data.showId, 80);
+  if (!title || !Number.isInteger(quantity) || quantity < 1 || quantity > 100000 || !Number.isInteger(price) || price < 1 || price > 100000000) {
+    return json({ error: "Enter a title, quantity, and store price." }, 400, cors);
+  }
+  if (imageUrl && !/^https:\/\//i.test(imageUrl) && !/^assets\/images\/[a-z0-9._/-]+$/i.test(imageUrl)) {
+    return json({ error: "Listing image must use HTTPS or a local assets/images path." }, 400, cors);
+  }
+  let inventoryItemId = clean(data.inventoryItemId, 80);
+  let inventorySeries = "";
+  if (inventoryItemId) {
+    const inventory = await env.DB.prepare(`SELECT id,series FROM inventory_items WHERE id=?`).bind(inventoryItemId).first();
+    if (!inventory) return json({ error: "Selected inventory item was not found." }, 404, cors);
+    inventoryItemId = inventory.id;
+    inventorySeries = inventory.series || "";
+  }
+  const listingRowId = uid();
+  const stamp = now();
+  await env.DB.prepare(`
+    INSERT INTO seller_store_listings(
+      id,member_id,show_id,inventory_item_id,title,description,sale_type,item_condition,quantity,price_cents,image_url,status,created_at,updated_at
+    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,'active',?,?)
+  `).bind(listingRowId, auth.member.id, showId, inventoryItemId || null, title, description, saleType, condition, quantity, price, imageUrl, stamp, stamp).run();
+  const created = await env.DB.prepare(`
+    SELECT listing.*,member.live_username,member.first_name,member.last_name,? inventory_series
+    FROM seller_store_listings listing JOIN members member ON member.id=listing.member_id
+    WHERE listing.id=?
+  `).bind(inventorySeries, listingRowId).first();
+  return json({ item: storeListingView(created) }, 201, cors);
+}
+
 async function adminReorders(request, env, cors, reorderId = "") {
   const auth = await requireOwner(request, env, cors);
   if (auth.error) return auth.error;
@@ -1784,8 +1891,12 @@ export async function handlePlatformRoute(request, env, cors) {
   if (url.pathname === "/gifted-giveaways/catalog" && request.method === "GET") return giftCatalog(request, env, cors, url);
   if (url.pathname === "/seller/giveaways" && ["GET", "POST"].includes(request.method)) return sellerGiveaways(request, env, cors);
   if (url.pathname === "/seller/inventory" && ["GET", "POST"].includes(request.method)) return sellerInventory(request, env, cors);
+  if (url.pathname === "/seller/store-listings" && ["GET", "POST"].includes(request.method)) return sellerStoreListings(request, env, cors);
+  const sellerStoreListingMatch = url.pathname.match(/^\/seller\/store-listings\/([0-9a-f-]{36})\/status$/i);
+  if (sellerStoreListingMatch && request.method === "POST") return sellerStoreListings(request, env, cors, sellerStoreListingMatch[1]);
   const sellerInventoryAdjustMatch = url.pathname.match(/^\/seller\/inventory\/([0-9a-f-]{36})\/adjust$/i);
   if (sellerInventoryAdjustMatch && request.method === "POST") return adjustSellerInventory(request, env, cors, sellerInventoryAdjustMatch[1]);
+  if (url.pathname === "/marketplace/listings" && request.method === "GET") return publicMarketplaceListings(request, env, cors);
   if (url.pathname === "/seller/stream/input" && ["GET", "POST"].includes(request.method)) return sellerStreamInput(request, env, cors);
   if (url.pathname === "/seller/stream/input/regenerate" && request.method === "POST") return sellerStreamInput(new Request(request, { method: "PUT" }), env, cors);
   if (url.pathname === "/seller/shows" && ["GET", "POST"].includes(request.method)) return sellerShows(request, env, cors);

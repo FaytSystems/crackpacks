@@ -659,13 +659,6 @@ button { color: inherit; }
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
   .reveal { opacity: 1; transform: none; }
 }
-/* The Store is a Seller Portal feature. Links remain hidden until the
-   authenticated portal controller confirms an active seller session. */
-body:not([data-portal-mode="seller"]) a[href^="shop.html"],
-body:not([data-portal-mode="seller"]) a[href^="international-shop.html"] {
-  display: none !important;
-}
-
 .crackpacks-social-footer {
   display: grid;
   justify-items: center;

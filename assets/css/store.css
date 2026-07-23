@@ -153,6 +153,19 @@
 
 .store-product-card .product-description { min-height: 62px; }
 
+.store-market-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: .76rem;
+  font-weight: 800;
+}
+
+.store-market-meta strong { color: var(--electric); }
+.store-market-meta span { color: var(--mint); }
+
 .store-price-stack {
   display: grid;
   gap: 4px;

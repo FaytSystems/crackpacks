@@ -10,6 +10,7 @@
   let giftedQueue = [];
   let sellerShows = [];
   let sellerInventoryItems = [];
+  let sellerStoreListings = [];
   let sellerContextAuthorized = false;
   let activeTab = "watchlist";
 
@@ -157,6 +158,23 @@
     }).join("") : `<div class="stream-empty">No auction lots are saved for this show.</div>`}`;
   }
 
+  function renderSellerStoreListings() {
+    const list = $("[data-seller-store-list]");
+    if (!list) return;
+    list.innerHTML = sellerStoreListings.length ? sellerStoreListings.map(item => `
+      <article class="seller-lot-item">
+        <div>
+          <strong>${escapeHtml(item.title)}</strong>
+          <p>${escapeHtml(item.status)} · ${escapeHtml(item.condition || "Condition pending")} · $${(Number(item.priceCents || 0) / 100).toFixed(2)} · ${Number(item.quantity || 0)} listed</p>
+          <small>@${escapeHtml(item.sellerUsername || "seller")} · ${escapeHtml(item.saleType || "sealed")}</small>
+        </div>
+        <div class="stream-card-actions">
+          <button class="btn btn-outline btn-small" type="button" data-store-status="${item.id}" data-store-next-status="${item.status === "active" ? "inactive" : "active"}">${item.status === "active" ? "Turn off" : "Turn on"}</button>
+        </div>
+      </article>
+    `).join("") : `<div class="stream-empty">No store listings yet. Use “Add to store” to publish products into the buyer marketplace.</div>`;
+  }
+
   async function loadSellerLots(showId) {
     if (!showId) { renderSellerLots([]); return; }
     const payload = await api(`/seller/shows/${encodeURIComponent(showId)}/lots`);
@@ -182,6 +200,20 @@
     renderSellerInventory(payload.reorders || []);
   }
 
+  async function loadSellerStoreListings() {
+    const payload = await api("/seller/store-listings");
+    sellerStoreListings = payload.items || [];
+    renderSellerStoreListings();
+  }
+
+  function syncListingDestinationUi() {
+    const destination = $("[data-listing-destination]")?.value || "show";
+    $$("[data-listing-show-field]").forEach(node => { node.hidden = destination !== "show"; });
+    $$("[data-listing-store-field]").forEach(node => { node.hidden = destination !== "store"; });
+    const submit = $("[data-listing-submit-label]");
+    if (submit) submit.textContent = destination === "store" ? "Add to store" : "Add auction lot";
+  }
+
   async function loadSellerContext() {
     if (!token()) return;
     try {
@@ -194,7 +226,7 @@
         const streamInput = await api("/seller/stream/input");
         renderStreamInput(streamInput.input);
       } catch {}
-      await Promise.all([loadSellerGiveaways(), loadSellerShows(), loadSellerInventory()]);
+      await Promise.all([loadSellerGiveaways(), loadSellerShows(), loadSellerInventory(), loadSellerStoreListings()]);
     } catch {}
   }
 
@@ -319,6 +351,7 @@
   });
   $("[data-seller-shows-refresh]")?.addEventListener("click", () => loadSellerShows().catch(error => setStatus("[data-seller-show-status]", error.message, "error")));
   $("[data-seller-social-refresh]")?.addEventListener("click", () => { updateSellerSocialComposer(); setStatus("[data-seller-social-status]", "Selected show link loaded.", "success"); });
+  $("[data-listing-destination]")?.addEventListener("change", syncListingDestinationUi);
   $("[data-seller-social-copy]")?.addEventListener("click", async () => {
     try { await copyText(sellerSocialCaption(selectedSellerShow())); setStatus("[data-seller-social-status]", "Show message and link copied.", "success"); }
     catch (error) { setStatus("[data-seller-social-status]", error.message, "error"); }
@@ -353,13 +386,35 @@
   });
 
   $("[data-seller-lot-form]")?.addEventListener("submit", async event => {
-    event.preventDefault(); const showId = $("[data-seller-show-select]").value;
-    if (!showId) { setStatus("[data-seller-lot-status]", "Choose an active show first.", "error"); return; }
+    event.preventDefault();
+    const destination = $("[data-listing-destination]")?.value || "show";
+    const showId = $("[data-seller-show-select]").value;
+    if (destination === "show" && !showId) { setStatus("[data-seller-lot-status]", "Choose an active show first.", "error"); return; }
     const form = event.currentTarget; const data = new FormData(form); const button = event.submitter; button.disabled = true;
     try {
-      await api(`/seller/shows/${encodeURIComponent(showId)}/lots`, { method: "POST", body: JSON.stringify(Object.fromEntries(data.entries())) });
-      form.reset(); form.elements.startingBid.value = "1.00"; form.elements.bidIncrement.value = "1.00";
-      await loadSellerLots(showId); setStatus("[data-seller-lot-status]", "Auction lot added.", "success");
+      if (destination === "store") {
+        await api("/seller/store-listings", {
+          method: "POST",
+          body: JSON.stringify({
+            title: data.get("title"),
+            saleType: data.get("saleType"),
+            price: Number(data.get("storePrice") || 0),
+            quantity: Number(data.get("storeQuantity") || 0),
+            condition: data.get("condition"),
+            imageUrl: data.get("imageUrl"),
+            description: data.get("description"),
+            showId
+          })
+        });
+        await loadSellerStoreListings();
+        setStatus("[data-seller-store-status]", "Store listing published to the buyer marketplace.", "success");
+      } else {
+        await api(`/seller/shows/${encodeURIComponent(showId)}/lots`, { method: "POST", body: JSON.stringify(Object.fromEntries(data.entries())) });
+        await loadSellerLots(showId);
+        setStatus("[data-seller-lot-status]", "Auction lot added.", "success");
+      }
+      form.reset(); form.elements.startingBid.value = "1.00"; form.elements.bidIncrement.value = "1.00"; form.elements.storePrice.value = "1.00"; form.elements.storeQuantity.value = "1";
+      syncListingDestinationUi();
     } catch (error) { setStatus("[data-seller-lot-status]", error.message, "error"); }
     finally { button.disabled = false; }
   });
@@ -379,6 +434,20 @@
         setStatus("[data-seller-lot-status]", `Show ended. Stream Credits are syncing.${synced}`, "success");
       }
     } catch (error) { setStatus("[data-seller-lot-status]", error.message, "error"); }
+  });
+
+  $("[data-seller-store-list]")?.addEventListener("click", async event => {
+    const button = event.target.closest("[data-store-status]");
+    if (!button) return;
+    button.disabled = true;
+    try {
+      await api(`/seller/store-listings/${encodeURIComponent(button.dataset.storeStatus)}/status`, { method: "POST", body: JSON.stringify({ status: button.dataset.storeNextStatus }) });
+      await loadSellerStoreListings();
+      setStatus("[data-seller-store-status]", "Store listing updated.", "success");
+    } catch (error) {
+      button.disabled = false;
+      setStatus("[data-seller-store-status]", error.message, "error");
+    }
   });
 
   $("[data-seller-inventory-form]")?.addEventListener("submit", async event => {
@@ -401,5 +470,6 @@
   });
 
   loadShows();
+  syncListingDestinationUi();
   loadSellerContext();
 })();

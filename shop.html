@@ -16,7 +16,7 @@
   <link rel="stylesheet" href="assets/css/contact-form.css?v=1.7.1">
   <!-- CRACK PACKS CONTACT ASSETS:END -->
 </head>
-<body data-page="shop" data-store-market="us" data-seller-page="true">
+<body data-page="shop" data-store-market="us">
   <a class="skip-link" href="#main">Skip to content</a>
   <div class="ambient-layer" aria-hidden="true"><span class="ambient-orb orb-a"></span><span class="ambient-orb orb-b"></span><span class="ambient-orb orb-c"></span><span class="grain"></span></div>
 
@@ -39,21 +39,11 @@
     </div>
   </header>
 
-  <div class="container portal-lock holo-panel" data-seller-gate hidden>
-    <p class="eyebrow">Seller Portal locked</p>
-    <h1>This store is only visible in Seller mode.</h1>
-    <p>Buyer mode never shows Store. Sign in on your Profile and switch to Seller Portal to view breaker-priced inventory and preorder tools.</p>
-    <div class="actions">
-      <a class="btn btn-primary" href="referral.html">Open Profile</a>
-      <button class="btn btn-outline" type="button" data-open-buyer-portal>Open Buyer Portal</button>
-    </div>
+  <div class="store-coming-soon-tape" role="status" aria-label="Crack Packs marketplace is live for searching seller listings">
+    <span>Buyer marketplace</span><span>Search all seller stores</span><span>Buyer marketplace</span><span aria-hidden="true">Seller listings</span>
   </div>
 
-  <div class="store-coming-soon-tape" role="status" aria-label="Crack Packs store is coming soon" data-seller-page-content>
-    <span>Coming soon</span><span>Checkout locked</span><span>Coming soon</span><span aria-hidden="true">Store preview</span>
-  </div>
-
-  <section class="visual-marquee visual-marquee-top" aria-label="Crack Packs shop showcase" data-seller-page-content>
+  <section class="visual-marquee visual-marquee-top" aria-label="Crack Packs shop showcase">
     <div class="marquee-slides" data-marquee>
       <a class="marquee-slide is-active" href="#inventory" style="--slide-image:url('/assets/images/banner-flame.svg')"><span class="marquee-kicker">Shop the heat</span><strong>Sealed, singles, slabs and packs.</strong><em>Browse below</em></a>
       <a class="marquee-slide" href="card-lookup.html" style="--slide-image:url('/assets/images/banner-electric.svg')"><span class="marquee-kicker">Before you buy or bid</span><strong>Search the card. Check the value.</strong><em>Open price check</em></a>
@@ -62,10 +52,10 @@
     </div>
   </section>
 
-  <main id="main" data-seller-page-content>
+  <main id="main">
     <section class="page-hero shop-hero">
       <div class="container page-hero-grid">
-        <div class="reveal"><p class="eyebrow">Seller Store Portal</p><h1>Breaker-priced inventory with <span>protected access.</span></h1><p>Seller mode unlocks wholesale-fed inventory, margin-friendly pricing, and preorder planning. Public buyers do not see this store in their nav.</p><div class="actions"><a class="btn btn-primary" href="#inventory">Browse seller inventory</a><a class="btn btn-glass" href="international-shop.html">International seller pricing</a><a class="btn btn-glass" href="releases.html">Open release calendar</a></div></div>
+        <div class="reveal"><p class="eyebrow">Buyer marketplace</p><h1>Search cards and products across <span>every seller store.</span></h1><p>Buyers can search all seller listings in one place, compare seller IDs, prices, and condition, then jump straight to the listing they want.</p><div class="actions"><a class="btn btn-primary" href="#inventory">Search the marketplace</a><a class="btn btn-glass" href="card-lookup.html">Card Search ($)</a><a class="btn btn-glass" href="releases.html">Open release calendar</a></div></div>
         <div class="shop-orb holo-panel reveal" aria-hidden="true"><span class="shop-orb-ring ring-one"></span><span class="shop-orb-ring ring-two"></span><span class="shop-orb-ring ring-three"></span><strong>SHOP<br>THE<br>CHASE</strong></div>
       </div>
     </section>
@@ -73,9 +63,9 @@
     <section class="section-tight" id="inventory">
       <div class="container">
         <div class="store-prelaunch-note holo-panel">
-          <span class="store-lock-icon" aria-hidden="true">&#128274;</span>
-          <div><strong>USA storefront preview</strong><p>Displayed prices include configured USA shipping and never fall below the protected channel floor. Checkout buttons are disabled, so this page cannot create a charge.</p></div>
-          <nav class="store-market-switch" aria-label="Choose storefront"><a href="shop.html" aria-current="page">USA store</a><a href="international-shop.html">International</a></nav>
+          <span class="store-lock-icon" aria-hidden="true">&#128269;</span>
+          <div><strong>All seller stores in one search</strong><p>Search by card, box, pack, or product name. Results show seller ID, price, condition, and live listed quantity.</p></div>
+          <nav class="store-market-switch" aria-label="Choose storefront"><a href="shop.html" aria-current="page">Buyer marketplace</a><a href="international-shop.html">International</a></nav>
         </div>
         <div class="shop-tools store-tools holo-panel" aria-label="Shop filters">
           <div class="lookup-examples" aria-label="Store series tabs">
@@ -83,6 +73,8 @@
             <div class="type-grid" data-store-series-tabs></div>
           </div>
           <label class="search-box"><span class="sr-only">Search products</span><input type="search" placeholder="Search sealed, packs, Japanese, singles…" data-product-search></label>
+          <div class="empty-state" data-product-suggestions hidden></div>
+          <label class="store-currency-control"><span>Sort marketplace</span><select data-marketplace-sort><option value="price">Price</option><option value="condition">Condition</option><option value="seller">Seller ID</option></select></label>
           <div class="filter-list" role="group" aria-label="Product category">
             <button class="filter-btn is-active" type="button" data-product-filter="all">All</button>
             <button class="filter-btn" type="button" data-product-filter="sealed">Sealed</button>
@@ -91,13 +83,13 @@
             <button class="filter-btn" type="button" data-product-filter="singles">Singles &amp; slabs</button>
           </div>
         </div>
-        <p class="store-catalog-status" data-store-catalog-status aria-live="polite">Preparing the store preview…</p>
+        <p class="store-catalog-status" data-store-catalog-status aria-live="polite">Preparing the marketplace…</p>
         <div class="product-grid shop-grid" data-all-products data-store-catalog></div>
-        <div class="empty-state" data-product-empty hidden><strong>No products match that search.</strong><span>Try another keyword or category.</span></div>
+        <div class="empty-state" data-product-empty hidden><strong>No listings match that search.</strong><span>Try another keyword or change the sort/filter.</span></div>
       </div>
     </section>
 
-    <section class="section" id="shipping-quote">
+    <section class="section" id="shipping-quote" data-seller-only hidden>
       <div class="container">
         <div class="shipping-quote-panel holo-panel reveal">
           <p class="eyebrow">Secure seller checkout</p>

@@ -8,8 +8,10 @@
   const catalogStatus = document.querySelector("[data-store-catalog-status]");
   const emptyState = document.querySelector("[data-product-empty]");
   const searchInput = document.querySelector("[data-product-search]");
+  const suggestions = document.querySelector("[data-product-suggestions]");
+  const sortSelect = document.querySelector("[data-marketplace-sort]");
   const currencySelect = document.querySelector("[data-store-currency]");
-  const inventoryEndpoint = "/store/inventory";
+  const inventoryEndpoint = "/marketplace/listings";
   const quoteEndpoint = "/store/shipping-quote";
   const checkoutEndpoint = "/store/checkout";
   const authToken = () => localStorage.getItem("cp_rewards_token") || "";
@@ -24,6 +26,7 @@
   let inventoryItems = [];
   let activeFilter = "all";
   let activeSearch = "";
+  let activeSort = "price";
   let catalogController = null;
   let storeComingSoon = true;
   let storeCheckoutEnabled = false;
@@ -85,6 +88,33 @@
   };
 
   function normalizeApiItem(item, payload) {
+    if (item?.sellerUsername) {
+      const category = classifyCategory(item?.saleType);
+      return {
+        slug: String(item?.id || "").trim(),
+        name: String(item?.title || "Seller listing").trim(),
+        category,
+        series: String(item?.series || item?.inventorySeries || "pokemon").trim().toLowerCase(),
+        categoryLabel: String(item?.saleType || category).trim(),
+        description: String(item?.description || "Seller listing").trim(),
+        imageUrl: safeSourceUrl(item?.imageUrl) || fallbackImages[category],
+        sourceUrl: "",
+        available: Number(item?.quantity || 0) > 0,
+        quantityLabel: `${Number(item?.quantity || 0)} available`,
+        priceCents: centsValue(item?.priceCents),
+        priceCurrency: "USD",
+        priceIncludesUsShipping: false,
+        msrpCents: null,
+        msrpCurrency: "USD",
+        msrpLabel: "Seller store listing",
+        msrpObservedAt: "",
+        shippingReady: false,
+        isFallback: false,
+        sellerUsername: String(item?.sellerUsername || "").trim(),
+        condition: String(item?.condition || "").trim(),
+        saleType: String(item?.saleType || "").trim()
+      };
+    }
     const category = classifyCategory(item?.category);
     const series = String(item?.series || item?.game || item?.tcg || "pokemon").trim().toLowerCase();
     const displayCurrency = String(item?.price?.currency || payload?.displayCurrency || "USD").toUpperCase();
@@ -188,6 +218,7 @@
         <div class="product-body">
           <p class="card-kicker">${escapeHtml(item.categoryLabel)}</p>
           <h3>${escapeHtml(item.name)}</h3>
+          <p class="store-market-meta"><strong>@${escapeHtml(item.sellerUsername || "crackpacks")}</strong>${item.condition ? `<span>${escapeHtml(item.condition)}</span>` : ""}</p>
           <p class="product-description">${escapeHtml(item.description)}</p>
           <div class="store-msrp-row">${msrpMarkup(item)}</div>
           ${sourceLink}
@@ -220,8 +251,22 @@
     applyFilters();
   }
 
+  function conditionRank(value) {
+    const ranked = ["mint", "near mint", "light play", "moderate play", "heavy play", "damaged", "factory sealed", "shrink", "sealed"];
+    const normalized = String(value || "").trim().toLowerCase();
+    const index = ranked.indexOf(normalized);
+    return index === -1 ? 999 : index;
+  }
+
   function applyFilters() {
     const cards = [...document.querySelectorAll("[data-store-catalog] [data-product-card]")];
+    cards.sort((left, right) => {
+      if (activeSort === "seller") return String(left.querySelector(".store-market-meta strong")?.textContent || "").localeCompare(String(right.querySelector(".store-market-meta strong")?.textContent || ""), undefined, { sensitivity: "base" });
+      if (activeSort === "condition") return conditionRank(left.querySelector(".store-market-meta span")?.textContent) - conditionRank(right.querySelector(".store-market-meta span")?.textContent);
+      const leftPrice = Number(left.querySelector(".store-current-price")?.textContent.replace(/[^0-9.]/g, "") || 0);
+      const rightPrice = Number(right.querySelector(".store-current-price")?.textContent.replace(/[^0-9.]/g, "") || 0);
+      return leftPrice - rightPrice;
+    }).forEach(card => catalog?.append(card));
     const activeSeries = document.querySelector("[data-store-series].is-active")?.dataset.storeSeries || "all";
     let visible = 0;
     cards.forEach(card => {
@@ -233,6 +278,11 @@
       if (show) visible += 1;
     });
     if (emptyState) emptyState.hidden = visible !== 0;
+    if (suggestions) {
+      const matches = inventoryItems.filter(item => !activeSearch || `${item.name} ${item.description} ${item.sellerUsername || ""}`.toLowerCase().includes(activeSearch)).slice(0, 6);
+      suggestions.hidden = !activeSearch || !matches.length;
+      suggestions.innerHTML = matches.map(item => `<button class="filter-btn" type="button" data-suggestion="${escapeHtml(item.name)}">${escapeHtml(item.name)} · @${escapeHtml(item.sellerUsername || "seller")}</button>`).join("");
+    }
   }
 
   function bindFilters() {
@@ -245,6 +295,17 @@
     });
     searchInput?.addEventListener("input", event => {
       activeSearch = String(event.currentTarget.value || "").trim().toLowerCase();
+      applyFilters();
+    });
+    suggestions?.addEventListener("click", event => {
+      const button = event.target.closest("[data-suggestion]");
+      if (!button || !searchInput) return;
+      searchInput.value = button.dataset.suggestion || "";
+      activeSearch = searchInput.value.trim().toLowerCase();
+      applyFilters();
+    });
+    sortSelect?.addEventListener("change", event => {
+      activeSort = String(event.currentTarget.value || "price");
       applyFilters();
     });
     const requested = String(new URLSearchParams(window.location.search).get("category") || "").toLowerCase();
@@ -267,7 +328,7 @@
     container.querySelectorAll("[data-store-series]").forEach(button => {
       button.addEventListener("click", () => {
         container.querySelectorAll("[data-store-series]").forEach(candidate => candidate.classList.toggle("is-active", candidate === button));
-        applyFilters();
+        loadCatalog();
       });
     });
   }
@@ -290,10 +351,9 @@
 
     try {
       const url = new URL(endpoint);
-      url.searchParams.set("market", market);
-      url.searchParams.set("currency", selectedCurrency());
+      url.searchParams.set("series", document.querySelector("[data-store-series].is-active")?.dataset.storeSeries === "magic" ? "magic" : "pokemon");
       const response = await fetch(url.toString(), {
-        headers: { Accept: "application/json", ...(authToken() ? { Authorization: `Bearer ${authToken()}` } : {}) },
+        headers: { Accept: "application/json" },
         signal: catalogController.signal
       });
       const payload = await response.json().catch(() => ({}));
@@ -306,20 +366,15 @@
         return;
       }
 
-      storeComingSoon = payload?.comingSoon !== false;
-      storeCheckoutEnabled = payload?.checkoutEnabled === true;
+      storeComingSoon = true;
+      storeCheckoutEnabled = false;
       const normalized = rows.map(item => normalizeApiItem(item, payload));
       renderCatalog(normalized);
-      if (!storeComingSoon) mountShippingTurnstile();
-      const currencyNote = market === "international" && payload?.rate
-        ? ` Display conversion: 1 USD = ${Number(payload.rate.value).toLocaleString(undefined, { maximumFractionDigits: 6 })} ${payload.displayCurrency || selectedCurrency()}; source ${payload.rate.source || "reference rate"}.`
-        : "";
-      const warning = payload?.currencyWarning ? ` ${payload.currencyWarning}` : "";
-      setCatalogStatus(`${normalized.length.toLocaleString()} launch product${normalized.length === 1 ? "" : "s"} loaded.${currencyNote}${warning}`, warning ? "fallback" : "success");
+      setCatalogStatus(`${normalized.length.toLocaleString()} seller marketplace listing${normalized.length === 1 ? "" : "s"} loaded. Search across every seller store below.`, "success");
     } catch (error) {
       if (error?.name === "AbortError") return;
       renderCatalog(fallbackInventory());
-      setCatalogStatus("Live inventory could not be reached. Showing the launch catalog preview; checkout remains locked.", "fallback");
+      setCatalogStatus("Seller marketplace could not be reached. Showing the preview catalog instead.", "fallback");
     }
   }
 
