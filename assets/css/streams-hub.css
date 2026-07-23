@@ -154,6 +154,63 @@
   gap: 0.85rem;
 }
 
+.obs-connection-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.85rem;
+  padding: 1rem;
+  border: 1px solid rgba(248,255,70,0.22);
+  border-radius: 1rem;
+  background: linear-gradient(135deg, rgba(248,255,70,0.08), rgba(56,232,255,0.05));
+}
+
+.obs-connection-summary > div {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.obs-connection-label {
+  color: rgba(255,255,255,0.62);
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.obs-connection-summary strong {
+  color: #fff;
+  font-size: 1rem;
+}
+
+.obs-setup-guide {
+  display: grid;
+  gap: 0.8rem;
+  padding: 1rem;
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 1rem;
+  background: rgba(255,255,255,0.04);
+}
+
+.obs-setup-guide strong {
+  color: var(--electric);
+  font-size: 1rem;
+}
+
+.obs-setup-guide ol {
+  margin: 0;
+  padding-left: 1.2rem;
+  color: rgba(255,255,255,0.9);
+}
+
+.obs-setup-guide li {
+  margin: 0.4rem 0;
+}
+
+.obs-setup-guide span {
+  color: #fff;
+  font-weight: 900;
+}
+
 .stream-secret-grid label > span,
 .seller-show-manager-head {
   display: flex;

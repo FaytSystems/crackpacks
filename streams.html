@@ -63,11 +63,40 @@
       <div class="giveaway-grid seller-cockpit-grid">
         <article class="holo-panel seller-stream-input">
           <h3>Private OBS connection</h3>
-          <p class="fine-print">Never post or share your stream key. Regeneration is handled through support if it is exposed.</p>
-          <button class="btn btn-primary" type="button" data-stream-input-create>Create / load OBS connection</button>
+          <p class="fine-print">One-time OBS setup. Your Crack Packs RTMPS server and stream key stay saved to your seller profile until you regenerate them, but the live input is locked except during your active show window.</p>
+          <div class="obs-connection-summary" data-stream-input-summary>
+            <div>
+              <span class="obs-connection-label">Connection status</span>
+              <strong data-stream-connection-status>Not set up yet</strong>
+            </div>
+            <div>
+              <span class="obs-connection-label">Security mode</span>
+              <strong>Static key + show lock</strong>
+            </div>
+          </div>
+          <div class="seller-social-actions">
+            <button class="btn btn-primary" type="button" data-stream-input-create>Create static OBS connection</button>
+            <button class="btn btn-outline" type="button" data-stream-input-load>Load saved connection</button>
+            <button class="btn btn-outline" type="button" data-stream-input-rotate>Regenerate stream key</button>
+            <button class="btn btn-outline" type="button" data-stream-setup-toggle>OBS setup guide</button>
+          </div>
           <div class="stream-secret-grid" data-stream-input-result hidden>
             <label>RTMPS server<span><input data-stream-rtmps-url readonly><button class="btn btn-outline btn-small" type="button" data-copy-stream-field="rtmps">Copy</button></span></label>
             <label>Stream key<span><input data-stream-key type="password" readonly><button class="btn btn-outline btn-small" type="button" data-reveal-stream-key>Reveal</button><button class="btn btn-outline btn-small" type="button" data-copy-stream-field="key">Copy</button></span></label>
+          </div>
+          <div class="obs-setup-guide" data-stream-setup-guide hidden>
+            <strong>OBS setup</strong>
+            <ol>
+              <li>Click <span>Create static OBS connection</span> once to generate your private Crack Packs stream input.</li>
+              <li>Open OBS and go to <span>Settings &gt; Stream</span>.</li>
+              <li>Set <span>Service</span> to <span>Custom</span>.</li>
+              <li>Paste the <span>RTMPS server</span> into OBS Server.</li>
+              <li>Paste the <span>Stream key</span> into OBS Stream Key.</li>
+              <li>Save OBS. Future shows reuse this same saved key until you choose <span>Regenerate stream key</span>.</li>
+              <li>The key is stored to your seller account, but Crack Packs locks the live input outside your active show window.</li>
+              <li>Start streaming in OBS before opening auctions on the site.</li>
+            </ol>
+            <p class="fine-print">If Cloudflare creation fails, the guide still applies once the stream input is fixed. The most common causes are a missing Stream token permission or the Stream service not being enabled on the Cloudflare account.</p>
           </div>
           <div class="campaign-form-status" data-stream-input-status aria-live="polite"></div>
         </article>

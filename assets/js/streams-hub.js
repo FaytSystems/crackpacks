@@ -25,6 +25,20 @@
     return payload;
   };
   const dateLabel = value => value ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "Schedule pending";
+  function renderStreamInput(input) {
+    const summary = $("[data-stream-connection-status]");
+    const result = $("[data-stream-input-result]");
+    if (!summary || !result) return;
+    if (!input?.rtmpsUrl || !input?.streamKey) {
+      summary.textContent = "Not set up yet";
+      result.hidden = true;
+      return;
+    }
+    summary.textContent = "Saved to seller profile";
+    $("[data-stream-rtmps-url]").value = input.rtmpsUrl;
+    $("[data-stream-key]").value = input.streamKey;
+    result.hidden = false;
+  }
   const showShareUrl = show => new URL(`live.html?show=${encodeURIComponent(show?.id || "")}`, location.href).href;
   const selectedSellerShow = () => {
     const showId = $("[data-seller-show-select]")?.value || "";
@@ -176,6 +190,10 @@
       localStorage.setItem("cp_can_seller_portal", status.sellerAccess ? "true" : "false");
       if (!sellerContextAuthorized) return;
       $$('[data-seller-only]').forEach(node => { node.hidden = false; });
+      try {
+        const streamInput = await api("/seller/stream/input");
+        renderStreamInput(streamInput.input);
+      } catch {}
       await Promise.all([loadSellerGiveaways(), loadSellerShows(), loadSellerInventory()]);
     } catch {}
   }
@@ -235,19 +253,42 @@
     } catch (error) { window.alert(error.message); button.disabled = false; button.textContent = "Fund giveaway securely"; }
   });
 
-  $("[data-stream-input-create]")?.addEventListener("click", async event => {
-    const button = event.currentTarget; button.disabled = true;
-    setStatus("[data-stream-input-status]", "Loading your private Cloudflare Stream input...");
+  async function loadOrCreateStreamInput({ createIfMissing = false, replaceExisting = false } = {}) {
+    $("[data-stream-setup-guide]")?.removeAttribute("hidden");
+    setStatus("[data-stream-input-status]", replaceExisting ? "Regenerating your saved OBS key..." : "Loading your saved OBS connection...");
     try {
       let payload = await api("/seller/stream/input");
-      if (!payload.input) payload = await api("/seller/stream/input", { method: "POST", body: "{}" });
-      if (!payload.input?.rtmpsUrl || !payload.input?.streamKey) throw new Error("Cloudflare did not return a complete OBS connection.");
-      $("[data-stream-rtmps-url]").value = payload.input.rtmpsUrl;
-      $("[data-stream-key]").value = payload.input.streamKey;
-      $("[data-stream-input-result]").hidden = false;
-      setStatus("[data-stream-input-status]", "OBS connection ready. Keep the stream key private.", "success");
+      if ((replaceExisting || (!payload.input && createIfMissing))) {
+        payload = await api(replaceExisting ? "/seller/stream/input/regenerate" : "/seller/stream/input", { method: "POST", body: "{}" });
+      }
+      if (!payload.input?.rtmpsUrl || !payload.input?.streamKey) {
+        if (!createIfMissing && !replaceExisting) throw new Error("No OBS connection is saved yet. Use Create static OBS connection first.");
+        throw new Error("Cloudflare did not return a complete OBS connection.");
+      }
+      renderStreamInput(payload.input);
+      setStatus("[data-stream-input-status]", replaceExisting ? "New static OBS key saved. Update OBS once with the regenerated key." : "Static OBS connection ready. This saved key can be reused for future shows.", "success");
     } catch (error) { setStatus("[data-stream-input-status]", error.message, "error"); }
-    finally { button.disabled = false; }
+  }
+  $("[data-stream-input-create]")?.addEventListener("click", async event => {
+    const button = event.currentTarget; button.disabled = true;
+    await loadOrCreateStreamInput({ createIfMissing: true });
+    button.disabled = false;
+  });
+  $("[data-stream-input-load]")?.addEventListener("click", async event => {
+    const button = event.currentTarget; button.disabled = true;
+    await loadOrCreateStreamInput({ createIfMissing: false });
+    button.disabled = false;
+  });
+  $("[data-stream-input-rotate]")?.addEventListener("click", async event => {
+    if (!confirm("Regenerate the saved OBS stream key? OBS will need the new key before the next show.")) return;
+    const button = event.currentTarget; button.disabled = true;
+    await loadOrCreateStreamInput({ createIfMissing: true, replaceExisting: true });
+    button.disabled = false;
+  });
+  $("[data-stream-setup-toggle]")?.addEventListener("click", () => {
+    const guide = $("[data-stream-setup-guide]");
+    if (!guide) return;
+    guide.hidden = !guide.hidden;
   });
 
   $("[data-reveal-stream-key]")?.addEventListener("click", event => {

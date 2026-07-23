@@ -1321,7 +1321,10 @@ async function cloudflareRequest(env, path, options = {}) {
     headers: { Authorization: `Bearer ${env.CLOUDFLARE_STREAM_API_TOKEN}`, "Content-Type": "application/json", ...(options.headers || {}) }
   });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok || payload.success === false) throw new Error("STREAM_PROVIDER_ERROR");
+  if (!response.ok || payload.success === false) {
+    const providerError = clean(payload?.errors?.[0]?.message || payload?.messages?.[0]?.message || payload?.result?.message || "", 240);
+    throw new Error(providerError ? `STREAM_PROVIDER_ERROR:${providerError}` : "STREAM_PROVIDER_ERROR");
+  }
   return payload.result || payload;
 }
 
@@ -1338,6 +1341,14 @@ async function cloudflareGraphqlRequest(env, query, variables) {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || payload.errors?.length) throw new Error("STREAM_ANALYTICS_PROVIDER_ERROR");
   return payload.data;
+}
+
+async function setLiveInputEnabled(env, liveInputUid, enabled) {
+  if (!liveInputUid) return;
+  await cloudflareRequest(env, `/live_inputs/${encodeURIComponent(liveInputUid)}`, {
+    method: "PUT",
+    body: JSON.stringify({ enabled: Boolean(enabled) })
+  });
 }
 
 function chooseBestRecordingForSession(session, videos) {
@@ -1512,18 +1523,35 @@ async function sellerStreamInput(request, env, cors) {
   const auth = await requireMember(request, env, cors, { seller: true });
   if (auth.error) return auth.error;
   let input = await env.DB.prepare(`SELECT * FROM breaker_stream_inputs WHERE member_id=?`).bind(auth.member.id).first();
-  if (!input && request.method === "POST") {
+  if ((request.method === "POST" && !input) || request.method === "PUT") {
+    if (request.method === "PUT" && input?.cloudflare_live_input_uid) {
+      await cloudflareRequest(env, `/live_inputs/${encodeURIComponent(input.cloudflare_live_input_uid)}`, { method: "DELETE" }).catch(() => null);
+    }
     let created;
     try {
-      created = await cloudflareRequest(env, "/live_inputs", { method: "POST", body: JSON.stringify({ meta: { name: `${auth.member.live_username || "seller"} Crack Packs input` }, recording: { mode: "automatic" } }) });
+      created = await cloudflareRequest(env, "/live_inputs", { method: "POST", body: JSON.stringify({ meta: { name: `${auth.member.live_username || "seller"} Crack Packs input` }, recording: { mode: "automatic" }, enabled: false }) });
     } catch (error) {
-      return json({ error: error.message === "STREAM_NOT_CONFIGURED" ? "Cloudflare Stream credentials are not configured." : "Cloudflare could not create the live input." }, 503, cors);
+      if (error.message === "STREAM_NOT_CONFIGURED") return json({ error: "Cloudflare Stream credentials are not configured." }, 503, cors);
+      const providerDetail = String(error.message || "").startsWith("STREAM_PROVIDER_ERROR:") ? String(error.message).slice("STREAM_PROVIDER_ERROR:".length) : "";
+      return json({ error: providerDetail ? `Cloudflare could not create the live input. ${providerDetail}` : "Cloudflare could not create the live input." }, 503, cors);
     }
     const stamp = now();
     const rtmps = created.rtmps || {};
     const srt = created.srt || {};
-    await env.DB.prepare(`INSERT INTO breaker_stream_inputs(member_id,cloudflare_live_input_uid,rtmps_url,rtmps_stream_key,srt_url,srt_stream_id,srt_passphrase,status,created_by_member_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`)
-      .bind(auth.member.id, created.uid, clean(rtmps.url, 300), clean(rtmps.streamKey, 500), clean(srt.url, 500), clean(srt.streamId, 300), clean(srt.passphrase, 300), "enabled", auth.member.id, stamp, stamp).run();
+    await env.DB.prepare(`
+      INSERT INTO breaker_stream_inputs(member_id,cloudflare_live_input_uid,rtmps_url,rtmps_stream_key,srt_url,srt_stream_id,srt_passphrase,status,created_by_member_id,created_at,updated_at)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?)
+      ON CONFLICT(member_id) DO UPDATE SET
+        cloudflare_live_input_uid=excluded.cloudflare_live_input_uid,
+        rtmps_url=excluded.rtmps_url,
+        rtmps_stream_key=excluded.rtmps_stream_key,
+        srt_url=excluded.srt_url,
+        srt_stream_id=excluded.srt_stream_id,
+        srt_passphrase=excluded.srt_passphrase,
+        status='disabled',
+        updated_at=excluded.updated_at
+    `)
+      .bind(auth.member.id, created.uid, clean(rtmps.url, 300), clean(rtmps.streamKey, 500), clean(srt.url, 500), clean(srt.streamId, 300), clean(srt.passphrase, 300), "disabled", auth.member.id, stamp, stamp).run();
     input = await env.DB.prepare(`SELECT * FROM breaker_stream_inputs WHERE member_id=?`).bind(auth.member.id).first();
   }
   return json({ input: input ? { uid: input.cloudflare_live_input_uid, rtmpsUrl: input.rtmps_url, streamKey: input.rtmps_stream_key, srtUrl: input.srt_url, srtStreamId: input.srt_stream_id, srtPassphrase: input.srt_passphrase, status: input.status } : null }, 200, cors);
@@ -1539,13 +1567,15 @@ async function sellerShows(request, env, cors) {
   const data = await boundedJson(request, 5000);
   const title = clean(data.title, 160);
   if (!title) return json({ error: "Enter a show title." }, 400, cors);
-  const input = await env.DB.prepare(`SELECT * FROM breaker_stream_inputs WHERE member_id=? AND status<>'disabled'`).bind(auth.member.id).first();
+  const input = await env.DB.prepare(`SELECT * FROM breaker_stream_inputs WHERE member_id=?`).bind(auth.member.id).first();
   if (!input) return json({ error: "Create your private OBS stream input first." }, 409, cors);
   const scheduledAt = data.scheduledAt && Number.isFinite(Date.parse(data.scheduledAt)) ? new Date(data.scheduledAt).toISOString() : null;
   const showId = uid(); const stamp = now();
   const slug = `${clean(auth.member.live_username || "seller", 32).toLowerCase()}-${showId.slice(0, 8)}`;
+  await setLiveInputEnabled(env, input.cloudflare_live_input_uid, true).catch(() => null);
   await env.DB.prepare(`INSERT INTO breaker_stream_sessions(id,member_id,cloudflare_live_input_uid,title,status,started_at,created_at,updated_at,public_slug,scheduled_at,thumbnail_url) VALUES(?,?,?,?,?,?,?,?,?,?,?)`)
     .bind(showId, auth.member.id, input.cloudflare_live_input_uid, title, "open", scheduledAt || stamp, stamp, stamp, slug, scheduledAt, clean(data.thumbnailUrl, 500)).run();
+  await env.DB.prepare(`UPDATE breaker_stream_inputs SET status='enabled',updated_at=? WHERE member_id=?`).bind(stamp, auth.member.id).run();
   return json({ id: showId, slug, status: "open" }, 201, cors);
 }
 
@@ -1571,6 +1601,12 @@ async function endSellerShow(request, env, cors, showId) {
   if (Number(changed.meta?.changes || 0) !== 1) return json({ error: "That show is already ended or was not found." }, 409, cors);
   await env.DB.prepare(`UPDATE breaker_auction_lots SET status='cancelled',updated_at=? WHERE session_id=? AND member_id=? AND status IN ('scheduled','live')`)
     .bind(stamp, showId, auth.member.id).run();
+  const remainingOpen = await env.DB.prepare(`SELECT id,cloudflare_live_input_uid FROM breaker_stream_sessions WHERE member_id=? AND id<>? AND status IN ('open','live') LIMIT 1`).bind(auth.member.id, showId).first();
+  if (!remainingOpen) {
+    const input = await env.DB.prepare(`SELECT cloudflare_live_input_uid FROM breaker_stream_inputs WHERE member_id=?`).bind(auth.member.id).first();
+    if (input?.cloudflare_live_input_uid) await setLiveInputEnabled(env, input.cloudflare_live_input_uid, false).catch(() => null);
+    await env.DB.prepare(`UPDATE breaker_stream_inputs SET status='disabled',updated_at=? WHERE member_id=?`).bind(stamp, auth.member.id).run();
+  }
   const streamCreditSync = await syncStreamUsageFromCloudflare(env, { memberId: auth.member.id, showId }).catch(error => {
     console.error("Post-show Stream Credit sync failed", error);
     return { syncedMembers: 0, syncedVideos: 0, syncFailed: true };
@@ -1751,6 +1787,7 @@ export async function handlePlatformRoute(request, env, cors) {
   const sellerInventoryAdjustMatch = url.pathname.match(/^\/seller\/inventory\/([0-9a-f-]{36})\/adjust$/i);
   if (sellerInventoryAdjustMatch && request.method === "POST") return adjustSellerInventory(request, env, cors, sellerInventoryAdjustMatch[1]);
   if (url.pathname === "/seller/stream/input" && ["GET", "POST"].includes(request.method)) return sellerStreamInput(request, env, cors);
+  if (url.pathname === "/seller/stream/input/regenerate" && request.method === "POST") return sellerStreamInput(new Request(request, { method: "PUT" }), env, cors);
   if (url.pathname === "/seller/shows" && ["GET", "POST"].includes(request.method)) return sellerShows(request, env, cors);
   const sellerLotMatch = url.pathname.match(/^\/seller\/shows\/([0-9a-f-]{36})\/lots$/i);
   if (sellerLotMatch && request.method === "GET") return sellerShowLots(request, env, cors, sellerLotMatch[1]);
