@@ -661,6 +661,7 @@
   function renderAccount(data) {
     accountState = data;
     const sellerAllowed = Boolean(data.isAdmin || data.sellerAccess);
+    const roles = Array.isArray(data.roles) && data.roles.length ? data.roles : (data.isAdmin ? ["buyer", "seller", "master"] : (sellerAllowed ? ["buyer", "seller"] : ["buyer"]));
     localStorage.setItem("cp_can_seller_portal", sellerAllowed ? "true" : "false");
     if (!sellerAllowed && (sessionStorage.getItem("cp_portal_mode") || localStorage.getItem("cp_portal_mode")) === "seller") {
       sessionStorage.setItem("cp_portal_mode", "buyer");
@@ -679,6 +680,8 @@
     }
     show("[data-profile-panel]", false); show("[data-dashboard]", true);
     $("[data-member-name]").textContent = data.firstName || "Collector";
+    const rolesNode = $("[data-account-role-badges]");
+    if (rolesNode) rolesNode.innerHTML = roles.map(role => `<span class="account-role-badge" data-role="${escapeHtml(role)}">${escapeHtml(role === "master" ? "Master Account" : role === "seller" ? "Seller Account" : "Buyer Account")}</span>`).join("");
     $("[data-admin-link]").hidden = !data.isAdmin;
     document.querySelectorAll("[data-seller-only]").forEach(node => { node.hidden = !sellerAllowed; });
     if (sellerAllowed) scheduleTopOfHourStreamCreditRefresh();
