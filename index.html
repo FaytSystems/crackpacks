@@ -60,7 +60,7 @@
         <strong>Search cards. Check market value.</strong>
         <em>Open price check</em>
       </a>
-      <a class="marquee-slide" href="shop.html" style="--slide-image:url('/assets/images/banner-flame.svg')">
+      <a class="marquee-slide" href="shop.html" data-seller-only hidden style="--slide-image:url('/assets/images/banner-flame.svg')">
         <span class="marquee-kicker">Pull the heat</span>
         <strong>Collector fire lives here.</strong>
         <em>See inventory</em>
@@ -122,10 +122,10 @@
 
     <section class="type-strip" aria-label="Collector categories">
       <div class="container type-grid">
-        <a href="shop.html?category=sealed" class="type-pill type-electric"><i>⚡</i><span><strong>Sealed heat</strong><small>Boxes, ETBs and bundles</small></span></a>
-        <a href="shop.html?category=packs" class="type-pill type-fire"><i>✦</i><span><strong>Pack lots</strong><small>Rip, ship or battle</small></span></a>
+        <a href="shop.html?category=sealed" class="type-pill type-electric" data-seller-only hidden><i>⚡</i><span><strong>Sealed heat</strong><small>Boxes, ETBs and bundles</small></span></a>
+        <a href="shop.html?category=packs" class="type-pill type-fire" data-seller-only hidden><i>✦</i><span><strong>Pack lots</strong><small>Rip, ship or battle</small></span></a>
         <a href="card-lookup.html" class="type-pill type-water"><i>⌕</i><span><strong>Card price check</strong><small>Search details and estimates</small></span></a>
-        <a href="shop.html?category=singles" class="type-pill type-psychic"><i>◆</i><span><strong>Singles &amp; slabs</strong><small>Raw, graded and vintage</small></span></a>
+        <a href="shop.html?category=singles" class="type-pill type-psychic" data-seller-only hidden><i>◆</i><span><strong>Singles &amp; slabs</strong><small>Raw, graded and vintage</small></span></a>
       </div>
     </section>
 
@@ -137,7 +137,7 @@
             <h2>Collector inventory with <span>live-show energy.</span></h2>
             <p>Browse the current inventory, then open the seller portal or live hub to verify availability.</p>
           </div>
-          <a class="btn btn-outline" href="shop.html">Open full shop →</a>
+          <a class="btn btn-outline" href="shop.html" data-seller-only hidden>Open Seller Store →</a>
         </div>
         <div class="product-grid" data-featured-products></div>
       </div>
@@ -151,7 +151,7 @@
           <p>Search by name, set, number, rarity, type, or keyword. Compare returned market references, then open the external market listing to verify the current value.</p>
           <div class="actions">
             <a class="btn btn-primary" href="card-lookup.html">Open Card Search &amp; Price Check</a>
-            <a class="btn btn-glass" href="shop.html">Browse inventory</a>
+            <a class="btn btn-glass" href="shop.html" data-seller-only hidden>Browse seller inventory</a>
           </div>
         </div>
         <div class="element-wheel" aria-hidden="true">
@@ -374,6 +374,7 @@
 </div>
 <!-- CRACK PACKS CONTACT MODAL:END -->
 <!-- CRACK PACKS CONTACT SCRIPT:START -->
+<script src="assets/js/portal-mode.js?v=1.1.0"></script>
 <script src="assets/js/nav-profile.js?v=2.6.1"></script>
 <script src="assets/js/contact-form.js?v=1.7.1"></script>
 <!-- CRACK PACKS CONTACT SCRIPT:END -->

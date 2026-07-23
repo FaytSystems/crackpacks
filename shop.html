@@ -97,6 +97,36 @@
       </div>
     </section>
 
+    <section class="section" id="shipping-quote">
+      <div class="container">
+        <div class="shipping-quote-panel holo-panel reveal">
+          <p class="eyebrow">Secure seller checkout</p>
+          <h2>Confirm the delivery address</h2>
+          <p>Choose one in-stock product and enter the USA delivery address. The carrier rate is verified before Stripe Checkout opens.</p>
+          <form class="shipping-quote-form" data-shipping-quote-form novalidate>
+            <label class="shipping-field shipping-field-wide"><span>Product</span><select name="slug" data-shipping-product required><option value="">Choose a product</option></select></label>
+            <label class="shipping-field"><span>Quantity</span><input type="number" name="quantity" value="1" min="1" max="1" step="1" readonly required><small>Current checkout supports one packed item at a time.</small></label>
+            <label class="shipping-field"><span>Recipient name</span><input type="text" name="name" autocomplete="name" maxlength="100" required></label>
+            <label class="shipping-field shipping-field-wide"><span>Address line 1</span><input type="text" name="street1" autocomplete="address-line1" maxlength="120" required></label>
+            <label class="shipping-field shipping-field-wide"><span>Address line 2 (optional)</span><input type="text" name="street2" autocomplete="address-line2" maxlength="120"></label>
+            <label class="shipping-field"><span>City</span><input type="text" name="city" autocomplete="address-level2" maxlength="80" required></label>
+            <label class="shipping-field"><span>State</span><input type="text" name="state" autocomplete="address-level1" maxlength="80" required></label>
+            <label class="shipping-field"><span>ZIP code</span><input type="text" name="postalCode" autocomplete="postal-code" maxlength="24" required></label>
+            <label class="shipping-field"><span>Country</span><input type="text" name="country" value="US" minlength="2" maxlength="2" readonly required></label>
+            <label class="shipping-field"><span>Phone (optional)</span><input type="tel" name="phone" autocomplete="tel" maxlength="30"></label>
+            <label class="shipping-field"><span>Email</span><input type="email" name="email" autocomplete="email" maxlength="254" required></label>
+            <div class="shipping-field shipping-field-wide shipping-security-check"><span>Security check</span><div data-shipping-turnstile></div></div>
+            <div class="shipping-form-actions">
+              <button class="btn btn-primary" type="submit">Get shipping options</button>
+              <p class="shipping-quote-status" data-shipping-quote-status aria-live="polite">No charge is created until you continue to Stripe.</p>
+            </div>
+          </form>
+          <div class="shipping-rate-list" data-shipping-rates aria-live="polite"></div>
+          <p class="shipping-provider-disclosure" data-shipping-disclosure hidden></p>
+        </div>
+      </div>
+    </section>
+
     <section class="section element-zone">
       <div class="container element-panel holo-panel reveal">
         <div class="element-panel-copy"><p class="eyebrow">Card Search &amp; Price Check</p><h2>Need a value before you buy, sell, or bid?</h2><p>Use the dedicated collector tool to find the exact printing, review returned market-reference pricing, and open the external market listing for verification.</p><div class="actions"><a class="btn btn-primary" href="card-lookup.html">Open the price check</a><a class="btn btn-glass" href="streams.html">View live inventory</a></div></div>

@@ -659,3 +659,75 @@ button { color: inherit; }
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
   .reveal { opacity: 1; transform: none; }
 }
+/* The Store is a Seller Portal feature. Links remain hidden until the
+   authenticated portal controller confirms an active seller session. */
+body:not([data-portal-mode="seller"]) a[href^="shop.html"],
+body:not([data-portal-mode="seller"]) a[href^="international-shop.html"] {
+  display: none !important;
+}
+
+.crackpacks-social-footer {
+  display: grid;
+  justify-items: center;
+  gap: 1rem;
+  margin: 2rem auto 0;
+  padding: 1.5rem max(1rem, 4vw);
+  border-top: 1px solid rgba(255,255,255,0.12);
+  background: radial-gradient(circle at 50% 0, rgba(49,207,255,0.13), transparent 55%), #050716;
+}
+
+.crackpacks-social-footer-title {
+  display: grid;
+  justify-items: center;
+  gap: 0.2rem;
+  text-align: center;
+}
+
+.crackpacks-social-footer-title strong {
+  letter-spacing: 0.08em;
+}
+
+.crackpacks-social-footer-title span {
+  color: rgba(255,255,255,0.72);
+}
+
+.crackpacks-social-footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.8rem;
+}
+
+.crackpacks-social-icon {
+  display: inline-grid;
+  grid-template-columns: 2rem auto;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 3rem;
+  padding: 0.45rem 0.85rem 0.45rem 0.5rem;
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 999px;
+  color: #fff;
+  background: linear-gradient(145deg, rgba(28,43,93,0.95), rgba(16,14,48,0.95));
+  box-shadow: 0 10px 30px rgba(0,0,0,0.28), inset 0 0 18px rgba(78,222,255,0.08);
+  text-decoration: none;
+  transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.crackpacks-social-icon > span {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  color: #071020;
+  font-weight: 900;
+  background: linear-gradient(135deg, #dfff4f, #41ddff 55%, #ed59e7);
+}
+
+.crackpacks-social-icon:hover,
+.crackpacks-social-icon:focus-visible {
+  transform: translateY(-3px) rotate(-1deg);
+  border-color: rgba(92,224,255,0.7);
+  box-shadow: 0 14px 38px rgba(18,179,255,0.22), 0 0 24px rgba(232,82,255,0.15);
+}

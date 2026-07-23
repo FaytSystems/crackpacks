@@ -13,7 +13,7 @@ The Crack Packs homepage now contains one responsive 16:9 live-room interface wi
 - **Upcoming mode:** keeps the artwork visible while showing the next scheduled livestream and its local start time.
 - **Safe fallback mode:** if YouTube or the Worker is unavailable, the slideshow remains active and the rest of the website continues working.
 
-The existing **Card Search & Price Check** navigation, card API, shop, release radar, Whatnot link, and original site files are preserved.
+The existing **Card Search & Price Check** navigation, card API, shop, release calendar, first-party Live Hub, and original site files are preserved.
 
 ## Complete replacement and new files
 

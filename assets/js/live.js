@@ -1,6 +1,12 @@
 (function () {
-  const apiBase = (window.CRACKPACKS_CONFIG && window.CRACKPACKS_CONFIG.rewardsApiBase) || "https://rewards-api.crackpacks.com";
+  const apiBase = (window.CRACKPACKS_CONFIG && window.CRACKPACKS_CONFIG.rewardsApiUrl) || "https://rewards-api.crackpacks.com";
   const token = () => localStorage.getItem("cp_rewards_token") || "";
+  const showId = new URLSearchParams(location.search).get("show") || "";
+  let viewerClientId = localStorage.getItem("cp_viewer_client_id") || "";
+  if (!/^[A-Za-z0-9_-]{16,80}$/.test(viewerClientId)) {
+    viewerClientId = crypto.randomUUID().replace(/-/g, "");
+    localStorage.setItem("cp_viewer_client_id", viewerClientId);
+  }
   const $ = (sel) => document.querySelector(sel);
   const els = {
     card: $("[data-live-bid-card]"),
@@ -17,12 +23,16 @@
     customForm: $("[data-custom-bid-form]"),
     customCurrent: $("[data-custom-live-current]"),
     customMin: $("[data-custom-live-min]"),
-    customHelp: $("[data-custom-bid-help]")
+    customHelp: $("[data-custom-bid-help]"),
+    player: $("[data-live-stream-player]"),
+    placeholder: $("[data-live-video-placeholder]"),
+    viewers: $("[data-live-viewers]")
   };
 
   let lot = null;
   let dragging = false;
   let lastRenderedBidCents = 0;
+  let activePlaybackUrl = "";
 
   const money = (cents) => `$${(Number(cents || 0) / 100).toFixed(2)}`;
   const dollars = (cents) => (Number(cents || 0) / 100).toFixed(2);
@@ -79,6 +89,7 @@
 
   const render = (nextLot) => {
     lot = nextLot || null;
+    if (lot?.playbackUrl) setPlayback(lot.playbackUrl);
     if (!lot) {
       els.card.dataset.state = "ready";
       els.status.textContent = "No auction is live yet. Keep this page open.";
@@ -120,14 +131,32 @@
     setSlider(0);
   };
 
+  const setPlayback = url => {
+    if (!url || url === activePlaybackUrl || !els.player) return;
+    activePlaybackUrl = url;
+    els.player.src = url;
+    els.player.hidden = false;
+    if (els.placeholder) els.placeholder.hidden = true;
+  };
+
   const refresh = async () => {
     try {
-      const data = await api("/live/auction", { method: "GET" });
+      const data = await api(`/live/auction${showId ? `?show=${encodeURIComponent(showId)}` : ""}`, { method: "GET" });
+      if (data.show?.playbackUrl) setPlayback(data.show.playbackUrl);
+      if (els.viewers) els.viewers.textContent = String(data.show?.viewerCount ?? data.lot?.viewerCount ?? 0);
       render(data.lot);
     } catch (err) {
       els.status.textContent = err.message;
       if (!token()) els.copy.textContent = "Sign in to your Profile before bidding.";
     }
+  };
+
+  const heartbeat = async () => {
+    if (!showId) return;
+    try {
+      const data = await api("/live/viewers/heartbeat", { method: "POST", body: JSON.stringify({ showId, clientId: viewerClientId }) });
+      if (els.viewers) els.viewers.textContent = String(data.viewers || 0);
+    } catch {}
   };
 
   const placeBid = async (payload = {}) => {
@@ -190,5 +219,7 @@
   }
 
   refresh();
+  heartbeat();
   setInterval(refresh, 2000);
+  setInterval(heartbeat, 30000);
 })();

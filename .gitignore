@@ -4,6 +4,12 @@ cloudflare-worker/.dev.vars
 cloudflare-worker/.env
 cloudflare-worker/.env.*
 cloudflare-worker/.wrangler/
+rewards-worker/node_modules/
+rewards-worker/.wrangler/
+youtube-live-worker/node_modules/
+youtube-live-worker/.wrangler/
+contact-worker/node_modules/
+contact-worker/.wrangler/
 
 # OS/editor files
 .DS_Store

@@ -30,7 +30,7 @@
       <button class="menu-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="site-nav"><span></span><span></span><span></span></button>
       <nav class="site-nav" id="site-nav" aria-label="Primary navigation">
         <a href="index.html">Home</a>
-        <a href="shop.html">Shop</a>
+        <a href="shop.html" data-hide-store-link hidden>Store</a>
         <a href="releases.html">Releases</a>
         <a href="card-lookup.html" aria-current="page">Card Search ($)</a>
         <div class="nav-profile" data-nav-profile>
@@ -59,6 +59,10 @@
         </div>
 
         <div class="lookup-search-panel holo-panel reveal">
+          <div class="card-series-tabs" data-card-series-tabs role="group" aria-label="Choose card game">
+            <button class="card-series-tab is-active" type="button" data-card-series="pokemon"><span>⚡</span>Pokémon</button>
+            <button class="card-series-tab" type="button" data-card-series="magic"><span>✦</span>Magic: The Gathering</button>
+          </div>
           <form data-price-check-form>
             <label class="lookup-field">
               <span>What card are you checking?</span>
@@ -158,7 +162,7 @@
       <div class="footer-links">
         <h3>Explore</h3>
         <a href="index.html">Home</a>
-        <a href="shop.html">Shop</a>
+        <a href="shop.html" data-hide-store-link hidden>Store</a>
         <a href="releases.html">Release Radar</a>
         <a href="card-lookup.html">Card Search &amp; Price Check</a>
         <a data-live href="#">Live Hub</a>
@@ -176,6 +180,7 @@
 </footer>
 
 <script src="assets/js/config.js?v=3.0.0"></script>
+  <script src="assets/js/portal-mode.js?v=1.1.0"></script>
   <script src="assets/js/data.js?v=1.5.0"></script>
   <script src="assets/js/app.js?v=1.5.0"></script>
   <script src="assets/js/card-lookup.js?v=1.5.0"></script>

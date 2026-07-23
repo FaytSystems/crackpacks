@@ -44,12 +44,12 @@ function facebookGraphVersion(value) {
   return /^v\d{1,2}\.\d$/.test(candidate) ? candidate : "v25.0";
 }
 
-function safeWhatnotUrl(value) {
+function safeCrackPacksUrl(value) {
   try {
     const parsed = new URL(String(value || "").trim());
     const hostname = parsed.hostname.toLowerCase();
     if (parsed.protocol !== "https:") return "";
-    if (hostname !== "whatnot.com" && !hostname.endsWith(".whatnot.com")) return "";
+    if (hostname !== "crackpacks.com" && hostname !== "www.crackpacks.com") return "";
     parsed.hash = "";
     return parsed.toString();
   } catch {
@@ -71,7 +71,7 @@ function facebookConfiguration(env) {
   const pageId = validFacebookPageId(env.FACEBOOK_PAGE_ID);
   const pageAccessToken = String(env.FACEBOOK_PAGE_ACCESS_TOKEN || "").trim();
   const appSecret = String(env.FACEBOOK_APP_SECRET || "").trim();
-  const whatnotUrl = safeWhatnotUrl(env.WHATNOT_LIVE_URL);
+  const liveHubUrl = safeCrackPacksUrl(env.CRACKPACKS_LIVE_URL || "https://crackpacks.com/streams.html");
 
   return {
     enabled: enabled(env.FACEBOOK_AUTO_POST_ENABLED),
@@ -79,13 +79,13 @@ function facebookConfiguration(env) {
       pageId &&
       pageAccessToken &&
       appSecret &&
-      whatnotUrl &&
+      liveHubUrl &&
       env.SOCIAL_ANNOUNCEMENTS
     ),
     pageId,
     pageAccessToken,
     appSecret,
-    whatnotUrl,
+    liveHubUrl,
     graphVersion: facebookGraphVersion(env.FACEBOOK_GRAPH_VERSION)
   };
 }
@@ -192,20 +192,20 @@ function safeYoutubeWatchUrl(value) {
   }
 }
 
-function facebookAnnouncementMessage(live, whatnotUrl) {
+function facebookAnnouncementMessage(live, liveHubUrl) {
   const title = normalizedPostText(live?.title, 180) || "Crack Packs is live";
   const description = normalizedPostText(live?.description, 420);
   const youtubeUrl = safeYoutubeWatchUrl(live?.watchUrl);
   const lines = [
-    "LIVE ON WHATNOT",
+    "LIVE ON CRACKPACKS",
     title
   ];
 
   if (description) lines.push(description);
 
   lines.push(
-    "Join Crack Packs live on Whatnot:",
-    whatnotUrl
+    "Join Crack Packs live:",
+    liveHubUrl
   );
 
   if (youtubeUrl) {
@@ -242,11 +242,11 @@ async function publishFacebookAnnouncement(env, live) {
     };
   }
 
-  const message = facebookAnnouncementMessage(live, config.whatnotUrl);
+  const message = facebookAnnouncementMessage(live, config.liveHubUrl);
   const appSecretProof = await hmacSha256Hex(config.appSecret, config.pageAccessToken);
   const form = new URLSearchParams({
     message,
-    link: config.whatnotUrl,
+    link: safeYoutubeWatchUrl(live?.watchUrl) || config.liveHubUrl,
     appsecret_proof: appSecretProof
   });
   const endpoint = `${FACEBOOK_GRAPH_BASE}/${config.graphVersion}/${config.pageId}/feed`;

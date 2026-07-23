@@ -3,7 +3,7 @@ CREATE TABLE IF NOT EXISTS member_orders (
   member_id TEXT NOT NULL,
   owner_member_id TEXT NOT NULL,
   order_number TEXT NOT NULL UNIQUE CHECK(length(order_number) BETWEEN 1 AND 64),
-  channel TEXT NOT NULL CHECK(channel IN ('website','whatnot','manual')),
+  channel TEXT NOT NULL CHECK(channel IN ('website','live','manual')),
   items_json TEXT NOT NULL CHECK(length(items_json) BETWEEN 2 AND 10000),
   status TEXT NOT NULL DEFAULT 'processing' CHECK(status IN ('processing','shipped','delivered','cancelled')),
   placed_at TEXT NOT NULL,

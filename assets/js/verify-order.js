@@ -29,7 +29,7 @@
       ["Clip ends", dateLabel(sale.clipEndedAt)],
       ["Clip method", String(sale.clipMethod || "pending").replace(/_/g, " ")],
       ["Clip length", sale.clipDurationSeconds ? `${sale.clipDurationSeconds}s` : "Pending"],
-      ["Breaker", sale.whatnotUsername ? `@${sale.whatnotUsername}` : sale.email || "Crack Packs breaker"]
+      ["Seller", sale.sellerUsername ? `@${sale.sellerUsername}` : sale.email || "Crack Packs seller"]
     ].forEach(([labelText, valueText]) => {
       const item = document.createElement("div");
       const label = document.createElement("span"); label.textContent = labelText;

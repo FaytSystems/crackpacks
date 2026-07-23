@@ -8,6 +8,7 @@
   const ownerReferralToken = String(qs.get("owner_ref") || "").slice(0, 80);
   const hasAttachedReferral = Boolean(referralCode || ownerReferralToken);
   const verificationToken = String(qs.get("verify") || "");
+  const sellerActivationToken = String(qs.get("seller_activation") || "").slice(0, 120);
   const normalizeOfferToken = value => {
     const candidate = String(value || "").trim().toUpperCase().slice(0, 64);
     return /^OFR[A-HJ-NP-Z2-9]{32}$/.test(candidate) ? candidate : "";
@@ -22,6 +23,7 @@
   const $ = selector => document.querySelector(selector);
   const status = $("[data-app-status]");
   const showStatus = (message = "", kind = "") => { status.textContent = message; status.dataset.kind = kind; };
+  const showContactStatus = (message = "", kind = "") => { const node = $("[data-contact-status]"); if (node) { node.textContent = message; node.dataset.kind = kind; } };
   let email = "";
   let turnstileTokenValue = "";
   let turnstileWidgetId = null;
@@ -497,15 +499,23 @@
   }
   function renderAccount(data) {
     accountState = data;
-    localStorage.setItem("cp_can_seller_portal", data.isAdmin ? "true" : "false");
-    if (!data.isAdmin && (sessionStorage.getItem("cp_portal_mode") || localStorage.getItem("cp_portal_mode")) === "seller") {
+    const sellerAllowed = Boolean(data.isAdmin || data.sellerAccess);
+    localStorage.setItem("cp_can_seller_portal", sellerAllowed ? "true" : "false");
+    if (!sellerAllowed && (sessionStorage.getItem("cp_portal_mode") || localStorage.getItem("cp_portal_mode")) === "seller") {
       sessionStorage.setItem("cp_portal_mode", "buyer");
       localStorage.setItem("cp_portal_mode", "buyer");
     }
     show("[data-auth-panel]", false);
     if (!data.deviceVerified) { show("[data-device-panel]", true); show("[data-profile-panel]", false); show("[data-dashboard]", false); return; }
     show("[data-device-panel]", false);
-    if (!data.profileComplete) { show("[data-profile-panel]", true); show("[data-dashboard]", false); return; }
+    if (!data.profileComplete) {
+      show("[data-profile-panel]", true);
+      show("[data-dashboard]", false);
+      const awaitingIdentity = ["pending_identity", "pending_review"].includes(data.identityStatus);
+      $("[data-profile-form]").hidden = awaitingIdentity;
+      $("[data-stripe-identity-action]").hidden = !awaitingIdentity;
+      return;
+    }
     show("[data-profile-panel]", false); show("[data-dashboard]", true);
     $("[data-member-name]").textContent = data.firstName || "Collector";
     $("[data-admin-link]").hidden = !data.isAdmin;
@@ -525,7 +535,19 @@
       $("[data-invite-copy-message]").textContent = "Your unique referral is ready to paste into a text, post, bio, or group chat.";
       loadPersonalQr(data.inviteUrl).catch(error => showStatus(error.message, "error"));
     }
-    $("[data-whatnot-username]").value = data.whatnotUsername || "";
+    $("[data-live-username]").value = data.liveUsername || "";
+    const shipping = data.shippingAddress || {};
+    $("[data-contact-phone]").value = data.phone || "";
+    $("[data-shipping-name]").value = shipping.name || data.firstName || "";
+    $("[data-shipping-street1]").value = shipping.street1 || "";
+    $("[data-shipping-street2]").value = shipping.street2 || "";
+    $("[data-shipping-city]").value = shipping.city || "";
+    $("[data-shipping-state]").value = shipping.state || "";
+    $("[data-shipping-postal]").value = shipping.postalCode || "";
+    $("[data-shipping-country]").value = shipping.country || "US";
+    $("[data-payment-method-label]").textContent = data.paymentMethod ? `${String(data.paymentMethod.brand || "Card").toUpperCase()} ending in ${data.paymentMethod.last4}` : "No payment method saved";
+    $("[data-add-payment-method]").textContent = data.paymentMethod ? "Replace payment method" : "Add payment method";
+    if (qs.get("billing") === "success") showContactStatus(data.paymentMethod ? "Payment method saved securely by Stripe." : "Stripe accepted the payment method. Waiting for webhook confirmation; refresh in a moment.", data.paymentMethod ? "success" : "");
     $("[data-next-tier]").textContent = data.nextTier ? `${data.nextTier.remaining} more verified friend${data.nextTier.remaining === 1 ? "" : "s"} to unlock ${data.nextTier.name}: ${data.nextTier.reward}.` : "You have reached the highest published reward tier.";
     const tierTrack = $("[data-tier-track]"); tierTrack.replaceChildren();
     (Array.isArray(data.tiers) ? data.tiers : []).forEach(tier => {
@@ -705,8 +727,27 @@
   document.querySelectorAll("[data-discount-redeemed-close]").forEach(button => button.addEventListener("click", () => { $("[data-discount-redeemed-modal]").hidden = true; }));
   $("[data-profile-form]").addEventListener("submit", async event => {
     event.preventDefault(); const form = Object.fromEntries(new FormData(event.currentTarget));
-    try { const data = await request("/profile", { method: "POST", body: JSON.stringify(form) }); showStatus("Identity profile verified.", "success"); renderAccount(data.account); }
+    try {
+      const data = await request("/profile", { method: "POST", body: JSON.stringify(form) });
+      renderAccount(data.account);
+      showStatus("Legal profile saved. Opening the secure Stripe Identity check...", "success");
+      const identity = await request("/identity/session", { method: "POST", body: "{}" });
+      if (identity.url) location.href = identity.url;
+    }
     catch (error) { showStatus(error.message, "error"); }
+  });
+  $("[data-start-stripe-identity]").addEventListener("click", async event => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      const identity = await request("/identity/session", { method: "POST", body: "{}" });
+      if (identity.verified) return loadAccount();
+      if (!identity.url) throw new Error("Stripe Identity did not return a verification page.");
+      location.href = identity.url;
+    } catch (error) {
+      button.disabled = false;
+      showStatus(error.message, "error");
+    }
   });
   const toBase64url = buffer => btoa(String.fromCharCode(...new Uint8Array(buffer))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   const fromBase64url = value => Uint8Array.from(atob(value.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(value.length / 4) * 4, "=")), c => c.charCodeAt(0));
@@ -745,6 +786,7 @@
       await loadMyOrders();
       $("[data-orders-panel]").scrollIntoView({ behavior: "smooth", block: "start" });
     }
+    if (button.dataset.view === "account") $("[data-account-panel]").scrollIntoView({ behavior: "smooth", block: "start" });
     if (inviteView && !accountState?.ownerReferralDashboardOnly) {
       try { await copyInviteLink(); }
       catch (error) { showStatus(error.message, "error"); }
@@ -833,12 +875,34 @@
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     try {
-      const data = await request("/profile/username", { method: "POST", body: JSON.stringify({ whatnotUsername: form.get("whatnotUsername") }) });
-      renderAccount(data.account);
+      const data = await request("/profile/live-username", { method: "POST", body: JSON.stringify({ liveUsername: form.get("liveUsername") }) });
+      accountState.liveUsername = data.liveUsername;
+      $("[data-live-username]").value = data.liveUsername;
       showStatus("User ID saved. It is now searchable in the owner dashboard.", "success");
     } catch (error) {
       showStatus(error.message, "error");
     }
+  });
+  $("[data-contact-form]")?.addEventListener("submit", async event => {
+    event.preventDefault();
+    const form = event.currentTarget; const data = new FormData(form); const button = event.submitter; button.disabled = true;
+    try {
+      const payload = await request("/profile/contact", { method: "POST", body: JSON.stringify({
+        phone: data.get("phone"),
+        shippingAddress: { name: data.get("name"), street1: data.get("street1"), street2: data.get("street2"), city: data.get("city"), state: data.get("state"), postalCode: data.get("postalCode"), country: data.get("country") }
+      }) });
+      accountState.phone = payload.phone; accountState.shippingAddress = payload.shippingAddress;
+      showContactStatus("Checkout profile saved.", "success");
+    } catch (error) { showContactStatus(error.message, "error"); }
+    finally { button.disabled = false; }
+  });
+  $("[data-add-payment-method]")?.addEventListener("click", async event => {
+    const button = event.currentTarget; button.disabled = true; showContactStatus("Opening Stripe's secure card setup...");
+    try {
+      const result = await request("/billing/setup", { method: "POST", body: "{}" });
+      if (!result.url) throw new Error("Stripe did not return a secure setup page.");
+      location.href = result.url;
+    } catch (error) { button.disabled = false; showContactStatus(error.message, "error"); }
   });
   $("[data-sign-out]").addEventListener("click", async () => {
     try { await request("/auth/logout", { method: "POST" }); } catch {}
@@ -847,7 +911,21 @@
     location.href = "referral.html";
   });
   async function confirmEmailLink() {
-    if (!verificationToken) return loadAccount();
+    if (!verificationToken) {
+      await loadAccount();
+      if (sellerActivationToken && token) {
+        try {
+          const result = await request("/seller/activate", { method: "POST", body: JSON.stringify({ token: sellerActivationToken }) });
+          localStorage.setItem("cp_can_seller_portal", "true");
+          localStorage.setItem("cp_portal_mode", result.activePortal || "seller");
+          sessionStorage.setItem("cp_portal_mode", result.activePortal || "seller");
+          history.replaceState({}, document.title, location.pathname);
+          showStatus("Seller Portal activated. You can now open seller inventory and show tools.", "success");
+          await loadAccount();
+        } catch (error) { showStatus(error.message, "error"); }
+      }
+      return;
+    }
     try {
       const data = await request("/auth/verify-link", { method: "POST", body: JSON.stringify({ token: verificationToken }) });
       token = data.token; localStorage.setItem("cp_rewards_token", token);

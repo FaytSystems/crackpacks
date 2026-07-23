@@ -3,8 +3,9 @@ import { issueOwnerReferral, ownerReferralSlotAt, verifyOwnerReferral } from "./
 import { campaignWeekAt, parseCampaignExpiryHours } from "./campaign-time.js";
 import { calculateChannelPricing, channelPricingErrors } from "./channel-pricing.js";
 import { sanitizeEasyPostTracker, verifyEasyPostWebhook } from "./easypost-tracking.js";
+import { handlePlatformRoute, usernameKey } from "./platform-routes.js";
 
-const VERSION = "3.3.3";
+const VERSION = "5.0.0";
 const CAMPAIGN_REWARD_TYPES = new Set(["percent", "free_shipping", "pick_a_pack", "pack_draft", "free_single", "product"]);
 const MAX_CAMPAIGN_REDEMPTIONS = 500;
 const STORE_CURRENCIES = new Set(["USD", "CAD", "EUR", "GBP", "AUD", "NZD", "JPY", "CHF", "SEK", "NOK", "DKK", "PLN", "CZK", "HUF", "RON"]);
@@ -74,7 +75,7 @@ function parseInventoryItemInput(data) {
   const retailListPriceCents = optionalInteger(data?.retailListPriceCents, 0, 100000000);
   const websiteListPriceCents = optionalInteger(data?.websiteListPriceCents, 0, 100000000);
   const internationalListPriceCents = optionalInteger(data?.internationalListPriceCents, 0, 100000000);
-  const whatnotListPriceCents = optionalInteger(data?.whatnotListPriceCents, 0, 100000000);
+  const liveListPriceCents = optionalInteger(data?.liveListPriceCents, 0, 100000000);
   const wholesaleSmallListPriceCents = optionalInteger(data?.wholesaleSmallListPriceCents, 0, 100000000);
   const wholesaleCaseListPriceCents = optionalInteger(data?.wholesaleCaseListPriceCents, 0, 100000000);
   const wholesalePalletListPriceCents = optionalInteger(data?.wholesalePalletListPriceCents, 0, 100000000);
@@ -83,7 +84,7 @@ function parseInventoryItemInput(data) {
   const widthIn = optionalNumber(data?.widthIn, 0.01, 120);
   const heightIn = optionalNumber(data?.heightIn, 0.01, 120);
   if ([quantity, averageMsrpCents, cogsCents, usShippingCents, profitCents, packagingCents, overheadCents, retailFixedFeeCents, wholesaleHandlingCents,
-    retailListPriceCents, websiteListPriceCents, internationalListPriceCents, whatnotListPriceCents, wholesaleSmallListPriceCents,
+    retailListPriceCents, websiteListPriceCents, internationalListPriceCents, liveListPriceCents, wholesaleSmallListPriceCents,
     wholesaleCaseListPriceCents, wholesalePalletListPriceCents, weightOz, lengthIn, widthIn, heightIn].some(Number.isNaN)) return { error: "Check the inventory quantity, pricing, weight, and package dimensions." };
   const originCountry = String(rawOriginCountry || "").trim().toUpperCase();
   if (originCountry && !/^[A-Z]{2}$/.test(originCountry)) return { error: "Country of origin must be a two-letter code." };
@@ -97,7 +98,7 @@ function parseInventoryItemInput(data) {
       name, upc: upc || null, category: clean(rawCategory, 64), series, description: String(rawDescription || "").trim(), imageUrl, sourceUrl,
       quantity, averageMsrpCents, referencePriceLabel: clean(rawReferenceLabel || "Retail reference price", 80), referencePriceObservedAt: referencePriceObservedAt || null,
       cogsCents, usShippingCents, profitCents, packagingCents, overheadCents, retailFixedFeeCents, wholesaleHandlingCents,
-      retailListPriceCents, websiteListPriceCents, internationalListPriceCents, whatnotListPriceCents,
+      retailListPriceCents, websiteListPriceCents, internationalListPriceCents, liveListPriceCents,
       wholesaleSmallListPriceCents, wholesaleCaseListPriceCents, wholesalePalletListPriceCents,
       weightOz, lengthIn, widthIn, heightIn,
       originCountry, hsCode, packingNotes: String(rawPackingNotes || "").trim(),
@@ -125,7 +126,7 @@ function corsFor(request, env) {
   return allowed.includes(origin) ? { "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Admin-Token", "Access-Control-Allow-Methods": "GET, POST, OPTIONS", Vary: "Origin" } : null;
 }
 async function body(request) { try { return await request.json(); } catch { throw new Error("INVALID_JSON"); } }
-async function sendEmail(env, to, subject, html, idempotencyKey = id()) {
+async function sendEmail(env, to, subject, html, idempotencyKey = id(), fromAddress = "rewards@crackpacks.com") {
   if (env.RESEND_API_KEY) {
     const result = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -135,7 +136,7 @@ async function sendEmail(env, to, subject, html, idempotencyKey = id()) {
         "Idempotency-Key": idempotencyKey
       },
       body: JSON.stringify({
-        from: "Crack Packs Rewards <rewards@crackpacks.com>",
+        from: `${fromAddress === "orders@crackpacks.com" ? "Crack Packs Orders" : "Crack Packs Rewards"} <${fromAddress}>`,
         to: [to],
         subject,
         html
@@ -152,18 +153,19 @@ async function sendEmail(env, to, subject, html, idempotencyKey = id()) {
     if (env.ENVIRONMENT === "development") return;
     throw new Error("EMAIL_NOT_CONFIGURED");
   }
+  if (fromAddress !== "rewards@crackpacks.com") throw new Error("EMAIL_NOT_CONFIGURED");
   const message = new EmailMessage("rewards@crackpacks.com", to, `From: Crack Packs Rewards <rewards@crackpacks.com>\r\nTo: ${to}\r\nSubject: ${subject}\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n${html}`);
   await env.REWARDS_EMAIL.send(message);
 }
-async function sendMemberEmailBatch(env, recipients, subject, message, idempotencyKey) {
+async function sendMemberEmailBatch(env, recipients, subject, message, idempotencyKey, senderAddress = "rewards@crackpacks.com") {
   if (!env.RESEND_API_KEY) throw new Error("MEMBER_EMAIL_NOT_CONFIGURED");
   const messageHtml = escapeHtml(message).replace(/\r?\n/g, "<br>");
   const payload = recipients.map(recipient => ({
-    from: "Crack Packs <rewards@crackpacks.com>",
+    from: `Crack Packs <${senderAddress}>`,
     to: [recipient.email],
     subject,
-    html: `<div style="font-family:Arial,sans-serif;color:#111827"><h1 style="color:#151936">Crack Packs</h1><p>Hi ${escapeHtml(recipient.first_name || recipient.whatnot_username || "collector")},</p><p>${messageHtml}</p><p style="margin-top:28px;color:#5d6475;font-size:12px">This member-account message was sent by Crack Packs. Reply to this email if you no longer want member announcements.</p></div>`,
-    headers: { "List-Unsubscribe": "<mailto:rewards@crackpacks.com?subject=Unsubscribe>" }
+    html: `<div style="font-family:Arial,sans-serif;color:#111827"><h1 style="color:#151936">Crack Packs</h1><p>Hi ${escapeHtml(recipient.first_name || recipient.live_username || "collector")},</p><p>${messageHtml}</p><p style="margin-top:28px;color:#5d6475;font-size:12px">This member-account message was sent by Crack Packs. Reply to this email if you no longer want member announcements.</p></div>`,
+    headers: { "List-Unsubscribe": `<mailto:${senderAddress}?subject=Unsubscribe>` }
   }));
   const result = await fetch("https://api.resend.com/emails/batch", {
     method: "POST",
@@ -268,7 +270,7 @@ const channelPricingInput = row => ({
   retailListPriceCents: cents(row.retail_list_price_cents),
   websiteListPriceCents: cents(row.website_list_price_cents),
   internationalListPriceCents: cents(row.international_list_price_cents),
-  whatnotListPriceCents: cents(row.whatnot_list_price_cents),
+  liveListPriceCents: cents(row.live_list_price_cents),
   wholesaleSmallListPriceCents: cents(row.wholesale_small_list_price_cents),
   wholesaleCaseListPriceCents: cents(row.wholesale_case_list_price_cents),
   wholesalePalletListPriceCents: cents(row.wholesale_pallet_list_price_cents)
@@ -308,7 +310,7 @@ const inventoryItemView = row => {
   retailListPriceCents: cents(row.retail_list_price_cents),
   websiteListPriceCents: cents(row.website_list_price_cents),
   internationalListPriceCents: cents(row.international_list_price_cents),
-  whatnotListPriceCents: cents(row.whatnot_list_price_cents),
+  liveListPriceCents: cents(row.live_list_price_cents),
   wholesaleSmallListPriceCents: cents(row.wholesale_small_list_price_cents),
   wholesaleCaseListPriceCents: cents(row.wholesale_case_list_price_cents),
   wholesalePalletListPriceCents: cents(row.wholesale_pallet_list_price_cents),
@@ -521,8 +523,12 @@ function orderView(row, env) {
     channel: row.channel,
     items: Array.isArray(items) ? items : [],
     status: row.status,
+    paymentStatus: row.payment_status || "not_applicable",
+    totalCents: Number(row.total_cents || 0),
+    currency: row.currency || "USD",
     placedAt: row.placed_at,
     updatedAt: row.updated_at,
+    label: row.label_purchased_at ? { ordered: true, purchasedAt: row.label_purchased_at, url: row.postage_label_pdf_url || row.postage_label_url || "" } : { ordered: false },
     tracking: hasTracking ? {
       carrier: row.carrier,
       trackingCode: row.tracking_code,
@@ -539,7 +545,8 @@ function orderView(row, env) {
 const orderSelectSql = `
   SELECT orders.*,shipments.easypost_tracker_id,shipments.mode tracking_mode,shipments.carrier,shipments.tracking_code,
          shipments.status tracking_status,shipments.status_detail,shipments.estimated_delivery_date,
-         shipments.carrier_public_url,shipments.tracking_details_json
+         shipments.carrier_public_url,shipments.tracking_details_json,shipments.label_purchased_at,
+         shipments.postage_label_url,shipments.postage_label_pdf_url
   FROM member_orders orders LEFT JOIN order_shipments shipments ON shipments.order_id=orders.id
 `;
 const campaignNeverExpires = campaign => Number(campaign.never_expires || 0) === 1;
@@ -591,7 +598,7 @@ function adminRedemptionView(row) {
     product: campaignProduct(row, true),
     memberId: row.member_id,
     email: row.email,
-    whatnotUsername: row.whatnot_username || ""
+    liveUsername: row.live_username || ""
   };
 }
 function adminCampaignView(campaign, redemptions, env, epochMs = Date.now()) {
@@ -666,13 +673,17 @@ async function weeklyReservation(env, memberId, week, sourceType, sourceId, crea
 async function releaseWeeklyReservation(env, memberId, weekKey, sourceType, sourceId) {
   await env.DB.prepare(`DELETE FROM weekly_reward_claims WHERE member_id=? AND week_key=? AND source_type=? AND source_id=?`).bind(memberId, weekKey, sourceType, sourceId).run();
 }
-async function account(member, count, env) {
+async function account(member, count, env, seller = null) {
   const tier = [...TIERS].reverse().find(t => count >= t.threshold);
   const next = TIERS.find(t => t.threshold > count);
   const invite = await inviteDetailsFor(member, env);
   return {
-    deviceVerified: Boolean(member.device_verified), profileComplete: member.identity_status === "verified", firstName: member.first_name,
-    whatnotUsername: member.whatnot_username || "", referredSignup: Boolean(member.referred_by_member_id), isAdmin: isAdmin(member, env),
+    deviceVerified: Boolean(member.device_verified), profileComplete: member.identity_status === "verified", identityStatus: member.identity_status,
+    stripeIdentityStatus: member.stripe_identity_status || "not_started", firstName: member.first_name,
+    liveUsername: member.live_username || "", referredSignup: Boolean(member.referred_by_member_id), isAdmin: isAdmin(member, env),
+    sellerAccess: seller?.status === "active", sellerStatus: seller?.status || "not_applied", activePortal: member.active_portal || "buyer",
+    phone: member.phone || "", shippingAddress: (() => { try { return JSON.parse(member.shipping_address_json || "{}"); } catch { return {}; } })(),
+    paymentMethod: member.stripe_payment_method_id ? { brand: member.stripe_payment_method_brand || "card", last4: member.stripe_payment_method_last4 || "" } : null,
     inviteCode: invite.ownerDashboardOnly ? "" : member.invite_code, inviteDisplayCode: invite.displayCode, inviteUrl: invite.url,
     rotatingReferral: invite.rotating, ownerReferralDashboardOnly: invite.ownerDashboardOnly,
     inviteStartsAt: invite.startsAt, inviteExpiresAt: invite.expiresAt,
@@ -682,12 +693,35 @@ async function account(member, count, env) {
   };
 }
 async function accountFor(member, env) {
-  const row = await env.DB.prepare(`SELECT COUNT(*) count FROM members WHERE referred_by_member_id=? AND referral_qualified_at IS NOT NULL AND identity_status='verified'`).bind(member.id).first();
-  return account(member, Number(row?.count || 0), env);
+  const [row, seller] = await Promise.all([
+    env.DB.prepare(`SELECT COUNT(*) count FROM members WHERE referred_by_member_id=? AND referral_qualified_at IS NOT NULL AND identity_status='verified'`).bind(member.id).first(),
+    env.DB.prepare(`SELECT status FROM breaker_profiles WHERE member_id=?`).bind(member.id).first()
+  ]);
+  return account(member, Number(row?.count || 0), env, seller);
 }
 async function audit(env, request, type, memberId = null, detail = "") {
   const ip = request.headers.get("CF-Connecting-IP") || "";
   await env.DB.prepare(`INSERT INTO audit_events(id,member_id,type,ip_hash,detail,created_at) VALUES(?,?,?,?,?,?)`).bind(id(), memberId, type, await hash(ip, env.AUTH_SECRET), detail.slice(0, 500), now()).run();
+}
+async function receiveDeliveredSellerOrder(env, order) {
+  if (!order?.id || !order?.member_id) return;
+  const seller = await env.DB.prepare(`SELECT status FROM breaker_profiles WHERE member_id=?`).bind(order.member_id).first();
+  if (seller?.status !== "active") return;
+  let items = [];
+  try { items = JSON.parse(order.items_json || "[]"); } catch {}
+  for (const line of items) {
+    const sourceId = String(line.inventoryItemId || ""); const quantity = Number(line.quantity || 0);
+    if (!/^[0-9a-f-]{36}$/i.test(sourceId) || !Number.isInteger(quantity) || quantity < 1) continue;
+    const inventory = await env.DB.prepare(`SELECT * FROM breaker_inventory_items WHERE member_id=? AND source_inventory_item_id=? AND unit_type='sealed_box'`).bind(order.member_id, sourceId).first();
+    if (!inventory) continue;
+    const already = await env.DB.prepare(`SELECT id FROM breaker_inventory_movements WHERE source_order_id=? AND breaker_inventory_item_id=? AND movement_type='received'`).bind(order.id, inventory.id).first();
+    if (already) continue;
+    const resulting = Number(inventory.quantity) + quantity; const stamp = now();
+    await env.DB.batch([
+      env.DB.prepare(`UPDATE breaker_inventory_items SET quantity=?,inbound_quantity=MAX(0,inbound_quantity-?),updated_at=? WHERE id=? AND member_id=?`).bind(resulting, quantity, stamp, inventory.id, order.member_id),
+      env.DB.prepare(`INSERT INTO breaker_inventory_movements(id,breaker_inventory_item_id,member_id,source_order_id,movement_type,delta_quantity,resulting_quantity,note,created_at) VALUES(?,?,?,?,?,?,?,?,?)`).bind(id(), inventory.id, order.member_id, order.id, "received", quantity, resulting, "Automatically received after carrier delivery", stamp)
+    ]);
+  }
 }
 async function verifyTurnstile(env, token, request) {
   if (!env.TURNSTILE_SECRET_KEY) throw new Error("TURNSTILE_NOT_CONFIGURED");
@@ -701,6 +735,8 @@ async function verifyTurnstile(env, token, request) {
 async function route(request, env, cors, ctx) {
   const url = new URL(request.url);
   if (url.pathname === "/health") return response({ ok: true, service: "crackpacks-rewards", version: VERSION, identityMode: env.IDENTITY_MODE, storeMode: String(env.STORE_COMING_SOON || "true") === "false" ? "live" : "coming_soon" }, 200, cors);
+  const platformResponse = await handlePlatformRoute(request, env, cors);
+  if (platformResponse) return platformResponse;
   if (url.pathname === "/webhooks/easypost" && request.method === "POST") {
     if (!env.EASYPOST_WEBHOOK_SECRET) return response({ error: "Tracking webhook is not configured." }, 503, cors);
     const contentLength = Number(request.headers.get("Content-Length") || 0);
@@ -731,6 +767,7 @@ async function route(request, env, cors, ctx) {
     await env.DB.prepare(`INSERT OR IGNORE INTO easypost_webhook_events(event_id,description,mode,tracker_id,received_at) VALUES(?,?,?,?,?)`).bind(eventId, description, mode, tracker?.id || null, receivedAt).run();
     if (tracker) {
       const updatedAt = now();
+      const trackedOrder = await env.DB.prepare(`SELECT orders.id,orders.member_id,orders.order_number,orders.status,orders.items_json,members.email FROM order_shipments shipment JOIN member_orders orders ON orders.id=shipment.order_id JOIN members ON members.id=orders.member_id WHERE shipment.easypost_tracker_id=? LIMIT 1`).bind(tracker.id).first();
       await env.DB.batch([
         env.DB.prepare(`
           UPDATE order_shipments SET mode=?,carrier=?,tracking_code=?,status=?,status_detail=?,estimated_delivery_date=?,carrier_public_url=?,tracking_details_json=?,updated_at=?
@@ -744,11 +781,27 @@ async function route(request, env, cors, ctx) {
           WHERE id=(SELECT order_id FROM order_shipments WHERE easypost_tracker_id=? LIMIT 1)
         `).bind(tracker.status, tracker.status, updatedAt, tracker.id)
       ]);
+      if (tracker.status === "delivered") await receiveDeliveredSellerOrder(env, trackedOrder);
+      if (trackedOrder?.email) {
+        const becameDelivered = tracker.status === "delivered" && trackedOrder.status !== "delivered";
+        const becameShipped = !["pre_transit","unknown","error","delivered"].includes(tracker.status) && !["shipped","delivered"].includes(trackedOrder.status);
+        if (becameDelivered || becameShipped) {
+          const title = becameDelivered ? `Order ${trackedOrder.order_number} delivered` : `Order ${trackedOrder.order_number} is on the way`;
+          const message = becameDelivered ? "The carrier marked your Crack Packs order delivered." : "Your Crack Packs order has its first carrier movement.";
+          const trackingUrl = `${String(env.SITE_URL || "https://crackpacks.com").replace(/\/$/, "")}/tracking.html?order=${encodeURIComponent(trackedOrder.id)}`;
+          try { await sendEmail(env, trackedOrder.email, title, `<h1>${title}</h1><p>${message}</p><p><a href="${trackingUrl}">Open private tracking</a></p>`, `tracking-${eventId}`, "orders@crackpacks.com"); }
+          catch (error) { console.error("Tracking email failed", { eventId, message: error.message }); }
+        }
+      }
     }
     await env.DB.prepare(`UPDATE easypost_webhook_events SET processed_at=? WHERE event_id=?`).bind(now(), eventId).run();
     return response({ ok: true }, 200, cors);
   }
   if (url.pathname === "/store/inventory" && request.method === "GET") {
+    const storeMember = await memberFromRequest(request, env);
+    const seller = storeMember ? await env.DB.prepare(`SELECT status FROM breaker_profiles WHERE member_id=?`).bind(storeMember.id).first() : null;
+    if (!storeMember) return response({ error: "Sign in to the Seller Portal to view store inventory." }, 401, cors);
+    if (storeMember.identity_status !== "verified" || (!isAdmin(storeMember, env) && seller?.status !== "active") || storeMember.active_portal !== "seller") return response({ error: "Active Seller Portal access is required." }, 403, cors);
     const market = url.searchParams.get("market") === "international" ? "international" : "us";
     const currency = String(url.searchParams.get("currency") || "USD").trim().toUpperCase();
     if (!STORE_CURRENCIES.has(currency)) return response({ error: "Choose a supported display currency." }, 400, cors);
@@ -808,6 +861,10 @@ async function route(request, env, cors, ctx) {
     }, 200, cors);
   }
   if (url.pathname === "/store/shipping-quote" && request.method === "POST") {
+    const storeMember = await memberFromRequest(request, env);
+    const seller = storeMember ? await env.DB.prepare(`SELECT status FROM breaker_profiles WHERE member_id=?`).bind(storeMember.id).first() : null;
+    if (!storeMember) return response({ error: "Sign in to the Seller Portal to request shipping." }, 401, cors);
+    if (storeMember.identity_status !== "verified" || (!isAdmin(storeMember, env) && seller?.status !== "active") || storeMember.active_portal !== "seller") return response({ error: "Active Seller Portal access is required." }, 403, cors);
     if (String(env.STORE_COMING_SOON || "true") !== "false" || String(env.STORE_CHECKOUT_ENABLED || "false") !== "true") {
       return response({ error: "Live carrier quotes are not enabled while the store is marked Coming Soon.", code: "SHIPPING_NOT_CONFIGURED" }, 503, cors);
     }
@@ -866,8 +923,8 @@ async function route(request, env, cors, ctx) {
     const expiresAt = new Date(Date.now() + STORE_QUOTE_TTL_MS).toISOString();
     await env.DB.batch([
       env.DB.prepare(`DELETE FROM shipping_quotes WHERE expires_at<=?`).bind(createdAt),
-      env.DB.prepare(`INSERT INTO shipping_quotes(id,inventory_item_id,quantity,market,destination_country,address_hash,easypost_shipment_id,rates_json,expires_at,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)`).bind(
-        quoteId, item.id, quantity, market, address.country, await hash(JSON.stringify(address), env.AUTH_SECRET), quoted.shipmentId, JSON.stringify(quoted.rates), expiresAt, createdAt
+      env.DB.prepare(`INSERT INTO shipping_quotes(id,inventory_item_id,quantity,market,destination_country,address_hash,easypost_shipment_id,rates_json,expires_at,created_at,address_json) VALUES(?,?,?,?,?,?,?,?,?,?,?)`).bind(
+        quoteId, item.id, quantity, market, address.country, await hash(JSON.stringify(address), env.AUTH_SECRET), quoted.shipmentId, JSON.stringify(quoted.rates), expiresAt, createdAt, JSON.stringify(address)
       )
     ]);
     await audit(env, request, "store_shipping_quote", null, `${item.public_slug}|${market}|${quoted.shipmentId}`);
@@ -1078,22 +1135,31 @@ async function route(request, env, cors, ctx) {
   }
   if (!member.device_verified) return response({ error: "Verify a device passkey first." }, 403, cors);
   if (url.pathname === "/profile" && request.method === "POST") {
-    if (member.identity_status === "verified") return response({ error: "Your identity profile is already verified. Use profile settings to update your WhatNot User Name." }, 409, cors);
-    const data = await body(request); const first = clean(data.firstName, 60), last = clean(data.lastName, 60), birth = clean(data.birthDate, 10), username = clean(data.whatnotUsername, 64).toLowerCase();
-    if (!first || !last || !/^\d{4}-\d{2}-\d{2}$/.test(birth) || !/^[a-z0-9_.-]+$/.test(username) || data.consent !== "on") return response({ error: "Complete every identity field and consent checkbox." }, 400, cors);
+    if (member.identity_status === "verified") return response({ error: "Your identity profile is already verified. Use profile settings to update your User ID." }, 409, cors);
+    const data = await body(request); const first = clean(data.firstName, 60), last = clean(data.lastName, 60), birth = clean(data.birthDate, 10), username = clean(data.liveUsername, 32);
+    if (!first || !last || !/^\d{4}-\d{2}-\d{2}$/.test(birth) || !/^[A-Za-z][A-Za-z0-9_]{2,31}$/.test(username) || data.consent !== "on") return response({ error: "Complete every identity field and consent checkbox." }, 400, cors);
     const birthDate = new Date(`${birth}T00:00:00Z`);
     if (!Number.isFinite(birthDate.getTime()) || birthDate.toISOString().slice(0, 10) !== birth) return response({ error: "Enter a valid calendar date of birth." }, 400, cors);
     const age = (Date.now() - birthDate.getTime()) / 31557600000;
     if (age < 18 || age > 120) return response({ error: "Rewards accounts require a valid adult date of birth." }, 400, cors);
     const fingerprint = await hash(`${first.toLowerCase()}|${last.toLowerCase()}|${birth}`, env.IDENTITY_PEPPER || env.AUTH_SECRET);
-    const duplicate = await env.DB.prepare(`SELECT id FROM members WHERE (identity_fingerprint=? OR whatnot_username=?) AND id<>?`).bind(fingerprint, username, member.id).first();
-    if (duplicate) { await audit(env, request, "duplicate_identity_blocked", member.id); return response({ error: "This identity or Whatnot username is already connected to an account." }, 409, cors); }
-    const identityStatus = "verified";
-    await env.DB.prepare(`UPDATE members SET first_name=?,last_name=?,birth_date=?,whatnot_username=?,identity_fingerprint=?,identity_status=?,referral_qualified_at=?,updated_at=? WHERE id=?`).bind(first, last, birth, username, fingerprint, identityStatus, identityStatus === "verified" ? now() : null, now(), member.id).run();
+    const key = usernameKey(username);
+    const rows = await env.DB.prepare(`SELECT id,identity_fingerprint,live_username_key FROM members WHERE id<>?`).bind(member.id).all();
+    const duplicate = (rows.results || []).find(row => {
+      const existingKey = String(row.live_username_key || "");
+      return row.identity_fingerprint === fingerprint || (existingKey && (existingKey === key || existingKey.startsWith(key) || key.startsWith(existingKey)));
+    });
+    if (duplicate) {
+      await env.DB.prepare(`INSERT INTO identity_review_queue(id,member_id,conflicting_member_id,reason,detail,created_at) VALUES(?,?,?,?,?,?)`).bind(id(), member.id, duplicate.id, "signup_collision", "Protected legal identity or User ID similarity collision.", now()).run();
+      await audit(env, request, "duplicate_identity_blocked", member.id);
+      return response({ error: "This identity or User ID is already connected to, or too similar to, an existing account. Owner review is required." }, 409, cors);
+    }
+    const identityStatus = "pending_identity";
+    await env.DB.prepare(`UPDATE members SET first_name=?,last_name=?,birth_date=?,live_username=?,live_username_key=?,identity_fingerprint=?,identity_status=?,stripe_identity_status='not_started',referral_qualified_at=NULL,updated_at=? WHERE id=?`).bind(first, last, birth, username, key, fingerprint, identityStatus, now(), member.id).run();
     const updated = await env.DB.prepare(`SELECT * FROM members WHERE id=?`).bind(member.id).first(); await audit(env, request, "profile_submitted", member.id, identityStatus);
-    return response({ account: await accountFor(updated, env) }, 200, cors);
+    return response({ account: await accountFor(updated, env), identityVerificationRequired: true }, 200, cors);
   }
-  if (member.identity_status !== "verified") return response({ error: "Complete identity verification first." }, 403, cors);
+  if (member.identity_status !== "verified") return response({ error: "Complete Stripe Identity verification first." }, 403, cors);
   if (url.pathname === "/orders/mine" && request.method === "GET") {
     const rows = await env.DB.prepare(`${orderSelectSql} WHERE orders.member_id=? ORDER BY orders.placed_at DESC LIMIT 100`).bind(member.id).all();
     return response({ orders: (rows.results || []).map(row => orderView(row, env)), serverNow: now() }, 200, cors);
@@ -1229,17 +1295,6 @@ async function route(request, env, cors, ctx) {
       campaignClaims,
       legacyDiscount: legacyDiscountView
     }, 200, cors);
-  }
-  if (url.pathname === "/profile/username" && request.method === "POST") {
-    const data = await body(request);
-    const username = clean(data.whatnotUsername, 64).toLowerCase();
-    if (!/^[a-z0-9_.-]+$/.test(username)) return response({ error: "Enter a valid WhatNot User Name using letters, numbers, dots, dashes, or underscores." }, 400, cors);
-    const duplicate = await env.DB.prepare(`SELECT id FROM members WHERE whatnot_username=? AND id<>?`).bind(username, member.id).first();
-    if (duplicate) return response({ error: "That WhatNot User Name is already connected to another account." }, 409, cors);
-    await env.DB.prepare(`UPDATE members SET whatnot_username=?,updated_at=? WHERE id=?`).bind(username, now(), member.id).run();
-    const updated = await env.DB.prepare(`SELECT * FROM members WHERE id=?`).bind(member.id).first();
-    await audit(env, request, "whatnot_username_updated", member.id, username);
-    return response({ account: await accountFor(updated, env) }, 200, cors);
   }
   if (url.pathname === "/admin/auth/options" && request.method === "POST") {
     if (!isAdmin(member, env)) return response({ error: "Owner access required." }, 403, cors);
@@ -1433,7 +1488,7 @@ async function route(request, env, cors, ctx) {
           id,owner_member_id,public_slug,name,upc,category,description,image_url,source_url,quantity,average_msrp_cents,
           reference_price_label,reference_price_observed_at,cogs_cents,us_shipping_cents,profit_cents,
           packaging_cents,overhead_cents,retail_fixed_fee_cents,wholesale_handling_cents,
-          retail_list_price_cents,website_list_price_cents,international_list_price_cents,whatnot_list_price_cents,
+          retail_list_price_cents,website_list_price_cents,international_list_price_cents,live_list_price_cents,
           wholesale_small_list_price_cents,wholesale_case_list_price_cents,wholesale_pallet_list_price_cents,
           weight_oz,length_in,width_in,height_in,
           origin_country,hs_code,packing_notes,is_store_visible,is_active,created_at,updated_at
@@ -1442,7 +1497,7 @@ async function route(request, env, cors, ctx) {
         inventoryId, member.id, publicSlug, item.name, item.upc, item.category, item.description, item.imageUrl, item.sourceUrl, item.quantity,
         item.averageMsrpCents, item.referencePriceLabel, item.referencePriceObservedAt, item.cogsCents, item.usShippingCents, item.profitCents,
         item.packagingCents, item.overheadCents, item.retailFixedFeeCents, item.wholesaleHandlingCents,
-        item.retailListPriceCents, item.websiteListPriceCents, item.internationalListPriceCents, item.whatnotListPriceCents,
+        item.retailListPriceCents, item.websiteListPriceCents, item.internationalListPriceCents, item.liveListPriceCents,
         item.wholesaleSmallListPriceCents, item.wholesaleCaseListPriceCents, item.wholesalePalletListPriceCents,
         item.weightOz, item.lengthIn, item.widthIn, item.heightIn, item.originCountry, item.hsCode, item.packingNotes,
         item.isStoreVisible ? 1 : 0, item.isActive ? 1 : 0, createdAt, createdAt
@@ -1467,7 +1522,7 @@ async function route(request, env, cors, ctx) {
         UPDATE inventory_items SET
           name=?,upc=?,category=?,description=?,image_url=?,source_url=?,quantity=?,average_msrp_cents=?,reference_price_label=?,reference_price_observed_at=?,
           cogs_cents=?,us_shipping_cents=?,profit_cents=?,packaging_cents=?,overhead_cents=?,retail_fixed_fee_cents=?,wholesale_handling_cents=?,
-          retail_list_price_cents=?,website_list_price_cents=?,international_list_price_cents=?,whatnot_list_price_cents=?,
+          retail_list_price_cents=?,website_list_price_cents=?,international_list_price_cents=?,live_list_price_cents=?,
           wholesale_small_list_price_cents=?,wholesale_case_list_price_cents=?,wholesale_pallet_list_price_cents=?,
           weight_oz=?,length_in=?,width_in=?,height_in=?,origin_country=?,hs_code=?,packing_notes=?,
           is_store_visible=?,is_active=?,updated_at=?
@@ -1476,7 +1531,7 @@ async function route(request, env, cors, ctx) {
         item.name, item.upc, item.category, item.description, item.imageUrl, item.sourceUrl, item.quantity, item.averageMsrpCents,
         item.referencePriceLabel, item.referencePriceObservedAt, item.cogsCents, item.usShippingCents, item.profitCents,
         item.packagingCents, item.overheadCents, item.retailFixedFeeCents, item.wholesaleHandlingCents,
-        item.retailListPriceCents, item.websiteListPriceCents, item.internationalListPriceCents, item.whatnotListPriceCents,
+        item.retailListPriceCents, item.websiteListPriceCents, item.internationalListPriceCents, item.liveListPriceCents,
         item.wholesaleSmallListPriceCents, item.wholesaleCaseListPriceCents, item.wholesalePalletListPriceCents,
         item.weightOz, item.lengthIn, item.widthIn, item.heightIn, item.originCountry, item.hsCode, item.packingNotes,
         item.isStoreVisible ? 1 : 0, item.isActive ? 1 : 0, updatedAt, adminInventoryMatch[1], member.id
@@ -1593,7 +1648,7 @@ async function route(request, env, cors, ctx) {
     const [campaignRows, redemptionRows] = await Promise.all([
       env.DB.prepare(`SELECT * FROM offer_campaigns WHERE owner_member_id=? ORDER BY created_at DESC`).bind(member.id).all(),
       env.DB.prepare(`
-        SELECT cr.*,c.title,c.reward_type,c.reward_variant,c.percent,c.max_redemptions,c.pack_count,c.expires_at,c.never_expires,c.inventory_item_id,c.product_name_snapshot,c.product_upc_snapshot,m.email,m.whatnot_username
+        SELECT cr.*,c.title,c.reward_type,c.reward_variant,c.percent,c.max_redemptions,c.pack_count,c.expires_at,c.never_expires,c.inventory_item_id,c.product_name_snapshot,c.product_upc_snapshot,m.email,m.live_username
         FROM campaign_redemptions cr
         JOIN offer_campaigns c ON c.id=cr.campaign_id
         JOIN members m ON m.id=cr.member_id
@@ -1725,7 +1780,7 @@ async function route(request, env, cors, ctx) {
     if (Number(updated.meta?.changes || 0) !== 1) return response({ error: "Campaign not found." }, 404, cors);
     const campaign = await env.DB.prepare(`SELECT * FROM offer_campaigns WHERE id=? AND owner_member_id=?`).bind(adminCampaignStatusMatch[1], member.id).first();
     const redemptions = await env.DB.prepare(`
-      SELECT cr.*,c.title,c.reward_type,c.reward_variant,c.percent,c.max_redemptions,c.pack_count,c.expires_at,c.never_expires,c.inventory_item_id,c.product_name_snapshot,c.product_upc_snapshot,m.email,m.whatnot_username
+      SELECT cr.*,c.title,c.reward_type,c.reward_variant,c.percent,c.max_redemptions,c.pack_count,c.expires_at,c.never_expires,c.inventory_item_id,c.product_name_snapshot,c.product_upc_snapshot,m.email,m.live_username
       FROM campaign_redemptions cr JOIN offer_campaigns c ON c.id=cr.campaign_id JOIN members m ON m.id=cr.member_id
       WHERE cr.campaign_id=? ORDER BY cr.claim_rank
     `).bind(campaign.id).all();
@@ -1736,7 +1791,7 @@ async function route(request, env, cors, ctx) {
   if (adminCampaignRedeemMatch && request.method === "POST") {
     if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
     const redemption = await env.DB.prepare(`
-      SELECT cr.*,c.title,c.reward_type,c.reward_variant,c.percent,c.max_redemptions,c.pack_count,c.expires_at,c.never_expires,c.inventory_item_id,c.product_name_snapshot,c.product_upc_snapshot,m.email,m.whatnot_username
+      SELECT cr.*,c.title,c.reward_type,c.reward_variant,c.percent,c.max_redemptions,c.pack_count,c.expires_at,c.never_expires,c.inventory_item_id,c.product_name_snapshot,c.product_upc_snapshot,m.email,m.live_username
       FROM campaign_redemptions cr
       JOIN offer_campaigns c ON c.id=cr.campaign_id
       JOIN members m ON m.id=cr.member_id
@@ -1766,14 +1821,14 @@ async function route(request, env, cors, ctx) {
     const to = /^\d{4}-\d{2}-\d{2}$/.test(url.searchParams.get("to") || "") ? `${url.searchParams.get("to")}T23:59:59.999Z` : "";
     const search = `%${query}%`;
     const rows = await env.DB.prepare(`
-      SELECT id,email,first_name,last_name,whatnot_username,created_at,referral_qualified_at
+      SELECT id,email,first_name,last_name,live_username,created_at,referral_qualified_at
       FROM members
       WHERE email_verified_at IS NOT NULL AND identity_status='verified' AND (?=1 OR email<>?)
         AND (?='' OR created_at>=?) AND (?='' OR created_at<=?)
-        AND (?='' OR lower(email) LIKE ? OR lower(COALESCE(first_name,'') || ' ' || COALESCE(last_name,'')) LIKE ? OR lower(COALESCE(whatnot_username,'')) LIKE ?)
+        AND (?='' OR lower(email) LIKE ? OR lower(COALESCE(first_name,'') || ' ' || COALESCE(last_name,'')) LIKE ? OR lower(COALESCE(live_username,'')) LIKE ?)
       ORDER BY created_at DESC LIMIT 250
     `).bind(includeOwner ? 1 : 0, normalizeEmail(env.ADMIN_EMAIL), from, from, to, to, query, search, search, search).all();
-    return response({ members: (rows.results || []).map(row => ({ id: row.id, email: row.email, firstName: row.first_name || "", lastName: row.last_name || "", whatnotUsername: row.whatnot_username || "", createdAt: row.created_at, qualifiedAt: row.referral_qualified_at || null, isOwner: normalizeEmail(row.email) === normalizeEmail(env.ADMIN_EMAIL) })) }, 200, cors);
+    return response({ members: (rows.results || []).map(row => ({ id: row.id, email: row.email, firstName: row.first_name || "", lastName: row.last_name || "", liveUsername: row.live_username || "", createdAt: row.created_at, qualifiedAt: row.referral_qualified_at || null, isOwner: normalizeEmail(row.email) === normalizeEmail(env.ADMIN_EMAIL) })) }, 200, cors);
   }
   if (url.pathname === "/admin/orders" && request.method === "GET") {
     if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
@@ -1783,18 +1838,18 @@ async function route(request, env, cors, ctx) {
       SELECT orders.*,shipments.easypost_tracker_id,shipments.mode tracking_mode,shipments.carrier,shipments.tracking_code,
              shipments.status tracking_status,shipments.status_detail,shipments.estimated_delivery_date,
              shipments.carrier_public_url,shipments.tracking_details_json,
-             customer.email,customer.first_name,customer.last_name,customer.whatnot_username
+             customer.email,customer.first_name,customer.last_name,customer.live_username
       FROM member_orders orders
       LEFT JOIN order_shipments shipments ON shipments.order_id=orders.id
       JOIN members customer ON customer.id=orders.member_id
       WHERE orders.owner_member_id=? AND (?='' OR lower(orders.order_number) LIKE ? OR lower(customer.email) LIKE ?
         OR lower(COALESCE(customer.first_name,'') || ' ' || COALESCE(customer.last_name,'')) LIKE ?
-        OR lower(COALESCE(customer.whatnot_username,'')) LIKE ? OR lower(COALESCE(shipments.tracking_code,'')) LIKE ?)
+        OR lower(COALESCE(customer.live_username,'')) LIKE ? OR lower(COALESCE(shipments.tracking_code,'')) LIKE ?)
       ORDER BY orders.updated_at DESC LIMIT 200
     `).bind(member.id, query, search, search, search, search, search).all();
     return response({ orders: (rows.results || []).map(row => ({
       ...orderView(row, env),
-      member: { id: row.member_id, email: row.email, firstName: row.first_name || "", lastName: row.last_name || "", whatnotUsername: row.whatnot_username || "" }
+      member: { id: row.member_id, email: row.email, firstName: row.first_name || "", lastName: row.last_name || "", liveUsername: row.live_username || "" }
     })) }, 200, cors);
   }
   if (url.pathname === "/admin/orders" && request.method === "POST") {
@@ -1804,7 +1859,7 @@ async function route(request, env, cors, ctx) {
     const data = await body(request);
     const memberId = String(data?.memberId || "");
     const orderNumber = clean(data?.orderNumber, 64);
-    const channel = ["website", "whatnot", "manual"].includes(data?.channel) ? data.channel : "manual";
+    const channel = ["website", "manual"].includes(data?.channel) ? data.channel : "manual";
     const items = parseOrderItems(data?.items);
     const trackingCode = clean(data?.trackingCode, 120).replace(/\s+/g, "");
     const carrier = clean(data?.carrier, 60).replace(/[^a-z0-9]/gi, "");
@@ -1845,7 +1900,10 @@ async function route(request, env, cors, ctx) {
     const contentLength = Number(request.headers.get("Content-Length") || 0);
     if (Number.isFinite(contentLength) && contentLength > 20000) return response({ error: "Email request is too large." }, 413, cors);
     const data = await body(request);
-    const audience = data?.audience === "all" ? "all" : data?.audience === "selected" ? "selected" : "";
+    const allowedSenders = new Set(["rewards@crackpacks.com", "alerts@crackpacks.com", "orders@crackpacks.com", "support@crackpacks.com", "hello@crackpacks.com"]);
+    const senderAddress = normalizeEmail(data?.fromAddress || "rewards@crackpacks.com");
+    if (!allowedSenders.has(senderAddress)) return response({ error: "Choose an approved Crack Packs sender address." }, 400, cors);
+    const audience = ["all", "selected", "tier"].includes(data?.audience) ? data.audience : "";
     const rawSubject = boundedString(data?.subject, 120);
     const rawMessage = boundedString(data?.message, 5000);
     const subject = rawSubject === null ? "" : clean(rawSubject, 120);
@@ -1855,25 +1913,35 @@ async function route(request, env, cors, ctx) {
     if (!message || message.length < 3) return response({ error: "Enter an email message from 3 to 5,000 characters." }, 400, cors);
     let rows;
     if (audience === "all") {
-      rows = await env.DB.prepare(`SELECT id,email,first_name,whatnot_username FROM members WHERE email_verified_at IS NOT NULL AND identity_status='verified' AND email<>? ORDER BY created_at LIMIT 101`).bind(normalizeEmail(env.ADMIN_EMAIL)).all();
+      rows = await env.DB.prepare(`SELECT id,email,first_name,live_username FROM members WHERE email_verified_at IS NOT NULL AND identity_status='verified' AND email<>? ORDER BY created_at LIMIT 101`).bind(normalizeEmail(env.ADMIN_EMAIL)).all();
+    } else if (audience === "tier") {
+      const ranges = { crew: [3, 10], breaker: [10, 25], headliner: [25, 50], legend: [50, 1000000] };
+      const range = ranges[String(data?.tierName || "").toLowerCase()];
+      if (!range) return response({ error: "Choose Crew, Breaker, Headliner, or Legend." }, 400, cors);
+      rows = await env.DB.prepare(`
+        SELECT member.id,member.email,member.first_name,member.live_username,COUNT(referral.id) referral_count
+        FROM members member LEFT JOIN members referral ON referral.referred_by_member_id=member.id AND referral.referral_qualified_at IS NOT NULL AND referral.identity_status='verified'
+        WHERE member.email_verified_at IS NOT NULL AND member.identity_status='verified' AND member.email<>?
+        GROUP BY member.id HAVING referral_count>=? AND referral_count<? ORDER BY member.created_at LIMIT 101
+      `).bind(normalizeEmail(env.ADMIN_EMAIL), range[0], range[1]).all();
     } else {
       const memberIds = Array.isArray(data?.memberIds) ? [...new Set(data.memberIds.filter(value => typeof value === "string" && /^[0-9a-f-]{36}$/i.test(value)))].slice(0, 101) : [];
       if (!memberIds.length) return response({ error: "Add at least one member before sending." }, 400, cors);
       const placeholders = memberIds.map(() => "?").join(",");
-      rows = await env.DB.prepare(`SELECT id,email,first_name,whatnot_username FROM members WHERE id IN (${placeholders}) AND email_verified_at IS NOT NULL AND identity_status='verified' AND email<>?`).bind(...memberIds, normalizeEmail(env.ADMIN_EMAIL)).all();
+      rows = await env.DB.prepare(`SELECT id,email,first_name,live_username FROM members WHERE id IN (${placeholders}) AND email_verified_at IS NOT NULL AND identity_status='verified' AND email<>?`).bind(...memberIds, normalizeEmail(env.ADMIN_EMAIL)).all();
     }
     const recipients = rows.results || [];
     if (!recipients.length) return response({ error: "No verified member recipients matched this message." }, 400, cors);
     if (recipients.length > 100) return response({ error: "Message All currently supports up to 100 verified members per send. Use Select Few for a smaller group." }, 400, cors);
     const sendId = id();
     try {
-      await sendMemberEmailBatch(env, recipients, subject, message, sendId);
+      await sendMemberEmailBatch(env, recipients, subject, message, sendId, senderAddress);
     } catch (error) {
       if (error.message === "MEMBER_EMAIL_NOT_CONFIGURED") return response({ error: "Member email is not configured. Add the existing RESEND_API_KEY Worker secret." }, 503, cors);
       return response({ error: "The member email batch could not be queued. No send was confirmed; try again." }, 502, cors);
     }
-    await audit(env, request, "member_email_sent", member.id, `${sendId}|audience:${audience}|count:${recipients.length}|subject:${subject.slice(0, 80)}`);
-    return response({ ok: true, sendId, recipientCount: recipients.length }, 202, cors);
+    await audit(env, request, "member_email_sent", member.id, `${sendId}|from:${senderAddress}|audience:${audience}|count:${recipients.length}|subject:${subject.slice(0, 80)}`);
+    return response({ ok: true, sendId, senderAddress, recipientCount: recipients.length }, 202, cors);
   }
   if (url.pathname === "/admin/summary" && request.method === "GET") {
     if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
@@ -1902,9 +1970,9 @@ async function route(request, env, cors, ctx) {
     }[status];
     const sql = `
       SELECT dc.id,dc.code,dc.percent,dc.expires_at,dc.redemption_requested_at,dc.redeemed_at,dc.created_at,
-             m.id member_id,m.email,m.first_name,m.last_name,m.whatnot_username
+             m.id member_id,m.email,m.first_name,m.last_name,m.live_username
       FROM discount_claims dc JOIN members m ON m.id=dc.member_id
-      WHERE (?='' OR lower(dc.code) LIKE ? OR lower(m.email) LIKE ? OR lower(COALESCE(m.first_name,'') || ' ' || COALESCE(m.last_name,'')) LIKE ? OR lower(COALESCE(m.whatnot_username,'')) LIKE ?)
+      WHERE (?='' OR lower(dc.code) LIKE ? OR lower(m.email) LIKE ? OR lower(COALESCE(m.first_name,'') || ' ' || COALESCE(m.last_name,'')) LIKE ? OR lower(COALESCE(m.live_username,'')) LIKE ?)
         AND ${statusClause}
       ORDER BY COALESCE(dc.redemption_requested_at,dc.created_at) DESC
       LIMIT 100
@@ -1994,8 +2062,8 @@ async function route(request, env, cors, ctx) {
       await sendEmail(
         env,
         notifyEmail,
-        `Whatnot discount requested: ${claim.code}`,
-        `<h1>Whatnot discount requested</h1><p><strong>Code:</strong> ${escapeHtml(claim.code)}</p><p><strong>Discount:</strong> ${Number(claim.percent)}%</p><p><strong>Member:</strong> ${escapeHtml(member.first_name)} ${escapeHtml(member.last_name)}</p><p><strong>Member email:</strong> ${escapeHtml(member.email)}</p><p><strong>Collector username:</strong> ${escapeHtml(member.whatnot_username || "Not provided")}</p><p><strong>Requested:</strong> ${escapeHtml(requestedAt)}</p><p>After the buyer actually uses this code during a Whatnot show, open the owner dashboard and mark it Redeemed.</p>`,
+        `Crack Packs discount requested: ${claim.code}`,
+        `<h1>Crack Packs discount requested</h1><p><strong>Code:</strong> ${escapeHtml(claim.code)}</p><p><strong>Discount:</strong> ${Number(claim.percent)}%</p><p><strong>Member:</strong> ${escapeHtml(member.first_name)} ${escapeHtml(member.last_name)}</p><p><strong>Member email:</strong> ${escapeHtml(member.email)}</p><p><strong>User ID:</strong> ${escapeHtml(member.live_username || "Not provided")}</p><p><strong>Requested:</strong> ${escapeHtml(requestedAt)}</p><p>After the buyer uses this code in an eligible Crack Packs sale, open the owner dashboard and mark it Redeemed.</p>`,
         `discount-request-${claim.id}`
       );
       await audit(env, request, "discount_redemption_requested", member.id, claim.code);

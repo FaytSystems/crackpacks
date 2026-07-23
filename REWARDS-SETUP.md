@@ -17,8 +17,37 @@ Required Worker secrets:
 - `BUSINESS_POSTAL_ADDRESS` — valid postal address shown in member announcements.
 
 Subscribe the Stripe webhook to `checkout.session.completed`,
-`checkout.session.async_payment_succeeded`, `checkout.session.expired`, and
-`charge.refunded`.
+`checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`,
+`checkout.session.expired`, `charge.refunded`,
+`identity.verification_session.verified`,
+`identity.verification_session.requires_input`,
+`identity.verification_session.canceled`, and
+`identity.verification_session.redacted`.
+
+The same signed Stripe endpoint handles store orders, paid gifted giveaways,
+buyer payment-method setup, refunds, and Stripe Identity results:
+`https://rewards-api.crackpacks.com/webhooks/stripe`.
+
+## Platform v5 launch controls
+
+- Buyer mode exposes Saved Watchlist, Live Now, Upcoming, Followed, referrals,
+  orders, shipping/contact settings, and Stripe-hosted payment setup.
+- Seller mode is server-gated by a one-time owner activation link and exposes
+  the Seller Store, OBS credentials, show scheduling, auction controls,
+  giveaway presets, paid gifted giveaways, inventory, PAR levels, and reorders.
+- Gifted-giveaway stock is held before Stripe Checkout opens, becomes reserved
+  only after a signed paid webhook, and is returned on expiration or refund.
+- Paid Seller Store purchases are added as inbound seller inventory; a delivered
+  EasyPost webhook moves those units into available stock exactly once.
+- Live viewer counts use a 90-second server-side presence window.
+- Bidding requires verified identity, a saved Stripe payment method, a phone,
+  and a shipping address. Automatic winner charging remains disabled until
+  seller payout ownership, tax, shipping, refunds, and Stripe Connect terms are
+  finalized; do not represent a bid as an automatic charge before that launch review.
+- Keep `LIVE_AUCTIONS_ENABLED=false` until that review is complete. The Worker
+  refuses to open a lot or accept a bid while the flag is false.
+
+Apply migrations `0024` through `0027` before deploying Worker v5.
 
 Stripe public business links:
 
@@ -43,7 +72,7 @@ The website UI and Worker backend are implemented, but the backend must be confi
 
 ## Security boundary
 
-Email verification, legal name, date of birth, a unique Whatnot username, hashed identity fingerprints, rate limits, self-referral prevention, and database uniqueness rules reduce abuse. They do **not** prove that one physical human has only one account. Whatnot does not provide a general-purpose identity guarantee merely because an email is entered.
+Email verification, a device passkey, legal name, date of birth, a protected unique Crack Packs User ID, Stripe Identity verification, hashed identity fingerprints, rate limits, self-referral prevention, and database uniqueness rules reduce abuse. Identity collisions are held for owner review.
 
 The included internal checker accepts any valid verified email address and enforces one account per email, a required WebAuthn passkey, unique collector usernames, and a salted one-way identity fingerprint made from normalized legal name plus birth date. Cloudflare Turnstile blocks automated signup abuse. Exact duplicate identities and reused passkey credentials are blocked. Suspicious cases should be manually reviewed. Publish official eligibility, privacy, prize, expiration, tax, geographic, and no-purchase-necessary rules before launch.
 
@@ -131,7 +160,7 @@ The pricing engine treats every result as a minimum floor, never a market-price 
 - Retail: `(landed COGS + overhead + retail fixed fee) ÷ (1 - 2.7% - 25%)`.
 - USA website: `(landed COGS + postage + packaging + overhead + $0.30) ÷ (1 - 2.9% - 20%)`.
 - International website item price: the website formula without postage; shipping is quoted separately.
-- Whatnot: `(landed COGS + packaging + overhead + $0.30) ÷ (1 - 12% - 18%)`; buyer-paid shipping is assumed.
+- Live auction: `(landed COGS + packaging + overhead + $0.30) ÷ (1 - 2.9% - 18%)`; buyer-paid shipping is assumed.
 - Wholesale: `(landed COGS + handling) ÷ (1 - margin)`, using 15% for small reseller orders, 12% for cases, and 10% for pallet/very large orders. ACH or wire (0% payment fee) and buyer-paid freight are assumed unless a documented minimum-order policy says otherwise.
 
 The API rejects owner list-price overrides below their applicable floor and does not expose COGS or floor components publicly. `STORE_COMING_SOON` and `STORE_CHECKOUT_ENABLED` remain locked down until every product, fee assumption, and checkout flow is verified.

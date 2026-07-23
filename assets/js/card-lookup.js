@@ -29,7 +29,7 @@
     term: "",
     field: "all",
     orderBy: "-set.releaseDate",
-    series: "all",
+    series: "pokemon",
     pageSize: 20,
     page: 1,
     totalCount: 0,
@@ -87,13 +87,13 @@
     const term = (params.get("q") || "").trim();
     const allowedFields = new Set(["all", "name", "set", "number", "rarity", "type"]);
     const allowedSorts = new Set(["-set.releaseDate", "set.releaseDate", "name", "-name"]);
-    const allowedSeries = new Set(["all", "pokemon", "magic"]);
+    const allowedSeries = new Set(["pokemon", "magic"]);
     const allowedSizes = new Set([12, 20, 24, 36, 48]);
 
     state.term = term;
     state.field = allowedFields.has(params.get("field")) ? params.get("field") : "all";
     state.orderBy = allowedSorts.has(params.get("sort")) ? params.get("sort") : "-set.releaseDate";
-    state.series = allowedSeries.has(params.get("series")) ? params.get("series") : "all";
+    state.series = allowedSeries.has(params.get("series")) ? params.get("series") : "pokemon";
 
     const parsedSize = Number.parseInt(params.get("size"), 10);
     state.pageSize = allowedSizes.has(parsedSize) ? parsedSize : 20;
@@ -279,7 +279,7 @@
     state.term = term;
     state.field = field.value;
     state.orderBy = order.value;
-    state.series = document.querySelector("[data-card-series].is-active")?.dataset.cardSeries || state.series || "all";
+    state.series = document.querySelector("[data-card-series].is-active")?.dataset.cardSeries || state.series || "pokemon";
     state.pageSize = Number.parseInt(pageSize.value, 10) || 20;
     state.loading = true;
 
@@ -414,7 +414,7 @@
   seriesTabs?.querySelectorAll("[data-card-series]").forEach(button => {
     button.addEventListener("click", () => {
       seriesTabs.querySelectorAll("[data-card-series]").forEach(candidate => candidate.classList.toggle("is-active", candidate === button));
-      state.series = button.dataset.cardSeries || "all";
+      state.series = button.dataset.cardSeries || "pokemon";
       if (state.term.length >= 2) {
         state.page = 1;
         searchCards({ scroll: true });

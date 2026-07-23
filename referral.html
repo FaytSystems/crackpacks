@@ -95,10 +95,15 @@
             <label>Legal last name<input name="lastName" autocomplete="family-name" required maxlength="60"></label>
           </div>
           <label>Date of birth<input name="birthDate" type="date" autocomplete="bday" required></label>
-          <label>Live Hub User Name<input name="liveUsername" required maxlength="64" pattern="[A-Za-z0-9_.-]+"></label>
+          <label>Crack Packs User ID<input name="liveUsername" required maxlength="32" pattern="[A-Za-z][A-Za-z0-9_]{2,31}"></label>
           <label class="check-line"><input name="consent" type="checkbox" required> I consent to identity and duplicate-account checks and confirm this information is mine.</label>
-          <button class="btn btn-primary" type="submit">Verify identity</button>
+          <button class="btn btn-primary" type="submit">Continue to secure ID check</button>
         </form>
+        <div class="stripe-identity-action" data-stripe-identity-action hidden>
+          <p>Your legal profile is saved. Complete Stripe Identity's document-and-selfie check to activate this account and prevent duplicate-person signups.</p>
+          <button class="btn btn-primary" type="button" data-start-stripe-identity>Open secure ID verification</button>
+          <p class="fine-print">Stripe handles the identity document. Crack Packs stores the verification result, not a copy of your full card or identity document.</p>
+        </div>
       </section>
 
       <section class="reward-card" data-device-panel hidden>
@@ -121,6 +126,7 @@
           <button class="choice-card" type="button" data-view="discount"><span>01</span><strong>Rewards</strong><small>Claim and track your available one-time offer.</small></button>
           <button class="choice-card choice-card-invites" type="button" data-view="invite"><span>02</span><strong>Invites</strong><small>Copy your personal invite link and open sharing tools.</small></button>
           <button class="choice-card choice-card-orders" type="button" data-view="orders"><span>03</span><strong>Orders</strong><small>See purchases and open live carrier tracking.</small></button>
+          <button class="choice-card" type="button" data-view="account"><span>04</span><strong>Account</strong><small>Shipping, phone, identity, and payment method.</small></button>
         </div>
         <section class="reward-card action-panel" data-discount-panel hidden>
           <p class="eyebrow">Member discount</p><h3>Your offer</h3>
@@ -193,9 +199,34 @@
           <h3>Your stream user name</h3>
           <p>Keep this matched to the name you use during live shows so the owner can find your reward code quickly.</p>
           <form class="username-settings-form" data-username-form>
-            <label>Stream User Name<input name="liveUsername" data-live-username required maxlength="64" pattern="[A-Za-z0-9_.-]+"></label>
+            <label>Crack Packs User ID<input name="liveUsername" data-live-username required maxlength="32" pattern="[A-Za-z][A-Za-z0-9_]{2,31}"></label>
             <button class="btn btn-outline" type="submit">Save user name</button>
           </form>
+        </section>
+        <section class="reward-card profile-settings-card" data-account-panel>
+          <p class="eyebrow">Buyer checkout profile</p>
+          <h3>Shipping, phone, and payment</h3>
+          <p>Save the address used for checkout and auction fulfillment. Card details are entered directly on Stripe and are never stored by Crack Packs.</p>
+          <form class="username-settings-form" data-contact-form>
+            <div class="field-grid">
+              <label>Phone number<input name="phone" data-contact-phone type="tel" autocomplete="tel" maxlength="32" required placeholder="+1 555 555 0123"></label>
+              <label>Recipient name<input name="name" data-shipping-name autocomplete="name" maxlength="120" required></label>
+            </div>
+            <label>Street address<input name="street1" data-shipping-street1 autocomplete="address-line1" maxlength="160" required></label>
+            <label>Apartment / suite<input name="street2" data-shipping-street2 autocomplete="address-line2" maxlength="160"></label>
+            <div class="field-grid">
+              <label>City<input name="city" data-shipping-city autocomplete="address-level2" maxlength="100" required></label>
+              <label>State / region<input name="state" data-shipping-state autocomplete="address-level1" maxlength="100" required></label>
+              <label>Postal code<input name="postalCode" data-shipping-postal autocomplete="postal-code" maxlength="32" required></label>
+              <label>Country code<input name="country" data-shipping-country autocomplete="country" maxlength="2" pattern="[A-Za-z]{2}" value="US" required></label>
+            </div>
+            <button class="btn btn-outline" type="submit">Save checkout profile</button>
+          </form>
+          <div class="campaign-form-status" data-contact-status aria-live="polite"></div>
+          <div class="payment-method-row">
+            <div><strong data-payment-method-label>No payment method saved</strong><small>Stripe securely stores the card for authorized checkout and future instant-auction payment.</small></div>
+            <button class="btn btn-primary" type="button" data-add-payment-method>Add payment method</button>
+          </div>
         </section>
         <section class="reward-card social-links-card">
           <p class="eyebrow">Crack_Pots Social Links</p>

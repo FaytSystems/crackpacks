@@ -25,3 +25,10 @@ window.CRACKPACKS_CONFIG = {
   storeNotice: "The Crack Packs storefront is a Coming Soon preview. Checkout is locked until inventory, shipping, and payment settings are verified.",
   newsletterMessage: "Create your verified Profile to join Crack Packs drop alerts."
 };
+
+if (!document.querySelector('script[data-crackpacks-social-loader]')) {
+  const socialScript = document.createElement('script');
+  socialScript.src = 'assets/js/social-footer.js?v=1.0.0';
+  socialScript.dataset.crackpacksSocialLoader = '';
+  document.head.append(socialScript);
+}

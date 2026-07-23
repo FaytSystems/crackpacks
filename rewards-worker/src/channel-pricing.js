@@ -1,7 +1,7 @@
 export const CHANNEL_PRICING_POLICY = Object.freeze({
   retail: Object.freeze({ processingPermille: 27, marginPermille: 250, denominatorPermille: 723 }),
   website: Object.freeze({ processingPermille: 29, marginPermille: 200, denominatorPermille: 771, fixedFeeCents: 30 }),
-  whatnot: Object.freeze({ platformPermille: 120, marginPermille: 180, denominatorPermille: 700, fixedFeeCents: 30 }),
+  live: Object.freeze({ platformPermille: 29, marginPermille: 180, denominatorPermille: 791, fixedFeeCents: 30 }),
   wholesaleSmall: Object.freeze({ paymentPermille: 0, marginPermille: 150, denominatorPermille: 850 }),
   wholesaleCase: Object.freeze({ paymentPermille: 0, marginPermille: 120, denominatorPermille: 880 }),
   wholesalePallet: Object.freeze({ paymentPermille: 0, marginPermille: 100, denominatorPermille: 900 })
@@ -26,7 +26,7 @@ export function calculateChannelPricing(input = {}) {
     retail: floorFrom([cogs, overhead, retailFixedFee], CHANNEL_PRICING_POLICY.retail.denominatorPermille),
     websiteUs: floorFrom([cogs, postage, packaging, overhead, CHANNEL_PRICING_POLICY.website.fixedFeeCents], CHANNEL_PRICING_POLICY.website.denominatorPermille),
     websiteInternational: floorFrom([cogs, packaging, overhead, CHANNEL_PRICING_POLICY.website.fixedFeeCents], CHANNEL_PRICING_POLICY.website.denominatorPermille),
-    whatnot: floorFrom([cogs, packaging, overhead, CHANNEL_PRICING_POLICY.whatnot.fixedFeeCents], CHANNEL_PRICING_POLICY.whatnot.denominatorPermille),
+    live: floorFrom([cogs, packaging, overhead, CHANNEL_PRICING_POLICY.live.fixedFeeCents], CHANNEL_PRICING_POLICY.live.denominatorPermille),
     wholesaleSmall: floorFrom([cogs, wholesaleHandling], CHANNEL_PRICING_POLICY.wholesaleSmall.denominatorPermille),
     wholesaleCase: floorFrom([cogs, wholesaleHandling], CHANNEL_PRICING_POLICY.wholesaleCase.denominatorPermille),
     wholesalePallet: floorFrom([cogs, wholesaleHandling], CHANNEL_PRICING_POLICY.wholesalePallet.denominatorPermille)
@@ -35,7 +35,7 @@ export function calculateChannelPricing(input = {}) {
     retail: optionalCents(input.retailListPriceCents),
     websiteUs: optionalCents(input.websiteListPriceCents),
     websiteInternational: optionalCents(input.internationalListPriceCents),
-    whatnot: optionalCents(input.whatnotListPriceCents),
+    live: optionalCents(input.liveListPriceCents),
     wholesaleSmall: optionalCents(input.wholesaleSmallListPriceCents),
     wholesaleCase: optionalCents(input.wholesaleCaseListPriceCents),
     wholesalePallet: optionalCents(input.wholesalePalletListPriceCents)
@@ -50,7 +50,7 @@ export function channelPricingErrors(input = {}) {
     retail: "Brick-and-mortar list price",
     websiteUs: "USA website list price",
     websiteInternational: "International website list price",
-    whatnot: "Whatnot list price",
+    live: "Live auction list price",
     wholesaleSmall: "Small-reseller wholesale price",
     wholesaleCase: "Case wholesale price",
     wholesalePallet: "Pallet wholesale price"

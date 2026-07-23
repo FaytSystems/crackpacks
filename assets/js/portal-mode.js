@@ -3,6 +3,8 @@
 
   const STORAGE_KEY = "cp_portal_mode";
   const SELLER_ALLOWED_KEY = "cp_can_seller_portal";
+  const apiBase = String(window.CRACKPACKS_CONFIG?.rewardsApiUrl || "").replace(/\/$/, "");
+  const authToken = () => localStorage.getItem("cp_rewards_token") || "";
   const body = document.body;
   if (!body) return;
 
@@ -12,6 +14,17 @@
   };
 
   const sellerAllowed = () => localStorage.getItem(SELLER_ALLOWED_KEY) === "true";
+
+  const portalRequest = async (path, options = {}) => {
+    if (!apiBase || !authToken()) throw new Error("Sign in to your Profile first.");
+    const response = await fetch(`${apiBase}${path}`, {
+      ...options,
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken()}`, ...(options.headers || {}) }
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || "Portal access could not be verified.");
+    return payload;
+  };
 
   const setMode = mode => {
     const next = mode === "seller" && sellerAllowed() ? "seller" : "buyer";
@@ -23,50 +36,52 @@
   let mode = getMode();
   if (mode === "seller" && !sellerAllowed()) mode = setMode("buyer");
 
-  body.dataset.portalMode = mode;
-  body.classList.toggle("portal-seller-mode", mode === "seller");
-  body.classList.toggle("portal-buyer-mode", mode !== "seller");
-
-  document.querySelectorAll("[data-portal-mode-label]").forEach(node => {
-    node.textContent = mode === "seller" ? "Seller Portal" : "Buyer Portal";
-  });
-
-  document.querySelectorAll("[data-buyer-only]").forEach(node => {
-    node.hidden = mode === "seller";
-  });
-
-  document.querySelectorAll("[data-seller-only]").forEach(node => {
-    node.hidden = mode !== "seller";
-  });
-
-  document.querySelectorAll("[data-hide-store-link]").forEach(node => {
-    node.hidden = mode !== "seller";
-  });
-
-  if (body.dataset.sellerPage === "true" && mode !== "seller") {
-    document.querySelectorAll("[data-seller-gate]").forEach(node => {
-      node.hidden = false;
-    });
-    document.querySelectorAll("[data-seller-page-content]").forEach(node => {
-      node.hidden = true;
-    });
-  }
+  const applyPortalDom = nextMode => {
+    body.dataset.portalMode = nextMode;
+    body.classList.toggle("portal-seller-mode", nextMode === "seller");
+    body.classList.toggle("portal-buyer-mode", nextMode !== "seller");
+    document.querySelectorAll("[data-portal-mode-label]").forEach(node => { node.textContent = nextMode === "seller" ? "Seller Portal" : "Buyer Portal"; });
+    document.querySelectorAll("[data-buyer-only]").forEach(node => { node.hidden = nextMode === "seller"; });
+    document.querySelectorAll("[data-seller-only]").forEach(node => { node.hidden = nextMode !== "seller"; });
+    document.querySelectorAll("[data-hide-store-link]").forEach(node => { node.hidden = nextMode !== "seller"; });
+    if (body.dataset.sellerPage === "true") {
+      document.querySelectorAll("[data-seller-gate]").forEach(node => { node.hidden = nextMode === "seller"; });
+      document.querySelectorAll("[data-seller-page-content]").forEach(node => { node.hidden = nextMode !== "seller"; });
+    }
+  };
+  applyPortalDom(mode);
 
   document.querySelectorAll("[data-open-seller-portal]").forEach(button => {
-    button.addEventListener("click", () => {
-      if (!sellerAllowed()) {
-        window.alert("Seller Portal access has not been enabled on this account yet.");
-        return;
+    button.addEventListener("click", async () => {
+      button.disabled = true;
+      try {
+        const result = await portalRequest("/portal/mode", { method: "POST", body: JSON.stringify({ mode: "seller" }) });
+        localStorage.setItem(SELLER_ALLOWED_KEY, "true");
+        setMode(result.activePortal || "seller");
+        window.location.href = "shop.html";
+      } catch (error) {
+        window.alert(error.message);
+        button.disabled = false;
       }
-      setMode("seller");
-      window.location.href = "shop.html";
     });
   });
 
   document.querySelectorAll("[data-open-buyer-portal]").forEach(button => {
-    button.addEventListener("click", () => {
+    button.addEventListener("click", async () => {
+      try { await portalRequest("/portal/mode", { method: "POST", body: JSON.stringify({ mode: "buyer" }) }); } catch {}
       setMode("buyer");
       window.location.href = "streams.html";
     });
   });
+
+  if (apiBase && authToken()) {
+    portalRequest("/portal/status").then(status => {
+      localStorage.setItem(SELLER_ALLOWED_KEY, status.sellerAccess ? "true" : "false");
+      const confirmed = status.sellerAccess && status.activePortal === "seller" ? "seller" : "buyer";
+      mode = setMode(confirmed);
+      applyPortalDom(mode);
+    }).catch(() => localStorage.setItem(SELLER_ALLOWED_KEY, "false"));
+  } else {
+    localStorage.setItem(SELLER_ALLOWED_KEY, "false");
+  }
 })();

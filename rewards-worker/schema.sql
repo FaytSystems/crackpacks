@@ -1,7 +1,7 @@
 PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS members (
   id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, email_verified_at TEXT,
-  first_name TEXT, last_name TEXT, birth_date TEXT, whatnot_username TEXT UNIQUE,
+  first_name TEXT, last_name TEXT, birth_date TEXT, legacy_marketplace_username TEXT UNIQUE,
   identity_fingerprint TEXT UNIQUE, identity_status TEXT NOT NULL DEFAULT 'pending',
   device_verified INTEGER NOT NULL DEFAULT 0,
   invite_code TEXT NOT NULL UNIQUE, referred_by_member_id TEXT,
@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS inventory_items (
   retail_list_price_cents INTEGER CHECK(retail_list_price_cents IS NULL OR retail_list_price_cents BETWEEN 0 AND 100000000),
   website_list_price_cents INTEGER CHECK(website_list_price_cents IS NULL OR website_list_price_cents BETWEEN 0 AND 100000000),
   international_list_price_cents INTEGER CHECK(international_list_price_cents IS NULL OR international_list_price_cents BETWEEN 0 AND 100000000),
-  whatnot_list_price_cents INTEGER CHECK(whatnot_list_price_cents IS NULL OR whatnot_list_price_cents BETWEEN 0 AND 100000000),
+  legacy_marketplace_list_price_cents INTEGER CHECK(legacy_marketplace_list_price_cents IS NULL OR legacy_marketplace_list_price_cents BETWEEN 0 AND 100000000),
   wholesale_small_list_price_cents INTEGER CHECK(wholesale_small_list_price_cents IS NULL OR wholesale_small_list_price_cents BETWEEN 0 AND 100000000),
   wholesale_case_list_price_cents INTEGER CHECK(wholesale_case_list_price_cents IS NULL OR wholesale_case_list_price_cents BETWEEN 0 AND 100000000),
   wholesale_pallet_list_price_cents INTEGER CHECK(wholesale_pallet_list_price_cents IS NULL OR wholesale_pallet_list_price_cents BETWEEN 0 AND 100000000),
@@ -297,7 +297,7 @@ CREATE TABLE IF NOT EXISTS member_orders (
   member_id TEXT NOT NULL,
   owner_member_id TEXT NOT NULL,
   order_number TEXT NOT NULL UNIQUE CHECK(length(order_number) BETWEEN 1 AND 64),
-  channel TEXT NOT NULL CHECK(channel IN ('website','whatnot','manual')),
+  channel TEXT NOT NULL CHECK(channel IN ('website','live','manual')),
   items_json TEXT NOT NULL CHECK(length(items_json) BETWEEN 2 AND 10000),
   status TEXT NOT NULL DEFAULT 'processing' CHECK(status IN ('processing','shipped','delivered','cancelled')),
   placed_at TEXT NOT NULL,

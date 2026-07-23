@@ -15,7 +15,7 @@
     "FACEBOOK_AUTO_POST_ENABLED": "false",
     "FACEBOOK_GRAPH_VERSION": "v25.0",
     "FACEBOOK_PAGE_ID": "",
-    "WHATNOT_LIVE_URL": "https://whatnot.com/invite/crackpacksdotcom"
+    "CRACKPACKS_LIVE_URL": "https://crackpacks.com/streams.html"
   },
   "triggers": {
     "crons": ["* * * * *"]

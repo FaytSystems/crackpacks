@@ -78,6 +78,8 @@
           <button type="button" data-master-section-button="email"><span>05</span><strong>Email</strong><small>Message members</small></button>
           <button type="button" data-master-section-button="inventory"><span>06</span><strong>Inventory</strong><small>Products &amp; store pricing</small></button>
           <button type="button" data-master-section-button="tracking"><span>07</span><strong>Orders</strong><small>Member tracking</small></button>
+          <button type="button" data-master-section-button="identity"><span>08</span><strong>Identity Review</strong><small>Resolve account collisions</small></button>
+          <button type="button" data-master-section-button="sellers"><span>09</span><strong>Sellers</strong><small>Issue one-time access</small></button>
         </nav>
         <section class="reward-card owner-referral-card" data-owner-referral data-master-section="create_link">
           <div class="owner-referral-grid">
@@ -179,10 +181,13 @@
           <div class="email-audience-actions">
             <button class="btn btn-primary" type="button" data-email-all>Message All</button>
             <button class="btn btn-outline" type="button" data-email-select-open>Select Few</button>
+            <label>Referral tier<select data-email-tier><option value="crew">Crew (3–9)</option><option value="breaker">Breaker (10–24)</option><option value="headliner">Headliner (25–49)</option><option value="legend">Legend (50+)</option></select></label>
+            <button class="btn btn-outline" type="button" data-email-tier-select>Message Tier</button>
           </div>
           <div class="email-recipient-summary" data-email-recipient-summary>No audience selected.</div>
           <div class="email-selected-chips" data-email-selected-chips></div>
           <form class="master-email-form" data-master-email-form>
+            <label>Send from<select name="fromAddress"><option value="rewards@crackpacks.com">rewards@crackpacks.com</option><option value="alerts@crackpacks.com">alerts@crackpacks.com</option><option value="orders@crackpacks.com">orders@crackpacks.com</option><option value="support@crackpacks.com">support@crackpacks.com</option><option value="hello@crackpacks.com">hello@crackpacks.com</option></select></label>
             <label>Subject<input name="subject" maxlength="120" required placeholder="Crack Packs live-show update"></label>
             <label>Message<textarea name="message" maxlength="5000" required rows="8" placeholder="Write the member message here..."></textarea></label>
             <div class="campaign-form-status" data-master-email-status aria-live="polite"></div>
@@ -250,6 +255,35 @@
               <div class="admin-order-list" data-admin-order-list aria-live="polite"></div>
             </div>
           </div>
+        </section>
+        <section class="reward-card" data-master-section="identity" hidden>
+          <div class="dashboard-head">
+            <div><p class="eyebrow">Account security</p><h2>Identity collision review</h2><p>Stripe-verified accounts appear here only when the protected legal-identity or User ID rules detect a collision.</p></div>
+            <button class="btn btn-outline btn-small" type="button" data-identity-review-refresh>Refresh</button>
+          </div>
+          <div class="campaign-form-status" data-identity-review-status aria-live="polite"></div>
+          <div class="admin-results" data-identity-review-list></div>
+        </section>
+        <section class="reward-card" data-master-section="sellers" hidden>
+          <div class="dashboard-head">
+            <div><p class="eyebrow">Seller security</p><h2>One-time Seller Portal activation</h2><p>Create a seven-day, single-use activation link for a specific verified email or User ID. The recipient must sign in as that same account and complete identity verification before the link works.</p></div>
+          </div>
+          <form class="master-email-form" data-seller-activation-form>
+            <label>Seller applicant email<input name="email" type="email" maxlength="254" required autocomplete="off" placeholder="seller@example.com"></label>
+            <label>Owner note<textarea name="note" rows="3" maxlength="300" placeholder="Approved after application review"></textarea></label>
+            <div class="campaign-form-status" data-seller-activation-status aria-live="polite"></div>
+            <button class="btn btn-primary" type="submit" data-seller-activation-submit>Create one-time activation link</button>
+          </form>
+          <div class="campaign-generated" data-seller-activation-result hidden>
+            <div>
+              <span class="campaign-live-chip">ONE-TIME LINK READY</span>
+              <p>Send this only to the approved applicant. It expires at <time data-seller-activation-expires></time>.</p>
+              <div class="share-row"><input data-seller-activation-url readonly aria-label="Seller activation URL"><button class="btn btn-outline btn-small" type="button" data-seller-activation-copy>Copy link</button></div>
+            </div>
+          </div>
+          <div class="dashboard-head"><div><p class="eyebrow">Seller supply queue</p><h3>PAR-triggered reorders</h3></div><button class="btn btn-outline btn-small" type="button" data-admin-reorders-refresh>Refresh</button></div>
+          <div class="campaign-form-status" data-admin-reorders-status aria-live="polite"></div>
+          <div class="admin-results" data-admin-reorders-list></div>
         </section>
       </section>
     </section>

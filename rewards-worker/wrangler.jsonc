@@ -17,6 +17,7 @@
     "STORE_BASE_CURRENCY": "USD",
     "STORE_COMING_SOON": "true",
     "STORE_CHECKOUT_ENABLED": "false",
+    "LIVE_AUCTIONS_ENABLED": "false",
     "INTERNATIONAL_INCOTERM": "DAP"
   },
   "observability": { "enabled": true }

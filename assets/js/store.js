@@ -11,6 +11,8 @@
   const currencySelect = document.querySelector("[data-store-currency]");
   const inventoryEndpoint = "/store/inventory";
   const quoteEndpoint = "/store/shipping-quote";
+  const checkoutEndpoint = "/store/checkout";
+  const authToken = () => localStorage.getItem("cp_rewards_token") || "";
   const fallbackImages = {
     sealed: "assets/images/product-electric.svg",
     packs: "assets/images/product-cosmic.svg",
@@ -24,6 +26,8 @@
   let activeSearch = "";
   let catalogController = null;
   let storeComingSoon = true;
+  let storeCheckoutEnabled = false;
+  let currentQuoteId = "";
   let shippingTurnstileToken = "";
   let shippingTurnstileWidgetId = null;
   let shippingTurnstileScriptAdded = false;
@@ -168,8 +172,8 @@
     const sourceLink = item.sourceUrl
       ? `<a class="store-source-link" href="${escapeHtml(item.sourceUrl)}" target="_blank" rel="noopener noreferrer">Product source ↗</a>`
       : "";
-    const quoteButton = market === "international" && item.slug
-      ? `<button class="btn btn-small btn-outline" type="button" data-quote-product="${escapeHtml(item.slug)}">Estimate shipping</button>`
+    const quoteButton = item.slug && item.available && item.shippingReady
+      ? `<button class="btn btn-small btn-outline" type="button" data-quote-product="${escapeHtml(item.slug)}">${storeCheckoutEnabled ? "Prepare checkout" : "Estimate shipping"}</button>`
       : "";
     const image = item.imageUrl
       ? `<img src="${escapeHtml(item.imageUrl)}" alt="${escapeHtml(item.name)}" loading="lazy" data-store-product-image>`
@@ -189,7 +193,7 @@
           ${sourceLink}
           <div class="product-footer">
             <div class="store-price-stack">${priceMarkup(item)}</div>
-            <button class="store-checkout-button" type="button" disabled aria-disabled="true">Checkout coming soon</button>
+            <button class="store-checkout-button" type="button" disabled aria-disabled="true">${storeCheckoutEnabled ? "Choose shipping below" : "Checkout coming soon"}</button>
           </div>
           ${quoteButton}
         </div>
@@ -289,7 +293,7 @@
       url.searchParams.set("market", market);
       url.searchParams.set("currency", selectedCurrency());
       const response = await fetch(url.toString(), {
-        headers: { Accept: "application/json" },
+        headers: { Accept: "application/json", ...(authToken() ? { Authorization: `Bearer ${authToken()}` } : {}) },
         signal: catalogController.signal
       });
       const payload = await response.json().catch(() => ({}));
@@ -302,8 +306,9 @@
         return;
       }
 
-      const normalized = rows.map(item => normalizeApiItem(item, payload));
       storeComingSoon = payload?.comingSoon !== false;
+      storeCheckoutEnabled = payload?.checkoutEnabled === true;
+      const normalized = rows.map(item => normalizeApiItem(item, payload));
       renderCatalog(normalized);
       if (!storeComingSoon) mountShippingTurnstile();
       const currencyNote = market === "international" && payload?.rate
@@ -385,6 +390,7 @@
       return;
     }
     const currency = String(payload?.currency || "USD").toUpperCase();
+    currentQuoteId = String(payload?.quoteId || "");
     const expiry = payload?.expiresAt
       ? ` Quote expires ${new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(payload.expiresAt))}.`
       : "";
@@ -394,14 +400,42 @@
       .map(rate => {
         const days = Number(rate?.deliveryDays);
         const delivery = Number.isFinite(days) && days >= 0 ? `${days} estimated business day${days === 1 ? "" : "s"}` : "Delivery estimate unavailable";
-        return `<article class="shipping-rate"><div><strong>${escapeHtml(`${rate?.carrier || "Carrier"} ${rate?.service || "service"}`)}</strong><small>${escapeHtml(delivery)}</small></div><span class="shipping-rate-price">${escapeHtml(formatMoney(rate?.amountCents, currency))}</span><button class="store-checkout-button" type="button" disabled aria-disabled="true">Checkout coming soon</button></article>`;
+        const checkout = storeCheckoutEnabled && currentQuoteId
+          ? `<button class="store-checkout-button" type="button" data-start-checkout data-rate-id="${escapeHtml(rate?.id || "")}">Checkout</button>`
+          : `<button class="store-checkout-button" type="button" disabled aria-disabled="true">Checkout coming soon</button>`;
+        return `<article class="shipping-rate"><div><strong>${escapeHtml(`${rate?.carrier || "Carrier"} ${rate?.service || "service"}`)}</strong><small>${escapeHtml(delivery)}</small></div><span class="shipping-rate-price">${escapeHtml(formatMoney(rate?.amountCents, currency))}</span>${checkout}</article>`;
       }).join("");
     if (shippingDisclosure) {
       shippingDisclosure.textContent = String(payload?.disclosure || "");
       shippingDisclosure.hidden = !shippingDisclosure.textContent;
     }
-    setShippingStatus(`${rates.length} shipping option${rates.length === 1 ? "" : "s"} found.${expiry} Checkout remains locked during prelaunch.`, "success");
+    setShippingStatus(`${rates.length} shipping option${rates.length === 1 ? "" : "s"} found.${expiry}${storeCheckoutEnabled ? " Choose Checkout to continue to Stripe." : " Checkout remains locked during prelaunch."}`, "success");
   }
+
+  shippingRates?.addEventListener("click", async event => {
+    const button = event.target.closest("[data-start-checkout]");
+    if (!button) return;
+    if (!authToken()) {
+      setShippingStatus("Sign in to your verified Seller Profile before checkout.", "error");
+      return;
+    }
+    button.disabled = true;
+    button.textContent = "Opening Stripe...";
+    try {
+      const response = await fetch(rewardsUrl(checkoutEndpoint), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json", Authorization: `Bearer ${authToken()}` },
+        body: JSON.stringify({ quoteId: currentQuoteId, rateId: button.dataset.rateId })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.checkoutUrl) throw new Error(payload.error || "Checkout could not be opened.");
+      location.href = payload.checkoutUrl;
+    } catch (error) {
+      button.disabled = false;
+      button.textContent = "Checkout";
+      setShippingStatus(error.message, "error");
+    }
+  });
 
   catalog?.addEventListener("click", event => {
     const button = event.target.closest("[data-quote-product]");
@@ -460,7 +494,7 @@
     try {
       const response = await fetch(endpoint, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        headers: { "Content-Type": "application/json", Accept: "application/json", ...(authToken() ? { Authorization: `Bearer ${authToken()}` } : {}) },
         body: JSON.stringify(body)
       });
       const payload = await response.json().catch(() => ({}));

@@ -16,7 +16,7 @@ test("channel pricing uses the requested safe-floor formulas and rounds up", () 
   assert.equal(floors.retail, Math.ceil(10380 / 0.723));
   assert.equal(floors.websiteUs, Math.ceil(11280 / 0.771));
   assert.equal(floors.websiteInternational, Math.ceil(10480 / 0.771));
-  assert.equal(floors.whatnot, Math.ceil(10480 / 0.70));
+  assert.equal(floors.live, Math.ceil(10480 / 0.791));
   assert.equal(floors.wholesaleSmall, Math.ceil(10100 / 0.85));
   assert.equal(floors.wholesaleCase, Math.ceil(10100 / 0.88));
   assert.equal(floors.wholesalePallet, Math.ceil(10100 / 0.90));

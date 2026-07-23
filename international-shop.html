@@ -13,7 +13,7 @@
   <link rel="stylesheet" href="assets/css/store.css?v=3.0.0">
   <link rel="stylesheet" href="assets/css/contact-form.css?v=1.7.1">
 </head>
-<body data-page="shop" data-store-market="international">
+<body data-page="shop" data-store-market="international" data-seller-page="true">
   <a class="skip-link" href="#main">Skip to content</a>
   <div class="ambient-layer" aria-hidden="true"><span class="ambient-orb orb-a"></span><span class="ambient-orb orb-b"></span><span class="ambient-orb orb-c"></span><span class="grain"></span></div>
 
@@ -36,11 +36,17 @@
     </div>
   </header>
 
-  <div class="store-coming-soon-tape" role="status" aria-label="Crack Packs international store is coming soon">
+  <div class="container portal-lock holo-panel" data-seller-gate hidden>
+    <p class="eyebrow">Seller Portal locked</p><h1>International inventory is seller-only.</h1>
+    <p>Sign in with an activated Seller Profile and switch to Seller Portal before viewing wholesale-fed inventory.</p>
+    <div class="actions"><a class="btn btn-primary" href="referral.html">Open Profile</a><button class="btn btn-outline" type="button" data-open-buyer-portal>Open Buyer Portal</button></div>
+  </div>
+
+  <div class="store-coming-soon-tape" role="status" aria-label="Crack Packs international store is coming soon" data-seller-page-content>
     <span>Coming soon</span><span>Checkout locked</span><span>International preview</span><span aria-hidden="true">Coming soon</span>
   </div>
 
-  <main id="main">
+  <main id="main" data-seller-page-content>
     <section class="page-hero shop-hero">
       <div class="container page-hero-grid">
         <div class="reveal">
@@ -170,6 +176,7 @@
   </footer>
 
   <script src="assets/js/config.js?v=3.0.0"></script>
+  <script src="assets/js/portal-mode.js?v=1.1.0"></script>
   <script src="assets/js/data.js?v=1.5.0"></script>
   <script src="assets/js/app.js?v=1.5.0"></script>
   <script src="assets/js/store.js?v=3.0.0"></script>

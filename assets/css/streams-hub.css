@@ -135,3 +135,54 @@
   max-width: 720px;
   margin: 2rem auto 0;
 }
+
+.seller-cockpit-grid,
+.seller-show-manager {
+  margin-bottom: 1.25rem;
+}
+
+.seller-stream-input,
+.seller-show-manager,
+.seller-lot-form {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.stream-secret-grid {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.stream-secret-grid label > span,
+.seller-show-manager-head {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.stream-secret-grid input {
+  min-width: 0;
+  flex: 1;
+}
+
+.seller-lot-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.seller-lot-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 1rem;
+  padding: 0.9rem;
+  background: rgba(7, 11, 28, 0.82);
+}
+
+.seller-lot-item p {
+  margin: 0.2rem 0 0;
+}

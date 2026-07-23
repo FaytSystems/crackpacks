@@ -55,6 +55,79 @@
     <section class="container section seller-show-tools" data-seller-only hidden>
       <div class="section-heading reveal">
         <div>
+          <p class="eyebrow">Seller Portal</p>
+          <h2>OBS stream and <span>auction cockpit.</span></h2>
+          <p>Your stream key is private. Create it once, add the RTMPS server and key to OBS, then schedule shows and control auction lots here.</p>
+        </div>
+      </div>
+      <div class="giveaway-grid seller-cockpit-grid">
+        <article class="holo-panel seller-stream-input">
+          <h3>Private OBS connection</h3>
+          <p class="fine-print">Never post or share your stream key. Regeneration is handled through support if it is exposed.</p>
+          <button class="btn btn-primary" type="button" data-stream-input-create>Create / load OBS connection</button>
+          <div class="stream-secret-grid" data-stream-input-result hidden>
+            <label>RTMPS server<span><input data-stream-rtmps-url readonly><button class="btn btn-outline btn-small" type="button" data-copy-stream-field="rtmps">Copy</button></span></label>
+            <label>Stream key<span><input data-stream-key type="password" readonly><button class="btn btn-outline btn-small" type="button" data-reveal-stream-key>Reveal</button><button class="btn btn-outline btn-small" type="button" data-copy-stream-field="key">Copy</button></span></label>
+          </div>
+          <div class="campaign-form-status" data-stream-input-status aria-live="polite"></div>
+        </article>
+        <article class="holo-panel">
+          <h3>Create a show</h3>
+          <form class="seller-giveaway-form" data-seller-show-form>
+            <label>Show title<input name="title" required maxlength="160" placeholder="Friday Night Crack Packs"></label>
+            <label>Scheduled time<input name="scheduledAt" type="datetime-local"></label>
+            <label>Thumbnail URL<input name="thumbnailUrl" type="url" maxlength="500" placeholder="https://..."></label>
+            <button class="btn btn-primary" type="submit">Save show</button>
+          </form>
+          <div class="campaign-form-status" data-seller-show-status aria-live="polite"></div>
+        </article>
+      </div>
+      <div class="holo-panel seller-show-manager">
+        <div class="seller-show-manager-head"><h3>Your shows and auction lots</h3><button class="btn btn-outline btn-small" type="button" data-seller-shows-refresh>Refresh</button></div>
+        <label>Manage show<select data-seller-show-select><option value="">Create a show first</option></select></label>
+        <form class="seller-lot-form" data-seller-lot-form>
+          <div class="field-grid">
+            <label>Auction title<input name="title" required maxlength="160" placeholder="Holographic single"></label>
+            <label>Sale type<select name="saleType"><option value="singles">Singles</option><option value="cards">Cards</option><option value="breaks">Breaks</option><option value="sealed">Sealed</option><option value="rip_ship">Rip &amp; Ship</option><option value="rtyh">RTYH</option><option value="buy_ship">Buy &amp; Ship</option></select></label>
+            <label>Starting bid ($)<input name="startingBid" type="number" min="0.01" max="100000" step="0.01" value="1.00" required></label>
+            <label>Bid increment ($)<input name="bidIncrement" type="number" min="0.01" max="10000" step="0.01" value="1.00" required></label>
+            <label>Condition<input name="condition" maxlength="80" placeholder="Near Mint"></label>
+            <label>Item image URL<input name="imageUrl" type="url" maxlength="500" placeholder="https://..."></label>
+          </div>
+          <label>Description<textarea name="description" rows="3" maxlength="1000"></textarea></label>
+          <button class="btn btn-primary" type="submit">Add auction lot</button>
+        </form>
+        <div class="campaign-form-status" data-seller-lot-status aria-live="polite"></div>
+        <div class="seller-lot-list" data-seller-lot-list></div>
+      </div>
+    </section>
+
+    <section class="container section seller-show-tools" data-seller-only hidden>
+      <div class="section-heading reveal"><div><p class="eyebrow">Seller inventory</p><h2>Stock, PAR levels, and <span>reviewed reorders.</span></h2><p>Paid Seller Store orders appear as inbound stock. Mark units received when they arrive; sales and gifted giveaways keep available quantities current.</p></div></div>
+      <div class="giveaway-grid">
+        <article class="holo-panel">
+          <form class="seller-giveaway-form" data-seller-inventory-form>
+            <div class="field-grid">
+              <label>Product name<input name="productName" required maxlength="160" placeholder="Booster Box"></label>
+              <label>SKU<input name="sku" maxlength="64" placeholder="CP-BOX-001"></label>
+              <label>Unit type<select name="unitType"><option value="sealed_box">Sealed box</option><option value="pack">Pack</option><option value="single">Single</option><option value="supply">Supply</option></select></label>
+              <label>In stock<input name="quantity" type="number" min="0" max="100000" value="0" required></label>
+              <label>PAR level<input name="parQuantity" type="number" min="0" max="100000" value="0" required></label>
+              <label>Reorder quantity<input name="reorderQuantity" type="number" min="0" max="100000" value="0" required></label>
+            </div>
+            <label class="check-line"><input name="autoReorder" type="checkbox"> Create an owner-review reorder request when stock falls below PAR</label>
+            <button class="btn btn-primary" type="submit">Save inventory item</button>
+          </form>
+          <div class="campaign-form-status" data-seller-inventory-status aria-live="polite"></div>
+        </article>
+        <article class="holo-panel"><h3>Pending reorders</h3><div class="seller-giveaway-list" data-seller-reorder-list></div></article>
+      </div>
+      <div class="seller-giveaway-list" data-seller-inventory-list></div>
+    </section>
+
+    <section class="container section seller-show-tools" data-seller-only hidden>
+      <div class="section-heading reveal">
+        <div>
           <p class="eyebrow">Seller tools</p>
           <h2>Saved giveaway presets for your <span>live shows.</span></h2>
           <p>Build giveaway presets before stream, then queue the one you want during your show.</p>
@@ -91,12 +164,9 @@
           <form class="gifted-giveaway-form" data-gifted-giveaway-form>
             <input type="hidden" name="showId" data-gifted-show-id>
             <p class="fine-print" data-gifted-show-title>Select a show from above with “Donate to Show”.</p>
-            <div class="field-grid">
-              <label>Your name<input name="buyerName" maxlength="80" placeholder="Collector name"></label>
-              <label>Giveaway product<input name="product" required maxlength="80" placeholder="Holo single · sealed pack · bonus card"></label>
-            </div>
+            <label>Giveaway product<select name="inventoryItemId" data-gifted-product required><option value="">Select a show first</option></select></label>
             <label>Message to seller<textarea name="note" rows="3" maxlength="300" placeholder="Use this for the final bonus spin of the stream."></textarea></label>
-            <button class="btn btn-primary" type="submit">Queue gifted giveaway</button>
+            <button class="btn btn-primary" type="submit">Fund giveaway securely</button>
           </form>
         </article>
         <article class="holo-panel">

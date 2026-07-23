@@ -13,7 +13,6 @@
 .social-link span{display:grid;place-items:center;width:36px;height:36px;border-radius:11px;font-weight:950;background:rgba(255,255,255,.1)}
 .social-link.facebook span{background:#1877f2}
 .social-link.youtube span{background:#ff0033}
-.social-link.whatnot span{color:#080815;background:var(--electric)}
 .social-link.x span{color:#fff;background:#050505;box-shadow:inset 0 0 0 1px rgba(255,255,255,.25)}
 .reward-share-strip{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-top:24px;padding:18px;border:1px solid rgba(56,232,255,.25);border-radius:16px;background:linear-gradient(110deg,rgba(56,232,255,.08),rgba(255,78,219,.07))}
 .reward-share-strip strong,.reward-share-strip span{display:block}.reward-share-strip span{margin-top:3px;color:var(--muted);font-size:.86rem}
@@ -41,3 +40,24 @@
 .member-order-card{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:22px;align-items:center;padding:19px;border:1px solid rgba(56,232,255,.17);border-radius:17px;background:linear-gradient(140deg,rgba(56,232,255,.045),rgba(255,255,255,.025))}.member-order-heading{display:flex;align-items:center;flex-wrap:wrap;gap:9px 13px}.member-order-heading h4{margin:0}.member-order-meta{margin:6px 0;color:var(--muted);font-size:.82rem}.member-order-content ul{margin:10px 0 0;padding-left:20px;color:#eef0ff}.member-order-action{display:grid;justify-items:end;gap:9px}.member-order-action small{color:var(--muted);text-align:right}.member-order-status{padding:6px 9px;border-radius:999px;color:#d7dcff;background:rgba(138,145,255,.15);font-size:.68rem;font-weight:950;text-transform:uppercase;letter-spacing:.06em}.member-order-status.shipped{color:#051820;background:var(--cyan)}.member-order-status.delivered{color:#04170f;background:var(--mint)}.member-order-status.cancelled{color:#fff;background:var(--danger)}
 @media(max-width:900px){.choice-grid{grid-template-columns:1fr}}
 @media(max-width:700px){.member-order-card{grid-template-columns:1fr}.member-order-action{justify-items:stretch}.member-order-action small{text-align:left}.member-order-action .btn{width:100%}}
+.payment-method-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 1rem;
+  background: rgba(7, 11, 28, 0.72);
+}
+
+.payment-method-row div {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.payment-method-row small {
+  color: rgba(255,255,255,0.72);
+}

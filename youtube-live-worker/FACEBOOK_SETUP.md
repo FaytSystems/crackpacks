@@ -2,7 +2,7 @@
 
 The Worker can publish one Facebook Page post when a new Crack Packs YouTube
 video becomes live. The post uses the YouTube title and description, links to
-the Crack Packs Whatnot profile, and includes the YouTube watch URL.
+the Crack Packs Live Hub, and includes the YouTube watch URL when available.
 
 The feature is installed disabled. Keep `FACEBOOK_AUTO_POST_ENABLED` set to
 `"false"` until the Meta app and Page access token are ready.
@@ -35,7 +35,7 @@ Set these non-secret values in `wrangler.jsonc`:
 
 - `FACEBOOK_PAGE_ID`: the Page `id` returned by `/me/accounts`
 - `FACEBOOK_GRAPH_VERSION`: currently `v25.0`
-- `WHATNOT_LIVE_URL`: `https://whatnot.com/invite/crackpacksdotcom`
+- `CRACKPACKS_LIVE_URL`: `https://crackpacks.com/streams.html`
 - `FACEBOOK_AUTO_POST_ENABLED`: change to `"true"` only after setup
 
 Also put the public Facebook Page URL in `assets/js/config.js` as

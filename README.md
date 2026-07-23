@@ -1,6 +1,6 @@
 # CrackPacks.com
 
-Static storefront, release radar, and secure Pokémon card-catalog search for **Crack Packs**.
+Static buyer/seller portals, live-show controls, rewards, commerce, and secure Pokémon plus Magic: The Gathering card search for **Crack Packs**.
 
 Repository: `FaytSystems/crackpacks`
 
@@ -9,8 +9,8 @@ Repository: `FaytSystems/crackpacks`
 - GitHub Pages serves the storefront.
 - The browser calls `https://api.crackpacks.com/cards`.
 - A Cloudflare Worker receives the search request.
-- The Worker reads the encrypted Cloudflare secret named `POKEMON_TCG_API_KEY`.
-- The Worker sends that secret to Pokémon TCG API in the `X-Api-Key` header.
+- The Worker reads the encrypted Cloudflare secret named `POKEMON_TCG_API_KEY` for Pokémon searches.
+- Magic searches use Scryfall through the same server-side proxy, with caching and the required identifying headers.
 - The API key is never stored in the public GitHub repository or browser JavaScript.
 
 ## Included
@@ -20,10 +20,10 @@ Repository: `FaytSystems/crackpacks`
 - `releases.html` — release calendar with live countdowns
 - `404.html` — custom error page
 - `assets/css/styles.css` — complete responsive visual system
-- `assets/js/config.js` — Whatnot URL, public Worker endpoint, email, and site settings
+- `assets/js/config.js` — live hub, public Worker endpoints, social links, email, and site settings
 - `assets/js/data.js` — store inventory and release data
 - `assets/js/app.js` — storefront rendering, filtering, catalog search, slideshows, and navigation
-- `cloudflare-worker/src/index.js` — secure Pokémon TCG API proxy
+- `cloudflare-worker/src/index.js` — secure Pokémon TCG API and Scryfall proxy
 - `cloudflare-worker/wrangler.jsonc` — Worker configuration and allowed public origins
 - `cloudflare-worker/package.json` — Worker development commands
 - `cloudflare-worker/deploy-worker.ps1` — PowerShell deployment helper
@@ -143,15 +143,9 @@ git push origin main
 
 ## Required storefront edits
 
-### Whatnot profile
+### Live profile
 
-Open `assets/js/config.js` and replace:
-
-```js
-whatnotUrl: "https://www.whatnot.com/user/YOUR_USERNAME"
-```
-
-Also replace every `YOUR_USERNAME` placeholder in `assets/js/data.js`.
+The first-party live hub is configured in `assets/js/config.js` with `liveHubUrl`.
 
 ### Store inventory
 
@@ -173,6 +167,12 @@ Example card search:
 
 ```text
 https://api.crackpacks.com/cards?term=charizard&page=1&pageSize=24&orderBy=-set.releaseDate
+```
+
+Magic example:
+
+```text
+https://api.crackpacks.com/cards?series=magic&term=black%20lotus&page=1&pageSize=20&orderBy=-set.releaseDate
 ```
 
 Website shop:

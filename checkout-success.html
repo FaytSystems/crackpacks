@@ -13,7 +13,7 @@
 <body data-page="checkout-success">
   <a class="skip-link" href="#main">Skip to content</a>
   <div class="ambient-layer" aria-hidden="true"><span class="ambient-orb orb-a"></span><span class="ambient-orb orb-b"></span><span class="grain"></span></div>
-  <header class="site-header"><div class="container nav-shell"><a class="brand" href="index.html"><img src="assets/images/logo.svg" alt="Crack Packs"></a><nav class="site-nav" aria-label="Primary"><a href="shop.html">Shop</a><a href="referral.html">Profile</a></nav></div></header>
+  <header class="site-header"><div class="container nav-shell"><a class="brand" href="index.html"><img src="assets/images/logo.svg" alt="Crack Packs"></a><nav class="site-nav" aria-label="Primary"><a href="streams.html">Live Feed</a><a href="shop.html" data-hide-store-link hidden>Store</a><a href="referral.html">Profile</a></nav></div></header>
   <main id="main" class="section">
     <div class="container">
       <section class="shipping-quote-panel holo-panel" data-checkout-confirmation aria-live="polite">
@@ -25,12 +25,13 @@
           <p><strong>Total:</strong> <span data-checkout-total></span></p>
           <p><strong>Status:</strong> Processing — label purchase is manual.</p>
         </div>
-        <div class="actions"><a class="btn btn-primary" href="referral.html#member-orders">Open Profile Orders</a><a class="btn btn-outline" href="shop.html">Return to shop</a></div>
+        <div class="actions"><a class="btn btn-primary" href="referral.html#member-orders">Open Profile Orders</a><a class="btn btn-outline" href="shop.html" data-hide-store-link hidden>Return to Seller Store</a></div>
         <p class="fine-print">A confirmation email comes from orders@crackpacks.com. Questions may be sent to <a href="mailto:support@crackpacks.com">support@crackpacks.com</a>.</p>
       </section>
     </div>
   </main>
   <script src="assets/js/config.js?v=4.0.0"></script>
+  <script src="assets/js/portal-mode.js?v=1.1.0"></script>
   <script src="assets/js/checkout-success.js?v=4.0.0"></script>
 </body>
 </html>

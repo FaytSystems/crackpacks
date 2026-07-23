@@ -68,6 +68,8 @@
     if (section === "redeemed") Promise.all([refreshDashboard(), refreshCampaigns()]).catch(error => showStatus(error.message, "error"));
     if (section === "inventory") refreshInventory().catch(error => setInventoryStatus(error.message, "error"));
     if (section === "tracking") Promise.all([searchTrackingMembers(), refreshAdminOrders()]).catch(error => setTrackingStatus(error.message, "error"));
+    if (section === "identity") refreshIdentityReviews().catch(error => setIdentityReviewStatus(error.message, "error"));
+    if (section === "sellers") refreshAdminReorders().catch(error => setAdminReordersStatus(error.message, "error"));
   }
 
   const request = async (path, options = {}) => {
@@ -112,6 +114,80 @@
   };
   const toBase64url = buffer => btoa(String.fromCharCode(...new Uint8Array(buffer))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   const fromBase64url = value => Uint8Array.from(atob(value.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(value.length / 4) * 4, "=")), c => c.charCodeAt(0));
+
+  function setIdentityReviewStatus(message = "", kind = "") {
+    const node = $("[data-identity-review-status]");
+    if (!node) return;
+    node.textContent = message;
+    node.dataset.kind = kind;
+  }
+  async function refreshIdentityReviews() {
+    const payload = await request("/admin/identity-reviews");
+    const reviews = Array.isArray(payload.reviews) ? payload.reviews : [];
+    const list = $("[data-identity-review-list]");
+    list.replaceChildren();
+    if (!reviews.length) {
+      const empty = document.createElement("div"); empty.className = "inventory-empty"; empty.textContent = "No identity collisions are waiting for review."; list.append(empty);
+      setIdentityReviewStatus("Identity queue is clear.", "success");
+      return;
+    }
+    reviews.forEach(review => {
+      const card = document.createElement("article"); card.className = "admin-result-card";
+      const heading = document.createElement("h3"); heading.textContent = review.live_username ? `@${review.live_username}` : review.email;
+      const detail = document.createElement("p"); detail.textContent = `${review.first_name || ""} ${review.last_name || ""} · DOB ${review.birth_date || "not supplied"} · ${review.email}`.trim();
+      const collision = document.createElement("p"); collision.textContent = `Collision: ${review.reason} · existing ${review.conflicting_username ? `@${review.conflicting_username}` : review.conflicting_email || "account"}`;
+      const actions = document.createElement("div"); actions.className = "admin-result-actions";
+      const approve = document.createElement("button"); approve.type = "button"; approve.className = "btn btn-primary btn-small"; approve.dataset.identityDecision = "approve"; approve.dataset.reviewId = review.id; approve.textContent = "Approve account";
+      const reject = document.createElement("button"); reject.type = "button"; reject.className = "btn btn-danger btn-small"; reject.dataset.identityDecision = "reject"; reject.dataset.reviewId = review.id; reject.textContent = "Reject account";
+      actions.append(approve, reject); card.append(heading, detail, collision, actions); list.append(card);
+    });
+    setIdentityReviewStatus(`${reviews.length} collision${reviews.length === 1 ? "" : "s"} require an owner decision.`);
+  }
+
+  function setSellerActivationStatus(message = "", kind = "") {
+    const node = $("[data-seller-activation-status]");
+    if (!node) return;
+    node.textContent = message;
+    node.dataset.kind = kind;
+  }
+
+  async function createSellerActivation(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const submit = $("[data-seller-activation-submit]");
+    const data = new FormData(form);
+    submit.disabled = true;
+    setSellerActivationStatus("Creating protected activation link...");
+    try {
+      const result = await request("/admin/sellers/activation", {
+        method: "POST",
+        body: JSON.stringify({ email: data.get("email"), note: data.get("note") })
+      });
+      $("[data-seller-activation-url]").value = result.activationUrl;
+      $("[data-seller-activation-expires]").textContent = new Date(result.expiresAt).toLocaleString();
+      $("[data-seller-activation-result]").hidden = false;
+      setSellerActivationStatus("Activation link created. It can be used once by the matching account.", "success");
+    } catch (error) {
+      setSellerActivationStatus(error.message, "error");
+    } finally {
+      submit.disabled = false;
+    }
+  }
+
+  function setAdminReordersStatus(message = "", kind = "") { const node = $("[data-admin-reorders-status]"); if (node) { node.textContent = message; node.dataset.kind = kind; } }
+  async function refreshAdminReorders() {
+    const payload = await request("/admin/reorders"); const rows = payload.reorders || []; const list = $("[data-admin-reorders-list]"); list.replaceChildren();
+    if (!rows.length) { const empty = document.createElement("div"); empty.className = "inventory-empty"; empty.textContent = "No seller reorders are waiting."; list.append(empty); return; }
+    rows.forEach(row => {
+      const card = document.createElement("article"); card.className = "admin-result-card";
+      const title = document.createElement("h3"); title.textContent = row.product_name;
+      const detail = document.createElement("p"); detail.textContent = `${row.live_username ? `@${row.live_username}` : row.email} · ${Number(row.requested_quantity)} ${row.unit_type} · PAR ${Number(row.par_quantity)} · stock trigger ${Number(row.trigger_quantity)}`;
+      const actions = document.createElement("div"); actions.className = "admin-result-actions";
+      [["approved","Approve"],["ordered","Mark ordered"],["rejected","Reject"]].forEach(([status,label]) => { const button = document.createElement("button"); button.type = "button"; button.className = status === "rejected" ? "btn btn-danger btn-small" : "btn btn-outline btn-small"; button.dataset.reorderId = row.id; button.dataset.reorderStatus = status; button.textContent = label; actions.append(button); });
+      card.append(title, detail, actions); list.append(card);
+    });
+    setAdminReordersStatus(`${rows.length} seller reorder request${rows.length === 1 ? "" : "s"} waiting.`);
+  }
 
   function initializeTurnstile() {
     const node = $("[data-admin-turnstile]");
@@ -1116,7 +1192,7 @@
     const main = document.createElement("div"); main.className = "campaign-redemption-main";
     const identity = document.createElement("strong");
     const email = String(pick(redemption, "email") || "Unknown email");
-    const username = String(pick(redemption, "whatnotUsername", "whatnot_username") || "");
+    const username = String(pick(redemption, "liveUsername", "live_username") || "");
     identity.textContent = username ? `${email} - @${username}` : email;
     const code = document.createElement("span"); code.className = "campaign-redemption-code"; code.textContent = String(pick(redemption, "code") || "No code");
     main.append(identity, code);
@@ -1211,7 +1287,7 @@
       if (hasDateFilter && !campaignCreatedMatches && !dateFilteredRedemptions.length) return;
       const product = campaignProduct(campaign);
       const campaignMatches = query && [pick(campaign, "title"), campaignRewardDescription(campaign), rewardType, pick(campaign, "url"), product?.name, product?.upc].some(value => String(value || "").toLowerCase().includes(query));
-      const visible = !query || campaignMatches ? dateFilteredRedemptions : dateFilteredRedemptions.filter(redemption => [pick(redemption, "code"), pick(redemption, "email"), pick(redemption, "whatnotUsername", "whatnot_username")].some(value => String(value || "").toLowerCase().includes(query)));
+      const visible = !query || campaignMatches ? dateFilteredRedemptions : dateFilteredRedemptions.filter(redemption => [pick(redemption, "code"), pick(redemption, "email"), pick(redemption, "liveUsername", "live_username")].some(value => String(value || "").toLowerCase().includes(query)));
       if (query && !campaignMatches && !visible.length) return;
       matches += 1;
       container.append(renderCampaign(campaign, visible));
@@ -1252,7 +1328,7 @@
       const identity = document.createElement("div"); const code = document.createElement("h3"); code.textContent = claim.code;
       const member = document.createElement("p"); member.textContent = `${claim.first_name || ""} ${claim.last_name || ""}`.trim() || "Unnamed member";
       const email = document.createElement("p"); email.textContent = claim.email;
-      const username = document.createElement("p"); username.textContent = claim.whatnot_username ? `@${claim.whatnot_username}` : "No collector username";
+      const username = document.createElement("p"); username.textContent = claim.live_username ? `@${claim.live_username}` : "No collector username";
       identity.append(code, member, email, username);
       const details = document.createElement("div"); const badge = document.createElement("span"); badge.className = `admin-claim-status ${state}`; badge.textContent = state;
       const percent = document.createElement("p"); const percentValue = document.createElement("strong"); percentValue.textContent = `${Number(claim.percent)}%`; percent.append(percentValue, " discount");
@@ -1283,7 +1359,7 @@
         if (statusFilter !== "all" && statusFilter !== state) return;
         const codeValue = String(pick(redemption, "code") || "");
         const emailValue = String(pick(redemption, "email") || "");
-        const usernameValue = String(pick(redemption, "whatnotUsername", "whatnot_username") || "");
+        const usernameValue = String(pick(redemption, "liveUsername", "live_username") || "");
         if (query && ![codeValue, emailValue, usernameValue, pick(campaign, "title"), campaignRewardDescription(campaign), campaignProduct(campaign)?.upc].some(value => String(value || "").toLowerCase().includes(query))) return;
         const card = document.createElement("article"); card.className = "admin-claim";
         const identity = document.createElement("div");
@@ -1345,10 +1421,10 @@
   function syncEmailComposer() {
     const count = selectedEmailMembers.size;
     const summary = $("[data-email-recipient-summary]");
-    summary.textContent = emailAudience === "all" ? "Audience: every verified Crack Packs member (up to 100 per send)." : emailAudience === "selected" ? `Audience: ${count} selected member${count === 1 ? "" : "s"}.` : "No audience selected.";
+    summary.textContent = emailAudience === "all" ? "Audience: every verified Crack Packs member (up to 100 per send)." : emailAudience === "tier" ? `Audience: ${$("[data-email-tier]").selectedOptions[0].textContent}.` : emailAudience === "selected" ? `Audience: ${count} selected member${count === 1 ? "" : "s"}.` : "No audience selected.";
     const chips = $("[data-email-selected-chips]"); chips.replaceChildren();
     if (emailAudience === "selected") selectedEmailMembers.forEach(member => {
-      const chip = document.createElement("button"); chip.type = "button"; chip.className = "email-recipient-chip"; chip.textContent = `${member.whatnotUsername ? `@${member.whatnotUsername}` : member.email} ×`;
+      const chip = document.createElement("button"); chip.type = "button"; chip.className = "email-recipient-chip"; chip.textContent = `${member.liveUsername ? `@${member.liveUsername}` : member.email} ×`;
       chip.title = `Remove ${member.email}`;
       chip.addEventListener("click", () => { selectedEmailMembers.delete(member.id); syncEmailComposer(); });
       chips.append(chip);
@@ -1365,7 +1441,7 @@
     members.forEach(member => {
       const row = document.createElement("article"); row.className = "email-member-row";
       const identity = document.createElement("div"); const name = document.createElement("strong"); name.textContent = `${member.firstName || ""} ${member.lastName || ""}`.trim() || member.email;
-      const detail = document.createElement("span"); detail.textContent = [member.whatnotUsername ? `@${member.whatnotUsername}` : "", member.email].filter(Boolean).join(" · "); identity.append(name, detail);
+      const detail = document.createElement("span"); detail.textContent = [member.liveUsername ? `@${member.liveUsername}` : "", member.email].filter(Boolean).join(" · "); identity.append(name, detail);
       const button = document.createElement("button"); button.type = "button"; button.className = `btn ${selectedEmailMembers.has(member.id) ? "btn-danger" : "btn-outline"} btn-small`; button.textContent = selectedEmailMembers.has(member.id) ? "Remove" : "Add";
       button.addEventListener("click", () => {
         if (selectedEmailMembers.has(member.id)) selectedEmailMembers.delete(member.id); else selectedEmailMembers.set(member.id, member);
@@ -1400,7 +1476,7 @@
     selectedTrackingMember = member;
     $("[data-tracking-member-id]").value = member?.id || "";
     const selected = $("[data-tracking-member-selected]");
-    selected.textContent = member ? `Selected: ${member.whatnotUsername ? `@${member.whatnotUsername} · ` : ""}${member.email}` : "No member selected.";
+    selected.textContent = member ? `Selected: ${member.liveUsername ? `@${member.liveUsername} · ` : ""}${member.email}` : "No member selected.";
     selected.classList.toggle("is-selected", Boolean(member));
     $("[data-tracking-member-results]").replaceChildren();
   }
@@ -1416,7 +1492,7 @@
     members.forEach(member => {
       const button = document.createElement("button"); button.type = "button"; button.className = "tracking-member-option";
       const name = document.createElement("strong"); name.textContent = `${member.firstName || ""} ${member.lastName || ""}`.trim() || member.email;
-      const detail = document.createElement("span"); detail.textContent = [member.isOwner ? "OWNER / TEST ACCOUNT" : "", member.whatnotUsername ? `@${member.whatnotUsername}` : "", member.email].filter(Boolean).join(" · ");
+      const detail = document.createElement("span"); detail.textContent = [member.isOwner ? "OWNER / TEST ACCOUNT" : "", member.liveUsername ? `@${member.liveUsername}` : "", member.email].filter(Boolean).join(" · ");
       button.append(name, detail); button.addEventListener("click", () => selectTrackingMember(member)); container.append(button);
     });
   }
@@ -1428,8 +1504,10 @@
       const card = document.createElement("article"); card.className = "admin-order-card";
       const head = document.createElement("div"); head.className = "admin-order-head";
       const titleWrap = document.createElement("div"); const title = document.createElement("h3"); title.textContent = order.orderNumber;
-      const member = document.createElement("p"); member.textContent = [order.member?.whatnotUsername ? `@${order.member.whatnotUsername}` : "", order.member?.email].filter(Boolean).join(" · "); titleWrap.append(title, member);
-      const badge = document.createElement("span"); badge.className = `order-status-chip ${order.status || "processing"}`; badge.textContent = adminOrderStatusLabel(order.status); head.append(titleWrap, badge);
+      const member = document.createElement("p"); member.textContent = [order.member?.liveUsername ? `@${order.member.liveUsername}` : "", order.member?.email].filter(Boolean).join(" · "); titleWrap.append(title, member);
+      const badge = document.createElement("span"); badge.className = `order-status-chip ${order.status || "processing"}`; badge.textContent = adminOrderStatusLabel(order.status);
+      const payment = document.createElement("span"); payment.className = `order-status-chip ${order.paymentStatus === "paid" ? "delivered" : "cancelled"}`; payment.textContent = order.paymentStatus === "paid" ? "PAID" : "UNPAID";
+      head.append(titleWrap, payment, badge);
       const items = document.createElement("ul"); items.className = "admin-order-items";
       (Array.isArray(order.items) ? order.items : []).forEach(item => { const li = document.createElement("li"); li.textContent = `${Number(item.quantity || 1)}× ${item.name}`; items.append(li); });
       const tracking = document.createElement("div"); tracking.className = "admin-order-tracking";
@@ -1437,6 +1515,12 @@
       const state = document.createElement("span"); state.textContent = `Latest: ${adminOrderStatusLabel(order.tracking?.status)}${order.tracking?.mode === "test" ? " · TEST" : ""}`;
       tracking.append(carrier, state);
       if (order.tracking?.url) { const link = document.createElement("a"); link.className = "btn btn-outline btn-small"; link.href = order.tracking.url; link.target = "_blank"; link.rel = "noopener"; link.textContent = "Open Tracking"; tracking.append(link); }
+      if (order.label?.ordered) {
+        const ordered = document.createElement("span"); ordered.className = "order-status-chip processing"; ordered.textContent = "Label ordered"; ordered.title = order.label.purchasedAt ? new Date(order.label.purchasedAt).toLocaleString() : "Label ordered"; tracking.append(ordered);
+        if (order.label.url) { const labelLink = document.createElement("a"); labelLink.className = "btn btn-outline btn-small"; labelLink.href = order.label.url; labelLink.target = "_blank"; labelLink.rel = "noopener"; labelLink.textContent = "Print Label"; tracking.append(labelLink); }
+      } else {
+        const labelButton = document.createElement("button"); labelButton.type = "button"; labelButton.className = "btn btn-primary btn-small"; labelButton.dataset.orderLabel = order.id; labelButton.textContent = "Order Label"; labelButton.disabled = order.paymentStatus !== "paid"; labelButton.title = labelButton.disabled ? "Payment must be marked paid first" : "Purchase the saved EasyPost rate"; tracking.append(labelButton);
+      }
       card.append(head, items, tracking); container.append(card);
     });
   }
@@ -1448,6 +1532,18 @@
     const data = await request(`/admin/orders?q=${query}`);
     renderAdminOrders(Array.isArray(data.orders) ? data.orders : []);
   }
+  $("[data-admin-order-list]").addEventListener("click", async event => {
+    const button = event.target.closest("[data-order-label]");
+    if (!button) return;
+    if (!confirm("Are you sure you want to purchase this EasyPost shipping label?")) return;
+    button.disabled = true; button.textContent = "Ordering...";
+    try {
+      const result = await request(`/admin/orders/${encodeURIComponent(button.dataset.orderLabel)}/label`, { method: "POST", body: "{}" });
+      await refreshAdminOrders();
+      if (result.labelUrl) window.open(result.labelUrl, "_blank", "noopener");
+      setTrackingStatus("Label ordered. The printable label opened in a new tab.", "success");
+    } catch (error) { button.disabled = false; button.textContent = "Order Label"; setTrackingStatus(error.message, "error"); }
+  });
   function trackingItemsFromText(value) {
     return String(value || "").split(/\r?\n/).map(line => line.trim()).filter(Boolean).map(line => {
       const match = /^(\d{1,3})\s*[x×]\s*(.+)$/i.exec(line);
@@ -1493,6 +1589,31 @@
   }));
   document.querySelectorAll("[data-admin-email-close]").forEach(button => button.addEventListener("click", () => { $("[data-admin-email-modal]").hidden = true; }));
   document.querySelectorAll("[data-master-section-button]").forEach(button => button.addEventListener("click", () => openMasterSection(button.dataset.masterSectionButton)));
+  $("[data-seller-activation-form]")?.addEventListener("submit", createSellerActivation);
+  $("[data-seller-activation-copy]")?.addEventListener("click", async () => {
+    const value = $("[data-seller-activation-url]")?.value || "";
+    if (!value) return;
+    try { await navigator.clipboard.writeText(value); setSellerActivationStatus("Activation link copied.", "success"); }
+    catch { $("[data-seller-activation-url]").select(); document.execCommand("copy"); setSellerActivationStatus("Activation link copied.", "success"); }
+  });
+  $("[data-admin-reorders-refresh]")?.addEventListener("click", () => refreshAdminReorders().catch(error => setAdminReordersStatus(error.message, "error")));
+  $("[data-admin-reorders-list]")?.addEventListener("click", async event => {
+    const button = event.target.closest("[data-reorder-id]"); if (!button) return; button.disabled = true;
+    try { await request(`/admin/reorders/${encodeURIComponent(button.dataset.reorderId)}`, { method: "POST", body: JSON.stringify({ status: button.dataset.reorderStatus }) }); await refreshAdminReorders(); }
+    catch (error) { button.disabled = false; setAdminReordersStatus(error.message, "error"); }
+  });
+  $("[data-identity-review-refresh]").addEventListener("click", () => refreshIdentityReviews().catch(error => setIdentityReviewStatus(error.message, "error")));
+  $("[data-identity-review-list]").addEventListener("click", async event => {
+    const button = event.target.closest("[data-identity-decision]");
+    if (!button) return;
+    const decision = button.dataset.identityDecision;
+    if (!confirm(`${decision === "approve" ? "Approve" : "Reject"} this identity collision?`)) return;
+    button.disabled = true;
+    try {
+      await request(`/admin/identity-reviews/${encodeURIComponent(button.dataset.reviewId)}`, { method: "POST", body: JSON.stringify({ decision }) });
+      await refreshIdentityReviews();
+    } catch (error) { button.disabled = false; setIdentityReviewStatus(error.message, "error"); }
+  });
   $("[data-inventory-new]").addEventListener("click", () => openInventoryModal());
   $("[data-inventory-shipping-test]").addEventListener("click", event => testEasyPost(event.currentTarget));
   $("[data-inventory-import]").addEventListener("click", importStarterInventory);
@@ -1527,7 +1648,7 @@
       const data = await request("/admin/orders", { method: "POST", body: JSON.stringify(payload) });
       const savedMember = selectedTrackingMember;
       form.reset(); selectTrackingMember(null); $("[data-tracking-member-search]").value = "";
-      setTrackingStatus(`${data.order?.orderNumber || payload.orderNumber} is now visible under ${savedMember?.whatnotUsername ? `@${savedMember.whatnotUsername}` : savedMember?.email}'s Orders.`, "success");
+      setTrackingStatus(`${data.order?.orderNumber || payload.orderNumber} is now visible under ${savedMember?.liveUsername ? `@${savedMember.liveUsername}` : savedMember?.email}'s Orders.`, "success");
       await refreshAdminOrders();
     } catch (error) { setTrackingStatus(error.message, "error"); }
     finally { button.disabled = false; button.textContent = "Create Order + Tracking"; }
@@ -1556,6 +1677,7 @@
     finally { button.disabled = false; button.textContent = editingInventoryId ? "Save Changes" : "Save Product"; }
   });
   $("[data-email-all]").addEventListener("click", () => { emailAudience = "all"; selectedEmailMembers.clear(); syncEmailComposer(); setMasterEmailStatus("Message All selected. Review your subject and message before sending.", "success"); });
+  $("[data-email-tier-select]").addEventListener("click", () => { emailAudience = "tier"; selectedEmailMembers.clear(); syncEmailComposer(); setMasterEmailStatus(`Referral tier ${$("[data-email-tier]").selectedOptions[0].textContent} selected.`, "success"); });
   $("[data-email-select-open]").addEventListener("click", openEmailMemberSelection);
   document.querySelectorAll("[data-email-select-close]").forEach(button => button.addEventListener("click", closeEmailMemberSelection));
   $("[data-email-select-finished]").addEventListener("click", () => { closeEmailMemberSelection(); syncEmailComposer(); $("[data-master-email-form] input[name='subject']").focus(); });
@@ -1564,9 +1686,9 @@
   $("[data-master-email-form]").addEventListener("submit", async event => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const payload = { audience: emailAudience, subject: String(form.get("subject") || "").trim(), message: String(form.get("message") || "").trim() };
+    const payload = { audience: emailAudience, tierName: $("[data-email-tier]").value, fromAddress: String(form.get("fromAddress") || "rewards@crackpacks.com"), subject: String(form.get("subject") || "").trim(), message: String(form.get("message") || "").trim() };
     if (emailAudience === "selected") payload.memberIds = [...selectedEmailMembers.keys()];
-    const audienceLabel = emailAudience === "all" ? "every verified member" : `${selectedEmailMembers.size} selected member${selectedEmailMembers.size === 1 ? "" : "s"}`;
+    const audienceLabel = emailAudience === "all" ? "every verified member" : emailAudience === "tier" ? `${payload.tierName} referral-tier members` : `${selectedEmailMembers.size} selected member${selectedEmailMembers.size === 1 ? "" : "s"}`;
     if (!emailAudience || (emailAudience === "selected" && !selectedEmailMembers.size)) { setMasterEmailStatus("Choose Message All or Select Few first.", "error"); return; }
     if (!confirm(`Send \"${payload.subject}\" to ${audienceLabel}?`)) return;
     const button = $("[data-email-send]"); button.disabled = true; button.textContent = "Sending..."; setMasterEmailStatus("");

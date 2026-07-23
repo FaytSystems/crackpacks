@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS members (
   first_name TEXT,
   last_name TEXT,
   birth_date TEXT,
-  whatnot_username TEXT UNIQUE,
+  legacy_marketplace_username TEXT UNIQUE,
   identity_fingerprint TEXT UNIQUE,
   identity_status TEXT NOT NULL DEFAULT 'pending',
   device_verified INTEGER NOT NULL DEFAULT 0,

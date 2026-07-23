@@ -30,6 +30,20 @@ export async function stripeRequest(secretKey, path, entries = [], idempotencyKe
   return payload;
 }
 
+export async function stripeGet(secretKey, path) {
+  if (!secretKey) throw new Error("STRIPE_NOT_CONFIGURED");
+  const result = await fetch(`https://api.stripe.com/v1${path}`, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${secretKey}` }
+  });
+  const payload = await result.json().catch(() => ({}));
+  if (!result.ok) {
+    console.error("Stripe request failed", { status: result.status, type: payload?.error?.type || "", code: payload?.error?.code || "" });
+    throw new Error("STRIPE_PROVIDER_ERROR");
+  }
+  return payload;
+}
+
 function parseSignatureHeader(value) {
   const parts = String(value || "").split(",");
   let timestamp = 0;
