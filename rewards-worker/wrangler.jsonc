@@ -8,6 +8,7 @@
   "send_email": [{ "name": "REWARDS_EMAIL", "allowed_sender_addresses": ["rewards@crackpacks.com"] }],
   "vars": {
     "ALLOWED_ORIGINS": "https://crackpacks.com,https://www.crackpacks.com,http://localhost:8080,http://127.0.0.1:8080",
+    "CLOUDFLARE_ACCOUNT_ID": "198a4ebd4ac3a23957f8d0431c273228",
     "SITE_URL": "https://crackpacks.com",
     "IDENTITY_MODE": "internal",
     "RP_ID": "crackpacks.com",
