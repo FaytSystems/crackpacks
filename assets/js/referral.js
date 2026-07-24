@@ -1038,6 +1038,9 @@
     if (button) button.disabled = true;
     try {
       const data = await request("/auth/password/set", { method: "POST", body: JSON.stringify(form) });
+      localStorage.setItem("cp_can_seller_portal", "false");
+      localStorage.setItem("cp_portal_mode", "buyer");
+      sessionStorage.setItem("cp_portal_mode", "buyer");
       showStatus("Password saved. Continue account setup.", "success");
       renderAccount(data.account);
     } catch (error) {

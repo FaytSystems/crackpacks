@@ -2138,14 +2138,17 @@ export async function handlePlatformRoute(request, env, cors) {
     }, 200, cors);
   }
   if (url.pathname === "/portal/mode" && request.method === "POST") {
-    const auth = await requireMember(request, env, cors);
+    const auth = await requireMember(request, env, cors, { verified: false });
     if (auth.error) return auth.error;
     const data = await boundedJson(request, 1000);
-    const owner = normalizeEmail(auth.member.email) === normalizeEmail(env.ADMIN_EMAIL);
+    const fullyVerified = Boolean(auth.member.email_verified_at && auth.member.device_verified && auth.member.identity_status === "verified");
+    const owner = fullyVerified && normalizeEmail(auth.member.email) === normalizeEmail(env.ADMIN_EMAIL);
+    const profile = await sellerProfile(env, auth.member.id);
+    const sellerAllowed = owner || (fullyVerified && profile?.status === "active");
     const requestedMode = data.mode === "master" ? "master" : (data.mode === "seller" ? "seller" : "buyer");
     const mode = requestedMode === "master" ? "master" : (requestedMode === "seller" ? "seller" : "buyer");
     if (mode === "master" && !owner) return json({ error: "Master Portal access is restricted to the master account." }, 403, cors);
-    if (mode === "seller" && !owner && (await sellerProfile(env, auth.member.id))?.status !== "active") return json({ error: "Seller Portal access has not been activated for this account." }, 403, cors);
+    if (mode === "seller" && !sellerAllowed) return json({ error: "Complete User ID, passkey, legal profile, and Stripe ID verification before opening Seller Portal." }, 403, cors);
     await env.DB.prepare(`UPDATE members SET active_portal=?,updated_at=? WHERE id=?`).bind(mode, now(), auth.member.id).run();
     return json({ activePortal: mode }, 200, cors);
   }
