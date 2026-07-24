@@ -88,30 +88,44 @@
 
       <section class="reward-card" data-profile-panel hidden>
         <p class="eyebrow">Identity profile</p>
-        <h2>Complete verification</h2>
-          <p>Crack Packs checks your verified email, legal name, birthday, and username against existing accounts. Duplicate identities are blocked and suspicious profiles can be held for review.</p>
+        <h2>Seller verification profile</h2>
+          <p>Seller accounts require a verified legal profile. Crack Packs checks your name and birthday against existing accounts before Stripe Identity begins.</p>
         <form data-profile-form>
           <div class="field-grid">
             <label>Legal first name<input name="firstName" autocomplete="given-name" required maxlength="60"></label>
             <label>Legal last name<input name="lastName" autocomplete="family-name" required maxlength="60"></label>
           </div>
           <label>Date of birth<input name="birthDate" type="date" autocomplete="bday" required></label>
-          <label>Crack Packs User ID<input name="liveUsername" required maxlength="32" pattern="[A-Za-z][A-Za-z0-9_]{2,31}"></label>
           <label class="check-line"><input name="consent" type="checkbox" required> I consent to identity and duplicate-account checks and confirm this information is mine.</label>
-          <button class="btn btn-primary" type="submit">Continue to secure ID check</button>
+          <button class="btn btn-primary" type="submit">Continue to seller ID check</button>
         </form>
         <div class="stripe-identity-action" data-stripe-identity-action hidden>
-          <p>Your legal profile is saved. Complete Stripe Identity's document-and-selfie check to activate this account and prevent duplicate-person signups.</p>
-          <button class="btn btn-primary" type="button" data-start-stripe-identity>Open secure ID verification</button>
+          <p>Your legal profile is saved. Complete Stripe Identity's document-and-selfie check before your Crack Packs User ID can be claimed and Seller access can be activated.</p>
+          <button class="btn btn-primary" type="button" data-start-stripe-identity>Open secure seller ID verification</button>
           <p class="fine-print">Stripe handles the identity document. Crack Packs stores the verification result, not a copy of your full card or identity document.</p>
         </div>
       </section>
 
+      <section class="reward-card" data-seller-username-panel hidden>
+        <p class="eyebrow">Seller User ID</p>
+        <h2>Claim your Crack Packs User ID</h2>
+        <p>Stripe confirmed your seller identity. Now choose the protected User ID buyers will see. Crack Packs blocks duplicates, close lookalikes, number swaps, and name-copy variations.</p>
+        <form data-seller-username-form>
+          <label>Crack Packs User ID<input name="liveUsername" data-seller-live-username required maxlength="32" pattern="[A-Za-z][A-Za-z0-9_]{2,31}" placeholder="RipWizard"></label>
+          <div class="actions">
+            <button class="btn btn-outline" type="button" data-check-seller-username>Check</button>
+            <button class="btn btn-primary" type="submit" data-save-seller-username disabled>Go to account</button>
+          </div>
+          <div class="campaign-form-status" data-seller-username-status aria-live="polite"></div>
+        </form>
+        <p class="fine-print">After this step, your seller account is activated, your referral link is live, and Crack Packs emails your account-granted details.</p>
+      </section>
+
       <section class="reward-card" data-device-panel hidden>
-        <p class="eyebrow">Free secure device check</p>
-        <h2>Create a Crack Packs passkey</h2>
-        <p>Confirm this signup on the device you are currently using with its screen lock, fingerprint sensor, Face ID, Touch ID, Windows Hello, or device PIN. Crack Packs receives a public key - not your fingerprint or biometric data.</p>
-        <button class="btn btn-primary" type="button" data-register-passkey>Verify this device</button>
+        <p class="eyebrow">Seller security step</p>
+        <h2>Create a Crack Packs seller passkey</h2>
+        <p>Seller accounts require a device passkey before legal identity verification begins. Crack Packs receives a public key - not your fingerprint or biometric data.</p>
+        <button class="btn btn-primary" type="button" data-register-passkey>Verify seller device</button>
         <p class="fine-print">Choose the local device or Windows Hello option if your browser asks. You should not need to scan a Google/FIDO QR code. Your passkey may sync through your device account or password manager.</p>
       </section>
 
@@ -129,6 +143,16 @@
           <button class="choice-card choice-card-orders" type="button" data-view="orders"><span>03</span><strong>Orders</strong><small>See purchases and open live carrier tracking.</small></button>
           <button class="choice-card" type="button" data-view="account"><span>04</span><strong>Account</strong><small>Shipping, phone, identity, and payment method.</small></button>
         </div>
+        <section class="reward-card portal-choice-card" data-portal-choice-panel hidden>
+          <p class="eyebrow">Choose Account</p>
+          <h3>Select which account portal to enter</h3>
+          <p>After sign-in or account creation, choose Buyer, Seller, or Master access from here.</p>
+          <div class="actions">
+            <button class="btn btn-outline" type="button" data-open-buyer-portal>Buyer Account</button>
+            <button class="btn btn-primary" type="button" data-open-seller-portal data-portal-seller-choice hidden>Seller Account</button>
+            <button class="btn btn-primary" type="button" data-open-master-portal data-portal-master-choice hidden>Master Account</button>
+          </div>
+        </section>
         <section class="reward-card action-panel" data-discount-panel hidden>
           <p class="eyebrow">Member discount</p><h3>Your offer</h3>
           <p class="code-output" data-discount-code>Claim when ready</p>
@@ -175,6 +199,15 @@
               <button class="btn btn-primary btn-small qr-download-button" type="button" data-download-qr>Download QR</button>
               <small>Save the PNG and post it anywhere your crew follows you.</small>
             </div>
+          </div>
+        </section>
+        <section class="reward-card seller-upgrade-card" data-seller-upgrade-panel hidden>
+          <p class="eyebrow">Seller access</p>
+          <h3>Buyer accounts are ready now. Seller accounts need extra verification.</h3>
+          <p>Your buyer account only needs email verification. If you want to become a seller or breaker, start the seller security flow for passkey, legal profile, and Stripe Identity verification.</p>
+          <div class="actions">
+            <button class="btn btn-primary" type="button" data-start-seller-upgrade>Become a Seller</button>
+            <a class="btn btn-outline" href="shop.html">Open Store</a>
           </div>
         </section>
         <section class="reward-card" data-seller-only hidden>
@@ -300,6 +333,17 @@
       <p class="eyebrow">Check your email</p>
       <h2 id="email-modal-title" data-email-modal-title>Check inbox for verification link</h2>
       <p data-email-modal-copy>Open the message from Crack Packs and click the secure link. It expires in 10 minutes and can only be used once.</p>
+      <div class="email-modal-steps">
+        <strong>Next steps</strong>
+        <ol>
+          <li>Open the email from Crack Packs.</li>
+          <li>Tap the secure account link in the message.</li>
+          <li>Finish your account details on the next page.</li>
+        </ol>
+      </div>
+      <div class="actions email-modal-actions">
+        <a class="btn btn-glass" data-email-modal-help href="#" target="_blank" rel="noopener noreferrer" hidden>Watch setup help</a>
+      </div>
       <button class="btn btn-primary" type="button" data-email-modal-close>Got it</button>
     </section>
   </div>
@@ -333,6 +377,20 @@
       <h2 id="discount-redeemed-title">Redemption requested</h2>
       <p>Crack Packs has been notified. Use the code during the live show; the owner will mark it redeemed after it is used.</p>
       <button class="btn btn-primary" type="button" data-discount-redeemed-close>Close</button>
+    </section>
+  </div>
+  <div class="rewards-modal" data-seller-identity-modal hidden>
+    <button class="rewards-modal-backdrop" type="button" data-seller-identity-close aria-label="Close"></button>
+    <section class="rewards-modal-card" role="dialog" aria-modal="true" aria-labelledby="seller-identity-title">
+      <button class="rewards-modal-close" type="button" data-seller-identity-close aria-label="Close">&times;</button>
+      <p class="eyebrow">Seller verification</p>
+      <h2 id="seller-identity-title">Continue seller ID verification</h2>
+      <p>Your legal profile is saved. For security, Stripe Identity continues on this signed-in device.</p>
+      <p class="fine-print">After Stripe verifies your identity, Crack Packs opens the protected User ID step so you can finish activating the seller account.</p>
+      <div class="actions">
+        <button class="btn btn-outline" type="button" data-seller-identity-close>Cancel</button>
+        <button class="btn btn-primary" type="button" data-seller-identity-continue>Continue on this device</button>
+      </div>
     </section>
   </div>
   <script src="assets/js/config.js?v=3.0.0"></script>

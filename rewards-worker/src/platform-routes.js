@@ -1977,8 +1977,12 @@ export async function handlePlatformRoute(request, env, cors) {
     if (auth.error) return auth.error;
     const profile = await sellerProfile(env, auth.member.id);
     const owner = normalizeEmail(auth.member.email) === normalizeEmail(env.ADMIN_EMAIL);
+    const requestedPortal = String(auth.member.active_portal || "buyer");
+    const activePortal = owner && requestedPortal === "master"
+      ? "master"
+      : ((owner || profile?.status === "active") && requestedPortal === "seller" ? "seller" : "buyer");
     return json({
-      activePortal: auth.member.active_portal || "buyer",
+      activePortal,
       sellerAccess: owner || profile?.status === "active",
       sellerStatus: owner ? "owner" : profile?.status || "not_applied",
       isMaster: owner,
@@ -1989,8 +1993,11 @@ export async function handlePlatformRoute(request, env, cors) {
     const auth = await requireMember(request, env, cors);
     if (auth.error) return auth.error;
     const data = await boundedJson(request, 1000);
-    const mode = data.mode === "seller" ? "seller" : "buyer";
-    if (mode === "seller" && normalizeEmail(auth.member.email) !== normalizeEmail(env.ADMIN_EMAIL) && (await sellerProfile(env, auth.member.id))?.status !== "active") return json({ error: "Seller Portal access has not been activated for this account." }, 403, cors);
+    const owner = normalizeEmail(auth.member.email) === normalizeEmail(env.ADMIN_EMAIL);
+    const requestedMode = data.mode === "master" ? "master" : (data.mode === "seller" ? "seller" : "buyer");
+    const mode = requestedMode === "master" ? "master" : (requestedMode === "seller" ? "seller" : "buyer");
+    if (mode === "master" && !owner) return json({ error: "Master Portal access is restricted to the master account." }, 403, cors);
+    if (mode === "seller" && !owner && (await sellerProfile(env, auth.member.id))?.status !== "active") return json({ error: "Seller Portal access has not been activated for this account." }, 403, cors);
     await env.DB.prepare(`UPDATE members SET active_portal=?,updated_at=? WHERE id=?`).bind(mode, now(), auth.member.id).run();
     return json({ activePortal: mode }, 200, cors);
   }

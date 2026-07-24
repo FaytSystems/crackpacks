@@ -44,7 +44,10 @@
   let streamCreditsNextRefreshTimer = null;
   let streamCreditsLastLoadedAt = 0;
   let streamCreditsRefreshInFlight = false;
+  let checkedSellerUsername = "";
+  let pendingSellerIdentityStart = false;
   const STREAM_CREDITS_REFRESH_FOCUS_GRACE_MS = 2 * 60 * 1000;
+  const SELLER_UPGRADE_KEY = "cp_seller_upgrade_requested";
   const authModeCopy = {
     signin: {
       kicker: "Returning collector",
@@ -53,7 +56,7 @@
       emailLabel: "Account email",
       sendLabel: "Email me a sign-in link",
       modalTitle: "Check inbox for your sign-in link",
-      modalCopy: "If this email belongs to a Crack Packs account, open the secure sign-in link within 10 minutes. If nothing arrives, choose Create Account.",
+      modalCopy: "If this email belongs to a Crack Packs account, open the secure sign-in link within 10 minutes. The email also includes a plain account link you can open on the same device if you do not want to scan anything.",
       sentStatus: "If that email matches an account, a secure sign-in link is on the way."
     },
     signup: {
@@ -63,8 +66,8 @@
       emailLabel: "Signup email",
       sendLabel: "Send signup link",
       modalTitle: "Check inbox to create your account",
-      modalCopy: "Open the secure signup link within 10 minutes to continue account and identity verification.",
-      sentStatus: "Signup link sent. Check your inbox to continue."
+      modalCopy: "Open the secure signup link within 10 minutes to create your buyer account. The email also includes the plain account-creation link if you are staying on the same device. Seller accounts can upgrade into ID verification after sign-in.",
+      sentStatus: "Signup link sent. Check your inbox to create your buyer account."
     }
   };
   function resetTurnstile() {
@@ -502,6 +505,26 @@
       const empty = document.createElement("div"); empty.className = "member-orders-empty"; empty.textContent = error.message; container.append(empty);
     }
   }
+  const sellerUpgradeRequested = () => sessionStorage.getItem(SELLER_UPGRADE_KEY) === "true";
+  const setSellerUpgradeRequested = value => {
+    if (value) sessionStorage.setItem(SELLER_UPGRADE_KEY, "true");
+    else sessionStorage.removeItem(SELLER_UPGRADE_KEY);
+  };
+  const beginSellerUpgradeFlow = (message = "Seller verification started. Complete the passkey and legal profile steps to continue.") => {
+    setSellerUpgradeRequested(true);
+    if (accountState) {
+      renderAccount(accountState);
+      const nextPanel = !accountState.deviceVerified ? $("[data-device-panel]") : $("[data-profile-panel]");
+      nextPanel?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    showStatus(message, "success");
+  };
+  const showSellerUsernameStatus = (message = "", kind = "") => {
+    const node = $("[data-seller-username-status]");
+    if (!node) return;
+    node.textContent = message;
+    node.dataset.kind = kind;
+  };
   const streamCreditStatus = (message = "", kind = "") => {
     const node = $("[data-stream-credits-status]");
     if (!node) return;
@@ -662,6 +685,10 @@
   function renderAccount(data) {
     accountState = data;
     const sellerAllowed = Boolean(data.isAdmin || data.sellerAccess);
+    const masterAllowed = Boolean(data.isMaster);
+    const needsSellerUpgradeFlow = Boolean(data.isAdmin || sellerAllowed || sellerUpgradeRequested());
+    const hasSellerLegalProfile = Boolean(data.hasSellerLegalProfile || (data.firstName && data.lastName && data.birthDate));
+    const needsSellerUsername = Boolean(needsSellerUpgradeFlow && data.deviceVerified && data.identityStatus === "verified" && !data.liveUsername);
     const roles = Array.isArray(data.roles) && data.roles.length ? data.roles : (data.isAdmin ? ["buyer", "seller", "master"] : (sellerAllowed ? ["buyer", "seller"] : ["buyer"]));
     localStorage.setItem("cp_can_seller_portal", sellerAllowed ? "true" : "false");
     if (!sellerAllowed && (sessionStorage.getItem("cp_portal_mode") || localStorage.getItem("cp_portal_mode")) === "seller") {
@@ -669,21 +696,48 @@
       localStorage.setItem("cp_portal_mode", "buyer");
     }
     show("[data-auth-panel]", false);
-    if (!data.deviceVerified) { show("[data-device-panel]", true); show("[data-profile-panel]", false); show("[data-dashboard]", false); return; }
-    show("[data-device-panel]", false);
-    if (!data.profileComplete) {
-      show("[data-profile-panel]", true);
+    show("[data-seller-upgrade-panel]", !sellerAllowed && !data.isAdmin);
+    if (needsSellerUpgradeFlow && !data.deviceVerified) {
+      show("[data-device-panel]", true);
+      show("[data-profile-panel]", false);
+      show("[data-seller-username-panel]", false);
       show("[data-dashboard]", false);
-      const awaitingIdentity = ["pending_identity", "pending_review"].includes(data.identityStatus);
-      $("[data-profile-form]").hidden = awaitingIdentity;
-      $("[data-stripe-identity-action]").hidden = !awaitingIdentity;
       return;
     }
-    show("[data-profile-panel]", false); show("[data-dashboard]", true);
+    show("[data-device-panel]", false);
+    if (needsSellerUpgradeFlow && (!hasSellerLegalProfile || data.identityStatus !== "verified")) {
+      show("[data-profile-panel]", true);
+      show("[data-seller-username-panel]", false);
+      show("[data-dashboard]", false);
+      const awaitingIdentity = hasSellerLegalProfile && ["pending_identity", "pending_review"].includes(data.identityStatus);
+      $("[data-profile-form]").hidden = hasSellerLegalProfile;
+      $("[data-stripe-identity-action]").hidden = !hasSellerLegalProfile;
+      if (awaitingIdentity) {
+        showStatus(data.identityStatus === "pending_review" ? "Seller identity is in manual review. We’ll unlock the final User ID step as soon as it clears." : "Seller legal profile saved. Complete Stripe Identity or wait for Stripe to finish processing.", awaitingIdentity ? "success" : "");
+      }
+      return;
+    }
+    show("[data-profile-panel]", false);
+    if (needsSellerUsername) {
+      show("[data-seller-username-panel]", true);
+      show("[data-dashboard]", false);
+      $("[data-seller-live-username]").value = data.pendingSellerUsername || data.liveUsername || "";
+      $("[data-save-seller-username]").disabled = true;
+      showSellerUsernameStatus("Stripe verified your seller identity. Check a unique Crack Packs User ID, then activate your seller account.");
+      return;
+    }
+    show("[data-seller-username-panel]", false);
+    show("[data-dashboard]", true);
+    if (sellerAllowed || data.isAdmin) setSellerUpgradeRequested(false);
     $("[data-member-name]").textContent = data.firstName || "Collector";
     const rolesNode = $("[data-account-role-badges]");
     if (rolesNode) rolesNode.innerHTML = roles.map(role => `<span class="account-role-badge" data-role="${escapeHtml(role)}">${escapeHtml(role === "master" ? "Master Account" : role === "seller" ? "Seller Account" : "Buyer Account")}</span>`).join("");
     $("[data-admin-link]").hidden = !data.isAdmin;
+    show("[data-portal-choice-panel]", true);
+    const sellerChoice = $("[data-portal-seller-choice]");
+    if (sellerChoice) sellerChoice.hidden = !sellerAllowed;
+    const masterChoice = $("[data-portal-master-choice]");
+    if (masterChoice) masterChoice.hidden = !masterAllowed;
     document.querySelectorAll("[data-seller-only]").forEach(node => { node.hidden = !sellerAllowed; });
     if (sellerAllowed) scheduleTopOfHourStreamCreditRefresh();
     else {
@@ -878,6 +932,14 @@
       const copy = authModeCopy[submittedMode];
       $("[data-email-modal-title]").textContent = copy.modalTitle;
       $("[data-email-modal-copy]").textContent = copy.modalCopy;
+      const help = $("[data-email-modal-help]");
+      const helpUrl = safeHttpUrl(config.youtubeChannelUrl);
+      if (helpUrl) {
+        help.href = helpUrl;
+        help.hidden = false;
+      } else {
+        help.hidden = true;
+      }
       $("[data-email-modal]").hidden = false;
       showStatus(copy.sentStatus, "success");
     }
@@ -897,16 +959,36 @@
   document.querySelectorAll("[data-invite-sent-close]").forEach(button => button.addEventListener("click", () => { $("[data-invite-sent-modal]").hidden = true; }));
   document.querySelectorAll("[data-invite-copy-close]").forEach(button => button.addEventListener("click", () => { $("[data-invite-copy-modal]").hidden = true; }));
   document.querySelectorAll("[data-discount-redeemed-close]").forEach(button => button.addEventListener("click", () => { $("[data-discount-redeemed-modal]").hidden = true; }));
+  document.querySelectorAll("[data-seller-identity-close]").forEach(button => button.addEventListener("click", () => {
+    pendingSellerIdentityStart = false;
+    $("[data-seller-identity-modal]").hidden = true;
+  }));
   $("[data-profile-form]").addEventListener("submit", async event => {
     event.preventDefault(); const form = Object.fromEntries(new FormData(event.currentTarget));
     try {
       const data = await request("/profile", { method: "POST", body: JSON.stringify(form) });
       renderAccount(data.account);
-      showStatus("Legal profile saved. Opening the secure Stripe Identity check...", "success");
-      const identity = await request("/identity/session", { method: "POST", body: "{}" });
-      if (identity.url) location.href = identity.url;
+      pendingSellerIdentityStart = true;
+      $("[data-seller-identity-modal]").hidden = false;
+      showStatus("Legal profile saved. Continue to the secure Stripe Identity check when ready.", "success");
     }
     catch (error) { showStatus(error.message, "error"); }
+  });
+  $("[data-seller-identity-continue]")?.addEventListener("click", async () => {
+    if (!pendingSellerIdentityStart) return;
+    const button = $("[data-seller-identity-continue]");
+    button.disabled = true;
+    try {
+      const identity = await request("/identity/session", { method: "POST", body: "{}" });
+      $("[data-seller-identity-modal]").hidden = true;
+      pendingSellerIdentityStart = false;
+      if (identity.verified) return loadAccount();
+      if (!identity.url) throw new Error("Stripe Identity did not return a verification page.");
+      location.href = identity.url;
+    } catch (error) {
+      button.disabled = false;
+      showStatus(error.message, "error");
+    }
   });
   $("[data-start-stripe-identity]").addEventListener("click", async event => {
     const button = event.currentTarget;
@@ -933,6 +1015,51 @@
       const payload = { id: credential.id, rawId: toBase64url(credential.rawId), type: credential.type, response: { clientDataJSON: toBase64url(credential.response.clientDataJSON), attestationObject: toBase64url(credential.response.attestationObject), transports: credential.response.getTransports ? credential.response.getTransports() : [] }, clientExtensionResults: credential.getClientExtensionResults() };
       const data = await request("/device/register/verify", { method: "POST", body: JSON.stringify(payload) }); showStatus("Device passkey verified.", "success"); renderAccount(data.account);
     } catch (error) { showStatus(error.message || "Device verification was cancelled.", "error"); }
+  });
+  $("[data-start-seller-upgrade]")?.addEventListener("click", () => {
+    beginSellerUpgradeFlow();
+  });
+  $("[data-check-seller-username]")?.addEventListener("click", async () => {
+    const input = $("[data-seller-live-username]");
+    const liveUsername = String(input?.value || "").trim();
+    checkedSellerUsername = "";
+    $("[data-save-seller-username]").disabled = true;
+    try {
+      const result = await request("/profile/live-username/check", { method: "POST", body: JSON.stringify({ liveUsername }) });
+      checkedSellerUsername = result.liveUsername || liveUsername;
+      showSellerUsernameStatus(`User ID ${checkedSellerUsername} is available. Click Go to account to activate seller access.`, "success");
+      $("[data-save-seller-username]").disabled = false;
+    } catch (error) {
+      showSellerUsernameStatus(error.message, "error");
+    }
+  });
+  $("[data-seller-live-username]")?.addEventListener("input", event => {
+    const current = String(event.currentTarget.value || "").trim();
+    if (current !== checkedSellerUsername) {
+      $("[data-save-seller-username]").disabled = true;
+      showSellerUsernameStatus("Check your User ID before activating the seller account.");
+    }
+  });
+  $("[data-seller-username-form]")?.addEventListener("submit", async event => {
+    event.preventDefault();
+    const input = $("[data-seller-live-username]");
+    const liveUsername = String(input?.value || "").trim();
+    if (!liveUsername || liveUsername !== checkedSellerUsername) {
+      showSellerUsernameStatus("Run the User ID check first so Crack Packs can reserve this name securely.", "error");
+      return;
+    }
+    const button = $("[data-save-seller-username]");
+    button.disabled = true;
+    try {
+      await request("/profile/live-username", { method: "POST", body: JSON.stringify({ liveUsername, activateSeller: true }) });
+      checkedSellerUsername = "";
+      showSellerUsernameStatus("Seller account granted. Opening your account now...", "success");
+      await loadAccount();
+      showStatus("Seller account granted. Your referral link is live and the welcome email is on the way.", "success");
+    } catch (error) {
+      button.disabled = false;
+      showSellerUsernameStatus(error.message, "error");
+    }
   });
   async function copyInviteLink() {
     if (accountState?.ownerReferralDashboardOnly) throw new Error("Open the Owner Dashboard to copy the current owner referral.");
@@ -1125,6 +1252,7 @@
   $("[data-sign-out]").addEventListener("click", async () => {
     try { await request("/auth/logout", { method: "POST" }); } catch {}
     clearStreamCreditRefreshTimer();
+    sessionStorage.removeItem(SELLER_UPGRADE_KEY);
     localStorage.removeItem("cp_rewards_token");
     sessionStorage.removeItem("cp_admin_token");
     location.href = "referral.html";
@@ -1159,9 +1287,9 @@
       token = data.token; localStorage.setItem("cp_rewards_token", token);
       if (offerToken) localStorage.setItem("cp_campaign_offer_token", offerToken);
       history.replaceState({}, document.title, location.pathname);
-      const accountReady = data.account.deviceVerified && data.account.profileComplete;
+      const accountReady = true;
       const signedIn = data.authFlow === "signin" || data.authFlow === "admin" || data.authFlow === "legacy";
-      showStatus(accountReady ? "Signed in to your Profile." : signedIn ? "Signed in. Continue account verification." : "Email verified. Continue secure account verification.", "success");
+      showStatus(signedIn ? "Signed in to your Profile." : "Email verified. Your buyer account is ready.", "success");
       renderAccount(data.account);
       if (returnTarget === "store" && signedIn && accountReady) {
         if (data.account.isAdmin || data.account.sellerAccess) {
