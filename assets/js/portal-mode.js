@@ -7,6 +7,7 @@
   const authToken = () => localStorage.getItem("cp_rewards_token") || "";
   const body = document.body;
   if (!body) return;
+  const page = String(body.dataset.page || "").toLowerCase();
 
   const getMode = () => {
     const stored = sessionStorage.getItem(STORAGE_KEY) || localStorage.getItem(STORAGE_KEY) || "buyer";
@@ -14,6 +15,8 @@
   };
 
   const sellerAllowed = () => localStorage.getItem(SELLER_ALLOWED_KEY) === "true";
+  const sellerPortalDestination = () => page === "streams" || page === "live" ? "streams.html" : "shop.html";
+  const buyerPortalDestination = () => page === "shop" ? "shop.html" : "streams.html";
 
   const portalRequest = async (path, options = {}) => {
     if (!apiBase || !authToken()) throw new Error("Sign in to your Profile first.");
@@ -58,7 +61,7 @@
         const result = await portalRequest("/portal/mode", { method: "POST", body: JSON.stringify({ mode: "seller" }) });
         localStorage.setItem(SELLER_ALLOWED_KEY, "true");
         setMode(result.activePortal || "seller");
-        window.location.href = "shop.html";
+        window.location.href = sellerPortalDestination();
       } catch (error) {
         window.alert(error.message);
         button.disabled = false;
@@ -70,7 +73,7 @@
     button.addEventListener("click", async () => {
       try { await portalRequest("/portal/mode", { method: "POST", body: JSON.stringify({ mode: "buyer" }) }); } catch {}
       setMode("buyer");
-      window.location.href = "streams.html";
+      window.location.href = buyerPortalDestination();
     });
   });
 
