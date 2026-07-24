@@ -149,11 +149,35 @@
 }
 
 .seller-stream-input,
+.youtube-simulcast-card,
 .seller-show-manager,
 .seller-social-launcher,
 .seller-lot-form {
   display: grid;
   gap: 0.9rem;
+}
+
+.youtube-simulcast-card {
+  position: relative;
+  overflow: hidden;
+  border-color: rgba(255, 58, 58, 0.28);
+  background:
+    radial-gradient(circle at 100% 0%, rgba(255, 52, 52, 0.17), transparent 42%),
+    linear-gradient(145deg, rgba(12, 15, 39, 0.98), rgba(24, 9, 35, 0.96));
+}
+
+.youtube-simulcast-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: linear-gradient(#ff3b3b, #ff2ed1, #38e8ff);
+  box-shadow: 0 0 22px rgba(255, 59, 59, 0.55);
+}
+
+.youtube-simulcast-card [data-youtube-output-status].is-connected {
+  color: #8dff9f;
+  text-shadow: 0 0 14px rgba(82, 255, 118, 0.42);
 }
 
 .listing-advanced {

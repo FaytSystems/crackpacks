@@ -9,7 +9,7 @@
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/css/styles.css?v=1.9.2">
   <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.6.1">
-  <link rel="stylesheet" href="assets/css/streams-hub.css?v=1.1.0">
+  <link rel="stylesheet" href="assets/css/streams-hub.css?v=1.2.0">
 </head>
 <body data-page="streams">
   <a class="skip-link" href="#main">Skip to content</a>
@@ -109,6 +109,26 @@
             <label>Stream key<span><input data-stream-key type="password" readonly><button class="btn btn-outline btn-small" type="button" data-reveal-stream-key>Reveal</button><button class="btn btn-outline btn-small" type="button" data-copy-stream-field="key">Copy</button></span></label>
           </div>
           <div class="campaign-form-status" data-stream-input-status aria-live="polite"></div>
+        </article>
+        <article class="holo-panel youtube-simulcast-card">
+          <p class="eyebrow">Simulcast</p>
+          <h3>Stream on Crack Packs + YouTube</h3>
+          <p>OBS sends one stream to Crack Packs. Cloudflare securely relays the same live show to your YouTube channel after you connect its private stream key.</p>
+          <div class="obs-connection-summary">
+            <div><span class="obs-connection-label">YouTube status</span><strong data-youtube-output-status>Not connected</strong></div>
+            <div><span class="obs-connection-label">Key storage</span><strong>Cloudflare output only</strong></div>
+          </div>
+          <form class="seller-giveaway-form" data-youtube-output-form>
+            <label>YouTube channel URL <span class="fine-print">(optional)</span><input name="channelUrl" type="url" maxlength="500" placeholder="https://www.youtube.com/@yourchannel"></label>
+            <label>YouTube stream key<input name="streamKey" type="password" required minlength="6" maxlength="300" autocomplete="off" spellcheck="false" placeholder="Paste from YouTube Studio"></label>
+            <p class="fine-print">The key is sent directly to the protected Worker to create the simulcast output. It is never returned to this page.</p>
+            <div class="seller-social-actions">
+              <button class="btn btn-primary" type="submit">Connect YouTube</button>
+              <button class="btn btn-outline" type="button" data-youtube-output-disconnect disabled>Disconnect</button>
+              <a class="btn btn-outline" data-youtube-channel-link href="https://studio.youtube.com/" target="_blank" rel="noopener noreferrer">Open YouTube Studio</a>
+            </div>
+          </form>
+          <div class="campaign-form-status" data-youtube-output-message aria-live="polite"></div>
         </article>
         <article class="holo-panel obs-setup-guide obs-setup-guide-premium" data-stream-setup-guide hidden data-stream-guide-premium>
           <div class="obs-setup-guide-badge">First-time seller setup</div>
@@ -278,6 +298,6 @@
   <script src="assets/js/config.js?v=3.0.0"></script>
   <script src="assets/js/app.js?v=1.9.2"></script>
   <script src="assets/js/portal-mode.js?v=1.1.0"></script>
-  <script src="assets/js/streams-hub.js?v=1.1.0"></script>
+  <script src="assets/js/streams-hub.js?v=1.2.0"></script>
 </body>
 </html>

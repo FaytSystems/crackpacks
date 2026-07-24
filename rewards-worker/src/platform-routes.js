@@ -1838,10 +1838,10 @@ async function sellerStreamInput(request, env, cors) {
   if (auth.error) return auth.error;
   let input = await env.DB.prepare(`SELECT * FROM breaker_stream_inputs WHERE member_id=?`).bind(auth.member.id).first();
   let obsSetupCompletedAt = auth.member.obs_setup_completed_at || null;
-  if ((request.method === "POST" && !input) || request.method === "PUT") {
-    if (request.method === "PUT" && input?.cloudflare_live_input_uid) {
-      await cloudflareRequest(env, `/live_inputs/${encodeURIComponent(input.cloudflare_live_input_uid)}`, { method: "DELETE" }).catch(() => null);
-    }
+  const inputIsComplete = Boolean(input?.cloudflare_live_input_uid && input?.rtmps_url && input?.rtmps_stream_key);
+  const shouldCreate = request.method === "PUT" || (request.method === "POST" && !inputIsComplete);
+  if (shouldCreate) {
+    const previousLiveInputUid = input?.cloudflare_live_input_uid || "";
     let created;
     try {
       created = await cloudflareRequest(env, "/live_inputs", {
@@ -1856,6 +1856,20 @@ async function sellerStreamInput(request, env, cors) {
       const providerDetail = String(error.message || "").startsWith("STREAM_PROVIDER_ERROR:") ? String(error.message).slice("STREAM_PROVIDER_ERROR:".length) : "";
       return json({ error: providerDetail ? `Cloudflare could not create the live input. ${providerDetail}` : "Cloudflare could not create the live input." }, 503, cors);
     }
+    const rtmps = created?.rtmps || {};
+    const rtmpsUrl = clean(rtmps.url, 300);
+    const rtmpsStreamKey = clean(rtmps.streamKey, 500);
+    if (!created?.uid || !rtmpsUrl || !rtmpsStreamKey) {
+      console.error("Cloudflare Stream created an incomplete live input", {
+        hasUid: Boolean(created?.uid),
+        hasRtmpsUrl: Boolean(rtmpsUrl),
+        hasRtmpsStreamKey: Boolean(rtmpsStreamKey)
+      });
+      if (created?.uid) {
+        await cloudflareRequest(env, `/live_inputs/${encodeURIComponent(created.uid)}`, { method: "DELETE" }).catch(() => null);
+      }
+      return json({ error: "Cloudflare created the live input without complete OBS credentials. Try again before changing OBS." }, 502, cors);
+    }
     if (created?.uid) {
       await setLiveInputEnabled(env, created.uid, false).catch(error => {
         console.error("Cloudflare Stream input created but could not be disabled after creation", {
@@ -1865,7 +1879,6 @@ async function sellerStreamInput(request, env, cors) {
       });
     }
     const stamp = now();
-    const rtmps = created.rtmps || {};
     const srt = created.srt || {};
     await env.DB.prepare(`
       INSERT INTO breaker_stream_inputs(member_id,cloudflare_live_input_uid,rtmps_url,rtmps_stream_key,srt_url,srt_stream_id,srt_passphrase,status,created_by_member_id,created_at,updated_at)
@@ -1877,11 +1890,22 @@ async function sellerStreamInput(request, env, cors) {
         srt_url=excluded.srt_url,
         srt_stream_id=excluded.srt_stream_id,
         srt_passphrase=excluded.srt_passphrase,
+        youtube_output_uid=NULL,
+        youtube_output_enabled=0,
+        youtube_channel_url=NULL,
         status='disabled',
         updated_at=excluded.updated_at
     `)
-      .bind(auth.member.id, created.uid, clean(rtmps.url, 300), clean(rtmps.streamKey, 500), clean(srt.url, 500), clean(srt.streamId, 300), clean(srt.passphrase, 300), "disabled", auth.member.id, stamp, stamp).run();
+      .bind(auth.member.id, created.uid, rtmpsUrl, rtmpsStreamKey, clean(srt.url, 500), clean(srt.streamId, 300), clean(srt.passphrase, 300), "disabled", auth.member.id, stamp, stamp).run();
     input = await env.DB.prepare(`SELECT * FROM breaker_stream_inputs WHERE member_id=?`).bind(auth.member.id).first();
+    if (previousLiveInputUid && previousLiveInputUid !== created.uid) {
+      await cloudflareRequest(env, `/live_inputs/${encodeURIComponent(previousLiveInputUid)}`, { method: "DELETE" }).catch(error => {
+        console.error("Replacement OBS input saved, but the prior Cloudflare input could not be removed", {
+          priorLiveInputUid: previousLiveInputUid,
+          error: String(error?.message || error || "")
+        });
+      });
+    }
     if (!obsSetupCompletedAt) {
       obsSetupCompletedAt = stamp;
       await env.DB.prepare(`UPDATE members SET obs_setup_completed_at=?,updated_at=? WHERE id=?`).bind(stamp, stamp, auth.member.id).run();
@@ -1891,6 +1915,66 @@ async function sellerStreamInput(request, env, cors) {
     input: input ? { uid: input.cloudflare_live_input_uid, rtmpsUrl: input.rtmps_url, streamKey: input.rtmps_stream_key, srtUrl: input.srt_url, srtStreamId: input.srt_stream_id, srtPassphrase: input.srt_passphrase, status: input.status } : null,
     obsSetupCompletedAt
   }, 200, cors);
+}
+
+async function sellerYouTubeOutput(request, env, cors) {
+  const auth = await requireMember(request, env, cors, { seller: true });
+  if (auth.error) return auth.error;
+  const input = await env.DB.prepare(`SELECT * FROM breaker_stream_inputs WHERE member_id=?`).bind(auth.member.id).first();
+  if (!input?.cloudflare_live_input_uid || !input?.rtmps_stream_key) {
+    return json({ error: "Create your private OBS connection before linking YouTube." }, 409, cors);
+  }
+  if (request.method === "GET") {
+    return json({
+      connected: Boolean(input.youtube_output_uid && Number(input.youtube_output_enabled || 0)),
+      channelUrl: input.youtube_channel_url || ""
+    }, 200, cors);
+  }
+  if (request.method === "DELETE") {
+    if (input.youtube_output_uid) {
+      try {
+        await cloudflareRequest(env, `/live_inputs/${encodeURIComponent(input.cloudflare_live_input_uid)}/outputs/${encodeURIComponent(input.youtube_output_uid)}`, { method: "DELETE" });
+      } catch (error) {
+        const providerDetail = String(error.message || "").startsWith("STREAM_PROVIDER_ERROR:") ? String(error.message).slice("STREAM_PROVIDER_ERROR:".length) : "";
+        return json({ error: providerDetail ? `YouTube could not be disconnected. ${providerDetail}` : "YouTube could not be disconnected." }, 503, cors);
+      }
+    }
+    await env.DB.prepare(`UPDATE breaker_stream_inputs SET youtube_output_uid=NULL,youtube_output_enabled=0,youtube_channel_url=NULL,updated_at=? WHERE member_id=?`)
+      .bind(now(), auth.member.id).run();
+    return json({ connected: false, channelUrl: "" }, 200, cors);
+  }
+  const data = await boundedJson(request, 2000);
+  const streamKey = String(data.streamKey || "").trim();
+  const channelUrl = clean(data.channelUrl, 500);
+  if (streamKey.length < 6 || streamKey.length > 300 || /\s/.test(streamKey)) {
+    return json({ error: "Enter the private YouTube stream key exactly as shown in YouTube Studio." }, 400, cors);
+  }
+  if (channelUrl && !/^https:\/\/(?:www\.)?(?:youtube\.com|youtu\.be)\//i.test(channelUrl)) {
+    return json({ error: "Enter a valid YouTube channel URL or leave it blank." }, 400, cors);
+  }
+  let created;
+  try {
+    created = await cloudflareRequest(env, `/live_inputs/${encodeURIComponent(input.cloudflare_live_input_uid)}/outputs`, {
+      method: "POST",
+      body: JSON.stringify({ url: "rtmp://a.rtmp.youtube.com/live2", streamKey })
+    });
+  } catch (error) {
+    const providerDetail = String(error.message || "").startsWith("STREAM_PROVIDER_ERROR:") ? String(error.message).slice("STREAM_PROVIDER_ERROR:".length) : "";
+    return json({ error: providerDetail ? `YouTube could not be linked. ${providerDetail}` : "YouTube could not be linked." }, 503, cors);
+  }
+  if (!created?.uid) return json({ error: "Cloudflare did not return a YouTube simulcast connection." }, 502, cors);
+  const previousOutputUid = input.youtube_output_uid || "";
+  await env.DB.prepare(`UPDATE breaker_stream_inputs SET youtube_output_uid=?,youtube_output_enabled=1,youtube_channel_url=?,updated_at=? WHERE member_id=?`)
+    .bind(created.uid, channelUrl || null, now(), auth.member.id).run();
+  if (previousOutputUid && previousOutputUid !== created.uid) {
+    await cloudflareRequest(env, `/live_inputs/${encodeURIComponent(input.cloudflare_live_input_uid)}/outputs/${encodeURIComponent(previousOutputUid)}`, { method: "DELETE" }).catch(error => {
+      console.error("New YouTube output saved, but the prior output could not be removed", {
+        priorOutputUid: previousOutputUid,
+        error: String(error?.message || error || "")
+      });
+    });
+  }
+  return json({ connected: true, channelUrl }, 201, cors);
 }
 
 async function sellerShows(request, env, cors) {
@@ -2168,6 +2252,7 @@ export async function handlePlatformRoute(request, env, cors) {
   if (url.pathname === "/marketplace/listings" && request.method === "GET") return publicMarketplaceListings(request, env, cors);
   if (url.pathname === "/seller/stream/input" && ["GET", "POST"].includes(request.method)) return sellerStreamInput(request, env, cors);
   if (url.pathname === "/seller/stream/input/regenerate" && request.method === "POST") return sellerStreamInput(new Request(request, { method: "PUT" }), env, cors);
+  if (url.pathname === "/seller/stream/youtube" && ["GET", "POST", "DELETE"].includes(request.method)) return sellerYouTubeOutput(request, env, cors);
   if (url.pathname === "/seller/shows" && ["GET", "POST"].includes(request.method)) return sellerShows(request, env, cors);
   const sellerLotMatch = url.pathname.match(/^\/seller\/shows\/([0-9a-f-]{36})\/lots$/i);
   if (sellerLotMatch && request.method === "GET") return sellerShowLots(request, env, cors, sellerLotMatch[1]);

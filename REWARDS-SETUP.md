@@ -49,6 +49,10 @@ buyer payment-method setup, refunds, and Stripe Identity results:
 
 Apply migrations `0024` through `0027` before deploying Worker v5.
 
+### Seller YouTube simulcasting
+
+Apply migration `0036_add_youtube_simulcast.sql` before deploying the Worker version that exposes `/seller/stream/youtube`. A seller creates their Crack Packs OBS input first, then pastes the private key from YouTube Studio into the seller-only **Stream on Crack Packs + YouTube** form. The Worker creates a Cloudflare Stream output targeting YouTube; the YouTube key is not stored in browser storage or returned by the API. Rotating the seller's Crack Packs OBS input disconnects its prior YouTube output, so YouTube must be reconnected after an OBS-key rotation.
+
 Stripe public business links:
 
 - Terms: `https://crackpacks.com/terms.html`

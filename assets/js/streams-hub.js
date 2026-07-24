@@ -52,6 +52,31 @@
     result.hidden = false;
     syncStreamKeyButtons();
   }
+  function renderYouTubeOutput(output) {
+    const connected = Boolean(output?.connected);
+    const status = $("[data-youtube-output-status]");
+    const disconnect = $("[data-youtube-output-disconnect]");
+    const channelInput = $("[data-youtube-output-form] [name='channelUrl']");
+    const channelLink = $("[data-youtube-channel-link]");
+    if (status) {
+      status.textContent = connected ? "Connected for simulcast" : "Not connected";
+      status.classList.toggle("is-connected", connected);
+    }
+    if (disconnect) disconnect.disabled = !connected;
+    if (channelInput && output?.channelUrl) channelInput.value = output.channelUrl;
+    if (channelLink) channelLink.href = output?.channelUrl || "https://studio.youtube.com/";
+  }
+  async function loadYouTubeOutput() {
+    if (!sellerContextAuthorized || !hasSavedObsConnection) {
+      renderYouTubeOutput(null);
+      return;
+    }
+    try {
+      renderYouTubeOutput(await api("/seller/stream/youtube"));
+    } catch (error) {
+      setStatus("[data-youtube-output-message]", error.message, "error");
+    }
+  }
   const showShareUrl = show => new URL(`live.html?show=${encodeURIComponent(show?.id || "")}`, location.href).href;
   const selectedSellerShow = () => {
     const showId = $("[data-seller-show-select]")?.value || "";
@@ -389,6 +414,7 @@
         obsGuideCompletedAt = String(streamInput.obsSetupCompletedAt || "");
         if (obsGuideCompletedAt) localStorage.setItem(OBS_GUIDE_COMPLETED_KEY, "true");
         renderStreamInput(streamInput.input);
+        await loadYouTubeOutput();
       } catch {}
       syncStreamKeyButtons();
       syncStreamGuideVisibility({ firstOpen: !hasSavedObsConnection && !hasCompletedObsGuide() });
@@ -434,6 +460,43 @@
     $$('[data-hub-tab]').forEach(node => node.classList.toggle("is-active", node === button)); renderShows();
   }));
 
+  $("[data-youtube-output-form]")?.addEventListener("submit", async event => {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    const button = event.submitter;
+    button.disabled = true;
+    button.textContent = "Connecting...";
+    setStatus("[data-youtube-output-message]", "Creating your private YouTube simulcast output...");
+    try {
+      const output = await api("/seller/stream/youtube", {
+        method: "POST",
+        body: JSON.stringify({ channelUrl: form.get("channelUrl"), streamKey: form.get("streamKey") })
+      });
+      formElement.elements.streamKey.value = "";
+      renderYouTubeOutput(output);
+      setStatus("[data-youtube-output-message]", "YouTube connected. Starting OBS during an active show will stream on Crack Packs and YouTube together.", "success");
+    } catch (error) {
+      setStatus("[data-youtube-output-message]", error.message, "error");
+    } finally {
+      button.disabled = false;
+      button.textContent = "Connect YouTube";
+    }
+  });
+  $("[data-youtube-output-disconnect]")?.addEventListener("click", async event => {
+    if (!window.confirm("Disconnect YouTube simulcasting from this seller account?")) return;
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      const output = await api("/seller/stream/youtube", { method: "DELETE" });
+      renderYouTubeOutput(output);
+      setStatus("[data-youtube-output-message]", "YouTube simulcasting disconnected. Your Crack Packs OBS connection is unchanged.", "success");
+    } catch (error) {
+      button.disabled = false;
+      setStatus("[data-youtube-output-message]", error.message, "error");
+    }
+  });
+
   $("[data-seller-giveaway-form]")?.addEventListener("submit", async event => {
     event.preventDefault(); const form = new FormData(event.currentTarget); const button = event.submitter; button.disabled = true;
     try {
@@ -465,8 +528,10 @@
       renderStreamInput(payload.input);
       setStatus("[data-stream-input-status]", replaceExisting ? "New static OBS key saved. Update OBS once with the regenerated key." : "Static OBS connection ready. This saved key can be reused for future shows.", "success");
       return payload;
-    } catch (error) { setStatus("[data-stream-input-status]", error.message, "error"); }
-    return null;
+    } catch (error) {
+      setStatus("[data-stream-input-status]", error.message, "error");
+      throw error;
+    }
   }
   async function generateStreamKey({ regenerate = false } = {}) {
     const button = $("[data-stream-key-creator-confirm]");
@@ -483,6 +548,7 @@
     try {
       const payload = await loadOrCreateStreamInput({ createIfMissing: true, replaceExisting: isRegenerate });
       const liveKey = payload?.input?.streamKey || $("[data-stream-key]")?.value || "";
+      if (!liveKey) throw new Error("No OBS key was returned. Your current key was not changed; try again.");
       if (input) {
         input.value = liveKey;
         input.placeholder = liveKey ? "OBS key created." : "No key was returned.";
@@ -498,7 +564,8 @@
       }
       syncStreamKeyButtons();
       syncStreamGuideVisibility();
-      setStatus("[data-stream-input-status]", isRegenerate ? "New OBS key created. Copy or save it before updating OBS." : "OBS key created. Copy or save it for OBS setup.", "success");
+      await loadYouTubeOutput();
+      setStatus("[data-stream-input-status]", isRegenerate ? "New OBS key created. Copy or save it before updating OBS." : "OBS key created and displayed. Copy or save it for OBS setup.", "success");
     } catch (error) {
       const reason = String(error?.message || "The live input could not be created.");
       if (input) {
