@@ -1844,11 +1844,25 @@ async function sellerStreamInput(request, env, cors) {
     }
     let created;
     try {
-      created = await cloudflareRequest(env, "/live_inputs", { method: "POST", body: JSON.stringify({ meta: { name: `${auth.member.live_username || "seller"} Crack Packs input` }, recording: { mode: "automatic" }, enabled: false }) });
+      created = await cloudflareRequest(env, "/live_inputs", {
+        method: "POST",
+        body: JSON.stringify({
+          meta: { name: `${auth.member.live_username || "seller"} Crack Packs input` },
+          recording: { mode: "automatic" }
+        })
+      });
     } catch (error) {
       if (error.message === "STREAM_NOT_CONFIGURED") return json({ error: "Cloudflare Stream credentials are not configured." }, 503, cors);
       const providerDetail = String(error.message || "").startsWith("STREAM_PROVIDER_ERROR:") ? String(error.message).slice("STREAM_PROVIDER_ERROR:".length) : "";
       return json({ error: providerDetail ? `Cloudflare could not create the live input. ${providerDetail}` : "Cloudflare could not create the live input." }, 503, cors);
+    }
+    if (created?.uid) {
+      await setLiveInputEnabled(env, created.uid, false).catch(error => {
+        console.error("Cloudflare Stream input created but could not be disabled after creation", {
+          liveInputUid: created.uid,
+          error: String(error?.message || error || "")
+        });
+      });
     }
     const stamp = now();
     const rtmps = created.rtmps || {};
