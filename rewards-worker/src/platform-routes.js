@@ -2122,17 +2122,19 @@ export async function handlePlatformRoute(request, env, cors) {
     const auth = await requireMember(request, env, cors, { verified: false });
     if (auth.error) return auth.error;
     const profile = await sellerProfile(env, auth.member.id);
-    const owner = normalizeEmail(auth.member.email) === normalizeEmail(env.ADMIN_EMAIL);
+    const fullyVerified = Boolean(auth.member.email_verified_at && auth.member.device_verified && auth.member.identity_status === "verified");
+    const owner = fullyVerified && normalizeEmail(auth.member.email) === normalizeEmail(env.ADMIN_EMAIL);
+    const sellerAllowed = owner || (fullyVerified && profile?.status === "active");
     const requestedPortal = String(auth.member.active_portal || "buyer");
     const activePortal = owner && requestedPortal === "master"
       ? "master"
-      : ((owner || profile?.status === "active") && requestedPortal === "seller" ? "seller" : "buyer");
+      : (sellerAllowed && requestedPortal === "seller" ? "seller" : "buyer");
     return json({
       activePortal,
-      sellerAccess: owner || profile?.status === "active",
+      sellerAccess: sellerAllowed,
       sellerStatus: owner ? "owner" : profile?.status || "not_applied",
       isMaster: owner,
-      roles: owner ? ["buyer", "seller", "master"] : ((profile?.status === "active") ? ["buyer", "seller"] : ["buyer"])
+      roles: owner ? ["buyer", "seller", "master"] : (sellerAllowed ? ["buyer", "seller"] : ["buyer"])
     }, 200, cors);
   }
   if (url.pathname === "/portal/mode" && request.method === "POST") {

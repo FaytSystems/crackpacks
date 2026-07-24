@@ -407,7 +407,12 @@
       const status = await api("/portal/status");
       sellerContextAuthorized = Boolean(status.sellerAccess && status.activePortal === "seller");
       localStorage.setItem("cp_can_seller_portal", status.sellerAccess ? "true" : "false");
-      if (!sellerContextAuthorized) return;
+      if (!sellerContextAuthorized) {
+        $$('[data-seller-only]').forEach(node => { node.hidden = true; });
+        $$('[data-seller-gate]').forEach(node => { node.hidden = false; });
+        $$('[data-seller-page-content]').forEach(node => { node.hidden = true; });
+        return;
+      }
       $$('[data-seller-only]').forEach(node => { node.hidden = false; });
       try {
         const streamInput = await api("/seller/stream/input");

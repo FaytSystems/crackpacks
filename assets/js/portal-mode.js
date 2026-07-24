@@ -41,6 +41,8 @@
   };
 
   let mode = getMode();
+  if (mode === "seller" && apiBase && authToken()) mode = "buyer";
+  if (mode === "master" && apiBase && authToken()) mode = "buyer";
   if (mode === "master" && !masterAllowed()) mode = setMode("buyer");
   if (mode === "seller" && !sellerAllowed()) mode = setMode("buyer");
 

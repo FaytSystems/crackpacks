@@ -728,7 +728,8 @@ async function account(member, count, env, seller = null) {
   const next = TIERS.find(t => t.threshold > count);
   const invite = await inviteDetailsFor(member, env);
   const admin = isAdmin(member, env);
-  const sellerAccess = admin || seller?.status === "active";
+  const verifiedSeller = Boolean(member.email_verified_at && member.device_verified && member.identity_status === "verified" && seller?.status === "active");
+  const sellerAccess = admin || verifiedSeller;
   const sellerStatus = admin ? "owner" : (seller?.status || "not_applied");
   const roles = admin ? ["buyer", "seller", "master"] : (sellerAccess ? ["buyer", "seller"] : ["buyer"]);
   return {
