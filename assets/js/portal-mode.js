@@ -19,6 +19,7 @@
   const masterAllowed = () => localStorage.getItem(MASTER_ALLOWED_KEY) === "true";
   const sellerPortalDestination = () => page === "streams" || page === "live" ? "streams.html" : "shop.html";
   const buyerPortalDestination = () => page === "shop" ? "shop.html" : "streams.html";
+  const sellerSetupDestination = () => authToken() ? "referral.html?return=seller" : "referral.html?mode=signin&return=seller";
 
   const portalRequest = async (path, options = {}) => {
     if (!apiBase || !authToken()) throw new Error("Sign in to your Profile first.");
@@ -72,8 +73,10 @@
         setMode(result.activePortal || "seller");
         window.location.href = sellerPortalDestination();
       } catch (error) {
-        window.alert(error.message);
-        button.disabled = false;
+        localStorage.setItem(SELLER_ALLOWED_KEY, "false");
+        sessionStorage.setItem(STORAGE_KEY, "buyer");
+        localStorage.setItem(STORAGE_KEY, "buyer");
+        window.location.href = sellerSetupDestination();
       }
     });
   });

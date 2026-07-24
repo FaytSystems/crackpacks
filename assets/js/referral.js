@@ -28,6 +28,13 @@
   const status = $("[data-app-status]");
   const showStatus = (message = "", kind = "") => { status.textContent = message; status.dataset.kind = kind; };
   const showContactStatus = (message = "", kind = "") => { const node = $("[data-contact-status]"); if (node) { node.textContent = message; node.dataset.kind = kind; } };
+  const escapeHtml = value => String(value ?? "").replace(/[&<>"']/g, char => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&#39;"
+  }[char]));
   let email = "";
   let turnstileTokenValue = "";
   let turnstileWidgetId = null;
@@ -54,6 +61,7 @@
   let sellerActivationFinalizePending = false;
   const STREAM_CREDITS_REFRESH_FOCUS_GRACE_MS = 2 * 60 * 1000;
   const SELLER_UPGRADE_KEY = "cp_seller_upgrade_requested";
+  if (returnTarget === "seller") sessionStorage.setItem(SELLER_UPGRADE_KEY, "true");
   const authModeCopy = {
     signin: {
       kicker: "Returning collector",

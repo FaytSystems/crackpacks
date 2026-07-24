@@ -8,6 +8,7 @@
   const body = document.body;
   const page = String(body?.dataset.page || "").toLowerCase();
   const buyerProfileUrl = "referral.html";
+  const sellerSetupUrl = () => (token() ? "referral.html?return=seller" : "referral.html?mode=signin&return=seller");
   const sellerGoLiveUrl = "streams.html#go-live";
   const sellerCreateShowUrl = "streams.html#create-show";
   let ownerSignupUrl = "referral.html?mode=signup";
@@ -23,8 +24,8 @@
     return payload;
   };
 
-  const goLiveHref = () => (portalState.sellerAccess ? sellerGoLiveUrl : ownerSignupUrl);
-  const createShowHref = () => (portalState.sellerAccess ? sellerCreateShowUrl : ownerSignupUrl);
+  const goLiveHref = () => (portalState.sellerAccess ? sellerGoLiveUrl : sellerSetupUrl());
+  const createShowHref = () => (portalState.sellerAccess ? sellerCreateShowUrl : sellerSetupUrl());
   const accountMenuMarkup = () => `
     <div class="nav-account-bubbles" aria-label="Account portal switcher">
       <button class="nav-account-bubble ${portalState.activePortal !== "seller" ? "is-active" : ""}" type="button" data-open-buyer-portal>Buyer</button>
@@ -115,18 +116,18 @@
     const buyer = event.target.closest("[data-open-buyer-portal]");
     const seller = event.target.closest("[data-open-seller-portal]");
     if (!buyer && !seller) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (typeof event.stopImmediatePropagation === "function") event.stopImmediatePropagation();
     if (!token() || !rewardsApi) {
-      if (seller) window.location.href = ownerSignupUrl;
+      if (seller) window.location.href = sellerSetupUrl();
       else window.location.href = buyerProfileUrl;
       return;
     }
     if (seller && !portalState.sellerAccess) {
-      window.location.href = ownerSignupUrl;
+      window.location.href = sellerSetupUrl();
       return;
     }
-    if (!buyer && !seller) return;
-    event.preventDefault();
-    event.stopPropagation();
     try {
       await fetch(`${rewardsApi}/portal/mode`, {
         method: "POST",
