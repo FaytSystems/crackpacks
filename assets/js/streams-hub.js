@@ -71,6 +71,47 @@
     const link = document.createElement("a"); link.href = url; link.download = `${show.title.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.ics`; link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
+  const downloadTextFile = (filename, text) => {
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  const streamKeyCreatorState = { mode: "create", generated: false };
+  function closeStreamKeyCreator() {
+    const panel = $("[data-stream-key-creator]");
+    if (!panel) return;
+    panel.hidden = true;
+    streamKeyCreatorState.mode = "create";
+    streamKeyCreatorState.generated = false;
+    const input = $("[data-stream-key-creator-value]");
+    const confirm = $("[data-stream-key-creator-confirm]");
+    const copy = $("[data-stream-key-creator-copy-button]");
+    const save = $("[data-stream-key-creator-save-button]");
+    if (input) input.value = "";
+    if (confirm) confirm.textContent = "Create Key";
+    if (copy) copy.disabled = true;
+    if (save) save.disabled = true;
+  }
+  function openStreamKeyCreator(mode = "create") {
+    const panel = $("[data-stream-key-creator]");
+    if (!panel) return;
+    const regenerate = mode === "regenerate";
+    streamKeyCreatorState.mode = regenerate ? "regenerate" : "create";
+    streamKeyCreatorState.generated = false;
+    panel.hidden = false;
+    $("[data-stream-key-creator-title]").textContent = regenerate ? "Regenerate key" : "Create key";
+    $("[data-stream-key-creator-copy]").textContent = regenerate
+      ? "Your current key stays active until you click Regenerate Key."
+      : "Create your private OBS key when you are ready.";
+    $("[data-stream-key-creator-value]").value = "";
+    $("[data-stream-key-creator-confirm]").textContent = regenerate ? "Regenerate Key" : "Create Key";
+    $("[data-stream-key-creator-copy-button]").disabled = true;
+    $("[data-stream-key-creator-save-button]").disabled = true;
+  }
 
   const showCard = show => `
     <article class="stream-card holo-panel">
@@ -207,7 +248,7 @@
             <strong>${escapeHtml(item.productName)}</strong>
             <p>${escapeHtml(item.orderNumber)} · ${escapeHtml(dateLabel(item.placedAt))}</p>
           </div>
-          <span class="seller-cogs-bid">Min bid ${dollars(item.suggestedMinimumBidCents)}</span>
+          <span class="seller-cogs-bid">Break-even bid ${dollars(item.suggestedMinimumBidCents)}</span>
         </header>
         <div class="seller-cogs-metrics">
           <span><small>Ordered</small><strong>${Number(item.orderedUnits || 0)} unit(s)</strong></span>
@@ -218,6 +259,7 @@
         <details class="seller-cogs-details">
           <summary>Cost breakdown</summary>
           <p>Item ${dollars(item.subtotalCents)} · shipping ${dollars(item.shippingCents)} · tax ${dollars(item.taxCents)} · catalog COGS ${catalogCogs}</p>
+          <p>Break-even bid uses CrackPacks.com processing only: 2.9% + $0.30, with 0% platform commission.</p>
           <p>Seller stock now shows ${Number(item.currentQuantity || 0)} available and ${Number(item.inboundQuantity || 0)} inbound. ${packsPerUnit ? `${packsPerUnit} pack/card count is being used for per-pack math.` : "Add packs per unit in seller inventory when you want pack-level floors."}</p>
         </details>
       </article>
@@ -346,9 +388,7 @@
     } catch (error) { setStatus("[data-stream-input-status]", error.message, "error"); }
   }
   $("[data-stream-input-create]")?.addEventListener("click", async event => {
-    const button = event.currentTarget; button.disabled = true;
-    await loadOrCreateStreamInput({ createIfMissing: true });
-    button.disabled = false;
+    openStreamKeyCreator("create");
   });
   $("[data-stream-input-load]")?.addEventListener("click", async event => {
     const button = event.currentTarget; button.disabled = true;
@@ -356,10 +396,48 @@
     button.disabled = false;
   });
   $("[data-stream-input-rotate]")?.addEventListener("click", async event => {
-    if (!confirm("Regenerate the saved OBS stream key? OBS will need the new key before the next show.")) return;
-    const button = event.currentTarget; button.disabled = true;
-    await loadOrCreateStreamInput({ createIfMissing: true, replaceExisting: true });
-    button.disabled = false;
+    openStreamKeyCreator("regenerate");
+  });
+  $("[data-stream-key-creator-cancel]")?.addEventListener("click", () => {
+    closeStreamKeyCreator();
+    setStatus("[data-stream-input-status]", "Current OBS key kept unchanged.", "success");
+  });
+  $("[data-stream-key-creator-confirm]")?.addEventListener("click", async event => {
+    const button = event.currentTarget;
+    const isRegenerate = streamKeyCreatorState.mode === "regenerate";
+    button.disabled = true;
+    button.textContent = isRegenerate ? "Regenerating..." : "Creating...";
+    setStatus("[data-stream-input-status]", isRegenerate ? "Generating your new OBS key..." : "Creating your OBS key...");
+    try {
+      await loadOrCreateStreamInput({ createIfMissing: true, replaceExisting: isRegenerate });
+      const liveKey = $("[data-stream-key]")?.value || "";
+      $("[data-stream-key-creator-value]").value = liveKey;
+      $("[data-stream-key-creator-copy-button]").disabled = !liveKey;
+      $("[data-stream-key-creator-save-button]").disabled = !liveKey;
+      streamKeyCreatorState.generated = Boolean(liveKey);
+      setStatus("[data-stream-input-status]", isRegenerate ? "New OBS key created. Copy or save it before updating OBS." : "OBS key created. Copy or save it for OBS setup.", "success");
+    } catch (error) {
+      setStatus("[data-stream-input-status]", error.message, "error");
+    } finally {
+      button.disabled = false;
+      button.textContent = isRegenerate ? "Regenerate Key" : "Create Key";
+    }
+  });
+  $("[data-stream-key-creator-copy-button]")?.addEventListener("click", async () => {
+    const value = $("[data-stream-key-creator-value]")?.value || "";
+    if (!value) return;
+    try {
+      await copyText(value);
+      setStatus("[data-stream-input-status]", "New OBS key copied.", "success");
+    } catch (error) {
+      setStatus("[data-stream-input-status]", error.message, "error");
+    }
+  });
+  $("[data-stream-key-creator-save-button]")?.addEventListener("click", () => {
+    const value = $("[data-stream-key-creator-value]")?.value || "";
+    if (!value) return;
+    downloadTextFile("crackpacks-obs-stream-key.txt", value);
+    setStatus("[data-stream-input-status]", "OBS key saved to your device.", "success");
   });
   $("[data-stream-setup-toggle]")?.addEventListener("click", () => {
     const guide = $("[data-stream-setup-guide]");

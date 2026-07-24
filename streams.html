@@ -81,6 +81,25 @@
             <button class="btn btn-outline" type="button" data-stream-input-rotate>Regenerate stream key</button>
             <button class="btn btn-outline" type="button" data-stream-setup-toggle>OBS setup guide</button>
           </div>
+          <div class="obs-key-creator" data-stream-key-creator hidden>
+            <div class="obs-key-creator-head">
+              <div>
+                <strong data-stream-key-creator-title>Create key</strong>
+                <p data-stream-key-creator-copy>Your current key stays active until you choose to create a new one.</p>
+              </div>
+            </div>
+            <label>Stream key creator
+              <span class="obs-key-creator-row">
+                <input data-stream-key-creator-value type="text" readonly placeholder="Your new OBS stream key will appear here after you click Create Key or Regenerate Key.">
+                <button class="btn btn-outline btn-small" type="button" data-stream-key-creator-copy-button disabled>Copy</button>
+                <button class="btn btn-outline btn-small" type="button" data-stream-key-creator-save-button disabled>Save</button>
+              </span>
+            </label>
+            <div class="seller-social-actions">
+              <button class="btn btn-outline" type="button" data-stream-key-creator-cancel>Cancel</button>
+              <button class="btn btn-primary" type="button" data-stream-key-creator-confirm>Create Key</button>
+            </div>
+          </div>
           <div class="stream-secret-grid" data-stream-input-result hidden>
             <label>RTMPS server<span><input data-stream-rtmps-url readonly><button class="btn btn-outline btn-small" type="button" data-copy-stream-field="rtmps">Copy</button></span></label>
             <label>Stream key<span><input data-stream-key type="password" readonly><button class="btn btn-outline btn-small" type="button" data-reveal-stream-key>Reveal</button><button class="btn btn-outline btn-small" type="button" data-copy-stream-field="key">Copy</button></span></label>
