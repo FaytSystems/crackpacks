@@ -74,6 +74,44 @@ const crackPacksBidFloorCents = ({ landedCents = 0, packagingCents = 0, overhead
   const denominator = 1 - Number(feeRate || 0) - Number(margin || 0);
   return denominator > 0 ? Math.ceil(base / denominator) : base;
 };
+const SELLER_PRODUCT_CATEGORIES = [
+  ["tcg", "TCG / Playing Cards"],
+  ["pokemon", "Pokémon"],
+  ["magic", "Magic the Gathering"],
+  ["yugioh", "Yu-Gi-Oh!"],
+  ["one_piece", "One Piece"],
+  ["lorcana", "Disney Lorcana"],
+  ["dragon_ball", "Dragon Ball"],
+  ["flesh_and_blood", "Flesh and Blood"],
+  ["digimon", "Digimon"],
+  ["sports", "Sports Cards"],
+  ["baseball", "Baseball"],
+  ["basketball", "Basketball"],
+  ["football", "Football"],
+  ["hockey", "Hockey"],
+  ["soccer", "Soccer"],
+  ["memorabilia", "Memorabilia"],
+  ["collectibles", "Collectibles"],
+  ["apparel", "Apparel"],
+  ["supplies", "Shipping / Break Supplies"],
+  ["other", "Other"]
+];
+const SELLER_CATEGORY_KEYS = new Set(SELLER_PRODUCT_CATEGORIES.map(([key]) => key));
+const sellerCategoryLabel = key => SELLER_PRODUCT_CATEGORIES.find(([value]) => value === key)?.[1] || "Other";
+const normalizeSellerCategoryKey = value => {
+  const key = String(value || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  return SELLER_CATEGORY_KEYS.has(key) ? key : "other";
+};
+function normalizeWeightToOz(value, unit) {
+  const amount = Number(value);
+  const normalizedUnit = String(unit || "oz").trim().toLowerCase();
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  if (normalizedUnit === "oz") return amount;
+  if (normalizedUnit === "lb") return amount * 16;
+  if (normalizedUnit === "g") return amount / 28.349523125;
+  if (normalizedUnit === "kg") return (amount * 1000) / 28.349523125;
+  return null;
+}
 
 async function latestStreamCreditConfig(env) {
   const row = await env.DB.prepare(`SELECT * FROM stream_credit_config_versions ORDER BY effective_at DESC, created_at DESC LIMIT 1`).first();
@@ -1171,16 +1209,14 @@ async function verifySale(request, env, cors, url) {
   } }, 200, cors);
 }
 
-async function purchaseOrderLabel(request, env, cors, orderId) {
-  const auth = await requireOwner(request, env, cors);
-  if (auth.error) return auth.error;
+async function purchaseOrderLabelForOwner(env, cors, orderId, ownerMemberId) {
   const row = await env.DB.prepare(`
     SELECT orders.*,reservation.easypost_shipment_id,reservation.easypost_rate_id,reservation.carrier,reservation.service,
            shipment.label_purchased_at,shipment.postage_label_url,shipment.postage_label_pdf_url
     FROM member_orders orders LEFT JOIN checkout_reservations reservation ON reservation.order_id=orders.id
     LEFT JOIN order_shipments shipment ON shipment.order_id=orders.id
     WHERE orders.id=? AND orders.owner_member_id=?
-  `).bind(orderId, auth.member.id).first();
+  `).bind(orderId, ownerMemberId).first();
   if (!row) return json({ error: "Order not found." }, 404, cors);
   if (row.payment_status !== "paid") return json({ error: "A shipping label can only be purchased for a paid order." }, 409, cors);
   if (row.label_purchased_at) return json({ ordered: true, labelUrl: row.postage_label_pdf_url || row.postage_label_url, purchasedAt: row.label_purchased_at }, 200, cors);
@@ -1209,6 +1245,18 @@ async function purchaseOrderLabel(request, env, cors, orderId) {
       .bind(uid(), orderId, shipment.tracker.id, shipment.mode === "production" ? "production" : "test", clean(shipment.tracker.carrier || row.carrier, 60), clean(shipment.tracking_code, 120), clean(shipment.tracker.status || "pre_transit", 40), "", String(shipment.tracker.public_url || "").slice(0, 500), "[]", stamp, stamp, shipment.id, row.easypost_rate_id, labelUrl, pdfUrl, clean(shipment.postage_label?.label_file_type || "PDF", 20), rateCents, stamp).run();
   }
   return json({ ordered: true, labelUrl: pdfUrl || labelUrl, purchasedAt: stamp, trackingCode: shipment.tracking_code }, 201, cors);
+}
+
+async function purchaseOrderLabel(request, env, cors, orderId) {
+  const auth = await requireOwner(request, env, cors);
+  if (auth.error) return auth.error;
+  return purchaseOrderLabelForOwner(env, cors, orderId, auth.member.id);
+}
+
+async function sellerPurchaseOrderLabel(request, env, cors, orderId) {
+  const auth = await requireMember(request, env, cors, { seller: true });
+  if (auth.error) return auth.error;
+  return purchaseOrderLabelForOwner(env, cors, orderId, auth.member.id);
 }
 
 async function listShows(request, env, cors) {
@@ -1309,23 +1357,133 @@ async function sellerInventory(request, env, cors) {
   if (sourceId && !source) return json({ error: "That Crack Packs store product is unavailable." }, 404, cors);
   const productName = clean(source?.name || data.productName, 160);
   const sku = clean(source?.sku || data.sku, 64);
+  const productCategoryKey = normalizeSellerCategoryKey(data.productCategoryKey || data.categoryKey);
+  const shippingWeightProfileId = validUuid(data.shippingWeightProfileId) ? String(data.shippingWeightProfileId) : "";
   const unitType = ["sealed_box","pack","single","supply"].includes(data.unitType) ? data.unitType : "sealed_box";
   const quantity = Number(data.quantity || 0); const par = Number(data.parQuantity || 0); const reorder = Number(data.reorderQuantity || 0);
   if (!productName || !Number.isInteger(quantity) || quantity < 0 || quantity > 100000 || !Number.isInteger(par) || par < 0 || !Number.isInteger(reorder) || reorder < 0) return json({ error: "Enter a valid product and inventory quantities." }, 400, cors);
+  if (shippingWeightProfileId) {
+    const profile = await env.DB.prepare(`SELECT id FROM seller_shipping_weight_profiles WHERE id=? AND member_id=?`).bind(shippingWeightProfileId, auth.member.id).first();
+    if (!profile) return json({ error: "Selected shipping profile does not belong to this seller account." }, 404, cors);
+  }
   const existing = source ? await env.DB.prepare(`SELECT * FROM breaker_inventory_items WHERE member_id=? AND source_inventory_item_id=? AND unit_type=?`).bind(auth.member.id, source.id, unitType).first() : null;
   const itemId = existing?.id || uid(); const stamp = now();
   if (existing) {
-    await env.DB.prepare(`UPDATE breaker_inventory_items SET sku=?,product_name=?,quantity=?,par_quantity=?,reorder_quantity=?,auto_reorder_enabled=?,updated_at=? WHERE id=? AND member_id=?`)
-      .bind(sku, productName, quantity, par, reorder, data.autoReorder ? 1 : 0, stamp, itemId, auth.member.id).run();
+    await env.DB.prepare(`UPDATE breaker_inventory_items SET sku=?,product_name=?,product_category_key=?,shipping_weight_profile_id=?,quantity=?,par_quantity=?,reorder_quantity=?,auto_reorder_enabled=?,updated_at=? WHERE id=? AND member_id=?`)
+      .bind(sku, productName, productCategoryKey, shippingWeightProfileId || null, quantity, par, reorder, data.autoReorder ? 1 : 0, stamp, itemId, auth.member.id).run();
   } else {
-    await env.DB.prepare(`INSERT INTO breaker_inventory_items(id,member_id,source_inventory_item_id,sku,product_name,unit_type,packs_per_unit,quantity,par_quantity,reorder_quantity,auto_reorder_enabled,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-      .bind(itemId, auth.member.id, source?.id || null, sku, productName, unitType, data.packsPerUnit ? Number(data.packsPerUnit) : null, quantity, par, reorder, data.autoReorder ? 1 : 0, stamp, stamp).run();
+    await env.DB.prepare(`INSERT INTO breaker_inventory_items(id,member_id,source_inventory_item_id,sku,product_name,product_category_key,shipping_weight_profile_id,unit_type,packs_per_unit,quantity,par_quantity,reorder_quantity,auto_reorder_enabled,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .bind(itemId, auth.member.id, source?.id || null, sku, productName, productCategoryKey, shippingWeightProfileId || null, unitType, data.packsPerUnit ? Number(data.packsPerUnit) : null, quantity, par, reorder, data.autoReorder ? 1 : 0, stamp, stamp).run();
   }
   await env.DB.prepare(`INSERT INTO breaker_inventory_movements(id,breaker_inventory_item_id,member_id,movement_type,delta_quantity,resulting_quantity,note,created_at) VALUES(?,?,?,?,?,?,?,?)`)
     .bind(uid(), itemId, auth.member.id, "manual_set", existing ? quantity - Number(existing.quantity) : quantity, quantity, "Seller inventory saved", stamp).run();
   const item = await env.DB.prepare(`SELECT * FROM breaker_inventory_items WHERE id=?`).bind(itemId).first();
   await maybeCreateReorder(env, item);
   return json({ item }, existing ? 200 : 201, cors);
+}
+
+async function sellerProductCategoryPayload(env, memberId) {
+  const saved = await env.DB.prepare(`SELECT * FROM seller_product_categories WHERE member_id=?`).bind(memberId).all();
+  const savedByKey = new Map((saved.results || []).map(row => [row.category_key, row]));
+  return {
+    categories: SELLER_PRODUCT_CATEGORIES.map(([key, label]) => {
+      const row = savedByKey.get(key);
+      return { key, label, enabled: row ? Boolean(row.enabled) : false, updatedAt: row?.updated_at || "" };
+    })
+  };
+}
+
+async function sellerProductCategories(request, env, cors) {
+  const auth = await requireMember(request, env, cors, { seller: true });
+  if (auth.error) return auth.error;
+  if (request.method === "GET") return json(await sellerProductCategoryPayload(env, auth.member.id), 200, cors);
+  const data = await boundedJson(request, 5000);
+  const requested = Array.isArray(data.categories) ? data.categories : [];
+  const enabled = new Set(requested.map(normalizeSellerCategoryKey).filter(key => SELLER_CATEGORY_KEYS.has(key)));
+  const stamp = now();
+  const statements = SELLER_PRODUCT_CATEGORIES.map(([key, label]) => env.DB.prepare(`
+    INSERT INTO seller_product_categories(member_id,category_key,category_label,enabled,created_at,updated_at)
+    VALUES(?,?,?,?,?,?)
+    ON CONFLICT(member_id,category_key) DO UPDATE SET category_label=excluded.category_label,enabled=excluded.enabled,updated_at=excluded.updated_at
+  `).bind(auth.member.id, key, label, enabled.has(key) ? 1 : 0, stamp, stamp));
+  await env.DB.batch(statements);
+  return json(await sellerProductCategoryPayload(env, auth.member.id), 200, cors);
+}
+
+function shippingProfileView(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    productCategoryKey: row.product_category_key || "",
+    productCategoryLabel: row.product_category_key ? sellerCategoryLabel(row.product_category_key) : "Any category",
+    breakerInventoryItemId: row.breaker_inventory_item_id || "",
+    inventoryProductName: row.inventory_product_name || "",
+    weightUnitSystem: row.weight_unit_system || "imperial",
+    displayWeightValue: Number(row.display_weight_value || 0),
+    displayWeightUnit: row.display_weight_unit || "oz",
+    finalWeightOz: Number(row.final_weight_oz || 0),
+    lengthIn: row.length_in == null ? null : Number(row.length_in),
+    widthIn: row.width_in == null ? null : Number(row.width_in),
+    heightIn: row.height_in == null ? null : Number(row.height_in),
+    packagingNote: row.packaging_note || "",
+    isDefault: Boolean(row.is_default),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+async function sellerShippingProfiles(request, env, cors) {
+  const auth = await requireMember(request, env, cors, { seller: true });
+  if (auth.error) return auth.error;
+  if (request.method === "GET") {
+    const rows = await env.DB.prepare(`
+      SELECT profile.*,item.product_name inventory_product_name
+      FROM seller_shipping_weight_profiles profile
+      LEFT JOIN breaker_inventory_items item ON item.id=profile.breaker_inventory_item_id
+      WHERE profile.member_id=?
+      ORDER BY profile.is_default DESC,profile.updated_at DESC
+      LIMIT 100
+    `).bind(auth.member.id).all();
+    return json({ profiles: (rows.results || []).map(shippingProfileView) }, 200, cors);
+  }
+  const data = await boundedJson(request, 5000);
+  const name = clean(data.name, 80);
+  const categoryKey = data.productCategoryKey ? normalizeSellerCategoryKey(data.productCategoryKey) : "";
+  const weightUnitSystem = String(data.weightUnitSystem || "").toLowerCase() === "metric" ? "metric" : "imperial";
+  const displayWeightUnit = ["oz", "lb", "g", "kg"].includes(String(data.displayWeightUnit || "").toLowerCase()) ? String(data.displayWeightUnit).toLowerCase() : (weightUnitSystem === "metric" ? "g" : "oz");
+  const displayWeightValue = Number(data.displayWeightValue || data.finalWeight || 0);
+  const finalWeightOz = normalizeWeightToOz(displayWeightValue, displayWeightUnit);
+  const lengthIn = data.lengthIn === "" || data.lengthIn == null ? null : Number(data.lengthIn);
+  const widthIn = data.widthIn === "" || data.widthIn == null ? null : Number(data.widthIn);
+  const heightIn = data.heightIn === "" || data.heightIn == null ? null : Number(data.heightIn);
+  const breakerInventoryItemId = validUuid(data.breakerInventoryItemId) ? String(data.breakerInventoryItemId) : "";
+  if (!name) return json({ error: "Name this weight profile." }, 400, cors);
+  if (!finalWeightOz || finalWeightOz <= 0 || finalWeightOz > 2400) return json({ error: "Enter a valid package weight under 150 lb / 68 kg." }, 400, cors);
+  for (const [label, value] of [["length", lengthIn], ["width", widthIn], ["height", heightIn]]) {
+    if (value !== null && (!Number.isFinite(value) || value <= 0 || value > 120)) return json({ error: `Enter a valid ${label} in inches, or leave it blank.` }, 400, cors);
+  }
+  if (breakerInventoryItemId) {
+    const item = await env.DB.prepare(`SELECT id FROM breaker_inventory_items WHERE id=? AND member_id=?`).bind(breakerInventoryItemId, auth.member.id).first();
+    if (!item) return json({ error: "Selected inventory item does not belong to this seller account." }, 404, cors);
+  }
+  const profileId = uid();
+  const stamp = now();
+  const isDefault = data.isDefault ? 1 : 0;
+  const statements = [];
+  if (isDefault) statements.push(env.DB.prepare(`UPDATE seller_shipping_weight_profiles SET is_default=0,updated_at=? WHERE member_id=?`).bind(stamp, auth.member.id));
+  statements.push(env.DB.prepare(`
+    INSERT INTO seller_shipping_weight_profiles(
+      id,member_id,name,product_category_key,breaker_inventory_item_id,weight_unit_system,display_weight_value,display_weight_unit,final_weight_oz,length_in,width_in,height_in,packaging_note,is_default,created_at,updated_at
+    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+  `).bind(profileId, auth.member.id, name, categoryKey, breakerInventoryItemId || null, weightUnitSystem, displayWeightValue, displayWeightUnit, finalWeightOz, lengthIn, widthIn, heightIn, clean(data.packagingNote, 300), isDefault, stamp, stamp));
+  await env.DB.batch(statements);
+  const row = await env.DB.prepare(`
+    SELECT profile.*,item.product_name inventory_product_name
+    FROM seller_shipping_weight_profiles profile
+    LEFT JOIN breaker_inventory_items item ON item.id=profile.breaker_inventory_item_id
+    WHERE profile.id=? AND profile.member_id=?
+  `).bind(profileId, auth.member.id).first();
+  return json({ profile: shippingProfileView(row) }, 201, cors);
 }
 
 async function sellerCogsOrders(request, env, cors) {
@@ -1395,6 +1553,203 @@ async function sellerCogsOrders(request, env, cors) {
   return json({ orders }, 200, cors);
 }
 
+const shipmentIsMoving = status => !["", "unknown", "pre_transit", "error"].includes(String(status || "").toLowerCase());
+function sellerOrderFulfillmentStatus(row, canPurchaseLabel) {
+  const orderStatus = String(row.status || "").toLowerCase();
+  const trackingStatus = String(row.tracking_status || "").toLowerCase();
+  if (orderStatus === "delivered" || trackingStatus === "delivered") return "delivered";
+  if (orderStatus === "shipped" || shipmentIsMoving(trackingStatus)) return "shipped";
+  if (row.label_purchased_at) return "ship_now";
+  if (String(row.payment_status || "") !== "paid") return "unpaid";
+  if (canPurchaseLabel && row.easypost_shipment_id && row.easypost_rate_id) return "needs_label";
+  return "needs_label_setup";
+}
+
+function firstOrderItem(row) {
+  const items = parseJsonSafe(row.items_json, []);
+  return Array.isArray(items) && items.length ? items[0] : {};
+}
+
+function sellerMemberOrderView(row, sellerMemberId, clipByReference = new Map()) {
+  const item = firstOrderItem(row);
+  const shippingPriceCents = money(row.shipping_cents || row.shipping_amount_cents);
+  const sellerIsFulfillmentOwner = row.owner_member_id === sellerMemberId;
+  const sellerIsBuyer = row.member_id === sellerMemberId;
+  const canPurchaseLabel = sellerIsFulfillmentOwner && String(row.payment_status || "") === "paid";
+  const relatedClip = clipByReference.get(row.order_number) || clipByReference.get(row.stripe_payment_intent_id || "") || null;
+  const fulfillmentStatus = sellerOrderFulfillmentStatus(row, canPurchaseLabel);
+  return {
+    id: row.order_id,
+    sourceId: row.order_id,
+    kind: row.channel === "live" ? "auction" : (sellerIsBuyer && !sellerIsFulfillmentOwner ? "seller_store" : "buyer_store"),
+    orderNumber: row.order_number,
+    title: item.name || row.reservation_product_name || "Crack Packs order",
+    quantity: Number(item.quantity || row.reservation_quantity || 1),
+    status: row.status || "processing",
+    paymentStatus: row.payment_status || "not_applicable",
+    fulfillmentStatus,
+    placedAt: row.placed_at,
+    customer: {
+      id: row.customer_id || "",
+      email: row.customer_email || "",
+      username: row.customer_username || "",
+      name: clean(`${row.customer_first_name || ""} ${row.customer_last_name || ""}`, 160)
+    },
+    fulfillmentOwner: {
+      id: row.owner_member_id || "",
+      email: row.owner_email || "",
+      username: row.owner_username || ""
+    },
+    sellerRole: sellerIsFulfillmentOwner ? "fulfillment_owner" : "stock_buyer",
+    paidBy: shippingPriceCents > 0 ? "buyer" : "seller",
+    shippingPriceCents,
+    totalCents: money(row.total_cents),
+    currency: row.currency || "USD",
+    carrier: row.carrier || "",
+    service: row.service || row.shipping_service || "",
+    trackingCode: row.tracking_code || "",
+    trackingStatus: row.tracking_status || "",
+    trackingUrl: row.carrier_public_url || "",
+    localTrackingUrl: row.order_id ? `${siteUrl({ SITE_URL: row.__site_url || "" })}/tracking.html?order=${encodeURIComponent(row.order_id)}` : "",
+    labelUrl: row.postage_label_pdf_url || row.postage_label_url || "",
+    labelPurchasedAt: row.label_purchased_at || "",
+    canPurchaseLabel,
+    labelReady: Boolean(row.label_purchased_at),
+    clipUrl: relatedClip?.clipUrl || "",
+    clipMethod: relatedClip?.clipMethod || "",
+    clipStatus: relatedClip?.verificationStatus || ""
+  };
+}
+
+function sellerAuctionSaleView(row) {
+  const clipUrl = row.clip_url || row.stream_recording_url || "";
+  return {
+    id: row.id,
+    sourceId: row.id,
+    kind: "auction",
+    orderNumber: row.order_reference || `LIVE-${String(row.id).slice(0, 8).toUpperCase()}`,
+    title: row.product_name || "Live auction sale",
+    quantity: Number(row.quantity || 1),
+    status: row.verification_status || "pending_recording",
+    paymentStatus: row.order_reference ? "paid" : "manual_review",
+    fulfillmentStatus: "needs_label_setup",
+    placedAt: row.sale_occurred_at || row.created_at,
+    customer: { id: "", email: row.buyer_email || "", username: "", name: "" },
+    fulfillmentOwner: { id: row.member_id || "", email: "", username: "" },
+    sellerRole: "fulfillment_owner",
+    paidBy: "buyer",
+    shippingPriceCents: null,
+    totalCents: null,
+    currency: "USD",
+    carrier: "",
+    service: "",
+    trackingCode: "",
+    trackingStatus: "",
+    trackingUrl: "",
+    localTrackingUrl: "",
+    labelUrl: "",
+    labelPurchasedAt: "",
+    canPurchaseLabel: false,
+    labelReady: false,
+    clipUrl,
+    clipMethod: row.clip_method || "pending",
+    clipStatus: row.verification_status || "pending_recording"
+  };
+}
+
+function sellerGiftedGiveawayOrderView(row) {
+  return {
+    id: row.id,
+    sourceId: row.id,
+    kind: "giveaway",
+    orderNumber: row.payment_reference || `GIFT-${String(row.id).slice(0, 8).toUpperCase()}`,
+    title: row.title || row.product_name || "Gifted giveaway",
+    quantity: Number(row.quantity || row.reserved_units || 1),
+    status: row.status || "reserved",
+    paymentStatus: ["reserved", "queued", "launched", "fulfilled", "paid"].includes(String(row.status || "")) ? "paid" : String(row.status || ""),
+    fulfillmentStatus: row.status === "fulfilled" ? "shipped" : "needs_label_setup",
+    placedAt: row.paid_at || row.created_at,
+    customer: { id: row.giver_member_id || "", email: row.giver_email || "", username: row.giver_username || "", name: clean(`${row.giver_first_name || ""} ${row.giver_last_name || ""}`, 160) },
+    fulfillmentOwner: { id: row.owner_member_id || "", email: "", username: "" },
+    sellerRole: "fulfillment_owner",
+    paidBy: "gifter",
+    shippingPriceCents: 0,
+    totalCents: Number(row.unit_amount_cents || 0) * Number(row.quantity || 1),
+    currency: row.currency || "USD",
+    carrier: "",
+    service: "",
+    trackingCode: "",
+    trackingStatus: "",
+    trackingUrl: "",
+    localTrackingUrl: "",
+    labelUrl: "",
+    labelPurchasedAt: "",
+    canPurchaseLabel: false,
+    labelReady: false,
+    clipUrl: "",
+    clipMethod: "",
+    clipStatus: "",
+    note: row.message || "",
+    showId: row.show_id || ""
+  };
+}
+
+async function sellerOrders(request, env, cors) {
+  const auth = await requireMember(request, env, cors, { seller: true });
+  if (auth.error) return auth.error;
+  const [ordersResult, salesResult, giftedResult] = await Promise.all([
+    env.DB.prepare(`
+      SELECT orders.id order_id,orders.member_id,orders.owner_member_id,orders.order_number,orders.channel,orders.items_json,
+        orders.status,orders.placed_at,orders.created_at,orders.updated_at,orders.subtotal_cents,orders.shipping_cents,
+        orders.tax_cents,orders.total_cents,orders.currency,orders.payment_status,orders.stripe_payment_intent_id,
+        orders.shipping_service,
+        reservation.product_name reservation_product_name,reservation.quantity reservation_quantity,
+        reservation.shipping_amount_cents,reservation.easypost_shipment_id,reservation.easypost_rate_id,
+        reservation.carrier,reservation.service,
+        shipment.mode tracking_mode,shipment.carrier shipment_carrier,shipment.tracking_code,shipment.status tracking_status,
+        shipment.status_detail,shipment.carrier_public_url,shipment.postage_label_url,shipment.postage_label_pdf_url,
+        shipment.label_rate_cents,shipment.label_purchased_at,
+        customer.id customer_id,customer.email customer_email,customer.first_name customer_first_name,
+        customer.last_name customer_last_name,customer.live_username customer_username,
+        owner.email owner_email,owner.live_username owner_username
+      FROM member_orders orders
+      LEFT JOIN checkout_reservations reservation ON reservation.order_id=orders.id
+      LEFT JOIN order_shipments shipment ON shipment.order_id=orders.id
+      JOIN members customer ON customer.id=orders.member_id
+      JOIN members owner ON owner.id=orders.owner_member_id
+      WHERE orders.owner_member_id=? OR orders.member_id=?
+      ORDER BY orders.placed_at DESC, orders.created_at DESC
+      LIMIT 150
+    `).bind(auth.member.id, auth.member.id).all(),
+    env.DB.prepare(`
+      SELECT sale.*,item.product_name
+      FROM breaker_sales sale
+      JOIN breaker_inventory_items item ON item.id=sale.breaker_inventory_item_id
+      WHERE sale.member_id=?
+      ORDER BY sale.sale_occurred_at DESC, sale.created_at DESC
+      LIMIT 150
+    `).bind(auth.member.id).all(),
+    env.DB.prepare(`
+      SELECT gift.*,giver.email giver_email,giver.first_name giver_first_name,giver.last_name giver_last_name,giver.live_username giver_username
+      FROM gifted_giveaways gift
+      LEFT JOIN members giver ON giver.id=gift.giver_member_id
+      WHERE gift.owner_member_id=? AND gift.status IN ('reserved','queued','launched','fulfilled','paid')
+      ORDER BY COALESCE(gift.paid_at,gift.updated_at,gift.created_at) DESC
+      LIMIT 150
+    `).bind(auth.member.id).all()
+  ]);
+  const clipByReference = new Map((salesResult.results || [])
+    .filter(row => row.order_reference || row.clip_url || row.stream_recording_url)
+    .map(row => [row.order_reference || row.id, { clipUrl: row.clip_url || row.stream_recording_url || "", clipMethod: row.clip_method || "pending", verificationStatus: row.verification_status || "" }]));
+  const orderKeys = new Set((ordersResult.results || []).map(row => row.order_number));
+  const orders = [
+    ...(ordersResult.results || []).map(row => sellerMemberOrderView({ ...row, carrier: row.shipment_carrier || row.carrier, __site_url: env.SITE_URL }, auth.member.id, clipByReference)),
+    ...(salesResult.results || []).filter(row => !row.order_reference || !orderKeys.has(row.order_reference)).map(sellerAuctionSaleView),
+    ...(giftedResult.results || []).map(sellerGiftedGiveawayOrderView)
+  ].sort((a, b) => Date.parse(b.placedAt || 0) - Date.parse(a.placedAt || 0));
+  return json({ orders }, 200, cors);
+}
+
 async function adjustSellerInventory(request, env, cors, itemId) {
   const auth = await requireMember(request, env, cors, { seller: true });
   if (auth.error) return auth.error;
@@ -1443,6 +1798,11 @@ function storeListingView(row) {
     showId: row.show_id || "",
     linkedLotId: row.linked_lot_id || "",
     series: row.inventory_series || "pokemon",
+    productCategoryKey: row.product_category_key || "tcg",
+    productCategoryLabel: sellerCategoryLabel(row.product_category_key || "tcg"),
+    shippingWeightProfileId: row.shipping_weight_profile_id || "",
+    fixedShippingCents: Number(row.fixed_shipping_cents || 0),
+    shippingOveragePolicy: row.shipping_overage_policy || "seller_pays_difference",
     title: row.title || "Store listing",
     description: row.description || "",
     saleType: row.sale_type || "sealed",
@@ -1537,13 +1897,28 @@ async function publicMarketplaceListings(request, env, cors) {
     LEFT JOIN inventory_items inventory ON inventory.id=listing.inventory_item_id
     LEFT JOIN breaker_stream_sessions session ON session.id=listing.show_id
     WHERE listing.status='active' AND listing.quantity>0
-      AND (?='' OR lower(COALESCE(inventory.series,''))=?)
+      AND (?='' OR lower(COALESCE(inventory.series,''))=? OR listing.product_category_key=?)
+      AND (
+        EXISTS(SELECT 1 FROM seller_product_categories pref WHERE pref.member_id=listing.member_id AND pref.category_key=listing.product_category_key AND pref.enabled=1)
+        OR NOT EXISTS(SELECT 1 FROM seller_product_categories pref WHERE pref.member_id=listing.member_id)
+      )
     ORDER BY listing.updated_at DESC, listing.created_at DESC
     LIMIT 500
-  `).bind(siteUrl(env), series, series).all();
+  `).bind(siteUrl(env), series, series, series).all();
+  const categoryRows = await env.DB.prepare(`
+    SELECT DISTINCT listing.product_category_key category_key
+    FROM seller_store_listings listing
+    WHERE listing.status='active' AND listing.quantity>0
+      AND (
+        EXISTS(SELECT 1 FROM seller_product_categories pref WHERE pref.member_id=listing.member_id AND pref.category_key=listing.product_category_key AND pref.enabled=1)
+        OR NOT EXISTS(SELECT 1 FROM seller_product_categories pref WHERE pref.member_id=listing.member_id)
+      )
+    ORDER BY listing.product_category_key COLLATE NOCASE
+  `).all();
   return json({
     ok: true,
     items: (rows.results || []).map(storeListingView),
+    categories: (categoryRows.results || []).map(row => ({ key: row.category_key || "tcg", label: sellerCategoryLabel(row.category_key || "tcg") })),
     series: series || "all"
   }, 200, cors);
 }
@@ -1581,14 +1956,22 @@ async function sellerStoreListings(request, env, cors, listingId = "") {
   const description = clean(data.description, 1000);
   const condition = clean(data.condition, 80);
   const saleType = ["cards", "breaks", "singles", "sealed", "rip_ship", "rtyh", "buy_ship"].includes(data.saleType) ? data.saleType : "sealed";
+  const productCategoryKey = normalizeSellerCategoryKey(data.productCategoryKey || data.categoryKey || "tcg");
   const quantity = Number(data.quantity || 0);
   const price = Math.round(Number(data.price || 0) * 100);
   const shippingPayer = ["buyer", "seller"].includes(String(data.shippingPayer || "")) ? String(data.shippingPayer) : "buyer";
+  const shippingWeightProfileId = validUuid(data.shippingWeightProfileId) ? String(data.shippingWeightProfileId) : "";
+  const fixedShippingCents = shippingPayer === "buyer" ? Math.max(0, Math.round(Number(data.fixedShipping || 0) * 100)) : 0;
   const imageUrl = clean(data.imageUrl, 500);
   const showId = clean(data.showId, 80);
   const linkedLotId = clean(data.linkedLotId, 80);
   if (!title || !Number.isInteger(quantity) || quantity < 1 || quantity > 100000 || !Number.isInteger(price) || price < 1 || price > 100000000) {
     return json({ error: "Enter a title, quantity, and store price." }, 400, cors);
+  }
+  if (!Number.isInteger(fixedShippingCents) || fixedShippingCents < 0 || fixedShippingCents > 10000000) return json({ error: "Enter a valid fixed buyer shipping price." }, 400, cors);
+  if (shippingWeightProfileId) {
+    const profile = await env.DB.prepare(`SELECT id FROM seller_shipping_weight_profiles WHERE id=? AND member_id=?`).bind(shippingWeightProfileId, auth.member.id).first();
+    if (!profile) return json({ error: "Selected shipping profile does not belong to this seller account." }, 404, cors);
   }
   if (imageUrl && !/^https:\/\//i.test(imageUrl) && !/^assets\/images\/[a-z0-9._/-]+$/i.test(imageUrl)) {
     return json({ error: "Listing image must use HTTPS or a local assets/images path." }, 400, cors);
@@ -1614,9 +1997,9 @@ async function sellerStoreListings(request, env, cors, listingId = "") {
   const stamp = now();
   await env.DB.prepare(`
     INSERT INTO seller_store_listings(
-      id,member_id,show_id,linked_lot_id,inventory_item_id,title,description,sale_type,item_condition,quantity,price_cents,shipping_payer,image_url,status,created_at,updated_at
-    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'active',?,?)
-  `).bind(listingRowId, auth.member.id, showId || null, linkedLotId || null, inventoryItemId || null, title, description, saleType, condition, quantity, price, shippingPayer, imageUrl, stamp, stamp).run();
+      id,member_id,show_id,linked_lot_id,inventory_item_id,title,description,sale_type,product_category_key,shipping_weight_profile_id,fixed_shipping_cents,shipping_overage_policy,item_condition,quantity,price_cents,shipping_payer,image_url,status,created_at,updated_at
+    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'active',?,?)
+  `).bind(listingRowId, auth.member.id, showId || null, linkedLotId || null, inventoryItemId || null, title, description, saleType, productCategoryKey, shippingWeightProfileId || null, fixedShippingCents, "seller_pays_difference", condition, quantity, price, shippingPayer, imageUrl, stamp, stamp).run();
   const created = await env.DB.prepare(`
     SELECT listing.*,member.live_username,member.first_name,member.last_name,? inventory_series,lot.title linked_lot_title,lot.status linked_lot_status
     FROM seller_store_listings listing JOIN members member ON member.id=listing.member_id
@@ -2331,6 +2714,8 @@ export async function handlePlatformRoute(request, env, cors) {
   }
   const labelMatch = url.pathname.match(/^\/admin\/orders\/([0-9a-f-]{36})\/label$/i);
   if (labelMatch && request.method === "POST") return purchaseOrderLabel(request, env, cors, labelMatch[1]);
+  const sellerLabelMatch = url.pathname.match(/^\/seller\/orders\/([0-9a-f-]{36})\/label$/i);
+  if (sellerLabelMatch && request.method === "POST") return sellerPurchaseOrderLabel(request, env, cors, sellerLabelMatch[1]);
   if (url.pathname === "/live/auction" && request.method === "GET") return currentAuction(request, env, cors, url);
   if (url.pathname === "/live/viewers/heartbeat" && request.method === "POST") return viewerHeartbeat(request, env, cors);
   if (url.pathname === "/live/shows" && request.method === "GET") return listShows(request, env, cors);
@@ -2339,7 +2724,10 @@ export async function handlePlatformRoute(request, env, cors) {
   if (url.pathname === "/gifted-giveaways/catalog" && request.method === "GET") return giftCatalog(request, env, cors, url);
   if (url.pathname === "/seller/giveaways" && ["GET", "POST"].includes(request.method)) return sellerGiveaways(request, env, cors);
   if (url.pathname === "/seller/inventory" && ["GET", "POST"].includes(request.method)) return sellerInventory(request, env, cors);
+  if (url.pathname === "/seller/product-categories" && ["GET", "POST"].includes(request.method)) return sellerProductCategories(request, env, cors);
+  if (url.pathname === "/seller/shipping-profiles" && ["GET", "POST"].includes(request.method)) return sellerShippingProfiles(request, env, cors);
   if (url.pathname === "/seller/cogs-orders" && request.method === "GET") return sellerCogsOrders(request, env, cors);
+  if (url.pathname === "/seller/orders" && request.method === "GET") return sellerOrders(request, env, cors);
   if (url.pathname === "/seller/store-listings" && ["GET", "POST"].includes(request.method)) return sellerStoreListings(request, env, cors);
   const sellerStoreListingMatch = url.pathname.match(/^\/seller\/store-listings\/([0-9a-f-]{36})\/status$/i);
   if (sellerStoreListingMatch && request.method === "POST") return sellerStoreListings(request, env, cors, sellerStoreListingMatch[1]);

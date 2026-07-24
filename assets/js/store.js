@@ -42,6 +42,7 @@
   let activeSellerSearch = "";
   let activeMinPrice = 0;
   let activeMaxPrice = 1000;
+  let marketplaceCategories = [];
   let catalogController = null;
   let storeComingSoon = true;
   let storeCheckoutEnabled = false;
@@ -170,11 +171,31 @@
     }
   };
 
+  const marketplaceCategoryLabel = key => marketplaceCategories.find(category => category.key === key)?.label || prettyLabel(key);
+
+  function renderPrimaryTabs(categories = []) {
+    if (!primaryTabs) return;
+    marketplaceCategories = categories.length
+      ? categories
+      : primaryCategoryButtons.map(button => ({ key: button.id, label: button.label }));
+    const buttons = [{ key: "all", label: "All", icon: "âœ¦" }].concat(
+      marketplaceCategories.filter(category => category.key !== "all").map(category => ({ key: category.key, label: category.label, icon: "âš¡" }))
+    );
+    primaryTabs.innerHTML = buttons.map((button, index) => `
+      <button class="type-pill${index === 0 ? " is-active" : ""}" type="button" data-store-primary="${escapeHtml(button.key)}">
+        <i>${escapeHtml(button.icon)}</i>
+        <span><strong>${escapeHtml(button.label)}</strong><small>${escapeHtml(button.key === "all" ? "All seller categories" : "Seller enabled")}</small></span>
+      </button>
+    `).join("");
+    activePrimary = "all";
+  }
+
   function normalizeApiItem(item, payload) {
     if (item?.sellerUsername) {
       const category = classifyCategory(item?.saleType);
       const categorySeed = `${item?.saleType || ""} ${item?.title || ""} ${item?.series || ""}`;
-      const primaryCategory = inferPrimaryCategory(categorySeed);
+      const productCategoryKey = String(item?.productCategoryKey || inferPrimaryCategory(categorySeed) || "tcg").trim().toLowerCase();
+      const primaryCategory = productCategoryKey;
       const subcategory = inferSubcategory(categorySeed);
       return {
         slug: String(item?.id || "").trim(),
@@ -183,7 +204,7 @@
         series: String(item?.series || item?.inventorySeries || "pokemon").trim().toLowerCase(),
         primaryCategory,
         subcategory,
-        categoryLabel: String(item?.saleType || category).trim(),
+        categoryLabel: String(item?.productCategoryLabel || marketplaceCategoryLabel(productCategoryKey) || item?.saleType || category).trim(),
         description: String(item?.description || "Seller listing").trim(),
         imageUrl: safeSourceUrl(item?.imageUrl) || fallbackImages[category],
         sourceUrl: "",
@@ -202,6 +223,9 @@
         condition: String(item?.condition || "").trim(),
         saleType: String(item?.saleType || "").trim(),
         shippingPayer: String(item?.shippingPayer || "buyer").trim(),
+        fixedShippingCents: centsValue(item?.fixedShippingCents),
+        shippingOveragePolicy: String(item?.shippingOveragePolicy || "seller_pays_difference").trim(),
+        shippingWeightProfileId: String(item?.shippingWeightProfileId || "").trim(),
         liveShow: item?.liveShow || null,
         sortRank: Number(item?.salesRank || item?.rank || 999999),
         createdAt: String(item?.createdAt || item?.updatedAt || "").trim()
@@ -304,13 +328,16 @@
   }
 
   function productCard(item) {
-    const search = `${item.name} ${item.categoryLabel} ${item.description} ${item.sellerUsername || ""} ${item.primaryCategory || ""} ${item.subcategory || ""} ${item.series || ""}`.toLowerCase();
+    const search = `${item.name} ${item.categoryLabel} ${item.description} ${item.sellerUsername || ""} ${item.primaryCategory || ""} ${item.subcategory || ""} ${item.series || ""} ${item.condition || ""} ${item.saleType || ""}`.toLowerCase();
     const sourceLink = item.sourceUrl
       ? `<a class="store-source-link" href="${escapeHtml(item.sourceUrl)}" target="_blank" rel="noopener noreferrer">Product source ↗</a>`
       : "";
     const quoteButton = item.slug && item.available && item.shippingReady
       ? `<button class="btn btn-small btn-outline" type="button" data-quote-product="${escapeHtml(item.slug)}">${storeCheckoutEnabled ? "Prepare checkout" : "Estimate shipping"}</button>`
       : "";
+    const sellerShippingTag = item.shippingPayer === "seller"
+      ? "Seller pays shipping"
+      : `${item.fixedShippingCents ? `${formatMoney(item.fixedShippingCents, item.priceCurrency)} fixed shipping` : "Fixed buyer shipping"} - seller covers overweight difference`;
     const image = item.imageUrl
       ? `<img src="${escapeHtml(item.imageUrl)}" alt="${escapeHtml(item.name)}" loading="lazy" data-store-product-image>`
       : `<span class="store-product-placeholder">Crack Packs</span>`;
@@ -324,7 +351,7 @@
         <div class="product-body">
           <p class="card-kicker">${escapeHtml(item.categoryLabel)}</p>
           <h3>${escapeHtml(item.name)}</h3>
-          <p class="store-market-meta"><strong>@${escapeHtml(item.sellerUsername || "crackpacks")}</strong>${item.condition ? `<span>${escapeHtml(item.condition)}</span>` : ""}${item.sellerUsername ? `<span>${escapeHtml(item.shippingPayer === "seller" ? "Seller pays shipping" : "Buyer pays shipping")}</span>` : ""}</p>
+          <p class="store-market-meta"><strong>@${escapeHtml(item.sellerUsername || "crackpacks")}</strong>${item.condition ? `<span>${escapeHtml(item.condition)}</span>` : ""}${item.sellerUsername ? `<span>${escapeHtml(sellerShippingTag)}</span>` : ""}</p>
           <p class="product-description">${escapeHtml(item.description)}</p>
           <div class="store-msrp-row">${msrpMarkup(item)}</div>
           ${sourceLink}
@@ -348,12 +375,39 @@
     });
   }
 
+  function updatePriceReadout() {
+    if (priceRangeReadout) {
+      priceRangeReadout.textContent = `${formatMoney(activeMinPrice * 100, selectedCurrency())} - ${formatMoney(activeMaxPrice * 100, selectedCurrency())}`;
+    }
+  }
+
+  function syncStoreTools(items) {
+    if (subcategoryFilter) {
+      const subcategories = [...new Set(items.map(item => item.subcategory).filter(Boolean))].sort((a, b) => prettyLabel(a).localeCompare(prettyLabel(b)));
+      const prior = activeSubcategory;
+      subcategoryFilter.innerHTML = `<option value="all">All subcategories</option>${subcategories.map(item => `<option value="${escapeHtml(item)}">${escapeHtml(prettyLabel(item))}</option>`).join("")}`;
+      if (prior && subcategories.includes(prior)) subcategoryFilter.value = prior;
+      else activeSubcategory = "all";
+    }
+    const maxPriceCents = Math.max(100000, ...items.map(item => Number(item.priceCents || 0)));
+    const maxDollars = Math.ceil(maxPriceCents / 100);
+    [priceMinInput, priceMaxInput].forEach(input => {
+      if (!input) return;
+      input.max = String(maxDollars);
+      input.step = String(Number(priceIncrementSelect?.value || 1));
+    });
+    if (priceMaxInput && Number(priceMaxInput.value || 0) < maxDollars) priceMaxInput.value = String(maxDollars);
+    activeMaxPrice = Number(priceMaxInput?.value || maxDollars);
+    updatePriceReadout();
+  }
+
   function renderCatalog(items) {
     inventoryItems = items;
     if (!catalog) return;
     catalog.innerHTML = items.map(productCard).join("");
     bindImageFallbacks();
     populateShippingProducts(items);
+    syncStoreTools(items);
     applyFilters();
   }
 
@@ -378,8 +432,13 @@
     cards.forEach(card => {
       const categoryMatch = activeFilter === "all" || card.dataset.category === activeFilter;
       const seriesMatch = activeSeries === "all" || String(card.dataset.series || "pokemon") === activeSeries;
+      const primaryMatch = activePrimary === "all" || String(card.dataset.primaryCategory || "all") === activePrimary;
+      const subcategoryMatch = activeSubcategory === "all" || String(card.dataset.subcategory || "other") === activeSubcategory;
+      const sellerMatch = !activeSellerSearch || String(card.dataset.seller || "").includes(activeSellerSearch);
+      const priceCents = Number(card.dataset.priceCents || 0);
+      const priceMatch = !priceCents || (priceCents >= activeMinPrice * 100 && priceCents <= activeMaxPrice * 100);
       const searchMatch = !activeSearch || String(card.dataset.search || "").includes(activeSearch);
-      const show = categoryMatch && seriesMatch && searchMatch;
+      const show = categoryMatch && seriesMatch && primaryMatch && subcategoryMatch && sellerMatch && priceMatch && searchMatch;
       card.hidden = !show;
       if (show) visible += 1;
     });
@@ -392,6 +451,13 @@
   }
 
   function bindFilters() {
+    primaryTabs?.addEventListener("click", event => {
+      const button = event.target.closest("[data-store-primary]");
+      if (!button) return;
+      activePrimary = button.dataset.storePrimary || "all";
+      primaryTabs.querySelectorAll("[data-store-primary]").forEach(candidate => candidate.classList.toggle("is-active", candidate === button));
+      applyFilters();
+    });
     document.querySelectorAll("[data-product-filter]").forEach(button => {
       button.addEventListener("click", () => {
         activeFilter = button.dataset.productFilter || "all";
@@ -412,6 +478,30 @@
     });
     sortSelect?.addEventListener("change", event => {
       activeSort = String(event.currentTarget.value || "price");
+      applyFilters();
+    });
+    subcategoryFilter?.addEventListener("change", event => {
+      activeSubcategory = String(event.currentTarget.value || "all");
+      applyFilters();
+    });
+    sellerSearchInput?.addEventListener("input", event => {
+      activeSellerSearch = String(event.currentTarget.value || "").trim().toLowerCase();
+      applyFilters();
+    });
+    priceIncrementSelect?.addEventListener("change", event => {
+      const step = String(event.currentTarget.value || "1");
+      [priceMinInput, priceMaxInput].forEach(input => { if (input) input.step = step; });
+    });
+    priceMinInput?.addEventListener("input", event => {
+      activeMinPrice = Math.min(Number(event.currentTarget.value || 0), Number(priceMaxInput?.value || 0));
+      if (Number(event.currentTarget.value || 0) > Number(priceMaxInput?.value || 0) && priceMaxInput) priceMaxInput.value = String(activeMinPrice);
+      updatePriceReadout();
+      applyFilters();
+    });
+    priceMaxInput?.addEventListener("input", event => {
+      activeMaxPrice = Math.max(Number(event.currentTarget.value || 0), Number(priceMinInput?.value || 0));
+      if (Number(event.currentTarget.value || 0) < Number(priceMinInput?.value || 0) && priceMinInput) priceMinInput.value = String(activeMaxPrice);
+      updatePriceReadout();
       applyFilters();
     });
     const requested = String(new URLSearchParams(window.location.search).get("category") || "").toLowerCase();
@@ -446,6 +536,7 @@
   async function loadCatalog() {
     const endpoint = rewardsUrl(inventoryEndpoint);
     if (!endpoint) {
+      renderPrimaryTabs();
       renderCatalog(fallbackInventory());
       setCatalogStatus("Live inventory is not connected. Showing the launch catalog preview.", "fallback");
       return;
@@ -467,6 +558,7 @@
 
       const rows = Array.isArray(payload?.items) ? payload.items : [];
       if (!rows.length) {
+        renderPrimaryTabs(payload?.categories || []);
         renderCatalog(fallbackInventory());
         setCatalogStatus("The live catalog is empty while inventory is being prepared. Showing the store preview.", "fallback");
         return;
@@ -474,11 +566,13 @@
 
       storeComingSoon = true;
       storeCheckoutEnabled = false;
+      renderPrimaryTabs(payload?.categories || []);
       const normalized = rows.map(item => normalizeApiItem(item, payload));
       renderCatalog(normalized);
       setCatalogStatus(`${normalized.length.toLocaleString()} seller marketplace listing${normalized.length === 1 ? "" : "s"} loaded. Search across every seller store below.`, "success");
     } catch (error) {
       if (error?.name === "AbortError") return;
+      renderPrimaryTabs();
       renderCatalog(fallbackInventory());
       setCatalogStatus("Seller marketplace could not be reached. Showing the preview catalog instead.", "fallback");
     }

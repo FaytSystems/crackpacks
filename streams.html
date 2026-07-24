@@ -9,7 +9,7 @@
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/css/styles.css?v=1.9.2">
   <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.6.1">
-  <link rel="stylesheet" href="assets/css/streams-hub.css?v=1.2.0">
+  <link rel="stylesheet" href="assets/css/streams-hub.css?v=1.4.0">
 </head>
 <body data-page="streams">
   <a class="skip-link" href="#main">Skip to content</a>
@@ -65,6 +65,7 @@
         <a class="hub-tab is-active" href="#go-live">Go Live</a>
         <a class="hub-tab" href="#create-show">Create Show</a>
         <a class="hub-tab" href="#seller-my-listings">My Listings</a>
+        <a class="hub-tab seller-print-label-tab" href="#seller-shipping">Shipping</a>
       </div>
       <div class="seller-cockpit-grid seller-cockpit-grid-premium">
         <article class="holo-panel seller-stream-input">
@@ -165,7 +166,10 @@
           <div class="field-grid">
             <label>Listing destination<select name="listingDestination" data-listing-destination><option value="show">Add to show</option><option value="store">Add to store</option></select></label>
             <label>Listing title<input name="title" required maxlength="160" placeholder="Holographic single"></label>
+            <label data-listing-store-field hidden>Product category<select name="productCategoryKey" data-seller-store-category-select></select></label>
+            <label data-listing-store-field hidden>Shipping profile<select name="shippingWeightProfileId" data-seller-store-shipping-profile><option value="">No profile linked</option></select></label>
             <label data-listing-store-field hidden>Store price ($)<input name="storePrice" type="number" min="0.01" max="100000" step="0.01" value="1.00"></label>
+            <label data-listing-store-field hidden>Fixed buyer shipping ($)<input name="fixedShipping" type="number" min="0" max="100000" step="0.01" value="5.00"></label>
             <label>Condition<input name="condition" maxlength="80" placeholder="Near Mint"></label>
             <label data-listing-store-field hidden>Shipping<select name="shippingPayer"><option value="buyer">Buyer pays shipping</option><option value="seller">Seller pays shipping</option></select></label>
             <label data-listing-store-field hidden>Link to Show<select name="storeShowId" data-store-show-link><option value="">No scheduled show linked</option></select></label>
@@ -216,6 +220,8 @@
             <div class="field-grid">
               <label>Product name<input name="productName" required maxlength="160" placeholder="Booster Box"></label>
               <label>SKU<input name="sku" maxlength="64" placeholder="CP-BOX-001"></label>
+              <label>Product category<select name="productCategoryKey" data-seller-inventory-category-select></select></label>
+              <label>Default shipping profile<select name="shippingWeightProfileId" data-seller-inventory-shipping-profile><option value="">No profile linked</option></select></label>
               <label>Unit type<select name="unitType"><option value="sealed_box">Sealed box</option><option value="pack">Pack</option><option value="single">Single</option><option value="supply">Supply</option></select></label>
               <label>In stock<input name="quantity" type="number" min="0" max="100000" value="0" required></label>
               <label>PAR level<input name="parQuantity" type="number" min="0" max="100000" value="0" required></label>
@@ -228,6 +234,18 @@
         </article>
         <article class="holo-panel"><h3>Pending reorders</h3><div class="seller-giveaway-list" data-seller-reorder-list></div></article>
       </div>
+      <div class="holo-panel seller-category-panel">
+        <div class="seller-show-manager-head">
+          <div>
+            <p class="eyebrow">Types of products selling</p>
+            <h3>Store category controls</h3>
+            <p class="fine-print">Choose the product categories this seller store actually carries. The buyer marketplace category/search bubbles will follow these saved categories.</p>
+          </div>
+          <button class="btn btn-primary btn-small" type="button" data-seller-categories-save>Save Categories</button>
+        </div>
+        <div class="seller-category-grid" data-seller-category-options></div>
+        <div class="campaign-form-status" data-seller-categories-status aria-live="polite"></div>
+      </div>
       <div class="holo-panel seller-cogs-panel">
         <div class="seller-show-manager-head">
           <div>
@@ -238,6 +256,54 @@
         </div>
         <div class="campaign-form-status" data-seller-cogs-status aria-live="polite"></div>
         <div class="seller-cogs-list" data-seller-cogs-list></div>
+      </div>
+      <div class="holo-panel seller-orders-panel" id="seller-shipping">
+        <div class="seller-show-manager-head">
+          <div>
+            <p class="eyebrow">Seller Shipping</p>
+            <h3>Orders, labels, clips, giveaways, and package weights</h3>
+            <p class="fine-print">Paid orders with saved EasyPost shipment details can create labels here. After a label is purchased, the action changes to Ship Now and opens the label/tracking tools.</p>
+          </div>
+          <button class="btn btn-outline btn-small" type="button" data-seller-orders-refresh>Refresh Orders</button>
+        </div>
+        <div class="seller-order-toolbar">
+          <div class="hub-tabs seller-order-tabs" role="tablist" aria-label="Seller order categories">
+            <button class="hub-tab is-active" type="button" data-seller-order-tab="all">All Orders</button>
+            <button class="hub-tab" type="button" data-seller-order-tab="needs_label">Needs Label</button>
+            <button class="hub-tab" type="button" data-seller-order-tab="ship_now">Ship Now</button>
+            <button class="hub-tab" type="button" data-seller-order-tab="giveaway">Giveaways</button>
+          </div>
+          <label class="seller-order-search">Search orders<input data-seller-order-search placeholder="Order #, buyer, seller ID, item, tracking, giveaway..."></label>
+        </div>
+        <div class="seller-shipping-layout">
+          <div>
+            <div class="campaign-form-status" data-seller-orders-status aria-live="polite"></div>
+            <div class="seller-orders-list" data-seller-orders-list></div>
+          </div>
+          <aside class="seller-weight-profile-panel">
+            <button class="btn btn-primary" type="button" data-weight-profile-toggle>Create Weight Profile</button>
+            <form class="seller-giveaway-form seller-weight-profile-form" data-weight-profile-form hidden>
+              <label>Profile name<input name="name" required maxlength="80" placeholder="Booster box + bubble wrap"></label>
+              <label>Inventory product<select name="breakerInventoryItemId" data-weight-profile-inventory><option value="">Generic category profile</option></select></label>
+              <label>Product category<select name="productCategoryKey" data-weight-profile-category><option value="">Any category</option></select></label>
+              <label>Country profile<select name="weightUnitSystem" data-weight-unit-system><option value="imperial">USA / Imperial</option><option value="metric">Metric country</option></select></label>
+              <div class="field-grid">
+                <label>Final package weight<input name="displayWeightValue" type="number" min="0.001" step="0.001" required placeholder="12"></label>
+                <label>Unit<select name="displayWeightUnit" data-weight-unit-select><option value="oz">oz</option><option value="lb">lb</option><option value="g">g</option><option value="kg">kg</option></select></label>
+              </div>
+              <div class="field-grid">
+                <label>Length (in)<input name="lengthIn" type="number" min="0.01" step="0.01" placeholder="Optional"></label>
+                <label>Width (in)<input name="widthIn" type="number" min="0.01" step="0.01" placeholder="Optional"></label>
+                <label>Height (in)<input name="heightIn" type="number" min="0.01" step="0.01" placeholder="Optional"></label>
+              </div>
+              <label>Packaging note<textarea name="packagingNote" rows="3" maxlength="300" placeholder="Box, bubble wrap, label, business card, sticker slaps..."></textarea></label>
+              <label class="check-line"><input name="isDefault" type="checkbox"> Make default weight profile</label>
+              <button class="btn btn-primary" type="submit">Save Weight Profile</button>
+            </form>
+            <div class="campaign-form-status" data-weight-profile-status aria-live="polite"></div>
+            <div class="seller-weight-profile-list" data-weight-profile-list></div>
+          </aside>
+        </div>
       </div>
       <div class="seller-giveaway-list" data-seller-inventory-list></div>
     </section>
@@ -298,6 +364,6 @@
   <script src="assets/js/config.js?v=3.0.0"></script>
   <script src="assets/js/app.js?v=1.9.2"></script>
   <script src="assets/js/portal-mode.js?v=1.1.2"></script>
-  <script src="assets/js/streams-hub.js?v=1.2.0"></script>
+  <script src="assets/js/streams-hub.js?v=1.4.0"></script>
 </body>
 </html>

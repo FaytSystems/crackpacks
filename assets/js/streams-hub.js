@@ -13,6 +13,11 @@
   let sellerStoreListings = [];
   let sellerShowLots = [];
   let sellerCogsOrders = [];
+  let sellerOrders = [];
+  let sellerProductCategories = [];
+  let sellerWeightProfiles = [];
+  let sellerOrderTab = "all";
+  let sellerOrderSearch = "";
   let sellerContextAuthorized = false;
   let activeTab = "watchlist";
   let hasSavedObsConnection = false;
@@ -320,6 +325,69 @@
     if (reorderList) reorderList.innerHTML = reorders.length ? reorders.map(item => `<article class="seller-giveaway-item"><strong>${escapeHtml(item.product_name)}</strong><p>${Number(item.requested_quantity)} requested · ${escapeHtml(item.status)}</p></article>`).join("") : `<div class="stream-empty">No reorders are waiting for owner review.</div>`;
   }
 
+  const categoryLabel = key => sellerProductCategories.find(item => item.key === key)?.label || "TCG / Playing Cards";
+  function renderSellerProductCategories() {
+    const grid = $("[data-seller-category-options]");
+    const inventorySelect = $("[data-seller-inventory-category-select]");
+    const storeSelect = $("[data-seller-store-category-select]");
+    const weightCategory = $("[data-weight-profile-category]");
+    const categories = sellerProductCategories.length ? sellerProductCategories : [{ key: "tcg", label: "TCG / Playing Cards", enabled: true }];
+    if (grid) {
+      grid.innerHTML = categories.map(category => `
+        <label class="seller-category-choice">
+          <input type="checkbox" data-seller-category="${escapeHtml(category.key)}" ${category.enabled ? "checked" : ""}>
+          <span>${escapeHtml(category.label)}</span>
+        </label>
+      `).join("");
+    }
+    const optionMarkup = categories.map(category => `<option value="${escapeHtml(category.key)}">${escapeHtml(category.label)}</option>`).join("");
+    if (inventorySelect) inventorySelect.innerHTML = optionMarkup;
+    if (storeSelect) storeSelect.innerHTML = optionMarkup;
+    if (weightCategory) weightCategory.innerHTML = `<option value="">Any category</option>${optionMarkup}`;
+  }
+
+  function syncWeightProfileInventoryOptions() {
+    const select = $("[data-weight-profile-inventory]");
+    if (!select) return;
+    const prior = select.value;
+    select.innerHTML = `<option value="">Generic category profile</option>${sellerInventoryItems.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.product_name)} - ${escapeHtml(categoryLabel(item.product_category_key))}</option>`).join("")}`;
+    if (prior && sellerInventoryItems.some(item => item.id === prior)) select.value = prior;
+  }
+
+  function syncShippingProfileSelects() {
+    const selects = [$("[data-seller-inventory-shipping-profile]"), $("[data-seller-store-shipping-profile]")].filter(Boolean);
+    if (!selects.length) return;
+    const options = `<option value="">No profile linked</option>${sellerWeightProfiles.map(profile => `<option value="${escapeHtml(profile.id)}">${escapeHtml(profile.name)} - ${Number(profile.displayWeightValue || 0)} ${escapeHtml(profile.displayWeightUnit)}</option>`).join("")}`;
+    selects.forEach(select => {
+      const prior = select.value;
+      select.innerHTML = options;
+      if (prior && sellerWeightProfiles.some(profile => profile.id === prior)) select.value = prior;
+    });
+  }
+
+  function renderSellerWeightProfiles() {
+    const list = $("[data-weight-profile-list]");
+    if (!list) return;
+    list.innerHTML = sellerWeightProfiles.length ? sellerWeightProfiles.map(profile => `
+      <article class="seller-weight-profile-card">
+        <header>
+          <div>
+            <strong>${escapeHtml(profile.name)}</strong>
+            <p>${escapeHtml(profile.inventoryProductName || profile.productCategoryLabel || "Any category")} - ${escapeHtml(profile.weightUnitSystem === "metric" ? "Metric" : "Imperial")}</p>
+          </div>
+          ${profile.isDefault ? `<span class="seller-order-chip is-ship-now">Default</span>` : ""}
+        </header>
+        <div class="seller-order-metrics">
+          <span><small>Entered</small><strong>${Number(profile.displayWeightValue || 0)} ${escapeHtml(profile.displayWeightUnit)}</strong></span>
+          <span><small>EasyPost</small><strong>${Number(profile.finalWeightOz || 0).toFixed(2)} oz</strong></span>
+          <span><small>Dims</small><strong>${profile.lengthIn && profile.widthIn && profile.heightIn ? `${profile.lengthIn}x${profile.widthIn}x${profile.heightIn} in` : "Optional"}</strong></span>
+        </div>
+        ${profile.packagingNote ? `<p class="fine-print">${escapeHtml(profile.packagingNote)}</p>` : ""}
+      </article>
+    `).join("") : `<div class="stream-empty">No weight profiles yet. Create one for each common final package setup.</div>`;
+    syncShippingProfileSelects();
+  }
+
   function cogsOrderCard(item) {
     const packsPerUnit = Number(item.packsPerUnit || 0);
     const perPack = item.perPackCents == null ? "Set packs/unit for per-pack math" : dollars(item.perPackCents);
@@ -355,16 +423,131 @@
     list.innerHTML = sellerCogsOrders.length ? sellerCogsOrders.map(cogsOrderCard).join("") : `<div class="stream-empty">No paid Seller Store orders are ready for COGS yet.</div>`;
   }
 
+  const sellerOrderStatusText = status => ({
+    needs_label: "Needs Label",
+    needs_label_setup: "Needs Order Data",
+    ship_now: "Ship Now",
+    shipped: "Shipped",
+    delivered: "Delivered",
+    unpaid: "Unpaid"
+  })[status] || String(status || "Processing").replace(/_/g, " ");
+  const sellerOrderKindText = kind => ({
+    buyer_store: "Buyer Store",
+    seller_store: "Stock Store",
+    auction: "Auction",
+    giveaway: "Giveaway"
+  })[kind] || "Order";
+  const sellerOrderPaidByText = value => ({
+    seller: "seller",
+    buyer: "buyer",
+    gifter: "gifter"
+  })[String(value || "").toLowerCase()] || "unknown";
+  const sellerOrderSearchText = order => [
+    order.orderNumber, order.title, order.kind, order.status, order.paymentStatus, order.fulfillmentStatus,
+    order.customer?.email, order.customer?.username, order.customer?.name,
+    order.fulfillmentOwner?.username, order.trackingCode, order.carrier, order.service, order.note
+  ].filter(Boolean).join(" ").toLowerCase();
+  function filteredSellerOrders() {
+    const query = sellerOrderSearch.trim().toLowerCase();
+    return sellerOrders.filter(order => {
+      const tabMatch = sellerOrderTab === "all"
+        || (sellerOrderTab === "giveaway" ? order.kind === "giveaway" : order.fulfillmentStatus === sellerOrderTab);
+      return tabMatch && (!query || sellerOrderSearchText(order).includes(query));
+    });
+  }
+  function sellerOrderAction(order) {
+    if (order.fulfillmentStatus === "needs_label" && order.canPurchaseLabel) {
+      return `<button class="btn btn-primary btn-small" type="button" data-seller-order-label="${escapeHtml(order.id)}">Print Label</button>`;
+    }
+    if (order.fulfillmentStatus === "ship_now") {
+      const label = order.labelUrl ? `<a class="btn btn-primary btn-small" href="${escapeHtml(order.labelUrl)}" target="_blank" rel="noopener noreferrer">Ship Now</a>` : "";
+      const tracking = order.localTrackingUrl ? `<a class="btn btn-outline btn-small" href="${escapeHtml(order.localTrackingUrl)}" target="_blank" rel="noopener noreferrer">Tracking</a>` : "";
+      return `${label}${tracking}` || `<span class="seller-order-chip is-ship-now">Ship Now</span>`;
+    }
+    if (order.fulfillmentStatus === "needs_label_setup") {
+      return `<span class="seller-order-chip is-muted">Needs saved shipment/rate</span>`;
+    }
+    if (order.fulfillmentStatus === "unpaid") {
+      return `<span class="seller-order-chip is-unpaid">Awaiting payment</span>`;
+    }
+    if (order.labelUrl) return `<a class="btn btn-outline btn-small" href="${escapeHtml(order.labelUrl)}" target="_blank" rel="noopener noreferrer">Open Label</a>`;
+    if (order.localTrackingUrl) return `<a class="btn btn-outline btn-small" href="${escapeHtml(order.localTrackingUrl)}" target="_blank" rel="noopener noreferrer">Tracking</a>`;
+    return `<span class="seller-order-chip">${escapeHtml(sellerOrderStatusText(order.fulfillmentStatus))}</span>`;
+  }
+  function sellerOrderCard(order) {
+    const shippingPrice = order.shippingPriceCents === null || order.shippingPriceCents === undefined ? "Not priced" : dollars(order.shippingPriceCents);
+    const clipLink = order.clipUrl ? `<a class="btn btn-outline btn-small" href="${escapeHtml(order.clipUrl)}" target="_blank" rel="noopener noreferrer">Watch Clip</a>` : `<span class="seller-order-chip is-muted">No clip yet</span>`;
+    const trackingLink = order.trackingUrl ? `<a class="btn btn-outline btn-small" href="${escapeHtml(order.trackingUrl)}" target="_blank" rel="noopener noreferrer">Carrier Page</a>` : "";
+    const weightProfilePicker = sellerWeightProfiles.length
+      ? `<label class="seller-order-weight-picker">Weight profile<select data-seller-order-weight-profile="${escapeHtml(order.id)}"><option value="">Choose final package weight</option>${sellerWeightProfiles.map(profile => `<option value="${escapeHtml(profile.id)}">${escapeHtml(profile.name)} - ${Number(profile.displayWeightValue || 0)} ${escapeHtml(profile.displayWeightUnit)}</option>`).join("")}</select></label>`
+      : `<span class="seller-order-chip is-muted">Create a weight profile for package-based labels</span>`;
+    const labelStatusClass = `is-${String(order.fulfillmentStatus || "processing").replace(/[^a-z0-9_-]/gi, "").toLowerCase()}`;
+    return `
+      <article class="seller-order-card ${escapeHtml(labelStatusClass)}">
+        <div class="seller-order-main">
+          <div>
+            <span class="seller-order-kind">${escapeHtml(sellerOrderKindText(order.kind))}</span>
+            <strong>${escapeHtml(order.title || "Crack Packs order")}</strong>
+            <p>${escapeHtml(order.orderNumber || order.id)} Â· ${escapeHtml(dateLabel(order.placedAt))}</p>
+          </div>
+          <span class="seller-order-status ${escapeHtml(labelStatusClass)}">${escapeHtml(sellerOrderStatusText(order.fulfillmentStatus))}</span>
+        </div>
+        <div class="seller-order-metrics">
+          <span><small>Status</small><strong>${escapeHtml(order.paymentStatus || order.status || "processing")}</strong></span>
+          <span><small>Paid by</small><strong>${escapeHtml(sellerOrderPaidByText(order.paidBy))}</strong></span>
+          <span><small>Shipping price</small><strong>${escapeHtml(shippingPrice)}</strong></span>
+          <span><small>Qty</small><strong>${Number(order.quantity || 1)}</strong></span>
+        </div>
+        <div class="seller-order-detail-row">
+          <span><small>Buyer / giver</small>${escapeHtml(order.customer?.username || order.customer?.email || order.customer?.name || "Not attached")}</span>
+          <span><small>Carrier</small>${escapeHtml([order.carrier, order.service].filter(Boolean).join(" Â· ") || order.trackingStatus || "Not labeled")}</span>
+          <span><small>Tracking</small>${escapeHtml(order.trackingCode || "Pending")}</span>
+        </div>
+        ${weightProfilePicker}
+        <div class="seller-order-actions">
+          ${sellerOrderAction(order)}
+          ${trackingLink}
+          ${clipLink}
+        </div>
+      </article>
+    `;
+  }
+  function renderSellerOrders() {
+    const list = $("[data-seller-orders-list]");
+    if (!list) return;
+    const orders = filteredSellerOrders();
+    list.innerHTML = orders.length ? orders.map(sellerOrderCard).join("") : `<div class="stream-empty">No seller orders match this filter yet.</div>`;
+  }
+
   async function loadSellerInventory() {
     const payload = await api("/seller/inventory");
     sellerInventoryItems = payload.items || [];
     renderSellerInventory(payload.reorders || []);
+    syncWeightProfileInventoryOptions();
   }
 
   async function loadSellerCogsOrders() {
     const payload = await api("/seller/cogs-orders");
     sellerCogsOrders = payload.orders || [];
     renderSellerCogsOrders();
+  }
+
+  async function loadSellerOrders() {
+    const payload = await api("/seller/orders");
+    sellerOrders = payload.orders || [];
+    renderSellerOrders();
+  }
+
+  async function loadSellerProductCategories() {
+    const payload = await api("/seller/product-categories");
+    sellerProductCategories = payload.categories || [];
+    renderSellerProductCategories();
+  }
+
+  async function loadSellerWeightProfiles() {
+    const payload = await api("/seller/shipping-profiles");
+    sellerWeightProfiles = payload.profiles || [];
+    renderSellerWeightProfiles();
   }
 
   async function loadSellerStoreListings() {
@@ -423,7 +606,8 @@
       } catch {}
       syncStreamKeyButtons();
       syncStreamGuideVisibility({ firstOpen: !hasSavedObsConnection && !hasCompletedObsGuide() });
-      await Promise.all([loadSellerGiveaways(), loadSellerShows(), loadSellerInventory(), loadSellerStoreListings(), loadSellerCogsOrders()]);
+      await loadSellerProductCategories();
+      await Promise.all([loadSellerGiveaways(), loadSellerShows(), loadSellerInventory(), loadSellerStoreListings(), loadSellerCogsOrders(), loadSellerOrders(), loadSellerWeightProfiles()]);
     } catch {}
   }
 
@@ -721,6 +905,9 @@
             price: Number(data.get("storePrice") || 0),
             quantity: Number(data.get("storeQuantity") || 0),
             condition: data.get("condition"),
+            productCategoryKey: data.get("productCategoryKey"),
+            shippingWeightProfileId: data.get("shippingWeightProfileId"),
+            fixedShipping: Number(data.get("fixedShipping") || 0),
             shippingPayer: data.get("shippingPayer") || "buyer",
             imageUrl: data.get("imageUrl"),
             description: data.get("description"),
@@ -734,7 +921,7 @@
         await loadSellerLots(showId);
         setStatus("[data-seller-lot-status]", "Auction lot added.", "success");
       }
-      form.reset(); form.elements.startingBid.value = "1.00"; form.elements.bidIncrement.value = "1.00"; form.elements.storePrice.value = "1.00"; form.elements.storeQuantity.value = "1"; form.elements.shippingPayer.value = "buyer"; form.elements.saleTypeStore.value = "singles";
+      form.reset(); form.elements.startingBid.value = "1.00"; form.elements.bidIncrement.value = "1.00"; form.elements.storePrice.value = "1.00"; form.elements.storeQuantity.value = "1"; form.elements.fixedShipping.value = "5.00"; form.elements.shippingPayer.value = "buyer"; form.elements.saleTypeStore.value = "singles";
       if (form.elements.storeShowId) form.elements.storeShowId.value = "";
       syncListingDestinationUi();
     } catch (error) { setStatus("[data-seller-lot-status]", error.message, "error"); }
@@ -775,7 +962,7 @@
   $("[data-seller-inventory-form]")?.addEventListener("submit", async event => {
     event.preventDefault(); const form = event.currentTarget; const data = new FormData(form); const button = event.submitter; button.disabled = true;
     try {
-      await api("/seller/inventory", { method: "POST", body: JSON.stringify({ productName: data.get("productName"), sku: data.get("sku"), unitType: data.get("unitType"), quantity: Number(data.get("quantity")), parQuantity: Number(data.get("parQuantity")), reorderQuantity: Number(data.get("reorderQuantity")), autoReorder: data.get("autoReorder") === "on" }) });
+      await api("/seller/inventory", { method: "POST", body: JSON.stringify({ productName: data.get("productName"), sku: data.get("sku"), productCategoryKey: data.get("productCategoryKey"), shippingWeightProfileId: data.get("shippingWeightProfileId"), unitType: data.get("unitType"), quantity: Number(data.get("quantity")), parQuantity: Number(data.get("parQuantity")), reorderQuantity: Number(data.get("reorderQuantity")), autoReorder: data.get("autoReorder") === "on" }) });
       form.reset(); await loadSellerInventory(); setStatus("[data-seller-inventory-status]", "Seller inventory saved.", "success");
     } catch (error) { setStatus("[data-seller-inventory-status]", error.message, "error"); }
     finally { button.disabled = false; }
@@ -790,6 +977,113 @@
       setStatus("[data-seller-cogs-status]", error.message, "error");
     } finally {
       button.disabled = false;
+    }
+  });
+
+  $("[data-seller-categories-save]")?.addEventListener("click", async event => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      const categories = $$("[data-seller-category]:checked").map(input => input.dataset.sellerCategory);
+      await api("/seller/product-categories", { method: "POST", body: JSON.stringify({ categories }) });
+      await loadSellerProductCategories();
+      setStatus("[data-seller-categories-status]", "Product categories saved. Buyer marketplace filters will use these categories.", "success");
+    } catch (error) {
+      setStatus("[data-seller-categories-status]", error.message, "error");
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  $("[data-weight-profile-toggle]")?.addEventListener("click", event => {
+    const form = $("[data-weight-profile-form]");
+    if (!form) return;
+    form.hidden = !form.hidden;
+    event.currentTarget.textContent = form.hidden ? "Create Weight Profile" : "Close Weight Profile";
+  });
+
+  $("[data-weight-unit-system]")?.addEventListener("change", event => {
+    const unitSelect = $("[data-weight-unit-select]");
+    if (!unitSelect) return;
+    const metric = event.currentTarget.value === "metric";
+    unitSelect.value = metric ? "g" : "oz";
+  });
+
+  $("[data-weight-profile-form]")?.addEventListener("submit", async event => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const button = event.submitter;
+    button.disabled = true;
+    try {
+      await api("/seller/shipping-profiles", {
+        method: "POST",
+        body: JSON.stringify({
+          name: data.get("name"),
+          breakerInventoryItemId: data.get("breakerInventoryItemId"),
+          productCategoryKey: data.get("productCategoryKey"),
+          weightUnitSystem: data.get("weightUnitSystem"),
+          displayWeightValue: Number(data.get("displayWeightValue") || 0),
+          displayWeightUnit: data.get("displayWeightUnit"),
+          lengthIn: data.get("lengthIn"),
+          widthIn: data.get("widthIn"),
+          heightIn: data.get("heightIn"),
+          packagingNote: data.get("packagingNote"),
+          isDefault: data.get("isDefault") === "on"
+        })
+      });
+      form.reset();
+      $("[data-weight-unit-select]").value = "oz";
+      await loadSellerWeightProfiles();
+      setStatus("[data-weight-profile-status]", "Weight profile saved. It is ready for shipping-label automation.", "success");
+    } catch (error) {
+      setStatus("[data-weight-profile-status]", error.message, "error");
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  $$("[data-seller-order-tab]").forEach(button => button.addEventListener("click", () => {
+    sellerOrderTab = button.dataset.sellerOrderTab || "all";
+    $$("[data-seller-order-tab]").forEach(node => node.classList.toggle("is-active", node === button));
+    renderSellerOrders();
+  }));
+
+  $("[data-seller-order-search]")?.addEventListener("input", event => {
+    sellerOrderSearch = event.currentTarget.value || "";
+    renderSellerOrders();
+  });
+
+  $("[data-seller-orders-refresh]")?.addEventListener("click", async event => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      await loadSellerOrders();
+      setStatus("[data-seller-orders-status]", "Seller orders refreshed.", "success");
+    } catch (error) {
+      setStatus("[data-seller-orders-status]", error.message, "error");
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  $("[data-seller-orders-list]")?.addEventListener("click", async event => {
+    const button = event.target.closest("[data-seller-order-label]");
+    if (!button) return;
+    const orderId = button.dataset.sellerOrderLabel;
+    if (!window.confirm("Buy this EasyPost label now? This charges the configured EasyPost account and saves the label to this order.")) return;
+    button.disabled = true;
+    button.textContent = "Buying label...";
+    try {
+      const weightProfileId = $(`[data-seller-order-weight-profile="${orderId}"]`)?.value || "";
+      const payload = await api(`/seller/orders/${encodeURIComponent(orderId)}/label`, { method: "POST", body: JSON.stringify({ weightProfileId }) });
+      await loadSellerOrders();
+      if (payload.labelUrl) window.open(payload.labelUrl, "_blank", "noopener,noreferrer");
+      setStatus("[data-seller-orders-status]", "Label purchased. The order is now in Ship Now.", "success");
+    } catch (error) {
+      button.disabled = false;
+      button.textContent = "Print Label";
+      setStatus("[data-seller-orders-status]", error.message, "error");
     }
   });
 
