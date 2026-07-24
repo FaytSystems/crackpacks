@@ -2,6 +2,7 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS members (
   id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, email_verified_at TEXT,
   first_name TEXT, last_name TEXT, birth_date TEXT, legacy_marketplace_username TEXT UNIQUE,
+  buyer_username TEXT, buyer_username_key TEXT,
   identity_fingerprint TEXT UNIQUE, identity_status TEXT NOT NULL DEFAULT 'pending',
   device_verified INTEGER NOT NULL DEFAULT 0,
   obs_setup_completed_at TEXT,
@@ -20,6 +21,8 @@ CREATE TABLE IF NOT EXISTS login_codes (
   expires_at TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, used_at TEXT, created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_login_codes_email ON login_codes(email, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_members_buyer_username ON members(buyer_username) WHERE buyer_username IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_members_buyer_username_key ON members(buyer_username_key) WHERE buyer_username_key IS NOT NULL;
 CREATE TABLE IF NOT EXISTS sessions (
   token_hash TEXT PRIMARY KEY, member_id TEXT NOT NULL, expires_at TEXT NOT NULL, created_at TEXT NOT NULL,
   FOREIGN KEY(member_id) REFERENCES members(id)

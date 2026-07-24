@@ -527,7 +527,7 @@ async function sendTransactionalEmail(env, to, subject, html, key) {
 async function sendSellerGrantedEmail(env, member, liveUsername) {
   const referralUrl = `${siteUrl(env)}/referral.html?ref=${encodeURIComponent(member.invite_code || "")}`;
   const accountUrl = `${siteUrl(env)}/referral.html`;
-  const html = `<div style="font-family:Arial,sans-serif;color:#111827"><h1 style="color:#151936">Seller account granted</h1><p>Thank you for signing up.</p><p><strong>Your Crack Packs User ID:</strong> ${escapeHtml(liveUsername)}</p><p><strong>Your refer-a-friend URL:</strong><br><a href="${escapeHtml(referralUrl)}">${escapeHtml(referralUrl)}</a></p><p>Please follow or check out our socials for frequent codes to redeem on your account.</p><p>If you earn 100 sign-ups, you get a ticket to our annual Raffle Bonanza. Each ticket is a winner.</p><p><a href="${escapeHtml(accountUrl)}" style="display:inline-block;padding:14px 22px;background:#f8ff46;color:#070815;text-decoration:none;font-weight:bold;border-radius:10px">Go to account</a></p></div>`;
+  const html = `<div style="font-family:Arial,sans-serif;color:#111827"><h1 style="color:#151936">Seller account granted</h1><p>Thank you for signing up.</p><p><strong>Your Crack Packs Seller ID:</strong> ${escapeHtml(liveUsername)}</p><p><strong>Your refer-a-friend URL:</strong><br><a href="${escapeHtml(referralUrl)}">${escapeHtml(referralUrl)}</a></p><p>Please follow or check out our socials for frequent codes to redeem on your account.</p><p>If you earn 100 sign-ups, you get a ticket to our annual Raffle Bonanza. Each ticket is a winner.</p><p><a href="${escapeHtml(accountUrl)}" style="display:inline-block;padding:14px 22px;background:#f8ff46;color:#070815;text-decoration:none;font-weight:bold;border-radius:10px">Go to account</a></p></div>`;
   await sendTransactionalEmail(env, member.email, "Crack Packs seller account granted", html, `seller-granted-${member.id}`);
 }
 
@@ -536,6 +536,34 @@ function usernameKey(value) {
     .replace(/[@4]/g, "a").replace(/[3]/g, "e").replace(/[1!|]/g, "i").replace(/[0]/g, "o")
     .replace(/[5$]/g, "s").replace(/[7+]/g, "t").replace(/[^a-z0-9]/g, "");
   return folded.replace(/(.)\1{2,}/g, "$1$1");
+}
+function cleanAccountUsername(value) {
+  return clean(value, 32);
+}
+function validateAccountUsername(username, label = "User ID") {
+  if (!/^[A-Za-z][A-Za-z0-9_]{2,31}$/.test(username)) return `${label} must be 3-32 characters, start with a letter, and use only letters, numbers, or underscores.`;
+  const key = usernameKey(username);
+  if (key.length < 3) return `Choose a more distinctive ${label}.`;
+  return "";
+}
+async function usernameCollision(env, memberId, key) {
+  const rows = await env.DB.prepare(`
+    SELECT id,buyer_username_key,live_username_key
+    FROM members
+    WHERE id<>? AND (buyer_username_key IS NOT NULL OR live_username_key IS NOT NULL)
+  `).bind(memberId).all();
+  return (rows.results || []).find(row => {
+    const keys = [row.buyer_username_key, row.live_username_key].filter(Boolean);
+    return keys.some(existing => existing === key || existing.startsWith(key) || key.startsWith(existing));
+  }) || null;
+}
+async function ensureUsernameAvailable(env, memberId, username, label) {
+  const validation = validateAccountUsername(username, label);
+  if (validation) return { error: validation };
+  const key = usernameKey(username);
+  const collision = await usernameCollision(env, memberId, key);
+  if (collision) return { error: `That ${label} is already used or is too similar to an existing Crack Packs ID.` };
+  return { username, key };
 }
 
 async function reserveOwnerInventory(env, itemId, ownerId, quantity, reservationId, note) {
@@ -2123,7 +2151,8 @@ export async function handlePlatformRoute(request, env, cors) {
     if (auth.error) return auth.error;
     const profile = await sellerProfile(env, auth.member.id);
     const fullyVerified = Boolean(auth.member.email_verified_at && auth.member.device_verified && auth.member.identity_status === "verified");
-    const owner = fullyVerified && normalizeEmail(auth.member.email) === normalizeEmail(env.ADMIN_EMAIL);
+    const ownerEmail = normalizeEmail(auth.member.email) === normalizeEmail(env.ADMIN_EMAIL);
+    const owner = fullyVerified && ownerEmail;
     const sellerAllowed = owner || (fullyVerified && profile?.status === "active");
     const requestedPortal = String(auth.member.active_portal || "buyer");
     const activePortal = owner && requestedPortal === "master"
@@ -2134,6 +2163,8 @@ export async function handlePlatformRoute(request, env, cors) {
       sellerAccess: sellerAllowed,
       sellerStatus: owner ? "owner" : profile?.status || "not_applied",
       isMaster: owner,
+      isMasterCandidate: ownerEmail,
+      isOwnerEmail: ownerEmail,
       roles: owner ? ["buyer", "seller", "master"] : (sellerAllowed ? ["buyer", "seller"] : ["buyer"])
     }, 200, cors);
   }
@@ -2148,7 +2179,7 @@ export async function handlePlatformRoute(request, env, cors) {
     const requestedMode = data.mode === "master" ? "master" : (data.mode === "seller" ? "seller" : "buyer");
     const mode = requestedMode === "master" ? "master" : (requestedMode === "seller" ? "seller" : "buyer");
     if (mode === "master" && !owner) return json({ error: "Master Portal access is restricted to the master account." }, 403, cors);
-    if (mode === "seller" && !sellerAllowed) return json({ error: "Complete User ID, passkey, legal profile, and Stripe ID verification before opening Seller Portal." }, 403, cors);
+    if (mode === "seller" && !sellerAllowed) return json({ error: "Complete Seller ID, passkey, legal profile, and Stripe ID verification before opening Seller Portal." }, 403, cors);
     await env.DB.prepare(`UPDATE members SET active_portal=?,updated_at=? WHERE id=?`).bind(mode, now(), auth.member.id).run();
     return json({ activePortal: mode }, 200, cors);
   }
@@ -2156,26 +2187,39 @@ export async function handlePlatformRoute(request, env, cors) {
     const auth = await requireMember(request, env, cors, { verified: false });
     if (auth.error) return auth.error;
     const data = await boundedJson(request, 1000);
-    const username = clean(data.liveUsername, 32);
-    if (!/^[A-Za-z][A-Za-z0-9_]{2,31}$/.test(username)) return json({ error: "User ID must be 3-32 characters, start with a letter, and use only letters, numbers, or underscores." }, 400, cors);
-    const key = usernameKey(username);
-    if (key.length < 3) return json({ error: "Choose a more distinctive User ID." }, 400, cors);
-    const rows = await env.DB.prepare(`SELECT id,live_username_key FROM members WHERE id<>? AND live_username_key IS NOT NULL`).bind(auth.member.id).all();
-    const collision = (rows.results || []).find(row => row.live_username_key === key || row.live_username_key.startsWith(key) || key.startsWith(row.live_username_key));
-    if (collision) return json({ error: "That User ID is already used or is too similar to an existing User ID." }, 409, cors);
+    const username = cleanAccountUsername(data.liveUsername);
+    const available = await ensureUsernameAvailable(env, auth.member.id, username, "Seller ID");
+    if (available.error) return json({ error: available.error }, available.error.includes("similar") ? 409 : 400, cors);
     return json({ ok: true, available: true, liveUsername: username }, 200, cors);
+  }
+  if (url.pathname === "/profile/buyer-username/check" && request.method === "POST") {
+    const auth = await requireMember(request, env, cors, { verified: false });
+    if (auth.error) return auth.error;
+    const data = await boundedJson(request, 1000);
+    const username = cleanAccountUsername(data.buyerUsername);
+    const available = await ensureUsernameAvailable(env, auth.member.id, username, "Buyer ID");
+    if (available.error) return json({ error: available.error }, available.error.includes("similar") ? 409 : 400, cors);
+    return json({ ok: true, available: true, buyerUsername: username }, 200, cors);
+  }
+  if (url.pathname === "/profile/buyer-username" && request.method === "POST") {
+    const auth = await requireMember(request, env, cors, { verified: false });
+    if (auth.error) return auth.error;
+    const data = await boundedJson(request, 1000);
+    const username = cleanAccountUsername(data.buyerUsername);
+    const available = await ensureUsernameAvailable(env, auth.member.id, username, "Buyer ID");
+    if (available.error) return json({ error: available.error }, available.error.includes("similar") ? 409 : 400, cors);
+    const stamp = now();
+    await env.DB.prepare(`UPDATE members SET buyer_username=?,buyer_username_key=?,updated_at=? WHERE id=?`)
+      .bind(username, available.key, stamp, auth.member.id).run();
+    return json({ buyerUsername: username }, 200, cors);
   }
   if (url.pathname === "/profile/live-username" && request.method === "POST") {
     const auth = await requireMember(request, env, cors, { verified: false });
     if (auth.error) return auth.error;
     const data = await boundedJson(request, 1000);
-    const username = clean(data.liveUsername, 32);
-    if (!/^[A-Za-z][A-Za-z0-9_]{2,31}$/.test(username)) return json({ error: "User ID must be 3-32 characters, start with a letter, and use only letters, numbers, or underscores." }, 400, cors);
-    const key = usernameKey(username);
-    if (key.length < 3) return json({ error: "Choose a more distinctive User ID." }, 400, cors);
-    const rows = await env.DB.prepare(`SELECT id,live_username_key FROM members WHERE id<>? AND live_username_key IS NOT NULL`).bind(auth.member.id).all();
-    const collision = (rows.results || []).find(row => row.live_username_key === key || row.live_username_key.startsWith(key) || key.startsWith(row.live_username_key));
-    if (collision) return json({ error: "That User ID is already used or is too similar to an existing User ID." }, 409, cors);
+    const username = cleanAccountUsername(data.liveUsername);
+    const available = await ensureUsernameAvailable(env, auth.member.id, username, "Seller ID");
+    if (available.error) return json({ error: available.error }, available.error.includes("similar") ? 409 : 400, cors);
     const activateSeller = data.activateSeller === true;
     if (activateSeller) {
       if (!auth.member.device_verified || auth.member.identity_status !== "verified") return json({ error: "Complete seller passkey and Stripe identity verification before activating seller access." }, 403, cors);
@@ -2183,7 +2227,7 @@ export async function handlePlatformRoute(request, env, cors) {
     }
     const stamp = now();
     await env.DB.batch([
-      env.DB.prepare(`UPDATE members SET live_username=?,live_username_key=?,active_portal=?,updated_at=? WHERE id=?`).bind(username, key, activateSeller ? "seller" : (auth.member.active_portal || "buyer"), stamp, auth.member.id),
+      env.DB.prepare(`UPDATE members SET live_username=?,live_username_key=?,active_portal=?,updated_at=? WHERE id=?`).bind(username, available.key, activateSeller ? "seller" : (auth.member.active_portal || "buyer"), stamp, auth.member.id),
       ...(activateSeller ? [env.DB.prepare(`INSERT INTO breaker_profiles(member_id,status,created_at,updated_at) VALUES(?,'active',?,?) ON CONFLICT(member_id) DO UPDATE SET status='active',updated_at=excluded.updated_at`).bind(auth.member.id, stamp, stamp)] : [])
     ]);
     if (activateSeller && !auth.member.live_username) {

@@ -728,6 +728,7 @@ async function account(member, count, env, seller = null) {
   const next = TIERS.find(t => t.threshold > count);
   const invite = await inviteDetailsFor(member, env);
   const admin = isAdmin(member, env);
+  const ownerEmail = isOwnerEmail(member, env);
   const verifiedSeller = Boolean(member.email_verified_at && member.device_verified && member.identity_status === "verified" && seller?.status === "active");
   const sellerAccess = admin || verifiedSeller;
   const sellerStatus = admin ? "owner" : (seller?.status || "not_applied");
@@ -737,7 +738,8 @@ async function account(member, count, env, seller = null) {
     passwordConfigured: Boolean(member.password_hash && member.password_salt),
     stripeIdentityStatus: member.stripe_identity_status || "not_started", firstName: member.first_name, lastName: member.last_name || "", birthDate: member.birth_date || "",
     hasSellerLegalProfile: Boolean(member.first_name && member.last_name && member.birth_date),
-    liveUsername: member.live_username || "", referredSignup: Boolean(member.referred_by_member_id), isAdmin: admin, isMaster: admin,
+    buyerUsername: member.buyer_username || "", sellerUsername: member.live_username || "", liveUsername: member.live_username || member.buyer_username || "",
+    referredSignup: Boolean(member.referred_by_member_id), isAdmin: admin, isMaster: admin, isOwnerEmail: ownerEmail, isMasterCandidate: ownerEmail,
     sellerAccess, sellerStatus, roles, activePortal: member.active_portal || "buyer",
     phone: member.phone || "", shippingAddress: (() => { try { return JSON.parse(member.shipping_address_json || "{}"); } catch { return {}; } })(),
     paymentMethod: member.stripe_payment_method_id ? { brand: member.stripe_payment_method_brand || "card", last4: member.stripe_payment_method_last4 || "" } : null,

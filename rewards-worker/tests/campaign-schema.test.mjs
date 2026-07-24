@@ -18,6 +18,7 @@ const productFulfillmentMigration = readFileSync(new URL("../migrations/0010_dec
 const channelPricingMigration = readFileSync(new URL("../migrations/0011_add_channel_pricing.sql", import.meta.url), "utf8");
 const memberTrackingMigration = readFileSync(new URL("../migrations/0012_add_member_orders_tracking.sql", import.meta.url), "utf8");
 const seriesGiveawaysMigration = readFileSync(new URL("../migrations/0013_add_series_and_giveaways.sql", import.meta.url), "utf8");
+const buyerUserIdMigration = readFileSync(new URL("../migrations/0038_add_buyer_user_id.sql", import.meta.url), "utf8");
 
 function member(db, id, email, inviteCode) {
   db.prepare(`INSERT INTO members(id,email,email_verified_at,identity_status,device_verified,invite_code,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)`)
@@ -44,6 +45,7 @@ test("campaign schema and sequential campaign migrations are valid", () => {
   migrationDb.exec(channelPricingMigration);
   migrationDb.exec(memberTrackingMigration);
   migrationDb.exec(seriesGiveawaysMigration);
+  migrationDb.exec(buyerUserIdMigration);
   assert.ok(migrationDb.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='offer_campaigns'`).get());
   assert.ok(migrationDb.prepare(`SELECT name FROM pragma_table_info('offer_campaigns') WHERE name='reward_variant'`).get());
   assert.ok(migrationDb.prepare(`SELECT name FROM pragma_table_info('offer_campaigns') WHERE name='never_expires'`).get());
@@ -63,6 +65,8 @@ test("campaign schema and sequential campaign migrations are valid", () => {
   assert.ok(migrationDb.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='seller_giveaways'`).get());
   assert.ok(migrationDb.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='gifted_giveaways'`).get());
   assert.ok(migrationDb.prepare(`SELECT name FROM pragma_table_info('inventory_items') WHERE name='series'`).get());
+  assert.ok(migrationDb.prepare(`SELECT name FROM pragma_table_info('members') WHERE name='buyer_username'`).get());
+  assert.ok(migrationDb.prepare(`SELECT name FROM sqlite_master WHERE type='index' AND name='idx_members_buyer_username_key'`).get());
   migrationDb.close();
 });
 

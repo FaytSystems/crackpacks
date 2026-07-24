@@ -99,6 +99,21 @@
         </form>
       </section>
 
+      <section class="reward-card" data-buyer-username-panel hidden>
+        <p class="eyebrow">Buyer setup</p>
+        <h2>Claim your Buyer ID</h2>
+        <p>This is your collector-facing profile name for the store, watchlists, rewards, and buyer activity. Seller accounts can still choose a separate Seller ID later for a brand or company name.</p>
+        <form data-buyer-username-form>
+          <label>Buyer ID<input name="buyerUsername" data-buyer-username required maxlength="32" pattern="[A-Za-z][A-Za-z0-9_]{2,31}" placeholder="CollectorNova"></label>
+          <div class="actions">
+            <button class="btn btn-outline" type="button" data-check-buyer-username>Check</button>
+            <button class="btn btn-primary" type="submit" data-save-buyer-username disabled>Continue</button>
+          </div>
+          <div class="campaign-form-status" data-buyer-username-status aria-live="polite"></div>
+        </form>
+        <p class="fine-print">Crack Packs blocks duplicates, close lookalikes, number swaps, and symbol tricks across Buyer IDs and Seller IDs.</p>
+      </section>
+
       <section class="reward-card" data-profile-panel hidden>
         <p class="eyebrow">Step 4 of 5</p>
         <h2>Legal account profile</h2>
@@ -120,22 +135,22 @@
       </section>
 
       <section class="reward-card" data-seller-username-panel hidden>
-        <p class="eyebrow">Step 3 of 5</p>
-        <h2>Claim your Crack Packs User ID</h2>
-        <p>Choose the protected User ID buyers and collectors will see. Crack Packs blocks duplicates, close lookalikes, number swaps, and name-copy variations.</p>
+        <p class="eyebrow">Step 2 of 5</p>
+        <h2>Claim your Seller ID</h2>
+        <p>Choose the protected Seller ID buyers will see on live streams, listings, and show pages. This can be different from your Buyer ID, which lets a company or brand name advertise itself naturally.</p>
         <form data-seller-username-form>
-          <label>Crack Packs User ID<input name="liveUsername" data-seller-live-username required maxlength="32" pattern="[A-Za-z][A-Za-z0-9_]{2,31}" placeholder="RipWizard"></label>
+          <label>Seller ID / brand name<input name="liveUsername" data-seller-live-username required maxlength="32" pattern="[A-Za-z][A-Za-z0-9_]{2,31}" placeholder="RipWizardBreaks"></label>
           <div class="actions">
             <button class="btn btn-outline" type="button" data-check-seller-username>Check</button>
             <button class="btn btn-primary" type="submit" data-save-seller-username disabled>Continue</button>
           </div>
           <div class="campaign-form-status" data-seller-username-status aria-live="polite"></div>
         </form>
-        <p class="fine-print">This reserves the User ID to your verified email before legal profile and ID verification continue.</p>
+        <p class="fine-print">This reserves the Seller ID to your verified email before passkey, legal profile, and ID verification continue.</p>
       </section>
 
       <section class="reward-card" data-device-panel hidden>
-        <p class="eyebrow">Step 2 of 5</p>
+        <p class="eyebrow">Step 3 of 5</p>
         <h2>Create your secure passkey</h2>
         <p>This locks the account to your device or password manager. Crack Packs stores the public key only - not your fingerprint, face, PIN, or device password.</p>
         <button class="btn btn-primary" type="button" data-register-passkey>Create passkey</button>
@@ -320,11 +335,11 @@
         </section>
         <section class="reward-card profile-settings-card">
           <p class="eyebrow">Profile details</p>
-          <h3>Your stream user name</h3>
-          <p>Keep this matched to the name you use during live shows so the owner can find your reward code quickly.</p>
+          <h3>Your Buyer ID</h3>
+          <p>This is your collector identity for store, rewards, watchlists, and buyer activity. Seller accounts use a separate Seller ID/brand name.</p>
           <form class="username-settings-form" data-username-form>
-            <label>Crack Packs User ID<input name="liveUsername" data-live-username required maxlength="32" pattern="[A-Za-z][A-Za-z0-9_]{2,31}"></label>
-            <button class="btn btn-outline" type="submit">Save user name</button>
+            <label>Buyer ID<input name="buyerUsername" data-live-username required maxlength="32" pattern="[A-Za-z][A-Za-z0-9_]{2,31}"></label>
+            <button class="btn btn-outline" type="submit">Save Buyer ID</button>
           </form>
         </section>
         <section class="reward-card profile-settings-card" data-account-panel>
@@ -380,7 +395,7 @@
         <ol>
           <li>Open the email from Crack Packs.</li>
           <li>Tap the secure account link in the message.</li>
-          <li>Create your password, passkey, User ID, then complete ID verification.</li>
+          <li>Create your password, claim a Buyer ID, then optionally start Seller ID verification.</li>
         </ol>
       </div>
       <div class="actions email-modal-actions">
@@ -428,7 +443,7 @@
       <p class="eyebrow">Seller verification</p>
       <h2 id="seller-identity-title">Continue seller ID verification</h2>
       <p>Your legal profile is saved. For security, Stripe Identity continues on this signed-in device.</p>
-      <p class="fine-print">After Stripe verifies your identity, Crack Packs opens the protected User ID step so you can finish activating the seller account.</p>
+      <p class="fine-print">After Stripe verifies your identity, Crack Packs finishes the protected Seller ID activation so you can enter Seller Portal.</p>
       <div class="actions">
         <button class="btn btn-outline" type="button" data-seller-identity-close>Cancel</button>
         <button class="btn btn-primary" type="button" data-seller-identity-continue>Continue on this device</button>
@@ -439,6 +454,6 @@
   <script src="assets/js/app.js?v=1.9.2"></script>
   <script src="assets/js/nav-profile.js?v=4.1.0"></script>
   <script src="assets/js/portal-mode.js?v=1.1.2"></script>
-  <script src="assets/js/referral.js?v=3.3.1"></script>
+  <script src="assets/js/referral.js?v=3.3.2"></script>
 </body>
 </html>
