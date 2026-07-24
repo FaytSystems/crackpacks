@@ -298,6 +298,13 @@
               </div>
               <label>Packaging note<textarea name="packagingNote" rows="3" maxlength="300" placeholder="Box, bubble wrap, label, business card, sticker slaps..."></textarea></label>
               <label class="check-line"><input name="isDefault" type="checkbox"> Make default weight profile</label>
+              <label class="check-line seller-auto-buy-line">
+                <input name="autoLabelPurchaseEnabled" type="checkbox">
+                Auto-Buy EasyPost label after payment
+                <span class="seller-info-dot" tabindex="0" aria-label="What Auto-Buy does">i
+                  <span class="seller-info-tooltip" role="tooltip">When this is ON for your default weight profile, Crack Packs automatically creates and buys the EasyPost label after a Stripe order is paid. Leave it OFF if you want to review each order and click Print Label manually.</span>
+                </span>
+              </label>
               <button class="btn btn-primary" type="submit">Save Weight Profile</button>
             </form>
             <div class="campaign-form-status" data-weight-profile-status aria-live="polite"></div>

@@ -375,7 +375,10 @@
             <strong>${escapeHtml(profile.name)}</strong>
             <p>${escapeHtml(profile.inventoryProductName || profile.productCategoryLabel || "Any category")} - ${escapeHtml(profile.weightUnitSystem === "metric" ? "Metric" : "Imperial")}</p>
           </div>
-          ${profile.isDefault ? `<span class="seller-order-chip is-ship-now">Default</span>` : ""}
+          <div class="seller-weight-profile-badges">
+            ${profile.isDefault ? `<span class="seller-order-chip is-ship-now">Default</span>` : ""}
+            ${profile.autoLabelPurchaseEnabled ? `<span class="seller-order-chip is-auto-buy">Auto-Buy ON</span>` : `<span class="seller-order-chip is-muted">Auto-Buy OFF</span>`}
+          </div>
         </header>
         <div class="seller-order-metrics">
           <span><small>Entered</small><strong>${Number(profile.displayWeightValue || 0)} ${escapeHtml(profile.displayWeightUnit)}</strong></span>
@@ -1029,7 +1032,8 @@
           widthIn: data.get("widthIn"),
           heightIn: data.get("heightIn"),
           packagingNote: data.get("packagingNote"),
-          isDefault: data.get("isDefault") === "on"
+          isDefault: data.get("isDefault") === "on",
+          autoLabelPurchaseEnabled: data.get("autoLabelPurchaseEnabled") === "on"
         })
       });
       form.reset();

@@ -621,9 +621,70 @@
   align-items: flex-start;
 }
 
+.seller-weight-profile-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.35rem;
+}
+
 .seller-weight-profile-card p {
   margin: 0.25rem 0 0;
   color: rgba(255,255,255,0.7);
+}
+
+.seller-auto-buy-line {
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.seller-info-dot {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 999px;
+  border: 1px solid rgba(79, 242, 255, 0.55);
+  color: #4ff2ff;
+  background:
+    radial-gradient(circle at 30% 20%, rgba(255,255,255,0.22), transparent 40%),
+    rgba(79, 242, 255, 0.08);
+  box-shadow: 0 0 16px rgba(79, 242, 255, 0.22);
+  font-size: 0.78rem;
+  font-weight: 900;
+  line-height: 1;
+  cursor: help;
+}
+
+.seller-info-tooltip {
+  position: absolute;
+  right: -0.35rem;
+  bottom: calc(100% + 0.75rem);
+  z-index: 20;
+  width: min(18rem, 78vw);
+  padding: 0.8rem 0.9rem;
+  border: 1px solid rgba(79, 242, 255, 0.35);
+  border-radius: 1rem;
+  background:
+    linear-gradient(135deg, rgba(9, 14, 38, 0.98), rgba(41, 14, 69, 0.98)),
+    rgba(7, 11, 28, 0.98);
+  color: rgba(255,255,255,0.88);
+  box-shadow: 0 22px 50px rgba(0,0,0,0.42), 0 0 28px rgba(79, 242, 255, 0.16);
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.45;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(0.35rem) scale(0.98);
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.seller-info-dot:hover .seller-info-tooltip,
+.seller-info-dot:focus .seller-info-tooltip,
+.seller-info-dot:focus-within .seller-info-tooltip {
+  opacity: 1;
+  transform: translateY(0) scale(1);
 }
 
 .seller-orders-list {
@@ -707,6 +768,12 @@
   color: #f8ff46;
   border-color: rgba(248,255,70,0.42);
   background: rgba(248,255,70,0.09);
+}
+
+.seller-order-chip.is-auto-buy {
+  color: #4ff2ff;
+  border-color: rgba(79, 242, 255, 0.46);
+  background: rgba(79, 242, 255, 0.11);
 }
 
 .seller-order-status.is-ship_now {

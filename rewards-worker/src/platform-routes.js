@@ -796,6 +796,12 @@ async function completeStoreOrder(env, session) {
     `).bind(uid(), reservation.member_id, reservation.inventory_item_id, reservation.product_name, Number(reservation.quantity), stamp, stamp));
   }
   await env.DB.batch(statements);
+  const autoLabel = await autoPurchaseOrderLabelAfterPayment(env, orderId, reservation.owner_member_id);
+  if (autoLabel?.ordered) {
+    console.log("EasyPost auto-label purchased", { orderId, ownerMemberId: reservation.owner_member_id });
+  } else if (autoLabel?.skipped) {
+    console.log("EasyPost auto-label skipped", { orderId, ownerMemberId: reservation.owner_member_id, reason: autoLabel.reason });
+  }
   await sendOrderEmail(env, reservation.email, `Order ${number} confirmed`, `<h1>Payment received</h1><p>Your Crack Packs order <strong>${number}</strong> is confirmed.</p><p>${clean(reservation.product_name, 120)} × ${Number(reservation.quantity)}</p><p>Tracking will appear in your Profile after the label is purchased.</p>`, `order-customer-${orderId}`);
   await sendOrderEmail(env, normalizeEmail(env.ORDER_NOTIFY_EMAIL || env.ADMIN_EMAIL), `New paid order ${number}`, `<h1>New paid order</h1><p><strong>${number}</strong></p><p>${clean(reservation.product_name, 120)} × ${Number(reservation.quantity)}</p><p>Open the Master Dashboard to purchase the label.</p>`, `order-owner-${orderId}`);
 }
@@ -1305,6 +1311,24 @@ async function createEasyPostShipmentFromWeightProfile(env, row, weightProfileId
   };
 }
 
+async function autoPurchaseOrderLabelAfterPayment(env, orderId, ownerMemberId) {
+  const profile = await env.DB.prepare(`
+    SELECT id
+    FROM seller_shipping_weight_profiles
+    WHERE member_id=? AND auto_label_purchase_enabled=1 AND is_default=1
+    ORDER BY updated_at DESC
+    LIMIT 1
+  `).bind(ownerMemberId).first();
+  if (!profile) return { skipped: true, reason: "No default Auto-Buy shipping profile is enabled." };
+  const response = await purchaseOrderLabelForOwner(env, {}, orderId, ownerMemberId, { weightProfileId: profile.id });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    console.error("EasyPost auto-label purchase failed", { orderId, status: response.status, code: payload.code || "", error: payload.error || "" });
+    return { skipped: true, reason: payload.error || "EasyPost could not auto-buy this label." };
+  }
+  return payload;
+}
+
 function labelPurchaseErrorMessage(code) {
   return ({
     LABEL_NOT_CONFIGURED: "EasyPost production label purchasing is not configured.",
@@ -1556,6 +1580,7 @@ function shippingProfileView(row) {
     heightIn: row.height_in == null ? null : Number(row.height_in),
     packagingNote: row.packaging_note || "",
     isDefault: Boolean(row.is_default),
+    autoLabelPurchaseEnabled: Boolean(row.auto_label_purchase_enabled),
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -1598,13 +1623,14 @@ async function sellerShippingProfiles(request, env, cors) {
   const profileId = uid();
   const stamp = now();
   const isDefault = data.isDefault ? 1 : 0;
+  const autoLabelPurchaseEnabled = data.autoLabelPurchaseEnabled ? 1 : 0;
   const statements = [];
   if (isDefault) statements.push(env.DB.prepare(`UPDATE seller_shipping_weight_profiles SET is_default=0,updated_at=? WHERE member_id=?`).bind(stamp, auth.member.id));
   statements.push(env.DB.prepare(`
     INSERT INTO seller_shipping_weight_profiles(
-      id,member_id,name,product_category_key,breaker_inventory_item_id,weight_unit_system,display_weight_value,display_weight_unit,final_weight_oz,length_in,width_in,height_in,packaging_note,is_default,created_at,updated_at
-    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-  `).bind(profileId, auth.member.id, name, categoryKey, breakerInventoryItemId || null, weightUnitSystem, displayWeightValue, displayWeightUnit, finalWeightOz, lengthIn, widthIn, heightIn, clean(data.packagingNote, 300), isDefault, stamp, stamp));
+      id,member_id,name,product_category_key,breaker_inventory_item_id,weight_unit_system,display_weight_value,display_weight_unit,final_weight_oz,length_in,width_in,height_in,packaging_note,is_default,auto_label_purchase_enabled,created_at,updated_at
+    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+  `).bind(profileId, auth.member.id, name, categoryKey, breakerInventoryItemId || null, weightUnitSystem, displayWeightValue, displayWeightUnit, finalWeightOz, lengthIn, widthIn, heightIn, clean(data.packagingNote, 300), isDefault, autoLabelPurchaseEnabled, stamp, stamp));
   await env.DB.batch(statements);
   const row = await env.DB.prepare(`
     SELECT profile.*,item.product_name inventory_product_name

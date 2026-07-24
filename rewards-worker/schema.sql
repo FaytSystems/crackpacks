@@ -282,6 +282,7 @@ CREATE TABLE IF NOT EXISTS seller_shipping_weight_profiles (
   height_in REAL CHECK(height_in IS NULL OR (height_in > 0 AND height_in <= 120)),
   packaging_note TEXT NOT NULL DEFAULT '' CHECK(length(packaging_note) <= 300),
   is_default INTEGER NOT NULL DEFAULT 0 CHECK(is_default IN (0,1)),
+  auto_label_purchase_enabled INTEGER NOT NULL DEFAULT 0 CHECK(auto_label_purchase_enabled IN (0,1)),
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   FOREIGN KEY(member_id) REFERENCES members(id)
