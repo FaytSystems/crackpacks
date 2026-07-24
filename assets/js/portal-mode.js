@@ -18,7 +18,7 @@
   const sellerAllowed = () => localStorage.getItem(SELLER_ALLOWED_KEY) === "true";
   const masterAllowed = () => localStorage.getItem(MASTER_ALLOWED_KEY) === "true";
   const sellerPortalDestination = () => page === "streams" || page === "live" ? "streams.html" : "shop.html";
-  const buyerPortalDestination = () => page === "shop" ? "shop.html" : "streams.html";
+  const buyerPortalDestination = () => page === "shop" ? "shop.html" : "shop.html";
   const sellerSetupDestination = () => authToken() ? "referral.html?return=seller" : "referral.html?mode=signin&return=seller";
 
   const portalRequest = async (path, options = {}) => {
@@ -77,6 +77,12 @@
         localStorage.setItem(SELLER_ALLOWED_KEY, "false");
         sessionStorage.setItem(STORAGE_KEY, "buyer");
         localStorage.setItem(STORAGE_KEY, "buyer");
+        if (page === "rewards") {
+          button.disabled = false;
+          sessionStorage.setItem("cp_seller_upgrade_requested", "true");
+          document.dispatchEvent(new CustomEvent("crackpacks:start-seller-upgrade"));
+          return;
+        }
         window.location.href = sellerSetupDestination();
       }
     });

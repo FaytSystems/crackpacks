@@ -529,6 +529,11 @@
   };
   const beginSellerUpgradeFlow = (message = "Seller verification started. Reserve a Seller ID first, then complete passkey, legal profile, and Stripe ID verification.") => {
     setSellerUpgradeRequested(true);
+    const launcher = $("[data-portal-launcher-modal]");
+    if (launcher) {
+      launcher.hidden = true;
+      launcher.setAttribute("aria-hidden", "true");
+    }
     if (accountState) {
       renderAccount(accountState);
       const nextPanel = !accountState.sellerUsername ? $("[data-seller-username-panel]") : (!accountState.deviceVerified ? $("[data-device-panel]") : $("[data-profile-panel]"));
@@ -536,6 +541,9 @@
     }
     showStatus(message, "success");
   };
+  document.addEventListener("crackpacks:start-seller-upgrade", () => {
+    beginSellerUpgradeFlow("Seller account setup started. Claim your Seller ID, then continue to passkey, legal profile, and Stripe ID verification.");
+  });
   const showBuyerUsernameStatus = (message = "", kind = "") => {
     const node = $("[data-buyer-username-status]");
     if (!node) return;
