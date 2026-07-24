@@ -51,17 +51,18 @@
   let checkedSellerUsername = "";
   let pendingSellerIdentityStart = false;
   let portalLauncherShown = false;
+  let sellerActivationFinalizePending = false;
   const STREAM_CREDITS_REFRESH_FOCUS_GRACE_MS = 2 * 60 * 1000;
   const SELLER_UPGRADE_KEY = "cp_seller_upgrade_requested";
   const authModeCopy = {
     signin: {
       kicker: "Returning collector",
       title: "Sign in to your Profile",
-      description: "Enter the email connected to your Crack Packs account. We will send a secure sign-in link.",
+      description: "Enter your Crack Packs email and password.",
       emailLabel: "Account email",
-      sendLabel: "Email me a sign-in link",
+      sendLabel: "Sign in",
       modalTitle: "Check inbox for your sign-in link",
-      modalCopy: "If this email belongs to a Crack Packs account, open the secure sign-in link within 10 minutes. The email also includes a plain account link you can open on the same device if you do not want to scan anything.",
+      modalCopy: "If this email belongs to a Crack Packs account, open the secure sign-in link within 10 minutes. If setup is incomplete, the page will continue with password/passkey, User ID, legal profile, and ID verification.",
       sentStatus: "If that email matches an account, a secure sign-in link is on the way."
     },
     signup: {
@@ -71,8 +72,8 @@
       emailLabel: "Signup email",
       sendLabel: "Send signup link",
       modalTitle: "Check inbox to create your account",
-      modalCopy: "Open the secure signup link within 10 minutes to create your buyer account. The email also includes the plain account-creation link if you are staying on the same device. Seller accounts can upgrade into ID verification after sign-in.",
-      sentStatus: "Signup link sent. Check your inbox to create your buyer account."
+      modalCopy: "Open the secure signup link within 10 minutes. Then create your password/passkey, reserve your User ID, enter legal details, consent, and complete the secure ID check.",
+      sentStatus: "Signup link sent. Check your inbox to create your account."
     }
   };
   function resetTurnstile() {
@@ -103,6 +104,8 @@
     $("[data-auth-title]").textContent = copy.title;
     $("[data-auth-description]").textContent = copy.description;
     $("[data-auth-email-label]").textContent = copy.emailLabel;
+    const passwordRow = $("[data-password-login-row]");
+    if (passwordRow) passwordRow.hidden = authMode !== "signin";
     const sendButton = $("[data-send-verification]");
     sendButton.textContent = authRequestSent ? "Check Inbox 10 min code" : turnstileTokenValue ? copy.sendLabel : "Complete security check";
     sendButton.disabled = authRequestSent || !turnstileTokenValue;
@@ -515,11 +518,11 @@
     if (value) sessionStorage.setItem(SELLER_UPGRADE_KEY, "true");
     else sessionStorage.removeItem(SELLER_UPGRADE_KEY);
   };
-  const beginSellerUpgradeFlow = (message = "Seller verification started. Complete the passkey and legal profile steps to continue.") => {
+  const beginSellerUpgradeFlow = (message = "Seller verification started. Create your passkey, reserve a User ID, then complete the legal profile and ID check.") => {
     setSellerUpgradeRequested(true);
     if (accountState) {
       renderAccount(accountState);
-      const nextPanel = !accountState.deviceVerified ? $("[data-device-panel]") : $("[data-profile-panel]");
+      const nextPanel = !accountState.deviceVerified ? $("[data-device-panel]") : (!accountState.liveUsername ? $("[data-seller-username-panel]") : $("[data-profile-panel]"));
       nextPanel?.scrollIntoView({ behavior: "smooth", block: "start" });
     }
     showStatus(message, "success");
@@ -693,7 +696,7 @@
     const masterAllowed = Boolean(data.isMaster);
     const needsSellerUpgradeFlow = Boolean(data.isAdmin || sellerAllowed || sellerUpgradeRequested());
     const hasSellerLegalProfile = Boolean(data.hasSellerLegalProfile || (data.firstName && data.lastName && data.birthDate));
-    const needsSellerUsername = Boolean(needsSellerUpgradeFlow && data.deviceVerified && data.identityStatus === "verified" && !data.liveUsername);
+    const needsUserId = Boolean(data.deviceVerified && !data.liveUsername);
     const roles = Array.isArray(data.roles) && data.roles.length ? data.roles : (data.isAdmin ? ["buyer", "seller", "master"] : (sellerAllowed ? ["buyer", "seller"] : ["buyer"]));
     localStorage.setItem("cp_can_seller_portal", sellerAllowed ? "true" : "false");
     if (!sellerAllowed && (sessionStorage.getItem("cp_portal_mode") || localStorage.getItem("cp_portal_mode")) === "seller") {
@@ -702,7 +705,16 @@
     }
     show("[data-auth-panel]", false);
     show("[data-seller-upgrade-panel]", !sellerAllowed && !data.isAdmin);
-    if (needsSellerUpgradeFlow && !data.deviceVerified) {
+    if (!data.passwordConfigured) {
+      show("[data-password-panel]", true);
+      show("[data-device-panel]", false);
+      show("[data-profile-panel]", false);
+      show("[data-seller-username-panel]", false);
+      show("[data-dashboard]", false);
+      return;
+    }
+    show("[data-password-panel]", false);
+    if (!data.deviceVerified) {
       show("[data-device-panel]", true);
       show("[data-profile-panel]", false);
       show("[data-seller-username-panel]", false);
@@ -710,7 +722,17 @@
       return;
     }
     show("[data-device-panel]", false);
-    if (needsSellerUpgradeFlow && (!hasSellerLegalProfile || data.identityStatus !== "verified")) {
+    if (needsUserId) {
+      show("[data-seller-username-panel]", true);
+      show("[data-profile-panel]", false);
+      show("[data-dashboard]", false);
+      $("[data-seller-live-username]").value = data.pendingSellerUsername || data.liveUsername || "";
+      $("[data-save-seller-username]").disabled = true;
+      showSellerUsernameStatus("Check a unique Crack Packs User ID, then continue to legal profile.");
+      return;
+    }
+    show("[data-seller-username-panel]", false);
+    if (!hasSellerLegalProfile || data.identityStatus !== "verified") {
       show("[data-profile-panel]", true);
       show("[data-seller-username-panel]", false);
       show("[data-dashboard]", false);
@@ -723,15 +745,22 @@
       return;
     }
     show("[data-profile-panel]", false);
-    if (needsSellerUsername) {
-      show("[data-seller-username-panel]", true);
+    if (needsSellerUpgradeFlow && data.liveUsername && data.identityStatus === "verified" && !sellerAllowed && !sellerActivationFinalizePending) {
+      sellerActivationFinalizePending = true;
       show("[data-dashboard]", false);
-      $("[data-seller-live-username]").value = data.pendingSellerUsername || data.liveUsername || "";
-      $("[data-save-seller-username]").disabled = true;
-      showSellerUsernameStatus("Stripe verified your seller identity. Check a unique Crack Packs User ID, then activate your seller account.");
+      showStatus("Finalizing Seller access now that your ID verification is complete...", "success");
+      request("/profile/live-username", { method: "POST", body: JSON.stringify({ liveUsername: data.liveUsername, activateSeller: true }) })
+        .then(() => loadAccount())
+        .catch(error => {
+          sellerActivationFinalizePending = false;
+          showStatus(error.message, "error");
+          show("[data-dashboard]", true);
+        });
       return;
     }
     show("[data-seller-username-panel]", false);
+    show("[data-password-panel]", false);
+    sellerActivationFinalizePending = false;
     show("[data-dashboard]", true);
     if (sellerAllowed || data.isAdmin) setSellerUpgradeRequested(false);
     $("[data-member-name]").textContent = data.firstName || "Collector";
@@ -925,6 +954,7 @@
       return;
     }
     const submittedMode = authMode;
+    const submittedPassword = String(form.get("password") || "");
     const submittedReferral = submittedMode === "signup" ? referralCode : "";
     const submittedOwnerReferral = submittedMode === "signup" ? ownerReferralToken : "";
     const sendButton = $("[data-send-verification]");
@@ -948,12 +978,24 @@
     }
     sendButton.textContent = "Sending secure link...";
     try {
-      await request("/auth/request", { method: "POST", body: JSON.stringify({ email, referralCode: submittedReferral, ownerReferralToken: submittedOwnerReferral, sellerActivationToken, offerToken, authMode: submittedMode, returnTo: requestedPortal === "master" ? "admin" : "rewards", turnstileToken }) });
+      if (submittedMode === "signin") {
+        if (!submittedPassword) throw new Error("Enter your Crack Packs password.");
+        sendButton.textContent = "Signing in...";
+        const data = await request("/auth/password/login", { method: "POST", body: JSON.stringify({ email, password: submittedPassword, turnstileToken }) });
+        token = data.token; localStorage.setItem("cp_rewards_token", token);
+        authRequestSent = false;
+        resetTurnstile();
+        showStatus("Signed in to your Profile.", "success");
+        renderAccount(data.account);
+        return;
+      }
+      const authResult = await request("/auth/request", { method: "POST", body: JSON.stringify({ email, referralCode: submittedReferral, ownerReferralToken: submittedOwnerReferral, sellerActivationToken, offerToken, authMode: submittedMode, returnTo: requestedPortal === "master" ? "admin" : "rewards", turnstileToken }) });
       authRequestSent = true;
       resetTurnstile();
       sendButton.textContent = "Check Inbox 10 min code";
       sendButton.disabled = true;
-      const copy = authModeCopy[submittedMode];
+      const deliveredMode = authResult.authFlow === "signin" || authResult.authFlow === "admin" ? "signin" : "signup";
+      const copy = authModeCopy[deliveredMode];
       $("[data-email-modal-title]").textContent = copy.modalTitle;
       $("[data-email-modal-copy]").textContent = copy.modalCopy;
       const help = $("[data-email-modal-help]");
@@ -987,6 +1029,21 @@
     pendingSellerIdentityStart = false;
     $("[data-seller-identity-modal]").hidden = true;
   }));
+  $("[data-password-form]")?.addEventListener("submit", async event => {
+    event.preventDefault();
+    const form = Object.fromEntries(new FormData(event.currentTarget));
+    const button = event.submitter;
+    if (button) button.disabled = true;
+    try {
+      const data = await request("/auth/password/set", { method: "POST", body: JSON.stringify(form) });
+      showStatus("Password saved. Continue account setup.", "success");
+      renderAccount(data.account);
+    } catch (error) {
+      showStatus(error.message, "error");
+    } finally {
+      if (button) button.disabled = false;
+    }
+  });
   $("[data-profile-form]").addEventListener("submit", async event => {
     event.preventDefault(); const form = Object.fromEntries(new FormData(event.currentTarget));
     try {
@@ -1051,7 +1108,7 @@
     try {
       const result = await request("/profile/live-username/check", { method: "POST", body: JSON.stringify({ liveUsername }) });
       checkedSellerUsername = result.liveUsername || liveUsername;
-      showSellerUsernameStatus(`User ID ${checkedSellerUsername} is available. Click Go to account to activate seller access.`, "success");
+      showSellerUsernameStatus(`User ID ${checkedSellerUsername} is available. Click Continue to reserve it.`, "success");
       $("[data-save-seller-username]").disabled = false;
     } catch (error) {
       showSellerUsernameStatus(error.message, "error");
@@ -1061,7 +1118,7 @@
     const current = String(event.currentTarget.value || "").trim();
     if (current !== checkedSellerUsername) {
       $("[data-save-seller-username]").disabled = true;
-      showSellerUsernameStatus("Check your User ID before activating the seller account.");
+      showSellerUsernameStatus("Check your User ID before continuing.");
     }
   });
   $("[data-seller-username-form]")?.addEventListener("submit", async event => {
@@ -1075,11 +1132,12 @@
     const button = $("[data-save-seller-username]");
     button.disabled = true;
     try {
-      await request("/profile/live-username", { method: "POST", body: JSON.stringify({ liveUsername, activateSeller: true }) });
+      const activateSeller = Boolean((accountState?.isAdmin || sellerUpgradeRequested()) && accountState?.identityStatus === "verified");
+      await request("/profile/live-username", { method: "POST", body: JSON.stringify({ liveUsername, activateSeller }) });
       checkedSellerUsername = "";
-      showSellerUsernameStatus("Seller account granted. Opening your account now...", "success");
+      showSellerUsernameStatus(activateSeller ? "Seller account granted. Opening your account now..." : "User ID reserved. Continue to legal profile.", "success");
       await loadAccount();
-      showStatus("Seller account granted. Your referral link is live and the welcome email is on the way.", "success");
+      showStatus(activateSeller ? "Seller account granted. Your referral link is live and the welcome email is on the way." : "User ID reserved. Continue to legal profile and ID verification.", "success");
     } catch (error) {
       button.disabled = false;
       showSellerUsernameStatus(error.message, "error");
@@ -1352,7 +1410,16 @@
       if (returnTarget) preserved.set("return", returnTarget);
       const query = preserved.toString();
       history.replaceState({}, document.title, `${location.pathname}${query ? `?${query}` : ""}`);
-      showStatus(error.message, "error");
+      authRequestSent = false;
+      authRequestPending = false;
+      show("[data-auth-panel]", true);
+      show("[data-device-panel]", false);
+      show("[data-seller-username-panel]", false);
+      show("[data-profile-panel]", false);
+      show("[data-dashboard]", false);
+      setAuthMode(authMode);
+      showStatus(`${error.message} Use the form below to send a fresh 10-minute link.`, "error");
+      $("[data-request-form] input[name='email']")?.focus();
     }
   }
   async function configureSocialLinks() {

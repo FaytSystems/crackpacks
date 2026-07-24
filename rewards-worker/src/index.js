@@ -33,6 +33,7 @@ const TIERS = [
   { threshold: 50, name: "Legend", reward: "VIP campaign grand prize entry" }
 ];
 const encoder = new TextEncoder();
+const PASSWORD_ITERATIONS = 210000;
 const now = () => new Date().toISOString();
 const id = () => crypto.randomUUID();
 const normalizeEmail = value => String(value || "").trim().toLowerCase().slice(0, 254);
@@ -117,6 +118,28 @@ const randomString = (length, alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789") => 
 async function hash(value, secret = "") {
   const bytes = await crypto.subtle.digest("SHA-256", encoder.encode(`${secret}:${value}`));
   return [...new Uint8Array(bytes)].map(b => b.toString(16).padStart(2, "0")).join("");
+}
+const bytesToBase64url = bytes => btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const base64urlToBytes = value => Uint8Array.from(atob(String(value || "").replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(String(value || "").length / 4) * 4, "=")), char => char.charCodeAt(0));
+function validatePassword(value) {
+  const password = String(value || "");
+  if (password.length < 10 || password.length > 128) return "Password must be 10 to 128 characters.";
+  if (!/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) return "Password must include at least one letter and one number.";
+  return "";
+}
+async function passwordDigest(password, saltBase64url, pepper) {
+  const keyMaterial = await crypto.subtle.importKey("raw", encoder.encode(`${pepper || ""}:${password}`), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt: base64urlToBytes(saltBase64url), iterations: PASSWORD_ITERATIONS }, keyMaterial, 256);
+  return bytesToBase64url(new Uint8Array(bits));
+}
+async function newPasswordRecord(password, pepper) {
+  const salt = bytesToBase64url(crypto.getRandomValues(new Uint8Array(24)));
+  return { salt, digest: await passwordDigest(password, salt, pepper) };
+}
+async function issueMemberSession(env, memberId) {
+  const token = randomString(48);
+  await env.DB.prepare(`INSERT INTO sessions(token_hash,member_id,expires_at,created_at) VALUES(?,?,?,?)`).bind(await hash(token, env.AUTH_SECRET), memberId, new Date(Date.now() + 30 * 86400e3).toISOString(), now()).run();
+  return token;
 }
 function response(body, status = 200, cors = {}) { return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...cors } }); }
 function svgResponse(svg, cors = {}) { return new Response(svg, { status: 200, headers: { "Content-Type": "image/svg+xml; charset=utf-8", "Content-Disposition": "inline; filename=crack-packs-referral-qr.svg", "Cache-Control": "private, no-store", "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'", "X-Content-Type-Options": "nosniff", ...cors } }); }
@@ -707,6 +730,7 @@ async function account(member, count, env, seller = null) {
   const roles = admin ? ["buyer", "seller", "master"] : (sellerAccess ? ["buyer", "seller"] : ["buyer"]);
   return {
     deviceVerified: Boolean(member.device_verified), profileComplete: member.identity_status === "verified", identityStatus: member.identity_status,
+    passwordConfigured: Boolean(member.password_hash && member.password_salt),
     stripeIdentityStatus: member.stripe_identity_status || "not_started", firstName: member.first_name, lastName: member.last_name || "", birthDate: member.birth_date || "",
     hasSellerLegalProfile: Boolean(member.first_name && member.last_name && member.birth_date),
     liveUsername: member.live_username || "", referredSignup: Boolean(member.referred_by_member_id), isAdmin: admin, isMaster: admin,
@@ -1027,18 +1051,17 @@ async function route(request, env, cors, ctx) {
     const data = await body(request); const email = normalizeEmail(data.email);
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return response({ error: "Enter a valid email address." }, 400, cors);
     const returnTo = data.returnTo === "admin" ? "admin" : "rewards";
-    const authFlow = returnTo === "admin" ? "admin" : data.authMode === "signup" ? "signup" : "signin";
+    const requestedAuthFlow = returnTo === "admin" ? "admin" : data.authMode === "signup" ? "signup" : "signin";
     if (!await verifyTurnstile(env, data.turnstileToken, request)) return response({ error: "Security check failed. Refresh the page and try again." }, 403, cors);
     const existingMember = await env.DB.prepare(`SELECT id FROM members WHERE email=?`).bind(email).first();
+    const authFlow = requestedAuthFlow === "admin" ? "admin" : existingMember ? "signin" : "signup";
     const emailKey = await hash(email, env.AUTH_SECRET);
     const rateWindow = new Date(Date.now() - 15 * 60e3).toISOString();
     const recentCodes = await env.DB.prepare(`SELECT COUNT(*) count FROM login_codes WHERE email=? AND created_at>?`).bind(email, rateWindow).first();
     if (Number(recentCodes?.count || 0) >= 3) return response({ error: "Too many links requested. Try again later." }, 429, cors);
-    const flowMatches = authFlow === "signup"
-      ? !existingMember
-      : authFlow === "admin"
-        ? Boolean(existingMember) && email === normalizeEmail(env.ADMIN_EMAIL)
-        : Boolean(existingMember);
+    const flowMatches = authFlow === "admin"
+      ? Boolean(existingMember) && email === normalizeEmail(env.ADMIN_EMAIL)
+      : true;
     const linkToken = randomString(48); const created = now();
     const rawReferralCode = authFlow === "signup" ? boundedString(data.referralCode, 16) : "";
     const rawOwnerReferralToken = authFlow === "signup" ? boundedString(data.ownerReferralToken, 80) : "";
@@ -1099,14 +1122,15 @@ async function route(request, env, cors, ctx) {
         throw error;
       }
     };
+    let authResult;
     try {
-      await finishAuthRequest();
+      authResult = await finishAuthRequest();
     } catch (error) {
       if (error.message === "EMAIL_NOT_CONFIGURED") return response({ error: "Account email is not configured on the rewards service yet." }, 503, cors);
       if (error.message === "EMAIL_DELIVERY_FAILED") return response({ error: "The verification email could not be sent right now. Try again in a minute." }, 502, cors);
       throw error;
     }
-    return response({ ok: true }, 200, cors);
+    return response({ ok: true, authFlow, delivered: Boolean(authResult?.delivered) }, 200, cors);
   }
   if (url.pathname === "/auth/verify-link" && request.method === "POST") {
     const data = await body(request); const submittedHash = await hash(String(data.token || ""), env.AUTH_SECRET);
@@ -1137,9 +1161,32 @@ async function route(request, env, cors, ctx) {
         await audit(env, request, "referral_credit_awarded", referrerMemberId, `${member.id}|${member.email}|first_signin`);
       }
     }
-    const token = randomString(48);
-    await env.DB.prepare(`INSERT INTO sessions(token_hash,member_id,expires_at,created_at) VALUES(?,?,?,?)`).bind(await hash(token, env.AUTH_SECRET), member.id, new Date(Date.now() + 30 * 86400e3).toISOString(), now()).run();
+    const token = await issueMemberSession(env, member.id);
     await audit(env, request, "email_link_verified", member.id, authFlow); return response({ token, authFlow, account: await accountFor(member, env) }, 200, cors);
+  }
+  if (url.pathname === "/auth/password/login" && request.method === "POST") {
+    const data = await body(request);
+    const email = normalizeEmail(data.email);
+    const password = String(data.password || "");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return response({ error: "Enter a valid email address." }, 400, cors);
+    if (!await verifyTurnstile(env, data.turnstileToken, request)) return response({ error: "Security check failed. Refresh the page and try again." }, 403, cors);
+    const member = await env.DB.prepare(`SELECT * FROM members WHERE email=?`).bind(email).first();
+    const generic = { error: "Email or password is incorrect." };
+    if (!member || !member.email_verified_at || !member.password_hash || !member.password_salt) return response(generic, 401, cors);
+    if (member.password_locked_until && member.password_locked_until > now()) return response({ error: "Too many password attempts. Try again later." }, 429, cors);
+    const digest = await passwordDigest(password, member.password_salt, env.AUTH_SECRET);
+    if (digest !== member.password_hash) {
+      const attempts = Number(member.password_failed_attempts || 0) + 1;
+      const lockedUntil = attempts >= 8 ? new Date(Date.now() + 15 * 60e3).toISOString() : null;
+      await env.DB.prepare(`UPDATE members SET password_failed_attempts=?,password_locked_until=?,updated_at=? WHERE id=?`).bind(attempts, lockedUntil, now(), member.id).run();
+      await audit(env, request, "password_login_failed", member.id);
+      return response(lockedUntil ? { error: "Too many password attempts. Try again in 15 minutes." } : generic, lockedUntil ? 429 : 401, cors);
+    }
+    const token = await issueMemberSession(env, member.id);
+    await env.DB.prepare(`UPDATE members SET password_failed_attempts=0,password_locked_until=NULL,updated_at=? WHERE id=?`).bind(now(), member.id).run();
+    const updated = await env.DB.prepare(`SELECT * FROM members WHERE id=?`).bind(member.id).first();
+    await audit(env, request, "password_login_verified", member.id);
+    return response({ token, authFlow: "signin", account: await accountFor(updated, env) }, 200, cors);
   }
   if (url.pathname === "/auth/logout" && request.method === "POST") {
     const sessionToken = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
@@ -1158,6 +1205,17 @@ async function route(request, env, cors, ctx) {
   const member = await memberFromRequest(request, env);
   if (!member) return response({ error: "Sign in is required." }, 401, cors);
   if (url.pathname === "/me" && request.method === "GET") return response(await accountFor(member, env), 200, cors);
+  if (url.pathname === "/auth/password/set" && request.method === "POST") {
+    const data = await body(request);
+    const passwordError = validatePassword(data.password);
+    if (passwordError) return response({ error: passwordError }, 400, cors);
+    if (data.password !== data.confirmPassword) return response({ error: "Passwords do not match." }, 400, cors);
+    const record = await newPasswordRecord(data.password, env.AUTH_SECRET);
+    await env.DB.prepare(`UPDATE members SET password_hash=?,password_salt=?,password_updated_at=?,password_failed_attempts=0,password_locked_until=NULL,updated_at=? WHERE id=?`).bind(record.digest, record.salt, now(), now(), member.id).run();
+    const updated = await env.DB.prepare(`SELECT * FROM members WHERE id=?`).bind(member.id).first();
+    await audit(env, request, "password_set", member.id);
+    return response({ account: await accountFor(updated, env) }, 200, cors);
+  }
   if (url.pathname === "/profile/referral/qr" && request.method === "POST") {
     if (!member.device_verified || member.identity_status !== "verified") return response({ error: "Complete account verification before generating a referral QR." }, 403, cors);
     if (isOwnerEmail(member, env)) return response({ error: "Owner referral links and QR codes are generated only in the protected Owner Dashboard." }, 403, cors);

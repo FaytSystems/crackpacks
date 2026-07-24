@@ -5,6 +5,11 @@ CREATE TABLE IF NOT EXISTS members (
   identity_fingerprint TEXT UNIQUE, identity_status TEXT NOT NULL DEFAULT 'pending',
   device_verified INTEGER NOT NULL DEFAULT 0,
   obs_setup_completed_at TEXT,
+  password_hash TEXT NOT NULL DEFAULT '',
+  password_salt TEXT NOT NULL DEFAULT '',
+  password_updated_at TEXT,
+  password_failed_attempts INTEGER NOT NULL DEFAULT 0,
+  password_locked_until TEXT,
   invite_code TEXT NOT NULL UNIQUE, referred_by_member_id TEXT,
   referral_qualified_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
   FOREIGN KEY(referred_by_member_id) REFERENCES members(id)

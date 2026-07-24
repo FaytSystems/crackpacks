@@ -80,16 +80,29 @@
           <p data-auth-description>Enter the email connected to your Crack Packs account. We will send a secure sign-in link.</p>
           <form data-request-form>
             <label><span data-auth-email-label>Account email</span><input name="email" type="email" autocomplete="email" required maxlength="254" placeholder="collector@example.com"></label>
+            <label data-password-login-row hidden>Password<input name="password" type="password" autocomplete="current-password" maxlength="128" placeholder="Your Crack Packs password"></label>
             <div data-turnstile></div>
             <button class="btn btn-primary" type="submit" data-send-verification disabled>Complete security check</button>
           </form>
         </div>
       </section>
 
+      <section class="reward-card" data-password-panel hidden>
+        <p class="eyebrow">Step 1 of 5</p>
+        <h2>Create your account password</h2>
+        <p>Use this password for normal Sign In. After this, Crack Packs will also ask for a secure device passkey before protected seller and master tools.</p>
+        <form data-password-form>
+          <label>Password<input name="password" type="password" autocomplete="new-password" required minlength="10" maxlength="128" placeholder="At least 10 characters"></label>
+          <label>Confirm password<input name="confirmPassword" type="password" autocomplete="new-password" required minlength="10" maxlength="128"></label>
+          <button class="btn btn-primary" type="submit">Save password</button>
+          <p class="fine-print">Use at least 10 characters with a letter and a number.</p>
+        </form>
+      </section>
+
       <section class="reward-card" data-profile-panel hidden>
-        <p class="eyebrow">Identity profile</p>
-        <h2>Seller verification profile</h2>
-          <p>Seller accounts require a verified legal profile. Crack Packs checks your name and birthday against existing accounts before Stripe Identity begins.</p>
+        <p class="eyebrow">Step 4 of 5</p>
+        <h2>Legal account profile</h2>
+          <p>Enter your legal name and birthday. Crack Packs checks this against existing accounts before the secure Stripe Identity step opens.</p>
         <form data-profile-form>
           <div class="field-grid">
             <label>Legal first name<input name="firstName" autocomplete="given-name" required maxlength="60"></label>
@@ -97,36 +110,36 @@
           </div>
           <label>Date of birth<input name="birthDate" type="date" autocomplete="bday" required></label>
           <label class="check-line"><input name="consent" type="checkbox" required> I consent to identity and duplicate-account checks and confirm this information is mine.</label>
-          <button class="btn btn-primary" type="submit">Continue to seller ID check</button>
+          <button class="btn btn-primary" type="submit">Continue to secure ID check</button>
         </form>
         <div class="stripe-identity-action" data-stripe-identity-action hidden>
-          <p>Your legal profile is saved. Complete Stripe Identity's document-and-selfie check before your Crack Packs User ID can be claimed and Seller access can be activated.</p>
-          <button class="btn btn-primary" type="button" data-start-stripe-identity>Open secure seller ID verification</button>
+          <p>Your legal profile is saved. Complete Stripe Identity's document-and-selfie check to finish account verification.</p>
+          <button class="btn btn-primary" type="button" data-start-stripe-identity>Open secure ID verification</button>
           <p class="fine-print">Stripe handles the identity document. Crack Packs stores the verification result, not a copy of your full card or identity document.</p>
         </div>
       </section>
 
       <section class="reward-card" data-seller-username-panel hidden>
-        <p class="eyebrow">Seller User ID</p>
+        <p class="eyebrow">Step 3 of 5</p>
         <h2>Claim your Crack Packs User ID</h2>
-        <p>Stripe confirmed your seller identity. Now choose the protected User ID buyers will see. Crack Packs blocks duplicates, close lookalikes, number swaps, and name-copy variations.</p>
+        <p>Choose the protected User ID buyers and collectors will see. Crack Packs blocks duplicates, close lookalikes, number swaps, and name-copy variations.</p>
         <form data-seller-username-form>
           <label>Crack Packs User ID<input name="liveUsername" data-seller-live-username required maxlength="32" pattern="[A-Za-z][A-Za-z0-9_]{2,31}" placeholder="RipWizard"></label>
           <div class="actions">
             <button class="btn btn-outline" type="button" data-check-seller-username>Check</button>
-            <button class="btn btn-primary" type="submit" data-save-seller-username disabled>Go to account</button>
+            <button class="btn btn-primary" type="submit" data-save-seller-username disabled>Continue</button>
           </div>
           <div class="campaign-form-status" data-seller-username-status aria-live="polite"></div>
         </form>
-        <p class="fine-print">After this step, your seller account is activated, your referral link is live, and Crack Packs emails your account-granted details.</p>
+        <p class="fine-print">This reserves the User ID to your verified email before legal profile and ID verification continue.</p>
       </section>
 
       <section class="reward-card" data-device-panel hidden>
-        <p class="eyebrow">Seller security step</p>
-        <h2>Create a Crack Packs seller passkey</h2>
-        <p>Seller accounts require a device passkey before legal identity verification begins. Crack Packs receives a public key - not your fingerprint or biometric data.</p>
-        <button class="btn btn-primary" type="button" data-register-passkey>Verify seller device</button>
-        <p class="fine-print">Choose the local device or Windows Hello option if your browser asks. You should not need to scan a Google/FIDO QR code. Your passkey may sync through your device account or password manager.</p>
+        <p class="eyebrow">Step 2 of 5</p>
+        <h2>Create your secure passkey</h2>
+        <p>This locks the account to your device or password manager. Crack Packs stores the public key only - not your fingerprint, face, PIN, or device password.</p>
+        <button class="btn btn-primary" type="button" data-register-passkey>Create passkey</button>
+        <p class="fine-print">Choose the local device or Windows Hello option if your browser asks. Your passkey may sync through your device account or password manager.</p>
       </section>
 
       <section data-dashboard hidden>
@@ -367,7 +380,7 @@
         <ol>
           <li>Open the email from Crack Packs.</li>
           <li>Tap the secure account link in the message.</li>
-          <li>Finish your account details on the next page.</li>
+          <li>Create your password, passkey, User ID, then complete ID verification.</li>
         </ol>
       </div>
       <div class="actions email-modal-actions">
