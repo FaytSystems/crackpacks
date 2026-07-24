@@ -683,7 +683,8 @@ async function account(member, count, env, seller = null) {
   const roles = admin ? ["buyer", "seller", "master"] : (sellerAccess ? ["buyer", "seller"] : ["buyer"]);
   return {
     deviceVerified: Boolean(member.device_verified), profileComplete: member.identity_status === "verified", identityStatus: member.identity_status,
-    stripeIdentityStatus: member.stripe_identity_status || "not_started", firstName: member.first_name,
+    stripeIdentityStatus: member.stripe_identity_status || "not_started", firstName: member.first_name, lastName: member.last_name || "", birthDate: member.birth_date || "",
+    hasSellerLegalProfile: Boolean(member.first_name && member.last_name && member.birth_date),
     liveUsername: member.live_username || "", referredSignup: Boolean(member.referred_by_member_id), isAdmin: admin, isMaster: admin,
     sellerAccess, sellerStatus, roles, activePortal: member.active_portal || "buyer",
     phone: member.phone || "", shippingAddress: (() => { try { return JSON.parse(member.shipping_address_json || "{}"); } catch { return {}; } })(),
@@ -698,7 +699,7 @@ async function account(member, count, env, seller = null) {
 }
 async function accountFor(member, env) {
   const [row, seller] = await Promise.all([
-    env.DB.prepare(`SELECT COUNT(*) count FROM members WHERE referred_by_member_id=? AND referral_qualified_at IS NOT NULL AND identity_status='verified'`).bind(member.id).first(),
+    env.DB.prepare(`SELECT COUNT(*) count FROM members WHERE referred_by_member_id=? AND referral_qualified_at IS NOT NULL`).bind(member.id).first(),
     env.DB.prepare(`SELECT status FROM breaker_profiles WHERE member_id=?`).bind(member.id).first()
   ]);
   return account(member, Number(row?.count || 0), env, seller);
@@ -1095,11 +1096,14 @@ async function route(request, env, cors, ctx) {
       }
       const memberId = id(); const inviteCode = `CP${randomString(8)}`; const created = now();
       try {
-        await env.DB.prepare(`INSERT INTO members(id,email,email_verified_at,invite_code,referred_by_member_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?)`).bind(memberId, email, created, inviteCode, referrerMemberId, created, created).run();
+        await env.DB.prepare(`INSERT INTO members(id,email,email_verified_at,invite_code,referred_by_member_id,referral_qualified_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)`).bind(memberId, email, created, inviteCode, referrerMemberId, referrerMemberId ? created : null, created, created).run();
       } catch (error) {
         return response({ error: "An account already exists for this email. Return to Profile and choose Sign In." }, 409, cors);
       }
       member = await env.DB.prepare(`SELECT * FROM members WHERE id=?`).bind(memberId).first();
+      if (referrerMemberId) {
+        await audit(env, request, "referral_credit_awarded", referrerMemberId, `${member.id}|${member.email}|first_signin`);
+      }
     }
     const token = randomString(48);
     await env.DB.prepare(`INSERT INTO sessions(token_hash,member_id,expires_at,created_at) VALUES(?,?,?,?)`).bind(await hash(token, env.AUTH_SECRET), member.id, new Date(Date.now() + 30 * 86400e3).toISOString(), now()).run();
@@ -1169,26 +1173,26 @@ async function route(request, env, cors, ctx) {
   if (!member.device_verified) return response({ error: "Verify a device passkey first." }, 403, cors);
   if (url.pathname === "/profile" && request.method === "POST") {
     if (member.identity_status === "verified") return response({ error: "Your identity profile is already verified. Use profile settings to update your User ID." }, 409, cors);
-    const data = await body(request); const first = clean(data.firstName, 60), last = clean(data.lastName, 60), birth = clean(data.birthDate, 10), username = clean(data.liveUsername, 32);
-    if (!first || !last || !/^\d{4}-\d{2}-\d{2}$/.test(birth) || !/^[A-Za-z][A-Za-z0-9_]{2,31}$/.test(username) || data.consent !== "on") return response({ error: "Complete every identity field and consent checkbox." }, 400, cors);
+    const data = await body(request); const first = clean(data.firstName, 60), last = clean(data.lastName, 60), birth = clean(data.birthDate, 10);
+    if (!first || !last || !/^\d{4}-\d{2}-\d{2}$/.test(birth) || data.consent !== "on") return response({ error: "Complete every legal identity field and consent checkbox." }, 400, cors);
     const birthDate = new Date(`${birth}T00:00:00Z`);
     if (!Number.isFinite(birthDate.getTime()) || birthDate.toISOString().slice(0, 10) !== birth) return response({ error: "Enter a valid calendar date of birth." }, 400, cors);
     const age = (Date.now() - birthDate.getTime()) / 31557600000;
     if (age < 18 || age > 120) return response({ error: "Rewards accounts require a valid adult date of birth." }, 400, cors);
     const fingerprint = await hash(`${first.toLowerCase()}|${last.toLowerCase()}|${birth}`, env.IDENTITY_PEPPER || env.AUTH_SECRET);
-    const key = usernameKey(username);
-    const rows = await env.DB.prepare(`SELECT id,identity_fingerprint,live_username_key FROM members WHERE id<>?`).bind(member.id).all();
-    const duplicate = (rows.results || []).find(row => {
-      const existingKey = String(row.live_username_key || "");
-      return row.identity_fingerprint === fingerprint || (existingKey && (existingKey === key || existingKey.startsWith(key) || key.startsWith(existingKey)));
-    });
+    const rows = await env.DB.prepare(`SELECT id,identity_fingerprint FROM members WHERE id<>?`).bind(member.id).all();
+    const duplicate = (rows.results || []).find(row => row.identity_fingerprint === fingerprint);
     if (duplicate) {
-      await env.DB.prepare(`INSERT INTO identity_review_queue(id,member_id,conflicting_member_id,reason,detail,created_at) VALUES(?,?,?,?,?,?)`).bind(id(), member.id, duplicate.id, "signup_collision", "Protected legal identity or User ID similarity collision.", now()).run();
+      const stamp = now();
+      await env.DB.batch([
+        env.DB.prepare(`UPDATE members SET first_name=?,last_name=?,birth_date=?,identity_fingerprint=?,identity_status='manual_review',stripe_identity_status='manual_review',updated_at=? WHERE id=?`).bind(first, last, birth, fingerprint, stamp, member.id),
+        env.DB.prepare(`INSERT INTO identity_review_queue(id,member_id,conflicting_member_id,reason,detail,created_at) VALUES(?,?,?,?,?,?)`).bind(id(), member.id, duplicate.id, "signup_collision", "Protected legal identity matches another account. Master may approve the single normal-seller exception.", stamp)
+      ]);
       await audit(env, request, "duplicate_identity_blocked", member.id);
-      return response({ error: "This identity or User ID is already connected to, or too similar to, an existing account. Owner review is required." }, 409, cors);
+      return response({ error: "This legal identity is already connected to an existing account. Owner review is required." }, 409, cors);
     }
     const identityStatus = "pending_identity";
-    await env.DB.prepare(`UPDATE members SET first_name=?,last_name=?,birth_date=?,live_username=?,live_username_key=?,identity_fingerprint=?,identity_status=?,stripe_identity_status='not_started',referral_qualified_at=NULL,updated_at=? WHERE id=?`).bind(first, last, birth, username, key, fingerprint, identityStatus, now(), member.id).run();
+    await env.DB.prepare(`UPDATE members SET first_name=?,last_name=?,birth_date=?,identity_fingerprint=?,identity_status=?,stripe_identity_status='not_started',referral_qualified_at=NULL,updated_at=? WHERE id=?`).bind(first, last, birth, fingerprint, identityStatus, now(), member.id).run();
     const updated = await env.DB.prepare(`SELECT * FROM members WHERE id=?`).bind(member.id).first(); await audit(env, request, "profile_submitted", member.id, identityStatus);
     return response({ account: await accountFor(updated, env), identityVerificationRequired: true }, 200, cors);
   }

@@ -140,8 +140,9 @@
       const collision = document.createElement("p"); collision.textContent = `Collision: ${review.reason} · existing ${review.conflicting_username ? `@${review.conflicting_username}` : review.conflicting_email || "account"}`;
       const actions = document.createElement("div"); actions.className = "admin-result-actions";
       const approve = document.createElement("button"); approve.type = "button"; approve.className = "btn btn-primary btn-small"; approve.dataset.identityDecision = "approve"; approve.dataset.reviewId = review.id; approve.textContent = "Approve account";
+      const approveSeller = document.createElement("button"); approveSeller.type = "button"; approveSeller.className = "btn btn-primary btn-small"; approveSeller.dataset.identityDecision = "approve_seller"; approveSeller.dataset.reviewId = review.id; approveSeller.textContent = "Approve as normal Seller (one available)";
       const reject = document.createElement("button"); reject.type = "button"; reject.className = "btn btn-danger btn-small"; reject.dataset.identityDecision = "reject"; reject.dataset.reviewId = review.id; reject.textContent = "Reject account";
-      actions.append(approve, reject); card.append(heading, detail, collision, actions); list.append(card);
+      actions.append(approve, approveSeller, reject); card.append(heading, detail, collision, actions); list.append(card);
     });
     setIdentityReviewStatus(`${reviews.length} collision${reviews.length === 1 ? "" : "s"} require an owner decision.`);
   }
@@ -1760,7 +1761,10 @@
     const button = event.target.closest("[data-identity-decision]");
     if (!button) return;
     const decision = button.dataset.identityDecision;
-    if (!confirm(`${decision === "approve" ? "Approve" : "Reject"} this identity collision?`)) return;
+    const confirmation = decision === "approve_seller"
+      ? "Use the one Master-authorized duplicate-identity exception and activate this as a normal Seller account? This account will not receive Master access."
+      : `${decision === "approve" ? "Approve" : "Reject"} this identity collision?`;
+    if (!confirm(confirmation)) return;
     button.disabled = true;
     try {
       await request(`/admin/identity-reviews/${encodeURIComponent(button.dataset.reviewId)}`, { method: "POST", body: JSON.stringify({ decision }) });

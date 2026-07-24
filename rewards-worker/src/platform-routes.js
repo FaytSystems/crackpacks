@@ -2250,10 +2250,28 @@ export async function handlePlatformRoute(request, env, cors) {
     const auth = await requireOwner(request, env, cors);
     if (auth.error) return auth.error;
     const data = await boundedJson(request, 1200);
-    const decision = data.decision === "approve" ? "approved" : data.decision === "reject" ? "rejected" : "";
+    const approveSeller = data.decision === "approve_seller";
+    const decision = data.decision === "approve" || approveSeller ? "approved" : data.decision === "reject" ? "rejected" : "";
     if (!decision) return json({ error: "Choose approve or reject." }, 400, cors);
     const review = await env.DB.prepare(`SELECT * FROM identity_review_queue WHERE id=? AND status='pending'`).bind(reviewMatch[1]).first();
     if (!review) return json({ error: "That identity review is no longer pending." }, 404, cors);
+    if (approveSeller) {
+      const usedException = await env.DB.prepare(`SELECT member_id,approved_at FROM owner_duplicate_seller_exception WHERE singleton_id=1`).first();
+      if (usedException) return json({ error: "The one additional duplicate-identity Seller account has already been approved." }, 409, cors);
+      const stamp = now();
+      try {
+        await env.DB.batch([
+          env.DB.prepare(`INSERT INTO owner_duplicate_seller_exception(singleton_id,member_id,identity_review_id,approved_by_member_id,approved_at) VALUES(1,?,?,?,?)`).bind(review.member_id, review.id, auth.member.id, stamp),
+          env.DB.prepare(`UPDATE identity_review_queue SET status='approved',reviewed_by_member_id=?,reviewed_at=? WHERE id=? AND status='pending'`).bind(auth.member.id, stamp, review.id),
+          env.DB.prepare(`UPDATE members SET identity_status='verified',stripe_identity_status='verified',active_portal='seller',referral_qualified_at=COALESCE(referral_qualified_at,?),updated_at=? WHERE id=?`).bind(stamp, stamp, review.member_id),
+          env.DB.prepare(`INSERT INTO breaker_profiles(member_id,status,created_at,updated_at) VALUES(?,'active',?,?) ON CONFLICT(member_id) DO UPDATE SET status='active',updated_at=excluded.updated_at`).bind(review.member_id, stamp, stamp)
+        ]);
+      } catch (error) {
+        console.error("Duplicate seller exception approval failed", { reviewId: review.id, error: String(error?.message || error || "") });
+        return json({ error: "The one additional Seller exception could not be granted or has already been used." }, 409, cors);
+      }
+      return json({ ok: true, decision: "approved", sellerActivated: true, roles: ["buyer", "seller"] }, 200, cors);
+    }
     await env.DB.batch([
       env.DB.prepare(`UPDATE identity_review_queue SET status=?,reviewed_by_member_id=?,reviewed_at=? WHERE id=? AND status='pending'`).bind(decision, auth.member.id, now(), review.id),
       decision === "approved"
