@@ -1062,6 +1062,14 @@ async function route(request, env, cors, ctx) {
     if (ownerReferralRejected) return response({ error: "This owner referral window has expired. Ask for the current QR or referral link." }, 410, cors);
     const destinationPath = returnTo === "admin" ? "/admin.html" : "/referral.html";
     const verifyParams = new URLSearchParams({ verify: linkToken, mode: authFlow });
+    const sellerActivationToken = boundedString(data.sellerActivationToken, 120);
+    if (sellerActivationToken === null) return response({ error: "Invalid seller activation credential." }, 400, cors);
+    if (sellerActivationToken) {
+      const activation = await env.DB.prepare(`SELECT target_email,target_member_id FROM breaker_activation_codes WHERE code_hash=? AND used_at IS NULL AND expires_at>?`).bind(await hash(sellerActivationToken, env.AUTH_SECRET), now()).first();
+      const activationMatches = Boolean(activation && normalizeEmail(activation.target_email) === email && (!activation.target_member_id || activation.target_member_id === existingMember?.id));
+      if (!activationMatches) return response({ error: "That seller activation link is invalid, expired, or belongs to another account." }, 403, cors);
+      verifyParams.set("seller_activation", sellerActivationToken);
+    }
     if (authFlow !== "admin" && email !== normalizeEmail(env.ADMIN_EMAIL)) {
       const offerToken = offerTokenValue(data.offerToken);
       if (offerToken) {

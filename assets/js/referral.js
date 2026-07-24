@@ -9,7 +9,10 @@
   const ownerReferralToken = String(qs.get("owner_ref") || "").slice(0, 80);
   const hasAttachedReferral = Boolean(referralCode || ownerReferralToken);
   const verificationToken = String(qs.get("verify") || "");
-  const sellerActivationToken = String(qs.get("seller_activation") || "").slice(0, 120);
+  const SELLER_ACTIVATION_KEY = "cp_pending_seller_activation";
+  const querySellerActivationToken = String(qs.get("seller_activation") || "").slice(0, 120);
+  if (querySellerActivationToken) localStorage.setItem(SELLER_ACTIVATION_KEY, querySellerActivationToken);
+  const sellerActivationToken = querySellerActivationToken || String(localStorage.getItem(SELLER_ACTIVATION_KEY) || "").slice(0, 120);
   const normalizeOfferToken = value => {
     const candidate = String(value || "").trim().toUpperCase().slice(0, 64);
     return /^OFR[A-HJ-NP-Z2-9]{32}$/.test(candidate) ? candidate : "";
@@ -945,7 +948,7 @@
     }
     sendButton.textContent = "Sending secure link...";
     try {
-      await request("/auth/request", { method: "POST", body: JSON.stringify({ email, referralCode: submittedReferral, ownerReferralToken: submittedOwnerReferral, offerToken, authMode: submittedMode, returnTo: requestedPortal === "master" ? "admin" : "rewards", turnstileToken }) });
+      await request("/auth/request", { method: "POST", body: JSON.stringify({ email, referralCode: submittedReferral, ownerReferralToken: submittedOwnerReferral, sellerActivationToken, offerToken, authMode: submittedMode, returnTo: requestedPortal === "master" ? "admin" : "rewards", turnstileToken }) });
       authRequestSent = true;
       resetTurnstile();
       sendButton.textContent = "Check Inbox 10 min code";
@@ -1293,6 +1296,7 @@
       if (sellerActivationToken && token) {
         try {
           const result = await request("/seller/activate", { method: "POST", body: JSON.stringify({ token: sellerActivationToken }) });
+          localStorage.removeItem(SELLER_ACTIVATION_KEY);
           localStorage.setItem("cp_can_seller_portal", "true");
           localStorage.setItem("cp_portal_mode", result.activePortal || "seller");
           sessionStorage.setItem("cp_portal_mode", result.activePortal || "seller");
@@ -1300,6 +1304,8 @@
           showStatus("Seller Portal activated. You can now open seller inventory and show tools.", "success");
           await loadAccount();
         } catch (error) { showStatus(error.message, "error"); }
+      } else if (sellerActivationToken) {
+        showStatus("Seller activation is attached. Sign in with the invited email, or choose Create Account if that email does not have a Crack Packs account yet.", "success");
       }
       return;
     }
@@ -1312,6 +1318,19 @@
       const signedIn = data.authFlow === "signin" || data.authFlow === "admin" || data.authFlow === "legacy";
       showStatus(signedIn ? "Signed in to your Profile." : "Email verified. Your buyer account is ready.", "success");
       renderAccount(data.account);
+      if (sellerActivationToken && signedIn) {
+        try {
+          const activation = await request("/seller/activate", { method: "POST", body: JSON.stringify({ token: sellerActivationToken }) });
+          localStorage.removeItem(SELLER_ACTIVATION_KEY);
+          localStorage.setItem("cp_can_seller_portal", "true");
+          localStorage.setItem("cp_portal_mode", activation.activePortal || "seller");
+          sessionStorage.setItem("cp_portal_mode", activation.activePortal || "seller");
+          showStatus("Seller Portal activated. Your Seller account is ready.", "success");
+          await loadAccount();
+        } catch (error) {
+          showStatus(error.message, "error");
+        }
+      }
       if (returnTarget === "store" && signedIn && accountReady) {
         if (data.account.isAdmin || data.account.sellerAccess) {
           localStorage.setItem("cp_portal_mode", "seller");
