@@ -153,6 +153,35 @@
             <button class="btn btn-primary" type="button" data-open-master-portal data-portal-master-choice hidden>Master Account</button>
           </div>
         </section>
+        <div class="portal-launcher-modal" data-portal-launcher-modal hidden aria-hidden="true">
+          <button class="portal-launcher-backdrop" type="button" data-close-portal-launcher aria-label="Close account chooser"></button>
+          <section class="portal-launcher-card" role="dialog" aria-modal="true" aria-labelledby="portal-launcher-title">
+            <button class="portal-launcher-close" type="button" data-close-portal-launcher aria-label="Close">&times;</button>
+            <p class="eyebrow">Choose Account</p>
+            <h2 id="portal-launcher-title">Enter Crack Packs your way.</h2>
+            <p class="portal-launcher-copy">Pick the portal you want to step into right now. Buyer is your collector home base, Seller unlocks live tools, and Master opens the owner command deck.</p>
+            <div class="portal-launcher-grid">
+              <button class="portal-launcher-option buyer" type="button" data-open-buyer-portal>
+                <span>01</span>
+                <strong>Buyer Account</strong>
+                <small>Store, rewards, invites, orders, and saved watchlists.</small>
+              </button>
+              <button class="portal-launcher-option seller" type="button" data-open-seller-portal data-portal-seller-choice-modal hidden>
+                <span>02</span>
+                <strong>Seller Account</strong>
+                <small>Go Live, inventory, listings, giveaways, and seller tools.</small>
+              </button>
+              <button class="portal-launcher-option master" type="button" data-open-master-portal data-portal-master-choice-modal hidden>
+                <span>03</span>
+                <strong>Master Account</strong>
+                <small>Owner controls, approvals, campaigns, and platform command.</small>
+              </button>
+            </div>
+            <div class="portal-launcher-actions">
+              <button class="btn btn-outline" type="button" data-close-portal-launcher>Stay in Profile</button>
+            </div>
+          </section>
+        </div>
         <section class="reward-card action-panel" data-discount-panel hidden>
           <p class="eyebrow">Member discount</p><h3>Your offer</h3>
           <p class="code-output" data-discount-code>Claim when ready</p>

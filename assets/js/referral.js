@@ -46,6 +46,7 @@
   let streamCreditsRefreshInFlight = false;
   let checkedSellerUsername = "";
   let pendingSellerIdentityStart = false;
+  let portalLauncherShown = false;
   const STREAM_CREDITS_REFRESH_FOCUS_GRACE_MS = 2 * 60 * 1000;
   const SELLER_UPGRADE_KEY = "cp_seller_upgrade_requested";
   const authModeCopy = {
@@ -738,6 +739,16 @@
     if (sellerChoice) sellerChoice.hidden = !sellerAllowed;
     const masterChoice = $("[data-portal-master-choice]");
     if (masterChoice) masterChoice.hidden = !masterAllowed;
+    const sellerChoiceModal = $("[data-portal-seller-choice-modal]");
+    if (sellerChoiceModal) sellerChoiceModal.hidden = !sellerAllowed;
+    const masterChoiceModal = $("[data-portal-master-choice-modal]");
+    if (masterChoiceModal) masterChoiceModal.hidden = !masterAllowed;
+    const launcher = $("[data-portal-launcher-modal]");
+    if (launcher && !portalLauncherShown) {
+      launcher.hidden = false;
+      launcher.setAttribute("aria-hidden", "false");
+      portalLauncherShown = true;
+    }
     document.querySelectorAll("[data-seller-only]").forEach(node => { node.hidden = !sellerAllowed; });
     if (sellerAllowed) scheduleTopOfHourStreamCreditRefresh();
     else {
@@ -795,6 +806,15 @@
       });
     }
   }
+
+  document.querySelectorAll("[data-close-portal-launcher]").forEach(button => {
+    button.addEventListener("click", () => {
+      const launcher = $("[data-portal-launcher-modal]");
+      if (!launcher) return;
+      launcher.hidden = true;
+      launcher.setAttribute("aria-hidden", "true");
+    });
+  });
 
   function memberCampaignStatus(claim) {
     if (pick(claim, "redeemedAt", "redeemed_at", "usedAt", "used_at")) return "used";
