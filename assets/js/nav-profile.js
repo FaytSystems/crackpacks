@@ -26,6 +26,13 @@
 
   const goLiveHref = () => (portalState.sellerAccess ? sellerGoLiveUrl : sellerSetupUrl());
   const createShowHref = () => (portalState.sellerAccess ? sellerCreateShowUrl : sellerSetupUrl());
+  const routeToSellerSetup = () => {
+    localStorage.setItem("cp_can_seller_portal", "false");
+    localStorage.setItem("cp_portal_mode", "buyer");
+    sessionStorage.setItem("cp_portal_mode", "buyer");
+    sessionStorage.setItem("cp_seller_upgrade_requested", "true");
+    window.location.href = sellerSetupUrl();
+  };
   const accountMenuMarkup = () => `
     <div class="nav-account-bubbles" aria-label="Account portal switcher">
       <button class="nav-account-bubble ${portalState.activePortal !== "seller" ? "is-active" : ""}" type="button" data-open-buyer-portal>Buyer</button>
@@ -120,22 +127,33 @@
     event.stopPropagation();
     if (typeof event.stopImmediatePropagation === "function") event.stopImmediatePropagation();
     if (!token() || !rewardsApi) {
-      if (seller) window.location.href = sellerSetupUrl();
+      if (seller) routeToSellerSetup();
       else window.location.href = buyerProfileUrl;
       return;
     }
     if (seller && !portalState.sellerAccess) {
-      window.location.href = sellerSetupUrl();
+      routeToSellerSetup();
       return;
     }
     try {
-      await fetch(`${rewardsApi}/portal/mode`, {
+      const response = await fetch(`${rewardsApi}/portal/mode`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
         body: JSON.stringify({ mode: seller ? "seller" : "buyer" })
       });
-    } catch {}
-    window.location.href = seller ? (page === "streams" || page === "live" ? "streams.html" : "streams.html") : buyerProfileUrl;
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "Portal access could not be verified.");
+      if (seller) {
+        if (payload.activePortal !== "seller") throw new Error("Seller setup is not complete yet.");
+        localStorage.setItem("cp_can_seller_portal", "true");
+        localStorage.setItem("cp_portal_mode", "seller");
+        sessionStorage.setItem("cp_portal_mode", "seller");
+      }
+      window.location.href = seller ? "streams.html" : buyerProfileUrl;
+    } catch {
+      if (seller) routeToSellerSetup();
+      else window.location.href = buyerProfileUrl;
+    }
   });
 
   loadNavAccountState();

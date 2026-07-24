@@ -174,6 +174,15 @@
           </div>
           <p class="fine-print">Results update as you type. Search is limited to 100 records and never exposes birthdays or identity-security data.</p>
         </section>
+        <section class="reward-card" data-master-section="redeemed" hidden>
+          <div class="campaign-history-head">
+            <div><p class="eyebrow">Inbound credit feed</p><h3>New referral sign-up credits</h3></div>
+            <button class="btn btn-outline btn-small" type="button" data-referral-credit-refresh>Refresh</button>
+          </div>
+          <p>Whenever a new member signs in for the first time from a friend referral link, the credited +1 appears here for the Master account.</p>
+          <div class="campaign-form-status" data-referral-credit-status aria-live="polite"></div>
+          <div class="admin-results" data-referral-credit-results></div>
+        </section>
         <div class="admin-results" data-admin-results data-master-section="redeemed" hidden></div>
         <section class="reward-card master-email-card" data-master-section="email" hidden>
           <p class="eyebrow">Member communications</p>
@@ -577,7 +586,7 @@
   </div>
 
   <script src="assets/js/config.js?v=3.0.0"></script>
-  <script src="assets/js/nav-profile.js?v=2.6.1"></script>
+  <script src="assets/js/nav-profile.js?v=4.1.0"></script>
   <script src="assets/js/admin.js?v=3.3.2"></script>
 </body>
 </html>

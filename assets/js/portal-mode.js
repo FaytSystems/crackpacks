@@ -69,6 +69,7 @@
       button.disabled = true;
       try {
         const result = await portalRequest("/portal/mode", { method: "POST", body: JSON.stringify({ mode: "seller" }) });
+        if (result.activePortal !== "seller") throw new Error("Seller setup is not complete yet.");
         localStorage.setItem(SELLER_ALLOWED_KEY, "true");
         setMode(result.activePortal || "seller");
         window.location.href = sellerPortalDestination();
