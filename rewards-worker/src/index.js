@@ -1056,9 +1056,13 @@ async function route(request, env, cors, ctx) {
     const existingMember = await env.DB.prepare(`SELECT id FROM members WHERE email=?`).bind(email).first();
     const authFlow = requestedAuthFlow === "admin" ? "admin" : existingMember ? "signin" : "signup";
     const emailKey = await hash(email, env.AUTH_SECRET);
-    const rateWindow = new Date(Date.now() - 15 * 60e3).toISOString();
-    const recentCodes = await env.DB.prepare(`SELECT COUNT(*) count FROM login_codes WHERE email=? AND created_at>?`).bind(email, rateWindow).first();
-    if (Number(recentCodes?.count || 0) >= 3) return response({ error: "Too many links requested. Try again later." }, 429, cors);
+    const currentTime = now();
+    await env.DB.prepare(`DELETE FROM login_codes WHERE email=? AND (used_at IS NOT NULL OR expires_at<=?)`).bind(email, currentTime).run();
+    const activeCodes = await env.DB.prepare(`SELECT expires_at FROM login_codes WHERE email=? AND used_at IS NULL AND expires_at>? ORDER BY expires_at ASC`).bind(email, currentTime).all();
+    if ((activeCodes.results || []).length >= 3) {
+      const retryAfterSeconds = Math.max(60, Math.ceil((Date.parse(activeCodes.results[0].expires_at) - Date.now()) / 1000));
+      return response({ error: "Too many active verification links. Use the newest email link, or wait a few minutes for the older links to expire.", retryAfterSeconds }, 429, { ...cors, "Retry-After": String(retryAfterSeconds) });
+    }
     const flowMatches = authFlow === "admin"
       ? Boolean(existingMember) && email === normalizeEmail(env.ADMIN_EMAIL)
       : true;

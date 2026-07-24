@@ -1014,7 +1014,9 @@
       resetTurnstile();
       sendButton.textContent = "Complete security check";
       sendButton.disabled = true;
-      showStatus(error.message, "error");
+      const waitMinutes = Math.ceil(Number(error.payload?.retryAfterSeconds || 0) / 60);
+      const retryHelp = error.status === 429 && waitMinutes ? ` Try again in about ${waitMinutes} minute${waitMinutes === 1 ? "" : "s"}, or use the newest email already sent.` : "";
+      showStatus(`${error.message}${retryHelp}`, "error");
     } finally {
       authRequestPending = false;
       emailInput.disabled = false;
