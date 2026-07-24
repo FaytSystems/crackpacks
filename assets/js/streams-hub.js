@@ -18,6 +18,7 @@
   let hasSavedObsConnection = false;
   let obsGuideDismissedForSession = false;
   let obsGuideCompletedAt = "";
+  let obsGuideTriggeredByCreate = false;
   const OBS_GUIDE_COMPLETED_KEY = "cp_obs_guide_completed";
 
   const escapeHtml = value => String(value ?? "").replace(/[&<>'"]/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character]);
@@ -63,12 +64,29 @@
   };
   const copyText = async text => {
     if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-      return;
+      try {
+        await navigator.clipboard.writeText(text);
+        return true;
+      } catch {}
     }
     const area = document.createElement("textarea");
-    area.value = text; area.setAttribute("readonly", ""); area.style.position = "fixed"; area.style.opacity = "0";
-    document.body.append(area); area.select(); document.execCommand("copy"); area.remove();
+    area.value = text;
+    area.setAttribute("readonly", "");
+    area.style.position = "fixed";
+    area.style.top = "0";
+    area.style.left = "0";
+    area.style.width = "1px";
+    area.style.height = "1px";
+    area.style.opacity = "0";
+    area.style.pointerEvents = "none";
+    document.body.append(area);
+    area.focus();
+    area.select();
+    area.setSelectionRange(0, area.value.length);
+    const copied = document.execCommand("copy");
+    area.remove();
+    if (!copied) throw new Error("Copy did not complete. Use Save to download the key instead.");
+    return true;
   };
 
   const calendarDownload = show => {
@@ -97,15 +115,17 @@
   };
   function syncStreamKeyButtons() {
     const create = $("[data-stream-input-create]");
+    const load = $("[data-stream-input-load]");
     const rotate = $("[data-stream-input-rotate]");
-    if (create) create.textContent = hasSavedObsConnection ? "Load saved OBS connection" : "Create static OBS connection";
-    if (rotate) rotate.textContent = hasSavedObsConnection ? "Regenerate stream key" : "Create key";
+    if (create) create.textContent = hasSavedObsConnection ? "Regenerate Key" : "Create Key";
+    if (load) load.textContent = "Show Saved OBS Connection";
+    if (rotate) rotate.textContent = "OBS Setup Guide";
   }
   function syncStreamGuideVisibility({ forceOpen = false, firstOpen = false } = {}) {
     const guide = $("[data-stream-setup-guide]");
     if (!guide) return;
-    const shouldAutoOpen = !hasSavedObsConnection && !hasCompletedObsGuide() && !obsGuideDismissedForSession;
-    const manualOpen = !guide.hidden && !hasSavedObsConnection;
+    const shouldAutoOpen = obsGuideTriggeredByCreate && !hasSavedObsConnection && !hasCompletedObsGuide() && !obsGuideDismissedForSession;
+    const manualOpen = !guide.hidden && (obsGuideTriggeredByCreate || hasSavedObsConnection || hasCompletedObsGuide());
     const visible = forceOpen || shouldAutoOpen || manualOpen;
     guide.hidden = !visible;
     guide.classList.toggle("is-visible", visible);
@@ -141,7 +161,7 @@
     $("[data-stream-key-creator-confirm]").textContent = regenerate ? "Regenerate Key" : "Create Key";
     $("[data-stream-key-creator-copy-button]").disabled = true;
     $("[data-stream-key-creator-save-button]").disabled = true;
-    syncStreamGuideVisibility({ forceOpen: true, firstOpen: !hasSavedObsConnection && !hasCompletedObsGuide() });
+    syncStreamGuideVisibility({ forceOpen: true, firstOpen: obsGuideTriggeredByCreate && !hasSavedObsConnection && !hasCompletedObsGuide() });
   }
 
   const showCard = show => `
@@ -428,7 +448,6 @@
   });
 
   async function loadOrCreateStreamInput({ createIfMissing = false, replaceExisting = false } = {}) {
-    $("[data-stream-setup-guide]")?.removeAttribute("hidden");
     setStatus("[data-stream-input-status]", replaceExisting ? "Regenerating your saved OBS key..." : "Loading your saved OBS connection...");
     try {
       let payload = await api("/seller/stream/input");
@@ -441,47 +460,29 @@
       }
       renderStreamInput(payload.input);
       setStatus("[data-stream-input-status]", replaceExisting ? "New static OBS key saved. Update OBS once with the regenerated key." : "Static OBS connection ready. This saved key can be reused for future shows.", "success");
+      return payload;
     } catch (error) { setStatus("[data-stream-input-status]", error.message, "error"); }
+    return null;
   }
-  $("[data-stream-input-create]")?.addEventListener("click", async event => {
-    if (hasSavedObsConnection) {
-      const button = event.currentTarget;
-      button.disabled = true;
-      await loadOrCreateStreamInput({ createIfMissing: false });
-      button.disabled = false;
-      return;
-    }
-    openStreamKeyCreator("create");
-  });
-  $("[data-stream-input-load]")?.addEventListener("click", async event => {
-    const button = event.currentTarget; button.disabled = true;
-    await loadOrCreateStreamInput({ createIfMissing: false });
-    button.disabled = false;
-  });
-  $("[data-stream-input-rotate]")?.addEventListener("click", async event => {
-    openStreamKeyCreator(hasSavedObsConnection ? "regenerate" : "create");
-  });
-  $("[data-stream-key-creator-cancel]")?.addEventListener("click", () => {
-    closeStreamKeyCreator();
-    setStatus("[data-stream-input-status]", "Current OBS key kept unchanged.", "success");
-  });
-  $("[data-stream-key-creator-confirm]")?.addEventListener("click", async event => {
-    const button = event.currentTarget;
-    const isRegenerate = streamKeyCreatorState.mode === "regenerate";
+  async function generateStreamKey({ regenerate = false } = {}) {
+    const button = $("[data-stream-key-creator-confirm]");
+    if (!button) return;
+    const isRegenerate = Boolean(regenerate);
     button.disabled = true;
     button.textContent = isRegenerate ? "Regenerating..." : "Creating...";
     setStatus("[data-stream-input-status]", isRegenerate ? "Generating your new OBS key..." : "Creating your OBS key...");
     try {
-      await loadOrCreateStreamInput({ createIfMissing: true, replaceExisting: isRegenerate });
-      const liveKey = $("[data-stream-key]")?.value || "";
+      const payload = await loadOrCreateStreamInput({ createIfMissing: true, replaceExisting: isRegenerate });
+      const liveKey = payload?.input?.streamKey || $("[data-stream-key]")?.value || "";
       $("[data-stream-key-creator-value]").value = liveKey;
       $("[data-stream-key-creator-copy-button]").disabled = !liveKey;
       $("[data-stream-key-creator-save-button]").disabled = !liveKey;
       streamKeyCreatorState.generated = Boolean(liveKey);
       hasSavedObsConnection = Boolean(liveKey);
       if (liveKey) {
-        markObsGuideCompleted();
+        markObsGuideCompleted(payload?.obsSetupCompletedAt);
         obsGuideDismissedForSession = true;
+        obsGuideTriggeredByCreate = false;
       }
       syncStreamKeyButtons();
       syncStreamGuideVisibility();
@@ -492,6 +493,44 @@
       button.disabled = false;
       button.textContent = isRegenerate ? "Regenerate Key" : "Create Key";
     }
+  }
+  $("[data-stream-input-create]")?.addEventListener("click", async event => {
+    if (hasSavedObsConnection) {
+      obsGuideTriggeredByCreate = false;
+      openStreamKeyCreator("regenerate");
+      await generateStreamKey({ regenerate: true });
+      return;
+    }
+    obsGuideDismissedForSession = false;
+    obsGuideTriggeredByCreate = true;
+    openStreamKeyCreator("create");
+    await generateStreamKey({ regenerate: false });
+  });
+  $("[data-stream-input-load]")?.addEventListener("click", async event => {
+    const button = event.currentTarget; button.disabled = true;
+    await loadOrCreateStreamInput({ createIfMissing: false });
+    button.disabled = false;
+  });
+  $("[data-stream-input-rotate]")?.addEventListener("click", async event => {
+    const guide = $("[data-stream-setup-guide]");
+    if (!guide) return;
+    if (guide.hidden) {
+      guide.hidden = false;
+      guide.classList.add("is-visible");
+      guide.classList.remove("is-first-open");
+      return;
+    }
+    guide.hidden = true;
+    guide.classList.remove("is-visible", "is-first-open");
+    obsGuideDismissedForSession = true;
+  });
+  $("[data-stream-key-creator-cancel]")?.addEventListener("click", () => {
+    closeStreamKeyCreator();
+    setStatus("[data-stream-input-status]", "Current OBS key kept unchanged.", "success");
+  });
+  $("[data-stream-key-creator-confirm]")?.addEventListener("click", async event => {
+    const isRegenerate = streamKeyCreatorState.mode === "regenerate";
+    await generateStreamKey({ regenerate: isRegenerate });
   });
   $("[data-stream-key-creator-copy-button]")?.addEventListener("click", async () => {
     const value = $("[data-stream-key-creator-value]")?.value || "";
@@ -509,20 +548,6 @@
     downloadTextFile("crackpacks-obs-stream-key.txt", value);
     setStatus("[data-stream-input-status]", "OBS key saved to your device.", "success");
   });
-  $("[data-stream-setup-toggle]")?.addEventListener("click", () => {
-    const guide = $("[data-stream-setup-guide]");
-    if (!guide) return;
-    if (guide.hidden) {
-      guide.hidden = false;
-      guide.classList.add("is-visible");
-      guide.classList.remove("is-first-open");
-      return;
-    }
-    guide.hidden = true;
-    guide.classList.remove("is-visible", "is-first-open");
-    obsGuideDismissedForSession = true;
-  });
-
   syncStreamKeyButtons();
   syncStreamGuideVisibility();
 
