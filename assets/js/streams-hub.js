@@ -15,6 +15,10 @@
   let sellerCogsOrders = [];
   let sellerContextAuthorized = false;
   let activeTab = "watchlist";
+  let hasSavedObsConnection = false;
+  let obsGuideDismissedForSession = false;
+  let obsGuideCompletedAt = "";
+  const OBS_GUIDE_COMPLETED_KEY = "cp_obs_guide_completed";
 
   const escapeHtml = value => String(value ?? "").replace(/[&<>'"]/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character]);
   const dollars = cents => `$${(Number(cents || 0) / 100).toFixed(2)}`;
@@ -34,14 +38,18 @@
     const result = $("[data-stream-input-result]");
     if (!summary || !result) return;
     if (!input?.rtmpsUrl || !input?.streamKey) {
+      hasSavedObsConnection = false;
       summary.textContent = "Not set up yet";
       result.hidden = true;
+      syncStreamKeyButtons();
       return;
     }
+    hasSavedObsConnection = true;
     summary.textContent = "Saved to seller profile";
     $("[data-stream-rtmps-url]").value = input.rtmpsUrl;
     $("[data-stream-key]").value = input.streamKey;
     result.hidden = false;
+    syncStreamKeyButtons();
   }
   const showShareUrl = show => new URL(`live.html?show=${encodeURIComponent(show?.id || "")}`, location.href).href;
   const selectedSellerShow = () => {
@@ -82,6 +90,27 @@
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
   const streamKeyCreatorState = { mode: "create", generated: false };
+  const hasCompletedObsGuide = () => Boolean(obsGuideCompletedAt) || localStorage.getItem(OBS_GUIDE_COMPLETED_KEY) === "true";
+  const markObsGuideCompleted = stamp => {
+    obsGuideCompletedAt = stamp || new Date().toISOString();
+    localStorage.setItem(OBS_GUIDE_COMPLETED_KEY, "true");
+  };
+  function syncStreamKeyButtons() {
+    const create = $("[data-stream-input-create]");
+    const rotate = $("[data-stream-input-rotate]");
+    if (create) create.textContent = hasSavedObsConnection ? "Load saved OBS connection" : "Create static OBS connection";
+    if (rotate) rotate.textContent = hasSavedObsConnection ? "Regenerate stream key" : "Create key";
+  }
+  function syncStreamGuideVisibility({ forceOpen = false, firstOpen = false } = {}) {
+    const guide = $("[data-stream-setup-guide]");
+    if (!guide) return;
+    const shouldAutoOpen = !hasSavedObsConnection && !hasCompletedObsGuide() && !obsGuideDismissedForSession;
+    const manualOpen = !guide.hidden && !hasSavedObsConnection;
+    const visible = forceOpen || shouldAutoOpen || manualOpen;
+    guide.hidden = !visible;
+    guide.classList.toggle("is-visible", visible);
+    guide.classList.toggle("is-first-open", Boolean(firstOpen && visible));
+  }
   function closeStreamKeyCreator() {
     const panel = $("[data-stream-key-creator]");
     if (!panel) return;
@@ -112,6 +141,7 @@
     $("[data-stream-key-creator-confirm]").textContent = regenerate ? "Regenerate Key" : "Create Key";
     $("[data-stream-key-creator-copy-button]").disabled = true;
     $("[data-stream-key-creator-save-button]").disabled = true;
+    syncStreamGuideVisibility({ forceOpen: true, firstOpen: !hasSavedObsConnection && !hasCompletedObsGuide() });
   }
 
   const showCard = show => `
@@ -332,8 +362,12 @@
       $$('[data-seller-only]').forEach(node => { node.hidden = false; });
       try {
         const streamInput = await api("/seller/stream/input");
+        obsGuideCompletedAt = String(streamInput.obsSetupCompletedAt || "");
+        if (obsGuideCompletedAt) localStorage.setItem(OBS_GUIDE_COMPLETED_KEY, "true");
         renderStreamInput(streamInput.input);
       } catch {}
+      syncStreamKeyButtons();
+      syncStreamGuideVisibility({ firstOpen: !hasSavedObsConnection && !hasCompletedObsGuide() });
       await Promise.all([loadSellerGiveaways(), loadSellerShows(), loadSellerInventory(), loadSellerStoreListings(), loadSellerCogsOrders()]);
     } catch {}
   }
@@ -410,6 +444,13 @@
     } catch (error) { setStatus("[data-stream-input-status]", error.message, "error"); }
   }
   $("[data-stream-input-create]")?.addEventListener("click", async event => {
+    if (hasSavedObsConnection) {
+      const button = event.currentTarget;
+      button.disabled = true;
+      await loadOrCreateStreamInput({ createIfMissing: false });
+      button.disabled = false;
+      return;
+    }
     openStreamKeyCreator("create");
   });
   $("[data-stream-input-load]")?.addEventListener("click", async event => {
@@ -418,7 +459,7 @@
     button.disabled = false;
   });
   $("[data-stream-input-rotate]")?.addEventListener("click", async event => {
-    openStreamKeyCreator("regenerate");
+    openStreamKeyCreator(hasSavedObsConnection ? "regenerate" : "create");
   });
   $("[data-stream-key-creator-cancel]")?.addEventListener("click", () => {
     closeStreamKeyCreator();
@@ -437,6 +478,13 @@
       $("[data-stream-key-creator-copy-button]").disabled = !liveKey;
       $("[data-stream-key-creator-save-button]").disabled = !liveKey;
       streamKeyCreatorState.generated = Boolean(liveKey);
+      hasSavedObsConnection = Boolean(liveKey);
+      if (liveKey) {
+        markObsGuideCompleted();
+        obsGuideDismissedForSession = true;
+      }
+      syncStreamKeyButtons();
+      syncStreamGuideVisibility();
       setStatus("[data-stream-input-status]", isRegenerate ? "New OBS key created. Copy or save it before updating OBS." : "OBS key created. Copy or save it for OBS setup.", "success");
     } catch (error) {
       setStatus("[data-stream-input-status]", error.message, "error");
@@ -464,8 +512,19 @@
   $("[data-stream-setup-toggle]")?.addEventListener("click", () => {
     const guide = $("[data-stream-setup-guide]");
     if (!guide) return;
-    guide.hidden = !guide.hidden;
+    if (guide.hidden) {
+      guide.hidden = false;
+      guide.classList.add("is-visible");
+      guide.classList.remove("is-first-open");
+      return;
+    }
+    guide.hidden = true;
+    guide.classList.remove("is-visible", "is-first-open");
+    obsGuideDismissedForSession = true;
   });
+
+  syncStreamKeyButtons();
+  syncStreamGuideVisibility();
 
   $("[data-reveal-stream-key]")?.addEventListener("click", event => {
     const field = $("[data-stream-key]"); const reveal = field.type === "password";

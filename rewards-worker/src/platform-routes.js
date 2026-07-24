@@ -1826,6 +1826,7 @@ async function sellerStreamInput(request, env, cors) {
   const auth = await requireMember(request, env, cors, { seller: true });
   if (auth.error) return auth.error;
   let input = await env.DB.prepare(`SELECT * FROM breaker_stream_inputs WHERE member_id=?`).bind(auth.member.id).first();
+  let obsSetupCompletedAt = auth.member.obs_setup_completed_at || null;
   if ((request.method === "POST" && !input) || request.method === "PUT") {
     if (request.method === "PUT" && input?.cloudflare_live_input_uid) {
       await cloudflareRequest(env, `/live_inputs/${encodeURIComponent(input.cloudflare_live_input_uid)}`, { method: "DELETE" }).catch(() => null);
@@ -1856,8 +1857,15 @@ async function sellerStreamInput(request, env, cors) {
     `)
       .bind(auth.member.id, created.uid, clean(rtmps.url, 300), clean(rtmps.streamKey, 500), clean(srt.url, 500), clean(srt.streamId, 300), clean(srt.passphrase, 300), "disabled", auth.member.id, stamp, stamp).run();
     input = await env.DB.prepare(`SELECT * FROM breaker_stream_inputs WHERE member_id=?`).bind(auth.member.id).first();
+    if (!obsSetupCompletedAt) {
+      obsSetupCompletedAt = stamp;
+      await env.DB.prepare(`UPDATE members SET obs_setup_completed_at=?,updated_at=? WHERE id=?`).bind(stamp, stamp, auth.member.id).run();
+    }
   }
-  return json({ input: input ? { uid: input.cloudflare_live_input_uid, rtmpsUrl: input.rtmps_url, streamKey: input.rtmps_stream_key, srtUrl: input.srt_url, srtStreamId: input.srt_stream_id, srtPassphrase: input.srt_passphrase, status: input.status } : null }, 200, cors);
+  return json({
+    input: input ? { uid: input.cloudflare_live_input_uid, rtmpsUrl: input.rtmps_url, streamKey: input.rtmps_stream_key, srtUrl: input.srt_url, srtStreamId: input.srt_stream_id, srtPassphrase: input.srt_passphrase, status: input.status } : null,
+    obsSetupCompletedAt
+  }, 200, cors);
 }
 
 async function sellerShows(request, env, cors) {

@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS members (
   first_name TEXT, last_name TEXT, birth_date TEXT, legacy_marketplace_username TEXT UNIQUE,
   identity_fingerprint TEXT UNIQUE, identity_status TEXT NOT NULL DEFAULT 'pending',
   device_verified INTEGER NOT NULL DEFAULT 0,
+  obs_setup_completed_at TEXT,
   invite_code TEXT NOT NULL UNIQUE, referred_by_member_id TEXT,
   referral_qualified_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
   FOREIGN KEY(referred_by_member_id) REFERENCES members(id)

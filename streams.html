@@ -66,7 +66,7 @@
         <a class="hub-tab" href="#create-show">Create Show</a>
         <a class="hub-tab" href="#seller-my-listings">My Listings</a>
       </div>
-      <div class="giveaway-grid seller-cockpit-grid">
+      <div class="seller-cockpit-grid seller-cockpit-grid-premium">
         <article class="holo-panel seller-stream-input">
           <h3>Private OBS connection</h3>
           <p class="fine-print">One-time OBS setup. Your Crack Packs RTMPS server and stream key stay saved to your seller profile until you regenerate them, but the live input is locked except during your active show window.</p>
@@ -109,21 +109,24 @@
             <label>RTMPS server<span><input data-stream-rtmps-url readonly><button class="btn btn-outline btn-small" type="button" data-copy-stream-field="rtmps">Copy</button></span></label>
             <label>Stream key<span><input data-stream-key type="password" readonly><button class="btn btn-outline btn-small" type="button" data-reveal-stream-key>Reveal</button><button class="btn btn-outline btn-small" type="button" data-copy-stream-field="key">Copy</button></span></label>
           </div>
-          <div class="obs-setup-guide" data-stream-setup-guide hidden>
-            <strong>OBS setup</strong>
-            <ol>
-              <li>Click <span>Create static OBS connection</span> once to generate your private Crack Packs stream input.</li>
-              <li>Open OBS and go to <span>Settings &gt; Stream</span>.</li>
-              <li>Set <span>Service</span> to <span>Custom</span>.</li>
-              <li>Paste the <span>RTMPS server</span> into OBS Server.</li>
-              <li>Paste the <span>Stream key</span> into OBS Stream Key.</li>
-              <li>Save OBS. Future shows reuse this same saved key until you choose <span>Regenerate stream key</span>.</li>
-              <li>The key is stored to your seller account, but Crack Packs locks the live input outside your active show window.</li>
-              <li>Start streaming in OBS before opening auctions on the site.</li>
-            </ol>
-            <p class="fine-print">If Cloudflare creation fails, the guide still applies once the stream input is fixed. The most common causes are a missing Stream token permission or the Stream service not being enabled on the Cloudflare account.</p>
-          </div>
           <div class="campaign-form-status" data-stream-input-status aria-live="polite"></div>
+        </article>
+        <article class="holo-panel obs-setup-guide obs-setup-guide-premium" data-stream-setup-guide hidden data-stream-guide-premium>
+          <div class="obs-setup-guide-badge">First-time seller setup</div>
+          <strong>OBS setup</strong>
+          <p class="obs-setup-guide-intro">Create your Crack Packs key once, paste it into OBS, and you are ready to reuse the same connection for future shows until you intentionally rotate it.</p>
+          <ol>
+            <li>Click <span>Create key</span> to generate your private Crack Packs stream input.</li>
+            <li>Open OBS and go to <span>Settings &gt; Stream</span>.</li>
+            <li>Set <span>Service</span> to <span>Custom</span>.</li>
+            <li>Paste the <span>RTMPS server</span> into OBS Server.</li>
+            <li>Paste the <span>Stream key</span> into OBS Stream Key.</li>
+            <li>Save OBS. Future shows reuse this same saved key until you choose <span>Regenerate stream key</span>.</li>
+            <li>Your key is tied to your seller account and the live input stays locked outside your active show window.</li>
+            <li>Start streaming in OBS before opening auctions on the site.</li>
+          </ol>
+          <p class="fine-print">After your first successful key creation, this guide stays tucked away unless you open it with the OBS setup guide button.</p>
+          <p class="fine-print">If Cloudflare creation fails, the guide still applies once the stream input is fixed. The most common causes are a missing Stream token permission or the Stream service not being enabled on the Cloudflare account.</p>
         </article>
         <article class="holo-panel" id="create-show">
           <h3>Create a show</h3>
