@@ -143,6 +143,9 @@ async function issueMemberSession(env, memberId) {
 }
 function response(body, status = 200, cors = {}) { return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...cors } }); }
 function svgResponse(svg, cors = {}) { return new Response(svg, { status: 200, headers: { "Content-Type": "image/svg+xml; charset=utf-8", "Content-Disposition": "inline; filename=crack-packs-referral-qr.svg", "Cache-Control": "private, no-store", "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'", "X-Content-Type-Options": "nosniff", ...cors } }); }
+function passwordSchemaMissing(error) {
+  return /no such column: members\.password_|no such column: password_|no such column: password_hash|no such column: password_salt/i.test(String(error?.message || ""));
+}
 function corsFor(request, env) {
   const origin = request.headers.get("Origin"); const allowed = String(env.ALLOWED_ORIGINS || "").split(",").map(x => x.trim());
   if (!origin) return { "Access-Control-Allow-Origin": "*" };
@@ -1182,12 +1185,22 @@ async function route(request, env, cors, ctx) {
     if (digest !== member.password_hash) {
       const attempts = Number(member.password_failed_attempts || 0) + 1;
       const lockedUntil = attempts >= 8 ? new Date(Date.now() + 15 * 60e3).toISOString() : null;
-      await env.DB.prepare(`UPDATE members SET password_failed_attempts=?,password_locked_until=?,updated_at=? WHERE id=?`).bind(attempts, lockedUntil, now(), member.id).run();
+      try {
+        await env.DB.prepare(`UPDATE members SET password_failed_attempts=?,password_locked_until=?,updated_at=? WHERE id=?`).bind(attempts, lockedUntil, now(), member.id).run();
+      } catch (error) {
+        if (passwordSchemaMissing(error)) return response({ error: "Password login is not ready yet. Run the remote D1 password migration, then deploy again." }, 503, cors);
+        throw error;
+      }
       await audit(env, request, "password_login_failed", member.id);
       return response(lockedUntil ? { error: "Too many password attempts. Try again in 15 minutes." } : generic, lockedUntil ? 429 : 401, cors);
     }
     const token = await issueMemberSession(env, member.id);
-    await env.DB.prepare(`UPDATE members SET password_failed_attempts=0,password_locked_until=NULL,updated_at=? WHERE id=?`).bind(now(), member.id).run();
+    try {
+      await env.DB.prepare(`UPDATE members SET password_failed_attempts=0,password_locked_until=NULL,updated_at=? WHERE id=?`).bind(now(), member.id).run();
+    } catch (error) {
+      if (passwordSchemaMissing(error)) return response({ error: "Password login is not ready yet. Run the remote D1 password migration, then deploy again." }, 503, cors);
+      throw error;
+    }
     const updated = await env.DB.prepare(`SELECT * FROM members WHERE id=?`).bind(member.id).first();
     await audit(env, request, "password_login_verified", member.id);
     return response({ token, authFlow: "signin", account: await accountFor(updated, env) }, 200, cors);
@@ -1215,7 +1228,12 @@ async function route(request, env, cors, ctx) {
     if (passwordError) return response({ error: passwordError }, 400, cors);
     if (data.password !== data.confirmPassword) return response({ error: "Passwords do not match." }, 400, cors);
     const record = await newPasswordRecord(data.password, env.AUTH_SECRET);
-    await env.DB.prepare(`UPDATE members SET password_hash=?,password_salt=?,password_updated_at=?,password_failed_attempts=0,password_locked_until=NULL,updated_at=? WHERE id=?`).bind(record.digest, record.salt, now(), now(), member.id).run();
+    try {
+      await env.DB.prepare(`UPDATE members SET password_hash=?,password_salt=?,password_updated_at=?,password_failed_attempts=0,password_locked_until=NULL,updated_at=? WHERE id=?`).bind(record.digest, record.salt, now(), now(), member.id).run();
+    } catch (error) {
+      if (passwordSchemaMissing(error)) return response({ error: "Password setup is not ready yet. Run the remote D1 password migration, then deploy again." }, 503, cors);
+      throw error;
+    }
     const updated = await env.DB.prepare(`SELECT * FROM members WHERE id=?`).bind(member.id).first();
     await audit(env, request, "password_set", member.id);
     return response({ account: await accountFor(updated, env) }, 200, cors);
