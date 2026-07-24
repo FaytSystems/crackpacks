@@ -1853,8 +1853,24 @@ async function sellerStreamInput(request, env, cors) {
       });
     } catch (error) {
       if (error.message === "STREAM_NOT_CONFIGURED") return json({ error: "Cloudflare Stream credentials are not configured." }, 503, cors);
-      const providerDetail = String(error.message || "").startsWith("STREAM_PROVIDER_ERROR:") ? String(error.message).slice("STREAM_PROVIDER_ERROR:".length) : "";
-      return json({ error: providerDetail ? `Cloudflare could not create the live input. ${providerDetail}` : "Cloudflare could not create the live input." }, 503, cors);
+      const firstProviderDetail = String(error.message || "").startsWith("STREAM_PROVIDER_ERROR:") ? String(error.message).slice("STREAM_PROVIDER_ERROR:".length) : "";
+      const bodyMayBeRejected = /(?:HTTP 400|10005|decode body|bad request)/i.test(firstProviderDetail);
+      if (!bodyMayBeRejected) {
+        return json({ error: firstProviderDetail ? `Cloudflare could not create the live input. ${firstProviderDetail}` : "Cloudflare could not create the live input." }, 503, cors);
+      }
+      try {
+        created = await cloudflareRequest(env, "/live_inputs", {
+          method: "POST",
+          body: "{}"
+        });
+      } catch (fallbackError) {
+        const fallbackDetail = String(fallbackError.message || "").startsWith("STREAM_PROVIDER_ERROR:") ? String(fallbackError.message).slice("STREAM_PROVIDER_ERROR:".length) : "";
+        return json({
+          error: fallbackDetail
+            ? `Cloudflare rejected both supported live-input request formats. ${fallbackDetail}`
+            : "Cloudflare rejected both supported live-input request formats."
+        }, 503, cors);
+      }
     }
     const rtmps = created?.rtmps || {};
     const rtmpsUrl = clean(rtmps.url, 300);
