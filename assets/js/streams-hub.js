@@ -221,16 +221,17 @@
   }
 
   async function loadSellerLots(showId) {
-    if (!showId) { renderSellerLots([]); syncStoreLinkedLotOptions(); return; }
+    if (!showId) { renderSellerLots([]); syncStoreShowOptionsFromSellerShows(); return; }
     const payload = await api(`/seller/shows/${encodeURIComponent(showId)}/lots`);
     renderSellerLots(payload.lots || [], payload.show);
-    syncStoreLinkedLotOptions();
+    syncStoreShowOptionsFromSellerShows();
   }
 
   async function loadSellerShows() {
     const payload = await api("/seller/shows");
     sellerShows = payload.shows || [];
     renderSellerShows();
+    syncStoreShowOptionsFromSellerShows();
   }
 
   function renderSellerInventory(reorders = []) {
@@ -293,10 +294,19 @@
     renderSellerStoreListings();
   }
 
-  function syncStoreLinkedLotOptions() {
-    const select = $("[data-store-linked-lot]");
+  function syncStoreShowOptionsFromSellerShows() {
+    const select = $("[data-store-show-link]");
     if (!select) return;
-    const options = [`<option value="">No exact show lot linked</option>`].concat(
+    const options = [`<option value="">No scheduled show linked</option>`].concat(
+      sellerShows.map(show => `<option value="${escapeHtml(show.id)}">${escapeHtml(show.title)} · ${escapeHtml(show.status || "scheduled")} · ${escapeHtml(dateLabel(show.scheduled_at || show.started_at || ""))}</option>`)
+    );
+    select.innerHTML = options.join("");
+  }
+
+  function syncStoreShowOptions() {
+    const select = $("[data-store-show-link]");
+    if (!select) return;
+    const options = [`<option value="">No scheduled show linked</option>`].concat(
       sellerShowLots.map(lot => `<option value="${escapeHtml(lot.id)}">${escapeHtml(lot.title)} · ${escapeHtml(lot.status)} · ${dollars(lot.starting_bid_cents)}</option>`)
     );
     select.innerHTML = options.join("");
@@ -538,8 +548,7 @@
             shippingPayer: data.get("shippingPayer") || "buyer",
             imageUrl: data.get("imageUrl"),
             description: data.get("description"),
-            showId,
-            linkedLotId: data.get("linkedLotId") || ""
+            showId: data.get("storeShowId") || ""
           })
         });
         await loadSellerStoreListings();
@@ -550,7 +559,7 @@
         setStatus("[data-seller-lot-status]", "Auction lot added.", "success");
       }
       form.reset(); form.elements.startingBid.value = "1.00"; form.elements.bidIncrement.value = "1.00"; form.elements.storePrice.value = "1.00"; form.elements.storeQuantity.value = "1"; form.elements.shippingPayer.value = "buyer"; form.elements.saleTypeStore.value = "singles";
-      if (form.elements.linkedLotId) form.elements.linkedLotId.value = "";
+      if (form.elements.storeShowId) form.elements.storeShowId.value = "";
       syncListingDestinationUi();
     } catch (error) { setStatus("[data-seller-lot-status]", error.message, "error"); }
     finally { button.disabled = false; }
