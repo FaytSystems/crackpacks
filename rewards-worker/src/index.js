@@ -1053,18 +1053,26 @@ async function route(request, env, cors, ctx) {
     const finishAuthRequest = async () => {
       if (!flowMatches) {
         await audit(env, request, "auth_flow_mismatch", null, emailKey);
-        return;
+        return { ok: true, delivered: false, flowMismatch: true };
       }
       try {
         await sendEmail(env, email, emailCopy.subject, `<h1>${emailCopy.heading}</h1><p><a href="${escapeHtml(verifyUrl)}" style="display:inline-block;padding:14px 22px;background:#f8ff46;color:#070815;text-decoration:none;font-weight:bold;border-radius:10px">${emailCopy.button}</a></p><p>This secure link expires in 10 minutes and can only be used once. If you did not request it, ignore this message.</p>`, codeId);
         await audit(env, request, `${authFlow}_link_requested`, null, emailKey);
+        return { ok: true, delivered: true };
       } catch (error) {
         console.error("Authentication email delivery failed", { flow: authFlow, codeId });
+        await env.DB.prepare(`DELETE FROM login_codes WHERE id=?`).bind(codeId).run();
         await audit(env, request, "auth_email_delivery_failed", null, emailKey);
+        throw error;
       }
     };
-    if (ctx?.waitUntil) ctx.waitUntil(finishAuthRequest());
-    else await finishAuthRequest();
+    try {
+      await finishAuthRequest();
+    } catch (error) {
+      if (error.message === "EMAIL_NOT_CONFIGURED") return response({ error: "Account email is not configured on the rewards service yet." }, 503, cors);
+      if (error.message === "EMAIL_DELIVERY_FAILED") return response({ error: "The verification email could not be sent right now. Try again in a minute." }, 502, cors);
+      throw error;
+    }
     return response({ ok: true }, 200, cors);
   }
   if (url.pathname === "/auth/verify-link" && request.method === "POST") {
