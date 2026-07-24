@@ -977,6 +977,27 @@ async function route(request, env, cors, ctx) {
     if (!offerToken) return response({ error: "Enter a valid offer token." }, 400, cors);
     return response(await publicCampaignStatus(env, offerToken, Date.now()), 200, cors);
   }
+  if (url.pathname === "/public/owner-referral" && request.method === "GET") {
+    const fallbackSignupUrl = `${env.SITE_URL}/referral.html?mode=signup`;
+    const owner = normalizeEmail(env.ADMIN_EMAIL)
+      ? await env.DB.prepare(`SELECT id,email FROM members WHERE email=? AND identity_status='verified'`).bind(normalizeEmail(env.ADMIN_EMAIL)).first()
+      : null;
+    if (!owner) return response({ ok: true, signupUrl: fallbackSignupUrl, sellerSignupUrl: fallbackSignupUrl, active: false }, 200, cors);
+    const epochMs = Date.now();
+    const slot = ownerReferralSlotAt(epochMs);
+    const active = await ownerReferralIsActive(env, owner.id, slot.id);
+    const issued = await issueOwnerReferral(env.SITE_URL, owner.id, env.OWNER_REFERRAL_SECRET, epochMs);
+    const signupUrl = active ? `${issued.url}&mode=signup` : fallbackSignupUrl;
+    return response({
+      ok: true,
+      signupUrl,
+      sellerSignupUrl: signupUrl,
+      active,
+      expiresAt: issued.expiresAt,
+      windowLabel: issued.label,
+      nextBoundaryLabel: issued.nextBoundaryLabel
+    }, 200, cors);
+  }
   if (url.pathname === "/auth/request" && request.method === "POST") {
     const data = await body(request); const email = normalizeEmail(data.email);
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return response({ error: "Enter a valid email address." }, 400, cors);

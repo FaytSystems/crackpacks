@@ -1,5 +1,74 @@
 (() => {
+  "use strict";
+
   const profiles = [...document.querySelectorAll("[data-nav-profile]")];
+  const config = window.CRACKPACKS_CONFIG || {};
+  const rewardsApi = String(config.rewardsApiUrl || "").replace(/\/$/, "");
+  const token = () => localStorage.getItem("cp_rewards_token") || "";
+  const body = document.body;
+  const page = String(body?.dataset.page || "").toLowerCase();
+  const buyerProfileUrl = "referral.html";
+  const sellerGoLiveUrl = "streams.html#go-live";
+  const sellerCreateShowUrl = "streams.html#create-show";
+  let ownerSignupUrl = "referral.html?mode=signup";
+  let portalState = { signedIn: false, sellerAccess: false, activePortal: "buyer" };
+
+  const requestJson = async path => {
+    if (!rewardsApi) throw new Error("Rewards service is not configured.");
+    const response = await fetch(`${rewardsApi}${path}`, {
+      headers: { Accept: "application/json", ...(token() ? { Authorization: `Bearer ${token()}` } : {}) }
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || "Navigation state could not be loaded.");
+    return payload;
+  };
+
+  const goLiveHref = () => (portalState.sellerAccess ? sellerGoLiveUrl : ownerSignupUrl);
+  const createShowHref = () => (portalState.sellerAccess ? sellerCreateShowUrl : ownerSignupUrl);
+  const accountMenuMarkup = () => `
+    <div class="nav-account-bubbles" aria-label="Account portal switcher">
+      <button class="nav-account-bubble ${portalState.activePortal !== "seller" ? "is-active" : ""}" type="button" data-open-buyer-portal>Buyer</button>
+      <button class="nav-account-bubble ${portalState.activePortal === "seller" ? "is-active" : ""}" type="button" data-open-seller-portal>Seller</button>
+    </div>
+    <a href="${buyerProfileUrl}"><strong>Profile</strong><small>Invites, rewards, orders and account tools</small></a>
+  `;
+
+  function ensureHeaderActionLinks() {
+    const nav = document.querySelector(".site-nav");
+    if (!nav) return;
+    let createLink = nav.querySelector("[data-header-create-show]");
+    let liveLink = nav.querySelector("[data-header-go-live]");
+    if (!createLink) {
+      createLink = document.createElement("a");
+      createLink.className = "nav-live nav-account-action";
+      createLink.dataset.headerCreateShow = "";
+      createLink.textContent = "Create Show";
+      nav.append(createLink);
+    }
+    if (!liveLink) {
+      liveLink = document.createElement("a");
+      liveLink.className = "nav-live nav-account-action nav-account-action-primary";
+      liveLink.dataset.headerGoLive = "";
+      liveLink.textContent = "Go Live";
+      nav.append(liveLink);
+    }
+    createLink.href = createShowHref();
+    liveLink.href = goLiveHref();
+    createLink.classList.toggle("is-signup-route", !portalState.sellerAccess);
+    liveLink.classList.toggle("is-signup-route", !portalState.sellerAccess);
+  }
+
+  function renderAccountMenus() {
+    profiles.forEach(profile => {
+      const trigger = profile.querySelector("[data-profile-trigger]");
+      const menu = profile.querySelector(".nav-profile-menu");
+      if (!trigger || !menu) return;
+      trigger.innerHTML = `Account <span class="nav-profile-caret" aria-hidden="true">▼</span>`;
+      menu.innerHTML = accountMenuMarkup();
+    });
+    ensureHeaderActionLinks();
+  }
+
   profiles.forEach(profile => {
     const trigger = profile.querySelector("[data-profile-trigger]");
     if (!trigger) return;
@@ -18,6 +87,57 @@
       }
     });
   });
+
+  async function loadNavAccountState() {
+    try {
+      const publicReferral = rewardsApi ? await requestJson("/public/owner-referral") : null;
+      ownerSignupUrl = String(publicReferral?.sellerSignupUrl || publicReferral?.signupUrl || ownerSignupUrl);
+    } catch {}
+    if (!token() || !rewardsApi) {
+      portalState = { signedIn: false, sellerAccess: false, activePortal: "buyer" };
+      renderAccountMenus();
+      return;
+    }
+    try {
+      const status = await requestJson("/portal/status");
+      portalState = {
+        signedIn: true,
+        sellerAccess: Boolean(status.sellerAccess || status.isMaster),
+        activePortal: status.sellerAccess && status.activePortal === "seller" ? "seller" : "buyer"
+      };
+    } catch {
+      portalState = { signedIn: false, sellerAccess: false, activePortal: "buyer" };
+    }
+    renderAccountMenus();
+  }
+
+  document.addEventListener("click", async event => {
+    const buyer = event.target.closest("[data-open-buyer-portal]");
+    const seller = event.target.closest("[data-open-seller-portal]");
+    if (!buyer && !seller) return;
+    if (!token() || !rewardsApi) {
+      if (seller) window.location.href = ownerSignupUrl;
+      else window.location.href = buyerProfileUrl;
+      return;
+    }
+    if (seller && !portalState.sellerAccess) {
+      window.location.href = ownerSignupUrl;
+      return;
+    }
+    if (!buyer && !seller) return;
+    event.preventDefault();
+    event.stopPropagation();
+    try {
+      await fetch(`${rewardsApi}/portal/mode`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
+        body: JSON.stringify({ mode: seller ? "seller" : "buyer" })
+      });
+    } catch {}
+    window.location.href = seller ? (page === "streams" || page === "live" ? "streams.html" : "streams.html") : buyerProfileUrl;
+  });
+
+  loadNavAccountState();
 
   const mountSocialFooter = () => {
     if (!document.body || document.querySelector("[data-crack-packs-social-footer]")) return;
