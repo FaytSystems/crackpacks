@@ -1865,10 +1865,23 @@ async function sellerStreamInput(request, env, cors) {
         });
       } catch (fallbackError) {
         const fallbackDetail = String(fallbackError.message || "").startsWith("STREAM_PROVIDER_ERROR:") ? String(fallbackError.message).slice("STREAM_PROVIDER_ERROR:".length) : "";
+        let credentialProbe = "";
+        try {
+          await cloudflareRequest(env, "/live_inputs?include_counts=false");
+          credentialProbe = "The token can list Stream inputs, but Cloudflare is refusing creation. Confirm the token has Stream Edit, not Stream Read.";
+        } catch (probeError) {
+          const probeDetail = String(probeError.message || "").startsWith("STREAM_PROVIDER_ERROR:") ? String(probeError.message).slice("STREAM_PROVIDER_ERROR:".length) : "";
+          credentialProbe = probeDetail
+            ? `The Stream credential check also failed: ${probeDetail}`
+            : "The Stream credential check also failed.";
+        }
         return json({
-          error: fallbackDetail
-            ? `Cloudflare rejected both supported live-input request formats. ${fallbackDetail}`
-            : "Cloudflare rejected both supported live-input request formats."
+          error: [
+            fallbackDetail
+              ? `Cloudflare rejected both supported live-input request formats. ${fallbackDetail}`
+              : "Cloudflare rejected both supported live-input request formats.",
+            credentialProbe
+          ].filter(Boolean).join(" ")
         }, 503, cors);
       }
     }
