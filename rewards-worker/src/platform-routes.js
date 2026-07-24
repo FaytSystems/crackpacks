@@ -1625,7 +1625,18 @@ async function cloudflareRequest(env, path, options = {}) {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || payload.success === false) {
-    const providerError = clean(payload?.errors?.[0]?.message || payload?.messages?.[0]?.message || payload?.result?.message || "", 240);
+    const primaryError = payload?.errors?.[0] || payload?.messages?.[0] || null;
+    const code = clean(primaryError?.code || "", 40);
+    const message = clean(primaryError?.message || payload?.result?.message || payload?.errors?.map?.(item => item?.message).filter(Boolean).join("; ") || "", 240);
+    const fallback = clean(`HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}`, 80);
+    const providerError = clean(code && message ? `${code}: ${message}` : (message || fallback), 240);
+    console.error("Cloudflare Stream request failed", {
+      path,
+      status: response.status,
+      statusText: response.statusText,
+      providerError,
+      payload
+    });
     throw new Error(providerError ? `STREAM_PROVIDER_ERROR:${providerError}` : "STREAM_PROVIDER_ERROR");
   }
   return payload.result || payload;

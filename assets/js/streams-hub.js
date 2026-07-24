@@ -142,6 +142,7 @@
     const copy = $("[data-stream-key-creator-copy-button]");
     const save = $("[data-stream-key-creator-save-button]");
     if (input) input.value = "";
+    if (input) input.placeholder = "Your new OBS stream key will appear here after you click Create Key or Regenerate Key.";
     if (confirm) confirm.textContent = "Create Key";
     if (copy) copy.disabled = true;
     if (save) save.disabled = true;
@@ -158,6 +159,9 @@
       ? "Your current key stays active until you click Regenerate Key."
       : "Create your private OBS key when you are ready.";
     $("[data-stream-key-creator-value]").value = "";
+    $("[data-stream-key-creator-value]").placeholder = regenerate
+      ? "Your regenerated OBS stream key will appear here."
+      : "Your new OBS stream key will appear here.";
     $("[data-stream-key-creator-confirm]").textContent = regenerate ? "Regenerate Key" : "Create Key";
     $("[data-stream-key-creator-copy-button]").disabled = true;
     $("[data-stream-key-creator-save-button]").disabled = true;
@@ -466,15 +470,23 @@
   }
   async function generateStreamKey({ regenerate = false } = {}) {
     const button = $("[data-stream-key-creator-confirm]");
+    const input = $("[data-stream-key-creator-value]");
     if (!button) return;
     const isRegenerate = Boolean(regenerate);
     button.disabled = true;
     button.textContent = isRegenerate ? "Regenerating..." : "Creating...";
+    if (input) {
+      input.value = "";
+      input.placeholder = isRegenerate ? "Generating regenerated key..." : "Generating OBS key...";
+    }
     setStatus("[data-stream-input-status]", isRegenerate ? "Generating your new OBS key..." : "Creating your OBS key...");
     try {
       const payload = await loadOrCreateStreamInput({ createIfMissing: true, replaceExisting: isRegenerate });
       const liveKey = payload?.input?.streamKey || $("[data-stream-key]")?.value || "";
-      $("[data-stream-key-creator-value]").value = liveKey;
+      if (input) {
+        input.value = liveKey;
+        input.placeholder = liveKey ? "OBS key created." : "No key was returned.";
+      }
       $("[data-stream-key-creator-copy-button]").disabled = !liveKey;
       $("[data-stream-key-creator-save-button]").disabled = !liveKey;
       streamKeyCreatorState.generated = Boolean(liveKey);
@@ -488,6 +500,14 @@
       syncStreamGuideVisibility();
       setStatus("[data-stream-input-status]", isRegenerate ? "New OBS key created. Copy or save it before updating OBS." : "OBS key created. Copy or save it for OBS setup.", "success");
     } catch (error) {
+      const reason = String(error?.message || "The live input could not be created.");
+      if (input) {
+        input.value = "";
+        input.placeholder = reason;
+        input.title = reason;
+      }
+      $("[data-stream-key-creator-copy-button]").disabled = true;
+      $("[data-stream-key-creator-save-button]").disabled = true;
       setStatus("[data-stream-input-status]", error.message, "error");
     } finally {
       button.disabled = false;
