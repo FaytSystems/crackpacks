@@ -4,6 +4,7 @@
   const config = window.CRACKPACKS_CONFIG || {};
   const api = String(config.rewardsApiUrl || "").replace(/\/$/, "");
   const qs = new URLSearchParams(location.search);
+  const requestedPortal = qs.get("portal") === "master" ? "master" : "";
   const referralCode = (qs.get("ref") || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 16);
   const ownerReferralToken = String(qs.get("owner_ref") || "").slice(0, 80);
   const hasAttachedReferral = Boolean(referralCode || ownerReferralToken);
@@ -944,7 +945,7 @@
     }
     sendButton.textContent = "Sending secure link...";
     try {
-      await request("/auth/request", { method: "POST", body: JSON.stringify({ email, referralCode: submittedReferral, ownerReferralToken: submittedOwnerReferral, offerToken, authMode: submittedMode, turnstileToken }) });
+      await request("/auth/request", { method: "POST", body: JSON.stringify({ email, referralCode: submittedReferral, ownerReferralToken: submittedOwnerReferral, offerToken, authMode: submittedMode, returnTo: requestedPortal === "master" ? "admin" : "rewards", turnstileToken }) });
       authRequestSent = true;
       resetTurnstile();
       sendButton.textContent = "Check Inbox 10 min code";

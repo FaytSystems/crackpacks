@@ -19,7 +19,6 @@
   const masterAllowed = () => localStorage.getItem(MASTER_ALLOWED_KEY) === "true";
   const sellerPortalDestination = () => page === "streams" || page === "live" ? "streams.html" : "shop.html";
   const buyerPortalDestination = () => page === "shop" ? "shop.html" : "streams.html";
-  const masterPortalDestination = () => "admin.html";
 
   const portalRequest = async (path, options = {}) => {
     if (!apiBase || !authToken()) throw new Error("Sign in to your Profile first.");
@@ -89,13 +88,21 @@
     button.addEventListener("click", async () => {
       button.disabled = true;
       try {
-        const result = await portalRequest("/portal/mode", { method: "POST", body: JSON.stringify({ mode: "master" }) });
-        localStorage.setItem(MASTER_ALLOWED_KEY, "true");
-        setMode(result.activePortal || "master");
-        window.location.href = masterPortalDestination();
-      } catch (error) {
-        window.alert(error.message);
-        button.disabled = false;
+        if (apiBase && authToken()) {
+          await fetch(`${apiBase}/auth/logout`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken()}` },
+            body: "{}"
+          }).catch(() => {});
+        }
+      } finally {
+        sessionStorage.removeItem("cp_admin_token");
+        localStorage.removeItem("cp_rewards_token");
+        localStorage.setItem(SELLER_ALLOWED_KEY, "false");
+        localStorage.setItem(MASTER_ALLOWED_KEY, "false");
+        sessionStorage.setItem(STORAGE_KEY, "buyer");
+        localStorage.setItem(STORAGE_KEY, "buyer");
+        window.location.href = "referral.html?mode=signin&portal=master";
       }
     });
   });
