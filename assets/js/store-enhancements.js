@@ -16,6 +16,9 @@
   const emptyState = document.querySelector("[data-product-empty]");
   const seriesTabsContainer = document.querySelector("[data-store-series-tabs]");
   const topItemsByWindow = window.CRACKPACKS_TOP_ITEMS || {};
+  const showModal = document.querySelector("[data-store-show-modal]");
+  const showResults = document.querySelector("[data-store-show-results]");
+  const showCopy = document.querySelector("[data-store-show-copy]");
 
   if (!catalog) return;
 
@@ -26,7 +29,8 @@
     seller: "",
     sort: String(sortSelect?.value || "rank"),
     minPrice: Number(priceMinInput?.value || 0),
-    maxPrice: Number(priceMaxInput?.value || 1000)
+    maxPrice: Number(priceMaxInput?.value || 1000),
+    shows: []
   };
   let syncingCatalog = false;
 
@@ -87,6 +91,11 @@
   const parseSeller = card => String(card.querySelector(".store-market-meta strong")?.textContent || "").replace(/^@/, "").trim().toLowerCase();
 
   const activeSeries = () => seriesTabsContainer?.querySelector("[data-store-series].is-active")?.dataset.storeSeries || "all";
+  const dateLabel = value => {
+    const stamp = Date.parse(value || "");
+    if (!Number.isFinite(stamp)) return "Schedule pending";
+    return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(stamp));
+  };
 
   function hydrateCards() {
     [...catalog.querySelectorAll("[data-product-card]")].forEach((card, index) => {
@@ -101,6 +110,14 @@
       card.dataset.rank = card.dataset.rank || String(index + 1);
       card.dataset.createdAt = card.dataset.createdAt || "";
       card.dataset.search = `${text} ${seller} ${primary} ${subcategory}`.toLowerCase();
+      if (!card.querySelector("[data-store-show-open]")) {
+        const action = document.createElement("button");
+        action.type = "button";
+        action.className = "btn btn-outline btn-small store-show-action";
+        action.dataset.storeShowOpen = "true";
+        action.textContent = "Show";
+        card.querySelector(".product-body")?.append(action);
+      }
     });
   }
 
@@ -178,6 +195,105 @@
     });
   }
 
+  async function loadShows() {
+    const base = String(window.CRACKPACKS_CONFIG?.rewardsApiUrl || "").trim().replace(/\/+$/, "");
+    if (!base) return;
+    try {
+      const response = await fetch(`${base}/live/shows`, { headers: { Accept: "application/json" } });
+      const payload = await response.json().catch(() => ({}));
+      state.shows = Array.isArray(payload?.shows) ? payload.shows : [];
+    } catch (_) {
+      state.shows = [];
+    }
+  }
+
+  function closeShowModal() {
+    if (!showModal) return;
+    showModal.hidden = true;
+    showModal.setAttribute("aria-hidden", "true");
+  }
+
+  function openShowModal(card) {
+    if (!showModal || !showResults || !showCopy) return;
+    const seller = String(card.dataset.seller || "");
+    const title = String(card.querySelector("h3")?.textContent || "Listing");
+    const category = String(card.querySelector(".card-kicker")?.textContent || "Category");
+    const price = String(card.querySelector(".store-current-price")?.textContent || "Price coming soon");
+    const condition = String(card.querySelector(".store-market-meta span")?.textContent || "Condition pending");
+    const search = state.search || title.toLowerCase();
+    const exactShowLink = String(card.dataset.showLink || "");
+    const exactShowId = String(card.dataset.showId || "");
+    const exactShowTitle = String(card.dataset.showTitle || "");
+    const exactShowStatus = String(card.dataset.showStatus || "");
+    const exactStartingBidCents = Number(card.dataset.showStartingBidCents || 0);
+    const exactBidInRange = String(card.dataset.showBidInRange || "") === "true";
+    const exactHasScheduledInventory = String(card.dataset.showHasScheduledInventory || "") === "true";
+    const filtered = state.shows.filter(show => {
+      const sellerMatch = seller ? String(show.sellerUsername || "").trim().toLowerCase() === seller : true;
+      const text = `${show.title || ""} ${show.sellerUsername || ""} ${show.state || ""}`.toLowerCase();
+      const queryMatch = !search || text.includes(search) || title.toLowerCase().includes(search);
+      return sellerMatch && (show.state === "live" || show.state === "upcoming" || show.id === exactShowId) && queryMatch;
+    });
+    const cards = exactShowId ? [{
+      id: exactShowId,
+      title: exactShowTitle || filtered[0]?.title || "Crack Packs show",
+      sellerUsername: seller,
+      state: exactShowStatus || filtered[0]?.state || "open",
+      startsAt: filtered[0]?.startsAt || "",
+      viewers: filtered[0]?.viewers || 0,
+      livePageUrl: exactShowLink,
+      startingBidCents: exactStartingBidCents,
+      startingBidInRange: exactBidInRange,
+      hasScheduledInventory: exactHasScheduledInventory
+    }, ...filtered.filter(show => show.id !== exactShowId).map(show => ({
+      ...show,
+      livePageUrl: `live.html?show=${encodeURIComponent(show.id || "")}`,
+      startingBidCents: 0,
+      startingBidInRange: false,
+      hasScheduledInventory: false
+    }))] : filtered.map(show => ({
+      ...show,
+      livePageUrl: `live.html?show=${encodeURIComponent(show.id || "")}`,
+      startingBidCents: 0,
+      startingBidInRange: false,
+      hasScheduledInventory: false
+    }));
+    showCopy.textContent = filtered.length
+      ? `Live and upcoming shows for @${seller || "seller"} connected to ${title}.`
+      : `No matching live or upcoming shows found for @${seller || "seller"} right now.`;
+    showResults.innerHTML = `
+      <div class="store-listing-summary">
+        <span><small>Title</small><strong>${title}</strong></span>
+        <span><small>Category</small><strong>${category}</strong></span>
+        <span><small>Price</small><strong>${price}</strong></span>
+        <span><small>Condition</small><strong>${condition}</strong></span>
+        <span><small>Show</small><strong>${cards.length ? `${cards.length} found` : "0 found"}</strong></span>
+      </div>
+      ${cards.map(show => `
+        <article class="store-show-card">
+          <div class="store-show-card-top">
+            <span class="store-show-pill ${show.state === "live" ? "is-live" : "is-upcoming"}">${show.state === "live" ? "Live now" : "Upcoming"}</span>
+            <span class="store-show-badge">@${show.sellerUsername || "seller"}</span>
+          </div>
+          <h3>${show.title || "Crack Packs show"}</h3>
+          <p>${show.state === "live" ? "Bidding is active now." : "Save the date and watch this one when it opens."}</p>
+          <div class="store-show-card-meta">
+            <span>${show.state === "live" ? "Live now" : dateLabel(show.startsAt)}</span>
+            <span>${Number(show.viewers || 0)} viewers</span>
+            ${show.hasScheduledInventory ? `<span>Show inventory ready</span>` : ""}
+            ${show.startingBidCents > 0 ? `<span>Start bid $${(show.startingBidCents / 100).toFixed(2)}</span>` : ""}
+            ${show.startingBidInRange ? `<span>Bid in range</span>` : ""}
+          </div>
+          <div class="store-show-card-actions">
+            <a class="btn btn-primary btn-small" href="${show.livePageUrl || `live.html?show=${encodeURIComponent(show.id || "")}`}">${show.state === "live" ? "Watch live sale" : "Open show page"}</a>
+            <a class="btn btn-outline btn-small" href="streams.html">Live hub</a>
+          </div>
+        </article>`).join("") || `<article class="store-show-card"><h3>No matching show yet</h3><p>Try a broader search, or check the seller live hub page for new inventory and auctions.</p><div class="store-show-card-actions"><a class="btn btn-primary btn-small" href="streams.html">Open live hub</a></div></article>`}
+    `;
+    showModal.hidden = false;
+    showModal.setAttribute("aria-hidden", "false");
+  }
+
   function refreshSuggestions() {
     if (!suggestions) return;
     if (!state.search) {
@@ -240,6 +356,18 @@
     state.search = String(searchInput.value || "").trim().toLowerCase();
     applyFilters();
   });
+  catalog.addEventListener("click", event => {
+    const button = event.target.closest("[data-store-show-open]");
+    if (!button) return;
+    const card = button.closest("[data-product-card]");
+    if (card) openShowModal(card);
+  });
+  showModal?.addEventListener("click", event => {
+    if (event.target.closest("[data-store-show-close]")) closeShowModal();
+  });
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape" && showModal && !showModal.hidden) closeShowModal();
+  });
   priceMinInput?.addEventListener("input", event => {
     state.minPrice = Number(event.currentTarget.value || 0);
     if (state.minPrice > state.maxPrice) {
@@ -270,5 +398,5 @@
   populateSubcategories();
   renderTopTen();
   updatePriceControls();
-  applyFilters();
+  loadShows().finally(applyFilters);
 })();

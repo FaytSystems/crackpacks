@@ -12,6 +12,15 @@
   const sortSelect = document.querySelector("[data-marketplace-sort]");
   const currencySelect = document.querySelector("[data-store-currency]");
   const authGate = document.querySelector("[data-store-auth-gate]");
+  const topTenGrid = document.querySelector("[data-top-ten-grid]");
+  const topTenWindow = document.querySelector("[data-top-ten-window]");
+  const primaryTabs = document.querySelector("[data-store-primary-tabs]");
+  const subcategoryFilter = document.querySelector("[data-subcategory-filter]");
+  const sellerSearchInput = document.querySelector("[data-seller-search]");
+  const priceMinInput = document.querySelector("[data-price-min]");
+  const priceMaxInput = document.querySelector("[data-price-max]");
+  const priceIncrementSelect = document.querySelector("[data-price-increment]");
+  const priceRangeReadout = document.querySelector("[data-price-range-readout]");
   const inventoryEndpoint = "/marketplace/listings";
   const quoteEndpoint = "/store/shipping-quote";
   const checkoutEndpoint = "/store/checkout";
@@ -27,7 +36,12 @@
   let inventoryItems = [];
   let activeFilter = "all";
   let activeSearch = "";
-  let activeSort = "price";
+  let activeSort = "rank";
+  let activePrimary = "all";
+  let activeSubcategory = "all";
+  let activeSellerSearch = "";
+  let activeMinPrice = 0;
+  let activeMaxPrice = 1000;
   let catalogController = null;
   let storeComingSoon = true;
   let storeCheckoutEnabled = false;
@@ -35,6 +49,25 @@
   let shippingTurnstileToken = "";
   let shippingTurnstileWidgetId = null;
   let shippingTurnstileScriptAdded = false;
+  const topItemsByWindow = window.CRACKPACKS_TOP_ITEMS || {};
+  const taxonomy = {
+    all: ["all"],
+    pokemon: ["all", "booster_box", "elite_trainer_box", "booster_pack", "single_card", "graded_card", "accessory", "japanese", "vintage"],
+    magic: ["all", "play_booster_box", "collector_booster_box", "commander_deck", "single_card", "graded_card", "secret_lair", "accessory"],
+    sports: ["all", "baseball", "basketball", "football", "hockey", "soccer", "racing", "wrestling", "multi_sport"],
+    memorabilia: ["all", "shirts", "hats", "pennants", "signed_items", "display_items", "tickets", "other_memorabilia"],
+    collectibles: ["all", "cups", "toys", "boardgames", "figures", "pins", "plush", "sealed_collectibles"],
+    tcg: ["all", "pokemon", "magic", "yugioh", "one_piece", "lorcana", "dragon_ball", "flesh_and_blood", "digimon", "sports_cards"]
+  };
+  const primaryCategoryButtons = [
+    { id: "all", label: "All", icon: "✦" },
+    { id: "pokemon", label: "Pokemon", icon: "⚡" },
+    { id: "magic", label: "Magic", icon: "✧" },
+    { id: "sports", label: "Sports", icon: "🏆" },
+    { id: "memorabilia", label: "Memorabilia", icon: "🎟" },
+    { id: "collectibles", label: "Collectibles", icon: "🧸" },
+    { id: "tcg", label: "All TCG", icon: "🃏" }
+  ];
 
   const requireStoreAccount = () => {
     const signedIn = Boolean(authToken());
@@ -86,6 +119,46 @@
     return "sealed";
   };
 
+  const slugifyTerm = value => String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "") || "other";
+
+  const inferPrimaryCategory = value => {
+    const text = String(value || "").trim().toLowerCase();
+    if (/pokemon|etb|booster|trainer|scarlet|violet/.test(text)) return "pokemon";
+    if (/magic|mtg|commander|ravnica|modern|secret lair/.test(text)) return "magic";
+    if (/baseball|basketball|football|hockey|soccer|racing|wrestling|sport/.test(text)) return "sports";
+    if (/shirt|hat|pennant|signed|memorabilia|ticket/.test(text)) return "memorabilia";
+    if (/toy|board ?game|figure|cup|pin|plush|collectible/.test(text)) return "collectibles";
+    if (/yugioh|one piece|lorcana|dragon ball|digimon|flesh and blood|tcg|trading card/.test(text)) return "tcg";
+    return "all";
+  };
+
+  const inferSubcategory = value => {
+    const text = String(value || "").trim().toLowerCase();
+    if (!text) return "other";
+    if (/elite trainer|etb/.test(text)) return "elite_trainer_box";
+    if (/booster box/.test(text)) return "booster_box";
+    if (/booster pack|pack lot|blister/.test(text)) return "booster_pack";
+    if (/play booster/.test(text)) return "play_booster_box";
+    if (/collector booster/.test(text)) return "collector_booster_box";
+    if (/commander/.test(text)) return "commander_deck";
+    if (/secret lair/.test(text)) return "secret_lair";
+    if (/single|raw|slab|graded|card/.test(text)) return "single_card";
+    if (/baseball|basketball|football|hockey|soccer|racing|wrestling/.test(text)) return slugifyTerm(text.match(/baseball|basketball|football|hockey|soccer|racing|wrestling/)?.[0]);
+    if (/shirt|hat|pennant|signed|ticket/.test(text)) return slugifyTerm(text.match(/shirt|hat|pennant|signed|ticket/)?.[0]);
+    if (/toy|board ?game|figure|cup|pin|plush/.test(text)) return slugifyTerm(text.match(/toy|board ?game|figure|cup|pin|plush/)?.[0]);
+    if (/pokemon|magic|yugioh|one piece|lorcana|dragon ball|digimon|flesh and blood/.test(text)) return slugifyTerm(text.match(/pokemon|magic|yugioh|one piece|lorcana|dragon ball|digimon|flesh and blood/)?.[0]);
+    return slugifyTerm(text);
+  };
+
+  const prettyLabel = value => String(value || "other")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, character => character.toUpperCase());
+
   const safeSourceUrl = value => {
     const raw = String(value || "").trim();
     if (!raw) return "";
@@ -100,11 +173,16 @@
   function normalizeApiItem(item, payload) {
     if (item?.sellerUsername) {
       const category = classifyCategory(item?.saleType);
+      const categorySeed = `${item?.saleType || ""} ${item?.title || ""} ${item?.series || ""}`;
+      const primaryCategory = inferPrimaryCategory(categorySeed);
+      const subcategory = inferSubcategory(categorySeed);
       return {
         slug: String(item?.id || "").trim(),
         name: String(item?.title || "Seller listing").trim(),
         category,
         series: String(item?.series || item?.inventorySeries || "pokemon").trim().toLowerCase(),
+        primaryCategory,
+        subcategory,
         categoryLabel: String(item?.saleType || category).trim(),
         description: String(item?.description || "Seller listing").trim(),
         imageUrl: safeSourceUrl(item?.imageUrl) || fallbackImages[category],
@@ -123,11 +201,17 @@
         sellerUsername: String(item?.sellerUsername || "").trim(),
         condition: String(item?.condition || "").trim(),
         saleType: String(item?.saleType || "").trim(),
-        shippingPayer: String(item?.shippingPayer || "buyer").trim()
+        shippingPayer: String(item?.shippingPayer || "buyer").trim(),
+        liveShow: item?.liveShow || null,
+        sortRank: Number(item?.salesRank || item?.rank || 999999),
+        createdAt: String(item?.createdAt || item?.updatedAt || "").trim()
       };
     }
     const category = classifyCategory(item?.category);
     const series = String(item?.series || item?.game || item?.tcg || "pokemon").trim().toLowerCase();
+    const categorySeed = `${item?.category || ""} ${item?.name || ""} ${series}`;
+    const primaryCategory = inferPrimaryCategory(categorySeed);
+    const subcategory = inferSubcategory(categorySeed);
     const displayCurrency = String(item?.price?.currency || payload?.displayCurrency || "USD").toUpperCase();
     const msrpCurrency = String(item?.msrp?.currency || displayCurrency).toUpperCase();
     const displayPriceCents = centsValue(item?.price?.displayCents);
@@ -137,6 +221,8 @@
       name: String(item?.name || "Unlisted product").trim(),
       category,
       series,
+      primaryCategory,
+      subcategory,
       categoryLabel: String(item?.category || category).trim(),
       description: String(item?.description || "Product details will be posted before the store opens.").trim(),
       imageUrl: safeSourceUrl(item?.imageUrl) || fallbackImages[category],
@@ -151,17 +237,23 @@
       msrpLabel: String(item?.msrp?.label || "Average MSRP").trim(),
       msrpObservedAt: String(item?.msrp?.observedAt || "").trim(),
       shippingReady: item?.shippingReady === true,
-      isFallback: false
+      isFallback: false,
+      liveShow: item?.liveShow || null,
+      sortRank: Number(item?.salesRank || item?.rank || 999999),
+      createdAt: String(item?.createdAt || item?.updatedAt || "").trim()
     };
   }
 
   function normalizeFallbackItem(item, index) {
     const category = classifyCategory(item?.category);
+    const categorySeed = `${item?.type || item?.category || ""} ${item?.name || ""} ${item?.series || ""}`;
     return {
       slug: String(item?.id || `preview-${index + 1}`),
       name: String(item?.name || "Store preview"),
       category,
       series: String(item?.series || "pokemon").trim().toLowerCase(),
+      primaryCategory: inferPrimaryCategory(categorySeed),
+      subcategory: inferSubcategory(categorySeed),
       categoryLabel: String(item?.type || item?.category || "Product preview"),
       description: String(item?.description || "Product details will be posted before launch."),
       imageUrl: safeSourceUrl(item?.image) || fallbackImages[category],
@@ -176,7 +268,10 @@
       msrpLabel: "Average MSRP to be posted",
       msrpObservedAt: "",
       shippingReady: false,
-      isFallback: true
+      isFallback: true,
+      liveShow: null,
+      sortRank: index + 1,
+      createdAt: ""
     };
   }
 
@@ -209,7 +304,7 @@
   }
 
   function productCard(item) {
-    const search = `${item.name} ${item.categoryLabel} ${item.description}`.toLowerCase();
+    const search = `${item.name} ${item.categoryLabel} ${item.description} ${item.sellerUsername || ""} ${item.primaryCategory || ""} ${item.subcategory || ""} ${item.series || ""}`.toLowerCase();
     const sourceLink = item.sourceUrl
       ? `<a class="store-source-link" href="${escapeHtml(item.sourceUrl)}" target="_blank" rel="noopener noreferrer">Product source ↗</a>`
       : "";
@@ -220,7 +315,7 @@
       ? `<img src="${escapeHtml(item.imageUrl)}" alt="${escapeHtml(item.name)}" loading="lazy" data-store-product-image>`
       : `<span class="store-product-placeholder">Crack Packs</span>`;
     return `
-      <article class="product-card store-product-card holo-panel reveal is-visible" data-product-card data-category="${escapeHtml(item.category)}" data-series="${escapeHtml(item.series || "pokemon")}" data-search="${escapeHtml(search)}" id="${escapeHtml(item.slug)}">
+      <article class="product-card store-product-card holo-panel reveal is-visible" data-product-card data-category="${escapeHtml(item.category)}" data-series="${escapeHtml(item.series || "pokemon")}" data-primary-category="${escapeHtml(item.primaryCategory || "all")}" data-subcategory="${escapeHtml(item.subcategory || "other")}" data-seller="${escapeHtml((item.sellerUsername || "").toLowerCase())}" data-price-cents="${escapeHtml(String(item.priceCents ?? ""))}" data-rank="${escapeHtml(String(item.sortRank ?? 999999))}" data-created-at="${escapeHtml(item.createdAt || "")}" data-show-id="${escapeHtml(item.liveShow?.showId || "")}" data-show-title="${escapeHtml(item.liveShow?.showTitle || "")}" data-show-status="${escapeHtml(item.liveShow?.showStatus || "")}" data-show-link="${escapeHtml(item.liveShow?.livePageUrl || "")}" data-show-starting-bid-cents="${escapeHtml(String(item.liveShow?.startingBidCents ?? ""))}" data-show-bid-in-range="${item.liveShow?.startingBidInRange ? "true" : "false"}" data-show-has-scheduled-inventory="${item.liveShow?.hasScheduledInventory ? "true" : "false"}" data-search="${escapeHtml(search)}" id="${escapeHtml(item.slug)}">
         <div class="product-media">
           ${image}
           <span class="product-badge">${escapeHtml(item.quantityLabel)}</span>
