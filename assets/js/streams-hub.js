@@ -11,6 +11,7 @@
   let sellerShows = [];
   let sellerInventoryItems = [];
   let sellerStoreListings = [];
+  let sellerShowLots = [];
   let sellerCogsOrders = [];
   let sellerContextAuthorized = false;
   let activeTab = "watchlist";
@@ -193,6 +194,7 @@
   function renderSellerLots(lots = [], show) {
     const list = $("[data-seller-lot-list]");
     if (!list) return;
+    sellerShowLots = Array.isArray(lots) ? lots : [];
     const end = show && ["open", "live"].includes(show.status) ? `<button class="btn btn-danger btn-small" type="button" data-end-show="${show.id}">End show</button>` : "";
     list.innerHTML = `${end}${lots.length ? lots.map(lot => {
       const current = Number(lot.current_bid_cents ?? lot.starting_bid_cents) / 100;
@@ -219,9 +221,10 @@
   }
 
   async function loadSellerLots(showId) {
-    if (!showId) { renderSellerLots([]); return; }
+    if (!showId) { renderSellerLots([]); syncStoreLinkedLotOptions(); return; }
     const payload = await api(`/seller/shows/${encodeURIComponent(showId)}/lots`);
     renderSellerLots(payload.lots || [], payload.show);
+    syncStoreLinkedLotOptions();
   }
 
   async function loadSellerShows() {
@@ -288,6 +291,15 @@
     const payload = await api("/seller/store-listings");
     sellerStoreListings = payload.items || [];
     renderSellerStoreListings();
+  }
+
+  function syncStoreLinkedLotOptions() {
+    const select = $("[data-store-linked-lot]");
+    if (!select) return;
+    const options = [`<option value="">No exact show lot linked</option>`].concat(
+      sellerShowLots.map(lot => `<option value="${escapeHtml(lot.id)}">${escapeHtml(lot.title)} · ${escapeHtml(lot.status)} · ${dollars(lot.starting_bid_cents)}</option>`)
+    );
+    select.innerHTML = options.join("");
   }
 
   function syncListingDestinationUi() {
@@ -526,7 +538,8 @@
             shippingPayer: data.get("shippingPayer") || "buyer",
             imageUrl: data.get("imageUrl"),
             description: data.get("description"),
-            showId
+            showId,
+            linkedLotId: data.get("linkedLotId") || ""
           })
         });
         await loadSellerStoreListings();
@@ -537,6 +550,7 @@
         setStatus("[data-seller-lot-status]", "Auction lot added.", "success");
       }
       form.reset(); form.elements.startingBid.value = "1.00"; form.elements.bidIncrement.value = "1.00"; form.elements.storePrice.value = "1.00"; form.elements.storeQuantity.value = "1"; form.elements.shippingPayer.value = "buyer"; form.elements.saleTypeStore.value = "singles";
+      if (form.elements.linkedLotId) form.elements.linkedLotId.value = "";
       syncListingDestinationUi();
     } catch (error) { setStatus("[data-seller-lot-status]", error.message, "error"); }
     finally { button.disabled = false; }

@@ -146,6 +146,7 @@
             <label data-listing-store-field hidden>Store price ($)<input name="storePrice" type="number" min="0.01" max="100000" step="0.01" value="1.00"></label>
             <label>Condition<input name="condition" maxlength="80" placeholder="Near Mint"></label>
             <label data-listing-store-field hidden>Shipping<select name="shippingPayer"><option value="buyer">Buyer pays shipping</option><option value="seller">Seller pays shipping</option></select></label>
+            <label data-listing-store-field hidden>Link to auction lot<select name="linkedLotId" data-store-linked-lot><option value="">No exact show lot linked</option></select></label>
             <label data-listing-show-field>Starting bid ($)<input name="startingBid" type="number" min="0.01" max="100000" step="0.01" value="1.00" required></label>
             <label data-listing-show-field>Bid increment ($)<input name="bidIncrement" type="number" min="0.01" max="10000" step="0.01" value="1.00" required></label>
             <label data-listing-show-field>Sale type<select name="saleType"><option value="singles">Singles</option><option value="cards">Cards</option><option value="breaks">Breaks</option><option value="sealed">Sealed</option><option value="rip_ship">Rip &amp; Ship</option><option value="rtyh">RTYH</option><option value="buy_ship">Buy &amp; Ship</option></select></label>

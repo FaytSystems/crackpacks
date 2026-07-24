@@ -220,6 +220,7 @@ CREATE TABLE IF NOT EXISTS seller_store_listings (
   id TEXT PRIMARY KEY,
   member_id TEXT NOT NULL,
   show_id TEXT,
+  linked_lot_id TEXT,
   inventory_item_id TEXT,
   title TEXT NOT NULL CHECK(length(title) BETWEEN 1 AND 120),
   description TEXT NOT NULL DEFAULT '' CHECK(length(description) <= 1000),
@@ -238,6 +239,7 @@ CREATE TABLE IF NOT EXISTS seller_store_listings (
 );
 CREATE INDEX IF NOT EXISTS idx_seller_store_listings_member_updated ON seller_store_listings(member_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_seller_store_listings_status_updated ON seller_store_listings(status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_seller_store_listings_linked_lot ON seller_store_listings(linked_lot_id);
 
 CREATE TRIGGER IF NOT EXISTS trg_inventory_quantity_commitment_guard
 BEFORE UPDATE OF quantity ON inventory_items

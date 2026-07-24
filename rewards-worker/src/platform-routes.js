@@ -508,6 +508,28 @@ async function sendOrderEmail(env, to, subject, html, key) {
   });
   if (!result.ok) console.error("Order email failed", { status: result.status });
 }
+const escapeHtml = value => String(value || "").replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character]));
+async function sendTransactionalEmail(env, to, subject, html, key) {
+  if (!to) return;
+  if (env.RESEND_API_KEY) {
+    const result = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, "Content-Type": "application/json", "Idempotency-Key": key },
+      body: JSON.stringify({ from: "Crack Packs Rewards <rewards@crackpacks.com>", to: [to], subject, html })
+    });
+    if (!result.ok) console.error("Transactional email failed", { status: result.status, subject });
+    return;
+  }
+  if (!env.REWARDS_EMAIL) return;
+  const message = new EmailMessage("rewards@crackpacks.com", to, `From: Crack Packs Rewards <rewards@crackpacks.com>\r\nTo: ${to}\r\nSubject: ${subject}\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n${html}`);
+  await env.REWARDS_EMAIL.send(message);
+}
+async function sendSellerGrantedEmail(env, member, liveUsername) {
+  const referralUrl = `${siteUrl(env)}/referral.html?ref=${encodeURIComponent(member.invite_code || "")}`;
+  const accountUrl = `${siteUrl(env)}/referral.html`;
+  const html = `<div style="font-family:Arial,sans-serif;color:#111827"><h1 style="color:#151936">Seller account granted</h1><p>Thank you for signing up.</p><p><strong>Your Crack Packs User ID:</strong> ${escapeHtml(liveUsername)}</p><p><strong>Your refer-a-friend URL:</strong><br><a href="${escapeHtml(referralUrl)}">${escapeHtml(referralUrl)}</a></p><p>Please follow or check out our socials for frequent codes to redeem on your account.</p><p>If you earn 100 sign-ups, you get a ticket to our annual Raffle Bonanza. Each ticket is a winner.</p><p><a href="${escapeHtml(accountUrl)}" style="display:inline-block;padding:14px 22px;background:#f8ff46;color:#070815;text-decoration:none;font-weight:bold;border-radius:10px">Go to account</a></p></div>`;
+  await sendTransactionalEmail(env, member.email, "Crack Packs seller account granted", html, `seller-granted-${member.id}`);
+}
 
 function usernameKey(value) {
   const folded = String(value || "").normalize("NFKD").toLowerCase().replace(/[\u0300-\u036f]/g, "")
@@ -1369,11 +1391,29 @@ async function adjustSellerInventory(request, env, cors, itemId) {
 }
 
 function storeListingView(row) {
+  const linkedShow = row.show_id ? {
+    showId: row.show_id,
+    showTitle: row.show_title || "Crack Packs show",
+    showStatus: row.show_status || "open",
+    publicSlug: row.show_public_slug || "",
+    scheduledAt: row.show_scheduled_at || row.show_started_at || "",
+    livePageUrl: row.show_id ? `${siteUrl({ SITE_URL: row.__site_url || "" })}/live.html?show=${encodeURIComponent(row.show_id)}` : "",
+    lotId: row.matched_lot_id || "",
+    lotTitle: row.matched_lot_title || "",
+    lotStatus: row.matched_lot_status || "",
+    startingBidCents: row.matched_lot_starting_bid_cents == null ? null : Number(row.matched_lot_starting_bid_cents),
+    currentBidCents: row.matched_lot_current_bid_cents == null ? null : Number(row.matched_lot_current_bid_cents),
+    startingBidInRange: row.matched_lot_starting_bid_cents == null
+      ? false
+      : (Number(row.matched_lot_starting_bid_cents) > 0 && Number(row.matched_lot_starting_bid_cents) <= Number(row.price_cents || 0)),
+    hasScheduledInventory: ["scheduled", "live"].includes(String(row.matched_lot_status || ""))
+  } : null;
   return {
     id: row.id,
     sellerId: row.member_id,
     sellerUsername: row.live_username || clean(`${row.first_name || ""} ${row.last_name || ""}`, 120) || "Seller",
     showId: row.show_id || "",
+    linkedLotId: row.linked_lot_id || "",
     series: row.inventory_series || "pokemon",
     title: row.title || "Store listing",
     description: row.description || "",
@@ -1385,7 +1425,8 @@ function storeListingView(row) {
     imageUrl: row.image_url || "",
     status: row.status || "active",
     createdAt: row.created_at,
-    updatedAt: row.updated_at
+    updatedAt: row.updated_at,
+    liveShow: linkedShow
   };
 }
 
@@ -1395,15 +1436,83 @@ async function publicMarketplaceListings(request, env, cors) {
     ? String(url.searchParams.get("series") || "").toLowerCase()
     : "";
   const rows = await env.DB.prepare(`
-    SELECT listing.*,member.live_username,member.first_name,member.last_name,inventory.series inventory_series
+    SELECT listing.*,member.live_username,member.first_name,member.last_name,inventory.series inventory_series,
+           session.title show_title,session.status show_status,session.public_slug show_public_slug,session.scheduled_at show_scheduled_at,session.started_at show_started_at,
+           (
+             SELECT lot.id FROM breaker_auction_lots lot
+             WHERE lot.session_id=listing.show_id
+               AND lot.member_id=listing.member_id
+               AND (
+                 (listing.linked_lot_id IS NOT NULL AND listing.linked_lot_id<>'' AND lot.id=listing.linked_lot_id)
+                 OR
+                 ((listing.linked_lot_id IS NULL OR listing.linked_lot_id='') AND lower(trim(lot.title))=lower(trim(listing.title)))
+               )
+               AND lot.status IN ('scheduled','live','sold')
+             ORDER BY CASE lot.status WHEN 'live' THEN 0 WHEN 'scheduled' THEN 1 ELSE 2 END, lot.updated_at DESC
+             LIMIT 1
+           ) matched_lot_id,
+           (
+             SELECT lot.title FROM breaker_auction_lots lot
+             WHERE lot.session_id=listing.show_id
+               AND lot.member_id=listing.member_id
+               AND (
+                 (listing.linked_lot_id IS NOT NULL AND listing.linked_lot_id<>'' AND lot.id=listing.linked_lot_id)
+                 OR
+                 ((listing.linked_lot_id IS NULL OR listing.linked_lot_id='') AND lower(trim(lot.title))=lower(trim(listing.title)))
+               )
+               AND lot.status IN ('scheduled','live','sold')
+             ORDER BY CASE lot.status WHEN 'live' THEN 0 WHEN 'scheduled' THEN 1 ELSE 2 END, lot.updated_at DESC
+             LIMIT 1
+           ) matched_lot_title,
+           (
+             SELECT lot.status FROM breaker_auction_lots lot
+             WHERE lot.session_id=listing.show_id
+               AND lot.member_id=listing.member_id
+               AND (
+                 (listing.linked_lot_id IS NOT NULL AND listing.linked_lot_id<>'' AND lot.id=listing.linked_lot_id)
+                 OR
+                 ((listing.linked_lot_id IS NULL OR listing.linked_lot_id='') AND lower(trim(lot.title))=lower(trim(listing.title)))
+               )
+               AND lot.status IN ('scheduled','live','sold')
+             ORDER BY CASE lot.status WHEN 'live' THEN 0 WHEN 'scheduled' THEN 1 ELSE 2 END, lot.updated_at DESC
+             LIMIT 1
+           ) matched_lot_status,
+           (
+             SELECT lot.starting_bid_cents FROM breaker_auction_lots lot
+             WHERE lot.session_id=listing.show_id
+               AND lot.member_id=listing.member_id
+               AND (
+                 (listing.linked_lot_id IS NOT NULL AND listing.linked_lot_id<>'' AND lot.id=listing.linked_lot_id)
+                 OR
+                 ((listing.linked_lot_id IS NULL OR listing.linked_lot_id='') AND lower(trim(lot.title))=lower(trim(listing.title)))
+               )
+               AND lot.status IN ('scheduled','live','sold')
+             ORDER BY CASE lot.status WHEN 'live' THEN 0 WHEN 'scheduled' THEN 1 ELSE 2 END, lot.updated_at DESC
+             LIMIT 1
+           ) matched_lot_starting_bid_cents,
+           (
+             SELECT lot.current_bid_cents FROM breaker_auction_lots lot
+             WHERE lot.session_id=listing.show_id
+               AND lot.member_id=listing.member_id
+               AND (
+                 (listing.linked_lot_id IS NOT NULL AND listing.linked_lot_id<>'' AND lot.id=listing.linked_lot_id)
+                 OR
+                 ((listing.linked_lot_id IS NULL OR listing.linked_lot_id='') AND lower(trim(lot.title))=lower(trim(listing.title)))
+               )
+               AND lot.status IN ('scheduled','live','sold')
+             ORDER BY CASE lot.status WHEN 'live' THEN 0 WHEN 'scheduled' THEN 1 ELSE 2 END, lot.updated_at DESC
+             LIMIT 1
+           ) matched_lot_current_bid_cents,
+           ? __site_url
     FROM seller_store_listings listing
     JOIN members member ON member.id=listing.member_id
     LEFT JOIN inventory_items inventory ON inventory.id=listing.inventory_item_id
+    LEFT JOIN breaker_stream_sessions session ON session.id=listing.show_id
     WHERE listing.status='active' AND listing.quantity>0
       AND (?='' OR lower(COALESCE(inventory.series,''))=?)
     ORDER BY listing.updated_at DESC, listing.created_at DESC
     LIMIT 500
-  `).bind(series, series).all();
+  `).bind(siteUrl(env), series, series).all();
   return json({
     ok: true,
     items: (rows.results || []).map(storeListingView),
@@ -1416,9 +1525,10 @@ async function sellerStoreListings(request, env, cors, listingId = "") {
   if (auth.error) return auth.error;
   if (request.method === "GET") {
     const rows = await env.DB.prepare(`
-      SELECT listing.*,member.live_username,member.first_name,member.last_name
+      SELECT listing.*,member.live_username,member.first_name,member.last_name,lot.title linked_lot_title,lot.status linked_lot_status
       FROM seller_store_listings listing
       JOIN members member ON member.id=listing.member_id
+      LEFT JOIN breaker_auction_lots lot ON lot.id=listing.linked_lot_id
       WHERE listing.member_id=?
       ORDER BY listing.updated_at DESC, listing.created_at DESC
       LIMIT 250
@@ -1448,11 +1558,21 @@ async function sellerStoreListings(request, env, cors, listingId = "") {
   const shippingPayer = ["buyer", "seller"].includes(String(data.shippingPayer || "")) ? String(data.shippingPayer) : "buyer";
   const imageUrl = clean(data.imageUrl, 500);
   const showId = clean(data.showId, 80);
+  const linkedLotId = clean(data.linkedLotId, 80);
   if (!title || !Number.isInteger(quantity) || quantity < 1 || quantity > 100000 || !Number.isInteger(price) || price < 1 || price > 100000000) {
     return json({ error: "Enter a title, quantity, and store price." }, 400, cors);
   }
   if (imageUrl && !/^https:\/\//i.test(imageUrl) && !/^assets\/images\/[a-z0-9._/-]+$/i.test(imageUrl)) {
     return json({ error: "Listing image must use HTTPS or a local assets/images path." }, 400, cors);
+  }
+  if (linkedLotId) {
+    const linkedLot = await env.DB.prepare(`
+      SELECT lot.id,lot.session_id
+      FROM breaker_auction_lots lot
+      WHERE lot.id=? AND lot.member_id=?
+    `).bind(linkedLotId, auth.member.id).first();
+    if (!linkedLot) return json({ error: "Selected auction lot was not found for this seller account." }, 404, cors);
+    if (showId && linkedLot.session_id !== showId) return json({ error: "Selected auction lot does not belong to the chosen show." }, 409, cors);
   }
   let inventoryItemId = clean(data.inventoryItemId, 80);
   let inventorySeries = "";
@@ -1466,12 +1586,13 @@ async function sellerStoreListings(request, env, cors, listingId = "") {
   const stamp = now();
   await env.DB.prepare(`
     INSERT INTO seller_store_listings(
-      id,member_id,show_id,inventory_item_id,title,description,sale_type,item_condition,quantity,price_cents,shipping_payer,image_url,status,created_at,updated_at
-    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,'active',?,?)
-  `).bind(listingRowId, auth.member.id, showId || null, inventoryItemId || null, title, description, saleType, condition, quantity, price, shippingPayer, imageUrl, stamp, stamp).run();
+      id,member_id,show_id,linked_lot_id,inventory_item_id,title,description,sale_type,item_condition,quantity,price_cents,shipping_payer,image_url,status,created_at,updated_at
+    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'active',?,?)
+  `).bind(listingRowId, auth.member.id, showId || null, linkedLotId || null, inventoryItemId || null, title, description, saleType, condition, quantity, price, shippingPayer, imageUrl, stamp, stamp).run();
   const created = await env.DB.prepare(`
-    SELECT listing.*,member.live_username,member.first_name,member.last_name,? inventory_series
+    SELECT listing.*,member.live_username,member.first_name,member.last_name,? inventory_series,lot.title linked_lot_title,lot.status linked_lot_status
     FROM seller_store_listings listing JOIN members member ON member.id=listing.member_id
+    LEFT JOIN breaker_auction_lots lot ON lot.id=listing.linked_lot_id
     WHERE listing.id=?
   `).bind(inventorySeries, listingRowId).first();
   return json({ item: storeListingView(created) }, 201, cors);
@@ -1873,24 +1994,50 @@ export async function handlePlatformRoute(request, env, cors) {
     await env.DB.prepare(`UPDATE members SET active_portal=?,updated_at=? WHERE id=?`).bind(mode, now(), auth.member.id).run();
     return json({ activePortal: mode }, 200, cors);
   }
-  if (url.pathname === "/profile/live-username" && request.method === "POST") {
+  if (url.pathname === "/profile/live-username/check" && request.method === "POST") {
     const auth = await requireMember(request, env, cors, { verified: false });
     if (auth.error) return auth.error;
     const data = await boundedJson(request, 1000);
     const username = clean(data.liveUsername, 32);
-    if (!/^[A-Za-z][A-Za-z0-9_]{2,31}$/.test(username)) return json({ error: "User ID must be 3–32 characters, start with a letter, and use only letters, numbers, or underscores." }, 400, cors);
+    if (!/^[A-Za-z][A-Za-z0-9_]{2,31}$/.test(username)) return json({ error: "User ID must be 3-32 characters, start with a letter, and use only letters, numbers, or underscores." }, 400, cors);
     const key = usernameKey(username);
     if (key.length < 3) return json({ error: "Choose a more distinctive User ID." }, 400, cors);
     const rows = await env.DB.prepare(`SELECT id,live_username_key FROM members WHERE id<>? AND live_username_key IS NOT NULL`).bind(auth.member.id).all();
     const collision = (rows.results || []).find(row => row.live_username_key === key || row.live_username_key.startsWith(key) || key.startsWith(row.live_username_key));
     if (collision) return json({ error: "That User ID is already used or is too similar to an existing User ID." }, 409, cors);
-    await env.DB.prepare(`UPDATE members SET live_username=?,live_username_key=?,updated_at=? WHERE id=?`).bind(username, key, now(), auth.member.id).run();
-    return json({ liveUsername: username }, 200, cors);
+    return json({ ok: true, available: true, liveUsername: username }, 200, cors);
+  }
+  if (url.pathname === "/profile/live-username" && request.method === "POST") {
+    const auth = await requireMember(request, env, cors, { verified: false });
+    if (auth.error) return auth.error;
+    const data = await boundedJson(request, 1000);
+    const username = clean(data.liveUsername, 32);
+    if (!/^[A-Za-z][A-Za-z0-9_]{2,31}$/.test(username)) return json({ error: "User ID must be 3-32 characters, start with a letter, and use only letters, numbers, or underscores." }, 400, cors);
+    const key = usernameKey(username);
+    if (key.length < 3) return json({ error: "Choose a more distinctive User ID." }, 400, cors);
+    const rows = await env.DB.prepare(`SELECT id,live_username_key FROM members WHERE id<>? AND live_username_key IS NOT NULL`).bind(auth.member.id).all();
+    const collision = (rows.results || []).find(row => row.live_username_key === key || row.live_username_key.startsWith(key) || key.startsWith(row.live_username_key));
+    if (collision) return json({ error: "That User ID is already used or is too similar to an existing User ID." }, 409, cors);
+    const activateSeller = data.activateSeller === true;
+    if (activateSeller) {
+      if (!auth.member.device_verified || auth.member.identity_status !== "verified") return json({ error: "Complete seller passkey and Stripe identity verification before activating seller access." }, 403, cors);
+      if (!auth.member.first_name || !auth.member.last_name || !auth.member.birth_date) return json({ error: "Complete the seller legal profile before activating seller access." }, 403, cors);
+    }
+    const stamp = now();
+    await env.DB.batch([
+      env.DB.prepare(`UPDATE members SET live_username=?,live_username_key=?,active_portal=?,updated_at=? WHERE id=?`).bind(username, key, activateSeller ? "seller" : (auth.member.active_portal || "buyer"), stamp, auth.member.id),
+      ...(activateSeller ? [env.DB.prepare(`INSERT INTO breaker_profiles(member_id,status,created_at,updated_at) VALUES(?,'active',?,?) ON CONFLICT(member_id) DO UPDATE SET status='active',updated_at=excluded.updated_at`).bind(auth.member.id, stamp, stamp)] : [])
+    ]);
+    if (activateSeller && !auth.member.live_username) {
+      const updatedMember = await env.DB.prepare(`SELECT * FROM members WHERE id=?`).bind(auth.member.id).first();
+      await sendSellerGrantedEmail(env, updatedMember, username);
+    }
+    return json({ liveUsername: username, sellerActivated: activateSeller, activePortal: activateSeller ? "seller" : (auth.member.active_portal || "buyer") }, 200, cors);
   }
   if (url.pathname === "/identity/session" && request.method === "POST") {
     const auth = await requireMember(request, env, cors, { verified: false });
     if (auth.error) return auth.error;
-    if (!auth.member.device_verified || !auth.member.first_name || !auth.member.last_name || !auth.member.birth_date || !auth.member.live_username) return json({ error: "Complete your legal profile and passkey before Stripe Identity verification." }, 403, cors);
+    if (!auth.member.device_verified || !auth.member.first_name || !auth.member.last_name || !auth.member.birth_date) return json({ error: "Complete your legal profile and passkey before Stripe Identity verification." }, 403, cors);
     if (auth.member.stripe_identity_status === "verified") return json({ verified: true }, 200, cors);
     let session;
     try {
