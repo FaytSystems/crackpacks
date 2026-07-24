@@ -127,6 +127,18 @@ function corsFor(request, env) {
 }
 async function body(request) { try { return await request.json(); } catch { throw new Error("INVALID_JSON"); } }
 async function sendEmail(env, to, subject, html, idempotencyKey = id(), fromAddress = "rewards@crackpacks.com") {
+  const text = String(html || "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>|<\/h[1-6]>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n\s+/g, "\n")
+    .trim();
   if (env.RESEND_API_KEY) {
     const result = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -139,23 +151,35 @@ async function sendEmail(env, to, subject, html, idempotencyKey = id(), fromAddr
         from: `${fromAddress === "orders@crackpacks.com" ? "Crack Packs Orders" : "Crack Packs Rewards"} <${fromAddress}>`,
         to: [to],
         subject,
-        html
+        html,
+        text
       })
     });
-    if (!result.ok) {
+    if (result.ok) return;
+    {
       const payload = await result.json().catch(() => ({}));
       console.error("Resend delivery failed", { status: result.status, name: payload.name || "", message: payload.message || "" });
-      throw new Error("EMAIL_DELIVERY_FAILED");
     }
-    return;
   }
   if (!env.REWARDS_EMAIL) {
     if (env.ENVIRONMENT === "development") return;
-    throw new Error("EMAIL_NOT_CONFIGURED");
+    throw new Error(env.RESEND_API_KEY ? "EMAIL_DELIVERY_FAILED" : "EMAIL_NOT_CONFIGURED");
   }
   if (fromAddress !== "rewards@crackpacks.com") throw new Error("EMAIL_NOT_CONFIGURED");
-  const message = new EmailMessage("rewards@crackpacks.com", to, `From: Crack Packs Rewards <rewards@crackpacks.com>\r\nTo: ${to}\r\nSubject: ${subject}\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n${html}`);
-  await env.REWARDS_EMAIL.send(message);
+  try {
+    await env.REWARDS_EMAIL.send({
+      to,
+      from: { email: "rewards@crackpacks.com", name: "Crack Packs Rewards" },
+      replyTo: "support@crackpacks.com",
+      subject,
+      html,
+      text,
+      headers: { "X-Message-ID": idempotencyKey }
+    });
+  } catch (error) {
+    console.error("Cloudflare email delivery failed", { code: error?.code || "", message: error?.message || "" });
+    throw new Error("EMAIL_DELIVERY_FAILED");
+  }
 }
 async function sendMemberEmailBatch(env, recipients, subject, message, idempotencyKey, senderAddress = "rewards@crackpacks.com") {
   if (!env.RESEND_API_KEY) throw new Error("MEMBER_EMAIL_NOT_CONFIGURED");
@@ -2165,4 +2189,3 @@ export default {
   }
 };
 import { generateAuthenticationOptions, generateRegistrationOptions, verifyAuthenticationResponse, verifyRegistrationResponse } from "@simplewebauthn/server";
-import { EmailMessage } from "cloudflare:email";
