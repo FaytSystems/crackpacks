@@ -12,12 +12,19 @@ CREATE TABLE IF NOT EXISTS members (
   password_failed_attempts INTEGER NOT NULL DEFAULT 0,
   password_locked_until TEXT,
   invite_code TEXT NOT NULL UNIQUE, referred_by_member_id TEXT,
-  referral_qualified_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+  referral_code_used TEXT,
+  referral_source TEXT NOT NULL DEFAULT '',
+  referral_tagged_at TEXT,
+  referral_qualified_at TEXT,
+  referral_awarded_at TEXT,
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
   FOREIGN KEY(referred_by_member_id) REFERENCES members(id)
 );
 CREATE TABLE IF NOT EXISTS login_codes (
   id TEXT PRIMARY KEY, email TEXT NOT NULL, code_hash TEXT NOT NULL,
   auth_flow TEXT NOT NULL DEFAULT 'legacy', referrer_member_id TEXT,
+  referral_code_used TEXT,
+  referral_source TEXT NOT NULL DEFAULT '',
   expires_at TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, used_at TEXT, created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_login_codes_email ON login_codes(email, created_at);

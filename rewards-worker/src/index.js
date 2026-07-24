@@ -743,6 +743,8 @@ async function account(member, count, env, seller = null) {
     sellerAccess, sellerStatus, roles, activePortal: member.active_portal || "buyer",
     phone: member.phone || "", shippingAddress: (() => { try { return JSON.parse(member.shipping_address_json || "{}"); } catch { return {}; } })(),
     paymentMethod: member.stripe_payment_method_id ? { brand: member.stripe_payment_method_brand || "card", last4: member.stripe_payment_method_last4 || "" } : null,
+    referralCodeUsed: member.referral_code_used || "", referralSource: member.referral_source || "",
+    referralTaggedAt: member.referral_tagged_at || null, referralAwardedAt: member.referral_awarded_at || null,
     inviteCode: invite.ownerDashboardOnly ? "" : member.invite_code, inviteDisplayCode: invite.displayCode, inviteUrl: invite.url,
     rotatingReferral: invite.rotating, ownerReferralDashboardOnly: invite.ownerDashboardOnly,
     inviteStartsAt: invite.startsAt, inviteExpiresAt: invite.expiresAt,
@@ -757,6 +759,28 @@ async function accountFor(member, env) {
     env.DB.prepare(`SELECT status FROM breaker_profiles WHERE member_id=?`).bind(member.id).first()
   ]);
   return account(member, Number(row?.count || 0), env, seller);
+}
+async function qualifyReferralForMember(env, memberId) {
+  const member = await env.DB.prepare(`SELECT id,email,email_verified_at,referred_by_member_id,referral_qualified_at,referral_awarded_at FROM members WHERE id=?`).bind(memberId).first();
+  if (!member?.email_verified_at || !member.referred_by_member_id || member.referral_awarded_at) return { awarded: false, reason: "not_eligible" };
+  if (member.referred_by_member_id === member.id) {
+    await env.DB.prepare(`UPDATE members SET referred_by_member_id=NULL,referral_code_used=NULL,referral_source='',referral_tagged_at=NULL,updated_at=? WHERE id=?`).bind(now(), member.id).run();
+    return { awarded: false, reason: "self_referral" };
+  }
+  const referrer = await env.DB.prepare(`SELECT id,email FROM members WHERE id=?`).bind(member.referred_by_member_id).first();
+  if (!referrer || normalizeEmail(referrer.email) === normalizeEmail(member.email)) {
+    await env.DB.prepare(`UPDATE members SET referred_by_member_id=NULL,referral_code_used=NULL,referral_source='',referral_tagged_at=NULL,updated_at=? WHERE id=?`).bind(now(), member.id).run();
+    return { awarded: false, reason: "invalid_referrer" };
+  }
+  const stamp = now();
+  const changed = await env.DB.prepare(`
+    UPDATE members
+    SET referral_qualified_at=COALESCE(referral_qualified_at,?),
+        referral_awarded_at=COALESCE(referral_awarded_at,?),
+        updated_at=?
+    WHERE id=? AND referred_by_member_id=? AND referral_awarded_at IS NULL
+  `).bind(stamp, stamp, stamp, member.id, referrer.id).run();
+  return Number(changed.meta?.changes || 0) === 1 ? { awarded: true, referrerId: referrer.id, awardedAt: stamp } : { awarded: false, reason: "already_awarded" };
 }
 async function audit(env, request, type, memberId = null, detail = "") {
   const ip = request.headers.get("CF-Connecting-IP") || "";
@@ -1080,17 +1104,27 @@ async function route(request, env, cors, ctx) {
     const ownerReferralToken = rawOwnerReferralToken;
     if ((ownerReferralToken && ref) || (ref && !/^[A-Z0-9]{1,16}$/.test(ref))) return response({ error: "Invalid referral credential." }, 400, cors);
     let referrerMemberId = null;
+    let referralCodeUsed = "";
+    let referralSource = "";
     let ownerReferralRejected = false;
     if (ownerReferralToken) {
       const owner = normalizeEmail(env.ADMIN_EMAIL) ? await env.DB.prepare(`SELECT id,email FROM members WHERE email=? AND identity_status='verified'`).bind(normalizeEmail(env.ADMIN_EMAIL)).first() : null;
       const slot = ownerReferralSlotAt(Date.now());
       const credentialValid = Boolean(owner && normalizeEmail(owner.email) !== email && await verifyOwnerReferral(ownerReferralToken, env.SITE_URL, owner.id, env.OWNER_REFERRAL_SECRET));
-      if (credentialValid && await ownerReferralIsActive(env, owner.id, slot.id)) referrerMemberId = owner.id;
+      if (credentialValid && await ownerReferralIsActive(env, owner.id, slot.id)) {
+        referrerMemberId = owner.id;
+        referralCodeUsed = `OWNER-${slot.id}`;
+        referralSource = "owner_rotating_qr";
+      }
       else ownerReferralRejected = true;
     } else if (ref) {
       const inviter = await env.DB.prepare(`SELECT id,email,identity_status FROM members WHERE invite_code=?`).bind(ref).first();
       if (inviter && isOwnerEmail(inviter, env)) ownerReferralRejected = true;
-      else if (inviter?.identity_status === "verified" && normalizeEmail(inviter.email) !== email) referrerMemberId = inviter.id;
+      else if (inviter?.identity_status === "verified" && normalizeEmail(inviter.email) !== email) {
+        referrerMemberId = inviter.id;
+        referralCodeUsed = ref;
+        referralSource = "member_invite_qr";
+      }
     }
     if (ownerReferralRejected) return response({ error: "This owner referral window has expired. Ask for the current QR or referral link." }, 410, cors);
     const destinationPath = returnTo === "admin" ? "/admin.html" : "/referral.html";
@@ -1112,7 +1146,7 @@ async function route(request, env, cors, ctx) {
     }
     const verifyUrl = `${env.SITE_URL}${destinationPath}?${verifyParams}`;
     const codeId = id();
-    await env.DB.prepare(`INSERT INTO login_codes(id,email,code_hash,auth_flow,referrer_member_id,expires_at,created_at) VALUES(?,?,?,?,?,?,?)`).bind(codeId, email, await hash(linkToken, env.AUTH_SECRET), authFlow, referrerMemberId, new Date(Date.now() + 10 * 60e3).toISOString(), created).run();
+    await env.DB.prepare(`INSERT INTO login_codes(id,email,code_hash,auth_flow,referrer_member_id,referral_code_used,referral_source,expires_at,created_at) VALUES(?,?,?,?,?,?,?,?,?)`).bind(codeId, email, await hash(linkToken, env.AUTH_SECRET), authFlow, referrerMemberId, referralCodeUsed || null, referralSource, new Date(Date.now() + 10 * 60e3).toISOString(), created).run();
     const emailCopy = authFlow === "signup"
       ? { subject: "Create your Crack Packs account", heading: "Create your account", button: "Verify email and create account" }
       : { subject: "Sign in to your Crack Packs account", heading: "Sign in to your account", button: "Verify email and sign in" };
@@ -1156,19 +1190,31 @@ async function route(request, env, cors, ctx) {
     if (authFlow === "signup" && member) return response({ error: "An account already exists for this email. Return to Profile and choose Sign In." }, 409, cors);
     if (authFlow === "signup") {
       let referrerMemberId = null;
+      let referralCodeUsed = "";
+      let referralSource = "";
       if (record.referrer_member_id) {
         const inviter = await env.DB.prepare(`SELECT id,email FROM members WHERE id=? AND identity_status='verified'`).bind(record.referrer_member_id).first();
-        if (inviter && normalizeEmail(inviter.email) !== email) referrerMemberId = inviter.id;
+        if (inviter && normalizeEmail(inviter.email) !== email) {
+          referrerMemberId = inviter.id;
+          referralCodeUsed = clean(record.referral_code_used, 80);
+          referralSource = clean(record.referral_source, 40);
+        }
       }
       const memberId = id(); const inviteCode = `CP${randomString(8)}`; const created = now();
       try {
-        await env.DB.prepare(`INSERT INTO members(id,email,email_verified_at,invite_code,referred_by_member_id,referral_qualified_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)`).bind(memberId, email, created, inviteCode, referrerMemberId, referrerMemberId ? created : null, created, created).run();
+        await env.DB.prepare(`
+          INSERT INTO members(
+            id,email,email_verified_at,invite_code,referred_by_member_id,referral_code_used,referral_source,referral_tagged_at,created_at,updated_at
+          ) VALUES(?,?,?,?,?,?,?,?,?,?)
+        `).bind(memberId, email, created, inviteCode, referrerMemberId, referralCodeUsed || null, referralSource, referrerMemberId ? created : null, created, created).run();
       } catch (error) {
         return response({ error: "An account already exists for this email. Return to Profile and choose Sign In." }, 409, cors);
       }
       member = await env.DB.prepare(`SELECT * FROM members WHERE id=?`).bind(memberId).first();
       if (referrerMemberId) {
-        await audit(env, request, "referral_credit_awarded", referrerMemberId, `${member.id}|${member.email}|first_signin`);
+        const award = await qualifyReferralForMember(env, member.id);
+        await audit(env, request, award.awarded ? "referral_credit_awarded" : "referral_tag_attached", referrerMemberId, `${member.id}|${member.email}|${referralCodeUsed || "referral"}|${award.reason || "qualified_signup"}`);
+        member = await env.DB.prepare(`SELECT * FROM members WHERE id=?`).bind(memberId).first();
       }
     }
     const token = await issueMemberSession(env, member.id);
@@ -1322,7 +1368,7 @@ async function route(request, env, cors, ctx) {
       return response({ error: "This legal identity is already connected to an existing account. Owner review is required." }, 409, cors);
     }
     const identityStatus = "pending_identity";
-    await env.DB.prepare(`UPDATE members SET first_name=?,last_name=?,birth_date=?,identity_fingerprint=?,identity_status=?,stripe_identity_status='not_started',referral_qualified_at=NULL,updated_at=? WHERE id=?`).bind(first, last, birth, fingerprint, identityStatus, now(), member.id).run();
+    await env.DB.prepare(`UPDATE members SET first_name=?,last_name=?,birth_date=?,identity_fingerprint=?,identity_status=?,stripe_identity_status='not_started',updated_at=? WHERE id=?`).bind(first, last, birth, fingerprint, identityStatus, now(), member.id).run();
     const updated = await env.DB.prepare(`SELECT * FROM members WHERE id=?`).bind(member.id).first(); await audit(env, request, "profile_submitted", member.id, identityStatus);
     return response({ account: await accountFor(updated, env), identityVerificationRequired: true }, 200, cors);
   }
