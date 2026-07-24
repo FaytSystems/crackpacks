@@ -33,7 +33,7 @@ const TIERS = [
   { threshold: 50, name: "Legend", reward: "VIP campaign grand prize entry" }
 ];
 const encoder = new TextEncoder();
-const PASSWORD_ITERATIONS = 210000;
+const PASSWORD_ITERATIONS = 60000;
 const now = () => new Date().toISOString();
 const id = () => crypto.randomUUID();
 const normalizeEmail = value => String(value || "").trim().toLowerCase().slice(0, 254);
@@ -1182,7 +1182,13 @@ async function route(request, env, cors, ctx) {
     const generic = { error: "Email or password is incorrect." };
     if (!member || !member.email_verified_at || !member.password_hash || !member.password_salt) return response(generic, 401, cors);
     if (member.password_locked_until && member.password_locked_until > now()) return response({ error: "Too many password attempts. Try again later." }, 429, cors);
-    const digest = await passwordDigest(password, member.password_salt, env.AUTH_SECRET);
+    let digest;
+    try {
+      digest = await passwordDigest(password, member.password_salt, env.AUTH_SECRET);
+    } catch (error) {
+      console.error("Password login hash failed", { name: error?.name || "", message: error?.message || "" });
+      return response({ error: "Password sign-in could not finish in this Worker request. Try again in a moment." }, 503, cors);
+    }
     if (digest !== member.password_hash) {
       const attempts = Number(member.password_failed_attempts || 0) + 1;
       const lockedUntil = attempts >= 8 ? new Date(Date.now() + 15 * 60e3).toISOString() : null;
@@ -1228,7 +1234,13 @@ async function route(request, env, cors, ctx) {
     const passwordError = validatePassword(data.password);
     if (passwordError) return response({ error: passwordError }, 400, cors);
     if (data.password !== data.confirmPassword) return response({ error: "Passwords do not match." }, 400, cors);
-    const record = await newPasswordRecord(data.password, env.AUTH_SECRET);
+    let record;
+    try {
+      record = await newPasswordRecord(data.password, env.AUTH_SECRET);
+    } catch (error) {
+      console.error("Password hash failed", { name: error?.name || "", message: error?.message || "" });
+      return response({ error: "Password setup could not finish in this Worker request. Try again with a different password, or deploy the latest password fix." }, 503, cors);
+    }
     try {
       await env.DB.prepare(`UPDATE members SET password_hash=?,password_salt=?,password_updated_at=?,password_failed_attempts=0,password_locked_until=NULL,updated_at=? WHERE id=?`).bind(record.digest, record.salt, now(), now(), member.id).run();
     } catch (error) {
