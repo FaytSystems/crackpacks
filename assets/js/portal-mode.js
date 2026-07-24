@@ -18,7 +18,7 @@
   const sellerAllowed = () => localStorage.getItem(SELLER_ALLOWED_KEY) === "true";
   const masterAllowed = () => localStorage.getItem(MASTER_ALLOWED_KEY) === "true";
   const sellerPortalDestination = () => page === "streams" || page === "live" ? "streams.html" : "shop.html";
-  const buyerPortalDestination = () => page === "shop" ? "shop.html" : "shop.html";
+  const buyerPortalDestination = () => "shop.html";
   const sellerSetupDestination = () => authToken() ? "referral.html?return=seller" : "referral.html?mode=signin&return=seller";
 
   const portalRequest = async (path, options = {}) => {

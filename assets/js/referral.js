@@ -716,6 +716,7 @@
   function renderAccount(data) {
     accountState = data;
     const sellerAllowed = Boolean(data.sellerAccess);
+    const stripeSellerVerified = data.identityStatus === "verified" && data.stripeIdentityStatus === "verified";
     const masterCandidate = Boolean(data.isMaster || data.isMasterCandidate || data.isOwnerEmail);
     const needsSellerUpgradeFlow = Boolean(sellerUpgradeRequested());
     const hasSellerLegalProfile = Boolean(data.hasSellerLegalProfile || (data.firstName && data.lastName && data.birthDate));
@@ -728,7 +729,7 @@
       localStorage.setItem("cp_portal_mode", "buyer");
     }
     show("[data-auth-panel]", false);
-    show("[data-seller-upgrade-panel]", !sellerAllowed && !data.isAdmin && !needsSellerUpgradeFlow);
+    show("[data-seller-upgrade-panel]", !sellerAllowed && !needsSellerUpgradeFlow);
     if (!data.passwordConfigured) {
       show("[data-password-panel]", true);
       show("[data-buyer-username-panel]", false);
@@ -760,21 +761,29 @@
       return;
     }
     show("[data-seller-username-panel]", false);
-    if (needsSellerUpgradeFlow && !sellerAllowed && (!hasSellerLegalProfile || data.identityStatus !== "verified")) {
+    if (needsSellerUpgradeFlow && !sellerAllowed && !stripeSellerVerified) {
       show("[data-buyer-username-panel]", false);
       show("[data-profile-panel]", true);
       show("[data-seller-username-panel]", false);
       show("[data-dashboard]", false);
-      const awaitingIdentity = hasSellerLegalProfile && ["pending_identity", "pending_review"].includes(data.identityStatus);
-      $("[data-profile-form]").hidden = hasSellerLegalProfile;
-      $("[data-stripe-identity-action]").hidden = !hasSellerLegalProfile;
+      const needsLegalConfirmation = !hasSellerLegalProfile || (data.identityStatus === "verified" && data.stripeIdentityStatus !== "verified");
+      const awaitingIdentity = hasSellerLegalProfile && !needsLegalConfirmation;
+      const profileForm = $("[data-profile-form]");
+      profileForm.hidden = !needsLegalConfirmation;
+      $("[data-stripe-identity-action]").hidden = needsLegalConfirmation;
+      if (needsLegalConfirmation) {
+        profileForm.elements.firstName.value = data.firstName || "";
+        profileForm.elements.lastName.value = data.lastName || "";
+        profileForm.elements.birthDate.value = data.birthDate || "";
+      }
       if (awaitingIdentity) {
-        showStatus(data.identityStatus === "pending_review" ? "Seller identity is in manual review. We will unlock Seller Portal as soon as it clears." : "Seller legal profile saved. Complete Stripe Identity or wait for Stripe to finish processing.", awaitingIdentity ? "success" : "");
+        const inReview = ["pending_review", "manual_review"].includes(data.identityStatus) || data.stripeIdentityStatus === "manual_review";
+        showStatus(inReview ? "Seller identity is in manual review. We will unlock Seller Portal as soon as it clears." : "Seller legal profile saved. Complete Stripe Identity or wait for Stripe to finish processing.", "success");
       }
       return;
     }
     show("[data-profile-panel]", false);
-    if (needsSellerUpgradeFlow && data.sellerUsername && data.identityStatus === "verified" && !sellerAllowed && !sellerActivationFinalizePending) {
+    if (needsSellerUpgradeFlow && data.sellerUsername && stripeSellerVerified && !sellerAllowed && !sellerActivationFinalizePending) {
       sellerActivationFinalizePending = true;
       show("[data-dashboard]", false);
       showStatus("Finalizing Seller access now that your ID verification is complete...", "success");
@@ -1228,7 +1237,7 @@
     const button = $("[data-save-seller-username]");
     button.disabled = true;
     try {
-      const activateSeller = Boolean((accountState?.isAdmin || sellerUpgradeRequested()) && accountState?.identityStatus === "verified");
+      const activateSeller = Boolean((accountState?.isAdmin || sellerUpgradeRequested()) && accountState?.identityStatus === "verified" && accountState?.stripeIdentityStatus === "verified");
       await request("/profile/live-username", { method: "POST", body: JSON.stringify({ liveUsername, activateSeller }) });
       checkedSellerUsername = "";
       showSellerUsernameStatus(activateSeller ? "Seller account granted. Opening your account now..." : "Seller ID reserved. Continue to legal profile.", "success");

@@ -120,6 +120,8 @@
   }
 
   document.addEventListener("click", async event => {
+    const accountMenu = event.target.closest("[data-nav-profile]");
+    if (!accountMenu) return;
     const buyer = event.target.closest("[data-open-buyer-portal]");
     const seller = event.target.closest("[data-open-seller-portal]");
     if (!buyer && !seller) return;

@@ -237,7 +237,7 @@ async function memberFromRequest(request, env) {
 }
 function isAdmin(member, env) {
   const adminEmail = normalizeEmail(env.ADMIN_EMAIL);
-  return Boolean(adminEmail && member && normalizeEmail(member.email) === adminEmail && member.email_verified_at && member.device_verified && member.identity_status === "verified");
+  return Boolean(adminEmail && member && normalizeEmail(member.email) === adminEmail && member.email_verified_at && member.device_verified && member.identity_status === "verified" && member.stripe_identity_status === "verified");
 }
 const isOwnerEmail = (member, env) => Boolean(member && normalizeEmail(env.ADMIN_EMAIL) && normalizeEmail(member.email) === normalizeEmail(env.ADMIN_EMAIL));
 async function hasFreshAdminSession(request, member, env) {
@@ -729,7 +729,7 @@ async function account(member, count, env, seller = null) {
   const invite = await inviteDetailsFor(member, env);
   const admin = isAdmin(member, env);
   const ownerEmail = isOwnerEmail(member, env);
-  const verifiedSeller = Boolean(member.email_verified_at && member.device_verified && member.identity_status === "verified" && seller?.status === "active");
+  const verifiedSeller = Boolean(member.email_verified_at && member.device_verified && member.identity_status === "verified" && member.stripe_identity_status === "verified" && seller?.status === "active");
   const sellerAccess = admin || verifiedSeller;
   const sellerStatus = admin ? "owner" : (seller?.status || "not_applied");
   const roles = admin ? ["buyer", "seller", "master"] : (sellerAccess ? ["buyer", "seller"] : ["buyer"]);
@@ -884,7 +884,7 @@ async function route(request, env, cors, ctx) {
     const storeMember = await memberFromRequest(request, env);
     const seller = storeMember ? await env.DB.prepare(`SELECT status FROM breaker_profiles WHERE member_id=?`).bind(storeMember.id).first() : null;
     if (!storeMember) return response({ error: "Sign in to the Seller Portal to view store inventory." }, 401, cors);
-    if (storeMember.identity_status !== "verified" || (!isAdmin(storeMember, env) && seller?.status !== "active") || storeMember.active_portal !== "seller") return response({ error: "Active Seller Portal access is required." }, 403, cors);
+    if (storeMember.identity_status !== "verified" || storeMember.stripe_identity_status !== "verified" || (!isAdmin(storeMember, env) && seller?.status !== "active") || storeMember.active_portal !== "seller") return response({ error: "Active Seller Portal access is required." }, 403, cors);
     const market = url.searchParams.get("market") === "international" ? "international" : "us";
     const currency = String(url.searchParams.get("currency") || "USD").trim().toUpperCase();
     if (!STORE_CURRENCIES.has(currency)) return response({ error: "Choose a supported display currency." }, 400, cors);
@@ -947,7 +947,7 @@ async function route(request, env, cors, ctx) {
     const storeMember = await memberFromRequest(request, env);
     const seller = storeMember ? await env.DB.prepare(`SELECT status FROM breaker_profiles WHERE member_id=?`).bind(storeMember.id).first() : null;
     if (!storeMember) return response({ error: "Sign in to the Seller Portal to request shipping." }, 401, cors);
-    if (storeMember.identity_status !== "verified" || (!isAdmin(storeMember, env) && seller?.status !== "active") || storeMember.active_portal !== "seller") return response({ error: "Active Seller Portal access is required." }, 403, cors);
+    if (storeMember.identity_status !== "verified" || storeMember.stripe_identity_status !== "verified" || (!isAdmin(storeMember, env) && seller?.status !== "active") || storeMember.active_portal !== "seller") return response({ error: "Active Seller Portal access is required." }, 403, cors);
     if (String(env.STORE_COMING_SOON || "true") !== "false" || String(env.STORE_CHECKOUT_ENABLED || "false") !== "true") {
       return response({ error: "Live carrier quotes are not enabled while the store is marked Coming Soon.", code: "SHIPPING_NOT_CONFIGURED" }, 503, cors);
     }
@@ -1345,7 +1345,7 @@ async function route(request, env, cors, ctx) {
   }
   if (!member.device_verified) return response({ error: "Verify a device passkey first." }, 403, cors);
   if (url.pathname === "/profile" && request.method === "POST") {
-    if (member.identity_status === "verified") return response({ error: "Your identity profile is already verified. Use profile settings to update your User ID." }, 409, cors);
+    if (member.identity_status === "verified" && member.stripe_identity_status === "verified") return response({ error: "Your identity profile is already verified. Use profile settings to update your User ID." }, 409, cors);
     const data = await body(request); const first = clean(data.firstName, 60), last = clean(data.lastName, 60), birth = clean(data.birthDate, 10);
     if (!first || !last || !/^\d{4}-\d{2}-\d{2}$/.test(birth) || data.consent !== "on") return response({ error: "Complete every legal identity field and consent checkbox." }, 400, cors);
     const birthDate = new Date(`${birth}T00:00:00Z`);

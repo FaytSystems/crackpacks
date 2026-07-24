@@ -40,6 +40,12 @@ async function memberFromRequest(request, env) {
 async function sellerProfile(env, memberId) {
   return env.DB.prepare(`SELECT * FROM breaker_profiles WHERE member_id=?`).bind(memberId).first();
 }
+export const hasVerifiedSellerIdentity = member => Boolean(
+  member?.email_verified_at &&
+  member?.device_verified &&
+  member?.identity_status === "verified" &&
+  member?.stripe_identity_status === "verified"
+);
 async function requireMember(request, env, cors, { verified = true, seller = false } = {}) {
   const member = await memberFromRequest(request, env);
   if (!member) return { error: json({ error: "Sign in to continue." }, 401, cors) };
@@ -47,6 +53,7 @@ async function requireMember(request, env, cors, { verified = true, seller = fal
     return { error: json({ error: "Complete email, passkey, and identity verification first." }, 403, cors) };
   }
   const profile = seller ? await sellerProfile(env, member.id) : null;
+  if (seller && !hasVerifiedSellerIdentity(member)) return { error: json({ error: "Complete Seller ID, passkey, legal profile, and Stripe Identity verification first." }, 403, cors) };
   if (seller && profile?.status !== "active" && normalizeEmail(member.email) !== normalizeEmail(env.ADMIN_EMAIL)) return { error: json({ error: "Active Seller Portal access is required." }, 403, cors) };
   return { member, profile };
 }
@@ -2688,7 +2695,7 @@ export async function handlePlatformRoute(request, env, cors) {
     const auth = await requireMember(request, env, cors, { verified: false });
     if (auth.error) return auth.error;
     const profile = await sellerProfile(env, auth.member.id);
-    const fullyVerified = Boolean(auth.member.email_verified_at && auth.member.device_verified && auth.member.identity_status === "verified");
+    const fullyVerified = hasVerifiedSellerIdentity(auth.member);
     const ownerEmail = normalizeEmail(auth.member.email) === normalizeEmail(env.ADMIN_EMAIL);
     const owner = fullyVerified && ownerEmail;
     const sellerAllowed = owner || (fullyVerified && profile?.status === "active");
@@ -2710,7 +2717,7 @@ export async function handlePlatformRoute(request, env, cors) {
     const auth = await requireMember(request, env, cors, { verified: false });
     if (auth.error) return auth.error;
     const data = await boundedJson(request, 1000);
-    const fullyVerified = Boolean(auth.member.email_verified_at && auth.member.device_verified && auth.member.identity_status === "verified");
+    const fullyVerified = hasVerifiedSellerIdentity(auth.member);
     const owner = fullyVerified && normalizeEmail(auth.member.email) === normalizeEmail(env.ADMIN_EMAIL);
     const profile = await sellerProfile(env, auth.member.id);
     const sellerAllowed = owner || (fullyVerified && profile?.status === "active");
@@ -2760,7 +2767,7 @@ export async function handlePlatformRoute(request, env, cors) {
     if (available.error) return json({ error: available.error }, available.error.includes("similar") ? 409 : 400, cors);
     const activateSeller = data.activateSeller === true;
     if (activateSeller) {
-      if (!auth.member.device_verified || auth.member.identity_status !== "verified") return json({ error: "Complete seller passkey and Stripe identity verification before activating seller access." }, 403, cors);
+      if (!hasVerifiedSellerIdentity(auth.member)) return json({ error: "Complete seller passkey, legal profile, and Stripe Identity verification before activating seller access." }, 403, cors);
       if (!auth.member.first_name || !auth.member.last_name || !auth.member.birth_date) return json({ error: "Complete the seller legal profile before activating seller access." }, 403, cors);
     }
     const stamp = now();
@@ -2795,6 +2802,7 @@ export async function handlePlatformRoute(request, env, cors) {
   if (url.pathname === "/seller/activate" && request.method === "POST") {
     const auth = await requireMember(request, env, cors);
     if (auth.error) return auth.error;
+    if (!hasVerifiedSellerIdentity(auth.member)) return json({ error: "Complete Seller ID, passkey, legal profile, and Stripe Identity verification before using an activation link." }, 403, cors);
     const data = await boundedJson(request, 2000);
     const token = String(data.token || "");
     const row = token.length >= 24 ? await env.DB.prepare(`SELECT * FROM breaker_activation_codes WHERE code_hash=? AND used_at IS NULL AND expires_at>?`).bind(await digest(token, env.AUTH_SECRET), now()).first() : null;
