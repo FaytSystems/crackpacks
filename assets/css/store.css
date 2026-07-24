@@ -161,6 +161,113 @@ body.store-auth-required main > section:not(.store-auth-gate) {
 .international-filter-list { margin: -12px 0 28px; }
 .international-filter-list + .store-catalog-status { margin-top: -12px; }
 
+.top-ten-marketplace {
+  margin: 0 0 22px;
+  padding: clamp(20px, 4vw, 30px);
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at top left, rgba(248,255,70,.14), transparent 24%),
+    radial-gradient(circle at bottom right, rgba(255,78,219,.14), transparent 28%),
+    linear-gradient(145deg, rgba(9,11,31,.96), rgba(19,24,62,.96));
+}
+
+.top-ten-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: end;
+  margin-bottom: 18px;
+}
+
+.top-ten-window {
+  min-width: min(100%, 260px);
+}
+
+.top-ten-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.top-ten-card {
+  display: grid;
+  gap: 14px;
+  min-height: 100%;
+  padding: 18px;
+  border-radius: 22px;
+  background: linear-gradient(155deg, rgba(10,13,39,.92), rgba(19,24,62,.9));
+}
+
+.top-ten-rank {
+  display: inline-grid;
+  width: 60px;
+  height: 60px;
+  place-items: center;
+  border-radius: 18px;
+  color: #070815;
+  background: linear-gradient(135deg, var(--electric), var(--magenta));
+  box-shadow: 0 0 22px rgba(56,232,255,.25);
+  font-size: 1.1rem;
+  font-weight: 1000;
+}
+
+.top-ten-copy h3,
+.top-ten-copy p {
+  margin: 0;
+}
+
+.top-ten-copy p:last-child {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: .84rem;
+}
+
+.top-ten-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  color: var(--muted);
+  font-size: .75rem;
+  font-weight: 800;
+}
+
+.top-ten-meta strong {
+  color: var(--store-warning);
+  font-size: 1rem;
+}
+
+.store-taxonomy-tools {
+  display: grid;
+  gap: 14px;
+  margin: 0 0 18px;
+}
+
+.price-range-readout {
+  align-self: end;
+  min-height: 48px;
+  padding: 12px 14px;
+  border: 1px solid rgba(56,232,255,.18);
+  border-radius: 16px;
+  color: var(--store-warning);
+  background: rgba(7,9,27,.78);
+  font-size: .86rem;
+  font-weight: 900;
+}
+
+.type-grid[data-store-primary-tabs] .type-pill {
+  min-height: 68px;
+}
+
+.type-grid[data-store-primary-tabs] .type-pill strong {
+  font-size: .95rem;
+}
+
+.type-grid[data-store-primary-tabs] .type-pill small {
+  color: rgba(223,226,243,.72);
+}
+
 .store-product-card { isolation: isolate; }
 .store-product-card .product-media { cursor: default; }
 

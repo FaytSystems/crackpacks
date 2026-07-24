@@ -81,20 +81,60 @@
           <div><strong>All seller stores in one search</strong><p>Search by card, box, pack, or product name. Results show seller ID, price, condition, and live listed quantity.</p></div>
           <nav class="store-market-switch" aria-label="Choose storefront"><a href="shop.html" aria-current="page">Buyer marketplace</a><a href="international-shop.html">International</a></nav>
         </div>
+        <section class="top-ten-marketplace holo-panel" aria-labelledby="top-ten-title">
+          <div class="top-ten-head">
+            <div>
+              <p class="eyebrow">Store spotlight</p>
+              <h2 id="top-ten-title">Top 10 non-repeating products</h2>
+              <p>When buyers open Store, Crack Packs can spotlight the strongest-selling unique products across adjustable time windows.</p>
+            </div>
+            <label class="store-currency-control top-ten-window">
+              <span>Time window</span>
+              <select data-top-ten-window>
+                <option value="1hr">1 hour</option>
+                <option value="3hr">3 hours</option>
+                <option value="5hr">5 hours</option>
+                <option value="12hr">12 hours</option>
+                <option value="24hr">24 hours</option>
+                <option value="3day">3 days</option>
+                <option value="5day">5 days</option>
+                <option value="7day">7 days</option>
+                <option value="30day">30 days</option>
+                <option value="3months">3 months</option>
+                <option value="6months">6 months</option>
+                <option value="year">1 year</option>
+                <option value="ytd">Year to date</option>
+              </select>
+            </label>
+          </div>
+          <div class="top-ten-grid" data-top-ten-grid aria-live="polite"></div>
+        </section>
         <div class="shop-tools store-tools holo-panel" aria-label="Shop filters">
           <div class="lookup-examples" aria-label="Store series tabs">
             <span>Store tabs:</span>
             <div class="type-grid" data-store-series-tabs></div>
           </div>
+          <div class="lookup-examples" aria-label="Marketplace primary tabs">
+            <span>Main categories:</span>
+            <div class="type-grid" data-store-primary-tabs></div>
+          </div>
           <label class="search-box"><span class="sr-only">Search products</span><input type="search" placeholder="Search sealed, packs, Japanese, singles…" data-product-search></label>
           <div class="empty-state" data-product-suggestions hidden></div>
-          <label class="store-currency-control"><span>Sort marketplace</span><select data-marketplace-sort><option value="price">Price</option><option value="condition">Condition</option><option value="seller">Seller ID</option></select></label>
+          <label class="store-currency-control"><span>Sort marketplace</span><select data-marketplace-sort><option value="rank">Rank</option><option value="alpha">Alphabetical</option><option value="newest">Newest</option><option value="oldest">Oldest</option><option value="price-low">Price low to high</option><option value="price-high">Price high to low</option><option value="condition">Condition</option><option value="seller">Seller ID</option></select></label>
           <div class="filter-list" role="group" aria-label="Product category">
             <button class="filter-btn is-active" type="button" data-product-filter="all">All</button>
             <button class="filter-btn" type="button" data-product-filter="sealed">Sealed</button>
             <button class="filter-btn" type="button" data-product-filter="packs">Packs</button>
             <button class="filter-btn" type="button" data-product-filter="japanese">Japanese</button>
             <button class="filter-btn" type="button" data-product-filter="singles">Singles &amp; slabs</button>
+          </div>
+          <div class="store-taxonomy-tools">
+            <label class="store-currency-control"><span>Increment</span><select data-price-increment><option value="1">$ 1</option><option value="10">$ 10</option><option value="100">$ 100</option><option value="1000">$ 1,000</option><option value="10000">$ 10,000</option><option value="25000">$ 25,000</option><option value="50000">$ 50,000</option><option value="100000">$ 100,000</option><option value="1000000">$ 1,000,000+</option></select></label>
+            <label>Seller / User ID<input type="search" data-seller-search placeholder="Search seller User ID"></label>
+            <label>Subcategory<select data-subcategory-filter><option value="all">All subcategories</option></select></label>
+            <label>Min price<input type="range" data-price-min min="0" max="1000" step="1" value="0"></label>
+            <label>Max price<input type="range" data-price-max min="0" max="1000" step="1" value="1000"></label>
+            <div class="price-range-readout" data-price-range-readout>$0 - $1,000</div>
           </div>
         </div>
         <p class="store-catalog-status" data-store-catalog-status aria-live="polite">Preparing the marketplace…</p>
@@ -183,8 +223,10 @@
   <script src="assets/js/config.js?v=3.0.0"></script>
   <script src="assets/js/data.js?v=1.5.0"></script>
   <script src="assets/js/app.js?v=1.5.0"></script>
+  <script src="assets/js/store-top-items.js?v=1.0.0"></script>
   <script src="assets/js/portal-mode.js?v=1.0.0"></script>
-  <script src="assets/js/store.js?v=3.0.0"></script>
+  <script src="assets/js/store.js?v=3.1.0"></script>
+  <script src="assets/js/store-enhancements.js?v=1.0.0"></script>
 
 
 <!-- CRACK PACKS CONTACT MODAL:START -->

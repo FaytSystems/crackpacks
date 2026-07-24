@@ -61,6 +61,11 @@
           <p>Your stream key is private. Create it once, add the RTMPS server and key to OBS, then schedule shows and control auction lots here.</p>
         </div>
       </div>
+      <div class="hub-tabs seller-quick-tabs" data-seller-only hidden>
+        <a class="hub-tab is-active" href="#go-live">Go Live</a>
+        <a class="hub-tab" href="#create-show">Create Show</a>
+        <a class="hub-tab" href="#seller-my-listings">My Listings</a>
+      </div>
       <div class="giveaway-grid seller-cockpit-grid">
         <article class="holo-panel seller-stream-input">
           <h3>Private OBS connection</h3>
@@ -131,7 +136,7 @@
           <div class="campaign-form-status" data-seller-show-status aria-live="polite"></div>
         </article>
       </div>
-      <div class="holo-panel seller-show-manager">
+      <div class="holo-panel seller-show-manager" id="seller-my-listings">
         <div class="seller-show-manager-head"><h3>Your shows, auction lots, and store listings</h3><button class="btn btn-outline btn-small" type="button" data-seller-shows-refresh>Refresh</button></div>
         <label>Manage show<select data-seller-show-select><option value="">Create a show first</option></select></label>
         <form class="seller-lot-form" data-seller-lot-form>
