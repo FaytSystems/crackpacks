@@ -1208,8 +1208,11 @@ async function route(request, env, cors, ctx) {
     const duplicate = (rows.results || []).find(row => row.identity_fingerprint === fingerprint);
     if (duplicate) {
       const stamp = now();
+      const pendingReview = await env.DB.prepare(`SELECT id FROM identity_review_queue WHERE member_id=? AND conflicting_member_id=? AND status='pending' ORDER BY created_at DESC LIMIT 1`).bind(member.id, duplicate.id).first();
+      if (pendingReview) return response({ error: "This legal identity is already connected to an existing account. Owner review is required." }, 409, cors);
+      const exceptionFingerprint = await hash(`approved-duplicate|${fingerprint}|${member.id}`, env.IDENTITY_PEPPER || env.AUTH_SECRET);
       await env.DB.batch([
-        env.DB.prepare(`UPDATE members SET first_name=?,last_name=?,birth_date=?,identity_fingerprint=?,identity_status='manual_review',stripe_identity_status='manual_review',updated_at=? WHERE id=?`).bind(first, last, birth, fingerprint, stamp, member.id),
+        env.DB.prepare(`UPDATE members SET first_name=?,last_name=?,birth_date=?,identity_fingerprint=?,identity_status='manual_review',stripe_identity_status='manual_review',updated_at=? WHERE id=?`).bind(first, last, birth, exceptionFingerprint, stamp, member.id),
         env.DB.prepare(`INSERT INTO identity_review_queue(id,member_id,conflicting_member_id,reason,detail,created_at) VALUES(?,?,?,?,?,?)`).bind(id(), member.id, duplicate.id, "signup_collision", "Protected legal identity matches another account. Master may approve the single normal-seller exception.", stamp)
       ]);
       await audit(env, request, "duplicate_identity_blocked", member.id);
