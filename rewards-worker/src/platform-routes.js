@@ -112,6 +112,33 @@ function normalizeWeightToOz(value, unit) {
   if (normalizedUnit === "kg") return (amount * 1000) / 28.349523125;
   return null;
 }
+function parseFulfillmentAddress(input) {
+  const address = {
+    name: clean(input?.name, 100),
+    street1: clean(input?.street1 || input?.address1 || input?.line1, 120),
+    street2: clean(input?.street2 || input?.address2 || input?.line2, 120),
+    city: clean(input?.city, 80),
+    state: clean(input?.state || input?.province || input?.region, 80),
+    postalCode: clean(input?.postalCode || input?.postal_code || input?.zip, 24),
+    country: clean(input?.country || "US", 2).toUpperCase(),
+    phone: clean(input?.phone, 32),
+    email: clean(input?.email, 254)
+  };
+  if (!address.name || !address.street1 || !address.city || !address.postalCode || !/^[A-Z]{2}$/.test(address.country)) return { error: "This order needs a complete recipient shipping address before EasyPost can make a label." };
+  if (address.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address.email)) return { error: "The recipient shipping email is invalid." };
+  return { address };
+}
+const easyPostFulfillmentAddress = address => ({
+  name: address.name,
+  street1: address.street1,
+  street2: address.street2 || undefined,
+  city: address.city,
+  state: address.state || undefined,
+  zip: address.postalCode,
+  country: address.country,
+  phone: address.phone || undefined,
+  email: address.email || undefined
+});
 
 async function latestStreamCreditConfig(env) {
   const row = await env.DB.prepare(`SELECT * FROM stream_credit_config_versions ORDER BY effective_at DESC, created_at DESC LIMIT 1`).first();
@@ -1209,9 +1236,97 @@ async function verifySale(request, env, cors, url) {
   } }, 200, cors);
 }
 
-async function purchaseOrderLabelForOwner(env, cors, orderId, ownerMemberId) {
+async function createEasyPostShipmentFromWeightProfile(env, row, weightProfileId) {
+  const apiKey = env.EASYPOST_API_KEY || "";
+  if (!apiKey) throw new Error("LABEL_NOT_CONFIGURED");
+  const profileId = validUuid(weightProfileId) ? String(weightProfileId) : String(row.shipping_weight_profile_id || "");
+  if (!profileId) throw new Error("WEIGHT_PROFILE_REQUIRED");
+  const profile = await env.DB.prepare(`SELECT * FROM seller_shipping_weight_profiles WHERE id=? AND member_id=?`).bind(profileId, row.owner_member_id).first();
+  if (!profile) throw new Error("WEIGHT_PROFILE_NOT_FOUND");
+  if (!Number(profile.final_weight_oz) || Number(profile.final_weight_oz) <= 0) throw new Error("WEIGHT_PROFILE_INCOMPLETE");
+  let fromRaw;
+  try { fromRaw = JSON.parse(env.SHIP_FROM_ADDRESS_JSON || ""); } catch { throw new Error("SHIP_FROM_NOT_CONFIGURED"); }
+  const parsedFrom = parseFulfillmentAddress({
+    name: fromRaw.name,
+    street1: fromRaw.street1,
+    street2: fromRaw.street2,
+    city: fromRaw.city,
+    state: fromRaw.state,
+    postalCode: fromRaw.postalCode || fromRaw.zip,
+    country: fromRaw.country || "US",
+    phone: fromRaw.phone,
+    email: fromRaw.email
+  });
+  if (parsedFrom.error) throw new Error("SHIP_FROM_NOT_CONFIGURED");
+  const parsedTo = parseFulfillmentAddress(parseJsonSafe(row.shipping_address_json, {}));
+  if (parsedTo.error) throw new Error("RECIPIENT_ADDRESS_REQUIRED");
+  const parcel = { weight: Number(profile.final_weight_oz) };
+  if (Number(profile.length_in) > 0) parcel.length = Number(profile.length_in);
+  if (Number(profile.width_in) > 0) parcel.width = Number(profile.width_in);
+  if (Number(profile.height_in) > 0) parcel.height = Number(profile.height_in);
+  const result = await fetch("https://api.easypost.com/v2/shipments", {
+    method: "POST",
+    headers: { Authorization: `Basic ${btoa(`${apiKey}:`)}`, "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({
+      shipment: {
+        to_address: easyPostFulfillmentAddress(parsedTo.address),
+        from_address: easyPostFulfillmentAddress(parsedFrom.address),
+        parcel
+      }
+    })
+  });
+  const payload = await result.json().catch(() => ({}));
+  if (!result.ok) {
+    console.error("EasyPost shipment creation failed", { status: result.status, code: payload?.error?.code || "" });
+    throw new Error("SHIPMENT_PROVIDER_ERROR");
+  }
+  const rate = (Array.isArray(payload.rates) ? payload.rates : [])
+    .map(item => ({
+      id: String(item.id || ""),
+      carrier: clean(item.carrier, 60),
+      service: clean(item.service, 80),
+      amountCents: Math.round(Number(item.rate) * 100)
+    }))
+    .filter(item => item.id && Number.isInteger(item.amountCents) && item.amountCents >= 0)
+    .sort((left, right) => left.amountCents - right.amountCents)[0];
+  if (!payload.id || !rate) throw new Error("NO_SHIPPING_RATES");
+  if (row.reservation_id) {
+    await env.DB.prepare(`
+      UPDATE checkout_reservations
+      SET easypost_shipment_id=?,easypost_rate_id=?,carrier=?,service=?,shipping_amount_cents=CASE WHEN shipping_amount_cents>0 THEN shipping_amount_cents ELSE ? END,updated_at=?
+      WHERE id=? AND owner_member_id=?
+    `).bind(String(payload.id), rate.id, rate.carrier, rate.service, rate.amountCents, now(), row.reservation_id, row.owner_member_id).run();
+  }
+  return {
+    easypost_shipment_id: String(payload.id),
+    easypost_rate_id: rate.id,
+    carrier: rate.carrier,
+    service: rate.service
+  };
+}
+
+function labelPurchaseErrorMessage(code) {
+  return ({
+    LABEL_NOT_CONFIGURED: "EasyPost production label purchasing is not configured.",
+    WEIGHT_PROFILE_REQUIRED: "Choose a weight profile before printing this label.",
+    WEIGHT_PROFILE_NOT_FOUND: "That weight profile was not found for this seller account.",
+    WEIGHT_PROFILE_INCOMPLETE: "The selected weight profile needs a final package weight.",
+    SHIP_FROM_NOT_CONFIGURED: "The saved ship-from address is missing or invalid.",
+    RECIPIENT_ADDRESS_REQUIRED: "This order needs a complete recipient shipping address before EasyPost can make a label.",
+    SHIPMENT_PROVIDER_ERROR: "EasyPost rejected the shipment request. Check the ship-from address, recipient address, package profile, carrier setup, and production API key.",
+    NO_SHIPPING_RATES: "EasyPost created the shipment but returned no rates for this address/package."
+  })[code] || "EasyPost could not prepare this label.";
+}
+
+function labelPurchaseErrorStatus(code) {
+  if (["WEIGHT_PROFILE_REQUIRED", "RECIPIENT_ADDRESS_REQUIRED", "WEIGHT_PROFILE_NOT_FOUND", "WEIGHT_PROFILE_INCOMPLETE"].includes(code)) return 409;
+  if (["LABEL_NOT_CONFIGURED", "SHIP_FROM_NOT_CONFIGURED"].includes(code)) return 503;
+  return 502;
+}
+
+async function purchaseOrderLabelForOwner(env, cors, orderId, ownerMemberId, { weightProfileId = "" } = {}) {
   const row = await env.DB.prepare(`
-    SELECT orders.*,reservation.easypost_shipment_id,reservation.easypost_rate_id,reservation.carrier,reservation.service,
+    SELECT orders.*,reservation.id reservation_id,reservation.easypost_shipment_id,reservation.easypost_rate_id,reservation.carrier,reservation.service,
            shipment.label_purchased_at,shipment.postage_label_url,shipment.postage_label_pdf_url
     FROM member_orders orders LEFT JOIN checkout_reservations reservation ON reservation.order_id=orders.id
     LEFT JOIN order_shipments shipment ON shipment.order_id=orders.id
@@ -1220,7 +1335,14 @@ async function purchaseOrderLabelForOwner(env, cors, orderId, ownerMemberId) {
   if (!row) return json({ error: "Order not found." }, 404, cors);
   if (row.payment_status !== "paid") return json({ error: "A shipping label can only be purchased for a paid order." }, 409, cors);
   if (row.label_purchased_at) return json({ ordered: true, labelUrl: row.postage_label_pdf_url || row.postage_label_url, purchasedAt: row.label_purchased_at }, 200, cors);
-  if (!row.easypost_shipment_id || !row.easypost_rate_id) return json({ error: "This order has no saved EasyPost shipment and rate. Create the label manually." }, 409, cors);
+  if (!row.easypost_shipment_id || !row.easypost_rate_id) {
+    try {
+      Object.assign(row, await createEasyPostShipmentFromWeightProfile(env, row, weightProfileId));
+    } catch (error) {
+      const code = error?.message || "LABEL_PURCHASE_FAILED";
+      return json({ error: labelPurchaseErrorMessage(code), code }, labelPurchaseErrorStatus(code), cors);
+    }
+  }
   const apiKey = env.EASYPOST_API_KEY || "";
   if (!apiKey) return json({ error: "EasyPost production label purchasing is not configured." }, 503, cors);
   const result = await fetch(`https://api.easypost.com/v2/shipments/${encodeURIComponent(row.easypost_shipment_id)}/buy`, {
@@ -1256,7 +1378,14 @@ async function purchaseOrderLabel(request, env, cors, orderId) {
 async function sellerPurchaseOrderLabel(request, env, cors, orderId) {
   const auth = await requireMember(request, env, cors, { seller: true });
   if (auth.error) return auth.error;
-  return purchaseOrderLabelForOwner(env, cors, orderId, auth.member.id);
+  let data = {};
+  try {
+    data = await boundedJson(request, 1500);
+  } catch (error) {
+    if (error.message === "REQUEST_TOO_LARGE") return json({ error: "Label request is too large." }, 413, cors);
+    return json({ error: "Send a valid label request." }, 400, cors);
+  }
+  return purchaseOrderLabelForOwner(env, cors, orderId, auth.member.id, { weightProfileId: data.weightProfileId || "" });
 }
 
 async function listShows(request, env, cors) {
@@ -1561,7 +1690,7 @@ function sellerOrderFulfillmentStatus(row, canPurchaseLabel) {
   if (orderStatus === "shipped" || shipmentIsMoving(trackingStatus)) return "shipped";
   if (row.label_purchased_at) return "ship_now";
   if (String(row.payment_status || "") !== "paid") return "unpaid";
-  if (canPurchaseLabel && row.easypost_shipment_id && row.easypost_rate_id) return "needs_label";
+  if (canPurchaseLabel) return "needs_label";
   return "needs_label_setup";
 }
 
