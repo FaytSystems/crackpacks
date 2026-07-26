@@ -2225,11 +2225,12 @@ async function cloudflareRequest(env, path, options = {}) {
     ...options,
     headers: { Authorization: `Bearer ${env.CLOUDFLARE_STREAM_API_TOKEN}`, "Content-Type": "application/json", ...(options.headers || {}) }
   });
-  const payload = await response.json().catch(() => ({}));
+  const responseText = await response.text().catch(() => "");
+  const payload = responseText ? (() => { try { return JSON.parse(responseText); } catch { return {}; } })() : {};
   if (!response.ok || payload.success === false) {
     const primaryError = payload?.errors?.[0] || payload?.messages?.[0] || null;
     const code = clean(primaryError?.code || "", 40);
-    const message = clean(primaryError?.message || payload?.result?.message || payload?.errors?.map?.(item => item?.message).filter(Boolean).join("; ") || "", 240);
+    const message = clean(primaryError?.message || payload?.result?.message || payload?.errors?.map?.(item => item?.message).filter(Boolean).join("; ") || responseText, 240);
     const fallback = clean(`HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}`, 80);
     const providerError = clean(code && message ? `${code}: ${message}` : (message || fallback), 240);
     console.error("Cloudflare Stream request failed", {
@@ -2242,6 +2243,22 @@ async function cloudflareRequest(env, path, options = {}) {
     throw new Error(providerError ? `STREAM_PROVIDER_ERROR:${providerError}` : "STREAM_PROVIDER_ERROR");
   }
   return payload.result || payload;
+}
+
+function cloudflareLiveInputBody(name, { minimal = false } = {}) {
+  const meta = { name: clean(name, 120) || "Crack Packs seller input" };
+  if (minimal) return { meta, recording: { mode: "automatic" } };
+  return {
+    enabled: true,
+    meta,
+    preferLowLatency: true,
+    recording: {
+      hideLiveViewerCount: false,
+      mode: "automatic",
+      requireSignedURLs: false,
+      timeoutSeconds: 0
+    }
+  };
 }
 
 async function cloudflareGraphqlRequest(env, query, variables) {
@@ -2445,13 +2462,11 @@ async function sellerStreamInput(request, env, cors) {
   if (shouldCreate) {
     const previousLiveInputUid = input?.cloudflare_live_input_uid || "";
     let created;
+    const inputName = `${auth.member.live_username || "seller"} Crack Packs input`;
     try {
       created = await cloudflareRequest(env, "/live_inputs", {
         method: "POST",
-        body: JSON.stringify({
-          meta: { name: `${auth.member.live_username || "seller"} Crack Packs input` },
-          recording: { mode: "automatic" }
-        })
+        body: JSON.stringify(cloudflareLiveInputBody(inputName))
       });
     } catch (error) {
       if (error.message === "STREAM_NOT_CONFIGURED") return json({ error: "Cloudflare Stream credentials are not configured." }, 503, cors);
@@ -2463,13 +2478,13 @@ async function sellerStreamInput(request, env, cors) {
       try {
         created = await cloudflareRequest(env, "/live_inputs", {
           method: "POST",
-          body: "{}"
+          body: JSON.stringify(cloudflareLiveInputBody(inputName, { minimal: true }))
         });
       } catch (fallbackError) {
         const fallbackDetail = String(fallbackError.message || "").startsWith("STREAM_PROVIDER_ERROR:") ? String(fallbackError.message).slice("STREAM_PROVIDER_ERROR:".length) : "";
         let credentialProbe = "";
         try {
-          await cloudflareRequest(env, "/live_inputs?include_counts=false");
+          await cloudflareRequest(env, "/live_inputs");
           credentialProbe = "The token can list Stream inputs, but Cloudflare is refusing creation. Confirm the token has Stream Edit, not Stream Read.";
         } catch (probeError) {
           const probeDetail = String(probeError.message || "").startsWith("STREAM_PROVIDER_ERROR:") ? String(probeError.message).slice("STREAM_PROVIDER_ERROR:".length) : "";

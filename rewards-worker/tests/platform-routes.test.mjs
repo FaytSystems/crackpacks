@@ -232,3 +232,93 @@ test("identity sync refreshes a verified Stripe session into member status", asy
   assert.equal(updates.length, 1);
   assert.match(updates[0].sql, /stripe_identity_status='verified'/);
 });
+
+test("seller stream input creates Cloudflare live input with current API body", async t => {
+  const originalFetch = globalThis.fetch;
+  const cloudflareCalls = [];
+  globalThis.fetch = async (url, options) => {
+    cloudflareCalls.push({ url: String(url), method: options?.method || "GET", body: String(options?.body || "") });
+    if (String(url).endsWith("/stream/live_inputs") && options?.method === "POST") {
+      return new Response(JSON.stringify({
+        success: true,
+        result: {
+          uid: "live_input_123",
+          rtmps: { url: "rtmps://live.cloudflare.com:443/live/", streamKey: "secret-stream-key" },
+          srt: { url: "srt://live.cloudflare.com:778", streamId: "live_input_123", passphrase: "secret-srt" }
+        }
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (String(url).endsWith("/stream/live_inputs/live_input_123") && options?.method === "PUT") {
+      return new Response(JSON.stringify({ success: true, result: { uid: "live_input_123" } }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    return new Response(JSON.stringify({ success: false, errors: [{ code: 1000, message: "unexpected request" }] }), { status: 400, headers: { "Content-Type": "application/json" } });
+  };
+  t.after(() => { globalThis.fetch = originalFetch; });
+
+  const member = {
+    id: "db319ec3-aa9a-436a-a094-2fca08c85f8a",
+    email_verified_at: "2026-07-24T00:00:00.000Z",
+    device_verified: 1,
+    identity_status: "verified",
+    stripe_identity_status: "verified",
+    live_username: "GARAGESALEdotcom"
+  };
+  let savedInput = null;
+  const env = {
+    AUTH_SECRET: "test-secret",
+    CLOUDFLARE_ACCOUNT_ID: "198a4ebd4ac3a23957f8d0431c273228",
+    CLOUDFLARE_STREAM_API_TOKEN: "stream-token",
+    DB: {
+      prepare(sql) {
+        return {
+          bind(...args) {
+            return {
+              first: async () => {
+                if (sql.includes("JOIN members")) return member;
+                if (sql.includes("breaker_profiles")) return { status: "active" };
+                if (sql.includes("breaker_stream_inputs")) return savedInput;
+                return null;
+              },
+              run: async () => {
+                if (sql.includes("INSERT INTO breaker_stream_inputs")) {
+                  savedInput = {
+                    member_id: args[0],
+                    cloudflare_live_input_uid: args[1],
+                    rtmps_url: args[2],
+                    rtmps_stream_key: args[3],
+                    srt_url: args[4],
+                    srt_stream_id: args[5],
+                    srt_passphrase: args[6],
+                    status: "disabled"
+                  };
+                }
+                return { success: true, meta: { changes: 1 } };
+              }
+            };
+          }
+        };
+      }
+    }
+  };
+  const response = await handlePlatformRoute(new Request("https://api.crackpacks.test/seller/stream/input", {
+    method: "POST",
+    headers: { Authorization: "Bearer session-token" },
+    body: "{}"
+  }), env, {});
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.input.uid, "live_input_123");
+  assert.equal(payload.input.rtmpsUrl, "rtmps://live.cloudflare.com:443/live/");
+  assert.equal(payload.input.streamKey, "secret-stream-key");
+  assert.equal(cloudflareCalls.length, 2);
+  const createBody = JSON.parse(cloudflareCalls[0].body);
+  assert.equal(createBody.enabled, true);
+  assert.equal(createBody.preferLowLatency, true);
+  assert.equal(createBody.meta.name, "GARAGESALEdotcom Crack Packs input");
+  assert.deepEqual(createBody.recording, {
+    hideLiveViewerCount: false,
+    mode: "automatic",
+    requireSignedURLs: false,
+    timeoutSeconds: 0
+  });
+});
