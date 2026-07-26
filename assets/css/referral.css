@@ -268,7 +268,56 @@
   margin-top: 24px;
 }
 
+.identity-status-card {
+  text-align: center;
+  border-color: rgba(248,255,70,.4);
+  background: radial-gradient(circle at 50% 0,rgba(248,255,70,.12),transparent 36%),linear-gradient(145deg,rgba(17,21,54,.96),rgba(8,10,31,.96));
+}
+
+.identity-status-bubble {
+  display: grid;
+  place-items: center;
+  width: min(100%,420px);
+  min-height: 160px;
+  margin: 28px auto 20px;
+  padding: 22px;
+  border: 3px solid rgba(248,255,70,.85);
+  border-radius: 999px;
+  color: #070815;
+  background: radial-gradient(circle at 35% 22%,#fffbd2 0,#f8ff46 48%,#38e8ff 100%);
+  box-shadow: 0 0 42px rgba(248,255,70,.32),inset 0 0 24px rgba(255,255,255,.42);
+  font-size: clamp(1.1rem,3vw,1.75rem);
+  font-weight: 1000;
+  line-height: 1.05;
+  text-align: center;
+  cursor: pointer;
+}
+
+.identity-status-bubble:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0 56px rgba(248,255,70,.44),inset 0 0 26px rgba(255,255,255,.5);
+}
+
+.identity-status-bubble:disabled {
+  cursor: wait;
+  opacity: .72;
+  transform: none;
+}
+
+.identity-status-actions {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.identity-status-result:not(:empty) {
+  margin-top: 18px;
+  text-align: left;
+}
+
 @media(max-width:900px){
   .portal-launcher-grid{grid-template-columns:1fr}
   .portal-launcher-option{min-height:unset}
+  .identity-status-bubble{min-height:132px}
 }

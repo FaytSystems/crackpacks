@@ -66,7 +66,6 @@
   let portalLauncherShown = false;
   let sellerActivationFinalizePending = false;
   const STREAM_CREDITS_REFRESH_FOCUS_GRACE_MS = 2 * 60 * 1000;
-  const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
   const authModeCopy = {
     signin: {
       kicker: "Returning collector",
@@ -477,45 +476,85 @@
     setSellerPortalState();
     window.location.replace("streams.html");
   }
+  const setIdentityStatusResult = (message = "", kind = "") => {
+    const node = $("[data-identity-status-result]");
+    if (!node) return;
+    node.textContent = message;
+    node.dataset.kind = kind;
+  };
+  function showIdentityStatusPanel(message = "Stripe has accepted your ID verification for processing. Click the status button to refresh the live result.", kind = "success") {
+    show("[data-auth-panel]", false);
+    show("[data-password-panel]", false);
+    show("[data-buyer-username-panel]", false);
+    show("[data-seller-username-panel]", false);
+    show("[data-device-panel]", false);
+    show("[data-profile-panel]", false);
+    show("[data-dashboard]", false);
+    show("[data-seller-upgrade-panel]", false);
+    show("[data-identity-status-panel]", true);
+    const copy = $("[data-identity-status-copy]");
+    if (copy) copy.textContent = message;
+    $("[data-open-verified-seller-portal]").hidden = true;
+    $("[data-retry-stripe-identity]").hidden = true;
+    setIdentityStatusResult(message, kind);
+  }
+  async function openVerifiedSellerPortalFromStatus() {
+    let account = await request("/me?syncIdentity=1");
+    accountState = account;
+    if (account.sellerUsername && account.identityStatus === "verified" && account.stripeIdentityStatus === "verified" && !account.sellerAccess) {
+      await request("/profile/live-username", { method: "POST", body: JSON.stringify({ liveUsername: account.sellerUsername, activateSeller: true }) });
+      account = await request("/me?syncIdentity=1");
+      accountState = account;
+    }
+    await enterSellerPortal();
+  }
+  async function checkStripeIdentityStatus(button) {
+    if (button) button.disabled = true;
+    try {
+      setIdentityStatusResult("Checking Stripe ID verification status...", "success");
+      const result = await request("/identity/sync", { method: "POST", body: JSON.stringify({ notify: true }) });
+      const status = String(result.status || result.stripeStatus || "").toLowerCase();
+      if (result.verified || status === "verified") {
+        showIdentityStatusPanel("PASS: Stripe ID verification is complete. Your acceptance email has been sent.", "success");
+        $("[data-open-verified-seller-portal]").hidden = false;
+        setIdentityStatusResult("PASS accepted. Open Seller Portal when you are ready.", "success");
+        return;
+      }
+      if (["processing", "manual_review", "pending_review"].includes(status)) {
+        showIdentityStatusPanel("VERIFY IN PROGRESS: Stripe is still processing your ID verification. Check again in a moment.", "success");
+        return;
+      }
+      if (["requires_input", "failed", "cancelled", "canceled", "redacted"].includes(status)) {
+        showIdentityStatusPanel("ID verification was not accepted. A retry email has been sent if this is the first failed result.", "error");
+        $("[data-retry-stripe-identity]").hidden = false;
+        return;
+      }
+      showIdentityStatusPanel("Stripe has not returned a final result yet. Check again in a moment.", "success");
+    } catch (error) {
+      showIdentityStatusPanel(error.message || "Stripe ID verification status could not be checked.", "error");
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
   async function finalizeSellerIdentityReturn() {
     if (!token) {
       showStatus("Stripe ID verification returned. Sign in again so Crack Packs can finish Seller Portal activation.", "success");
       show("[data-auth-panel]", true);
       return false;
     }
-    showStatus("Stripe ID verification returned. Finalizing Seller Portal activation...", "success");
     setSellerUpgradeRequested(true);
-    try {
-      for (let attempt = 0; attempt < 10; attempt += 1) {
-        await request("/identity/sync", { method: "POST", body: "{}" }).catch(() => {});
-        const account = await request("/me");
-        accountState = account;
-        if (account.sellerAccess) {
-          await enterSellerPortal();
-          return true;
-        }
-        if (account.sellerUsername && account.identityStatus === "verified" && account.stripeIdentityStatus === "verified") {
-          await request("/profile/live-username", { method: "POST", body: JSON.stringify({ liveUsername: account.sellerUsername, activateSeller: true }) });
-          await enterSellerPortal();
-          return true;
-        }
-        renderAccount(account);
-        const inReview = ["pending_review", "manual_review"].includes(account.identityStatus) || account.stripeIdentityStatus === "manual_review";
-        if (inReview) {
-          showStatus("Stripe ID verification is in manual review. Seller Portal will unlock as soon as it clears.", "success");
-          history.replaceState({}, document.title, location.pathname);
-          return false;
-        }
-        showStatus("Stripe ID verification is processing. Waiting for Stripe confirmation...", "success");
-        await sleep(1500);
-      }
-    } catch (error) {
-      history.replaceState({}, document.title, location.pathname);
-      showStatus(error.message || "Seller Portal could not open after Stripe verification. Refresh and try again.", "error");
-      return false;
+    showStatus("Stripe ID verification returned. Check the live Stripe status below.", "success");
+    showIdentityStatusPanel();
+    const account = await loadAccount().catch(() => null);
+    if (account?.identityStatus === "verified" && account?.stripeIdentityStatus === "verified") {
+      showIdentityStatusPanel("PASS: Stripe ID verification is complete. Your acceptance email has been sent.", "success");
+      $("[data-open-verified-seller-portal]").hidden = false;
+    } else if (["processing", "manual_review"].includes(String(account?.stripeIdentityStatus || "").toLowerCase()) || account?.identityStatus === "pending_review") {
+      showIdentityStatusPanel("VERIFY IN PROGRESS: Stripe has accepted your ID verification for processing. Check again in a moment.", "success");
+    } else {
+      showIdentityStatusPanel("Stripe has accepted your ID verification for processing. Click the status button to refresh the live result.", "success");
     }
-    history.replaceState({}, document.title, location.pathname);
-    showStatus("Stripe ID verification is still processing. Refresh this page in a moment and Seller Portal will open once Stripe confirms it.", "success");
+    $("[data-check-stripe-identity-status]")?.scrollIntoView({ behavior: "smooth", block: "center" });
     return false;
   }
   function clearPersonalQr() {
@@ -804,6 +843,7 @@
   }
   function renderAccount(data) {
     accountState = data;
+    if (!identityReturnRequested) show("[data-identity-status-panel]", false);
     const sellerAllowed = Boolean(data.sellerAccess && data.identityStatus === "verified" && data.stripeIdentityStatus === "verified");
     const stripeSellerVerified = data.identityStatus === "verified" && data.stripeIdentityStatus === "verified";
     const masterCandidate = Boolean(data.isMaster || data.isMasterCandidate || data.isOwnerEmail);
@@ -1276,6 +1316,22 @@
   });
   $("[data-start-stripe-identity]").addEventListener("click", async event => {
     await startStripeIdentity(event.currentTarget, { force: true });
+  });
+  $("[data-check-stripe-identity-status]")?.addEventListener("click", async event => {
+    await checkStripeIdentityStatus(event.currentTarget);
+  });
+  $("[data-retry-stripe-identity]")?.addEventListener("click", async event => {
+    pendingSellerIdentityStart = true;
+    await startStripeIdentity(event.currentTarget, { force: true });
+  });
+  $("[data-open-verified-seller-portal]")?.addEventListener("click", async event => {
+    event.currentTarget.disabled = true;
+    try {
+      await openVerifiedSellerPortalFromStatus();
+    } catch (error) {
+      event.currentTarget.disabled = false;
+      setIdentityStatusResult(error.message || "Seller Portal could not open yet.", "error");
+    }
   });
   const toBase64url = buffer => btoa(String.fromCharCode(...new Uint8Array(buffer))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   const fromBase64url = value => Uint8Array.from(atob(value.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(value.length / 4) * 4, "=")), c => c.charCodeAt(0));

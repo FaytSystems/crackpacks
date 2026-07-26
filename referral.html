@@ -8,7 +8,7 @@
   <meta name="theme-color" content="#07091b">
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/css/styles.css?v=1.9.2">
-  <link rel="stylesheet" href="assets/css/referral.css?v=3.3.1">
+  <link rel="stylesheet" href="assets/css/referral.css?v=3.3.2">
   <link rel="stylesheet" href="assets/css/rewards-modal.css?v=2.2.0">
   <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.6.1">
 </head>
@@ -143,6 +143,18 @@
           <button class="btn btn-primary" type="button" data-start-stripe-identity>Open secure ID verification</button>
           <p class="fine-print">Stripe handles the identity document. Crack Packs stores the verification result, not a copy of your full card or identity document.</p>
         </div>
+      </section>
+
+      <section class="reward-card identity-status-card" data-identity-status-panel hidden>
+        <p class="eyebrow">Seller verification - Step 5 of 5</p>
+        <h2>Stripe ID Verify Status</h2>
+        <p data-identity-status-copy>Stripe has accepted your ID verification for processing. Check the live status when you are ready.</p>
+        <button class="identity-status-bubble" type="button" data-check-stripe-identity-status>CHECK STATUS OF STRIPE ID VERIFY</button>
+        <div class="identity-status-actions">
+          <button class="btn btn-primary" type="button" data-open-verified-seller-portal hidden>Open Seller Portal</button>
+          <button class="btn btn-outline" type="button" data-retry-stripe-identity hidden>Retry Verify ID</button>
+        </div>
+        <div class="campaign-form-status identity-status-result" data-identity-status-result aria-live="polite"></div>
       </section>
 
       <section class="reward-card" data-seller-username-panel hidden>
@@ -465,6 +477,6 @@
   <script src="assets/js/app.js?v=1.9.2"></script>
   <script src="assets/js/nav-profile.js?v=4.1.4"></script>
   <script src="assets/js/portal-mode.js?v=1.1.5"></script>
-  <script src="assets/js/referral.js?v=3.4.2"></script>
+  <script src="assets/js/referral.js?v=3.4.3"></script>
 </body>
 </html>

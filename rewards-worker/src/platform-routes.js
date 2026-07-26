@@ -606,26 +606,71 @@ async function sendOrderEmail(env, to, subject, html, key) {
   if (!result.ok) console.error("Order email failed", { status: result.status });
 }
 const escapeHtml = value => String(value || "").replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character]));
-async function sendTransactionalEmail(env, to, subject, html, key) {
-  if (!to) return;
+const htmlToText = html => String(html || "")
+  .replace(/<style[\s\S]*?<\/style>/gi, " ")
+  .replace(/<script[\s\S]*?<\/script>/gi, " ")
+  .replace(/<br\s*\/?>/gi, "\n")
+  .replace(/<\/p>/gi, "\n\n")
+  .replace(/<[^>]+>/g, " ")
+  .replace(/&nbsp;/g, " ")
+  .replace(/&amp;/g, "&")
+  .replace(/&lt;/g, "<")
+  .replace(/&gt;/g, ">")
+  .replace(/&quot;/g, '"')
+  .replace(/&#39;/g, "'")
+  .replace(/[ \t]+\n/g, "\n")
+  .replace(/\n{3,}/g, "\n\n")
+  .replace(/[ \t]{2,}/g, " ")
+  .trim();
+async function sendTransactionalEmail(env, to, subject, html, key, options = {}) {
+  if (!to) return false;
+  const fromAddress = clean(options.fromAddress || "rewards@crackpacks.com", 120);
+  const fromName = clean(options.fromName || "Crack Packs Rewards", 80);
+  const text = options.text || htmlToText(html);
   if (env.RESEND_API_KEY) {
     const result = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, "Content-Type": "application/json", "Idempotency-Key": key },
-      body: JSON.stringify({ from: "Crack Packs Rewards <rewards@crackpacks.com>", to: [to], subject, html })
+      body: JSON.stringify({ from: `${fromName} <${fromAddress}>`, to: [to], subject, html, text })
     });
     if (!result.ok) console.error("Transactional email failed", { status: result.status, subject });
-    return;
+    return result.ok;
   }
-  if (!env.REWARDS_EMAIL) return;
-  const message = new EmailMessage("rewards@crackpacks.com", to, `From: Crack Packs Rewards <rewards@crackpacks.com>\r\nTo: ${to}\r\nSubject: ${subject}\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n${html}`);
-  await env.REWARDS_EMAIL.send(message);
+  if (!env.REWARDS_EMAIL) return false;
+  await env.REWARDS_EMAIL.send({
+    to,
+    from: { email: fromAddress, name: fromName },
+    subject,
+    html,
+    text
+  });
+  return true;
 }
 async function sendSellerGrantedEmail(env, member, liveUsername) {
   const referralUrl = `${siteUrl(env)}/referral.html?ref=${encodeURIComponent(member.invite_code || "")}`;
   const accountUrl = `${siteUrl(env)}/referral.html`;
   const html = `<div style="font-family:Arial,sans-serif;color:#111827"><h1 style="color:#151936">Seller account granted</h1><p>Thank you for signing up.</p><p><strong>Your Crack Packs Seller ID:</strong> ${escapeHtml(liveUsername)}</p><p><strong>Your refer-a-friend URL:</strong><br><a href="${escapeHtml(referralUrl)}">${escapeHtml(referralUrl)}</a></p><p>Please follow or check out our socials for frequent codes to redeem on your account.</p><p>If you earn 100 sign-ups, you get a ticket to our annual Raffle Bonanza. Each ticket is a winner.</p><p><a href="${escapeHtml(accountUrl)}" style="display:inline-block;padding:14px 22px;background:#f8ff46;color:#070815;text-decoration:none;font-weight:bold;border-radius:10px">Go to account</a></p></div>`;
   await sendTransactionalEmail(env, member.email, "Crack Packs seller account granted", html, `seller-granted-${member.id}`);
+}
+async function sendStripeIdentityResultEmail(env, member, result) {
+  if (!member?.id || !member.email || !["verified", "failed"].includes(result)) return false;
+  if (member.stripe_identity_result_email_status === result) return false;
+  const loginUrl = `${siteUrl(env)}/referral.html?mode=signin&return=seller`;
+  const isVerified = result === "verified";
+  const subject = isVerified ? "Crack Packs ID verification accepted" : "Crack Packs ID verification needs another try";
+  const buttonLabel = isVerified ? "LOG-IN" : "RETRY VERIFY ID";
+  const title = isVerified ? "Your ID verification was accepted" : "Your ID verification needs another try";
+  const copy = isVerified
+    ? "Stripe Identity returned a PASS result. Sign in to open your Crack Packs Seller Portal."
+    : "Stripe Identity could not approve the verification attempt. Sign in and restart the secure ID check.";
+  const html = `<div style="font-family:Arial,sans-serif;color:#111827"><h1 style="color:#151936">${title}</h1><p>${copy}</p><p><a href="${escapeHtml(loginUrl)}" style="display:inline-block;padding:18px 28px;background:#f8ff46;color:#070815;text-decoration:none;font-weight:900;border-radius:999px;letter-spacing:.08em">${buttonLabel}</a></p><p>If this was not you, contact support@crackpacks.com.</p></div>`;
+  const text = `${title}\n\n${copy}\n\n${buttonLabel}: ${loginUrl}\n\nIf this was not you, contact support@crackpacks.com.`;
+  const sent = await sendTransactionalEmail(env, member.email, subject, html, `stripe-identity-${result}-${member.id}`, { text });
+  if (!sent) return false;
+  const stamp = now();
+  await env.DB.prepare(`UPDATE members SET stripe_identity_result_email_status=?,stripe_identity_result_email_sent_at=?,updated_at=? WHERE id=? AND COALESCE(stripe_identity_result_email_status,'')<>?`)
+    .bind(result, stamp, stamp, member.id, result).run();
+  return true;
 }
 
 function usernameKey(value) {
@@ -1044,7 +1089,7 @@ async function handleRefund(env, object) {
   }
 }
 
-async function applyStripeIdentityStatus(env, memberId, status) {
+async function applyStripeIdentityStatus(env, memberId, status, { notifyFailure = true } = {}) {
   if (!validUuid(memberId)) return "";
   if (status === "verified") {
     const member = await env.DB.prepare(`SELECT * FROM members WHERE id=?`).bind(memberId).first();
@@ -1059,14 +1104,19 @@ async function applyStripeIdentityStatus(env, memberId, status) {
       return "manual_review";
     }
     await env.DB.prepare(`UPDATE members SET identity_fingerprint=?,stripe_identity_status='verified',identity_status='verified',referral_qualified_at=COALESCE(referral_qualified_at,?),updated_at=? WHERE id=?`).bind(identityFingerprint, now(), now(), member.id).run();
+    await sendStripeIdentityResultEmail(env, member, "verified").catch(error => console.error("Stripe Identity accepted email failed", { memberId: member.id, message: clean(error?.message || "", 200) }));
     return "verified";
   }
-  const next = status === "canceled" ? "cancelled" : status === "redacted" ? "redacted" : status === "processing" ? "processing" : "requires_input";
+  const next = status === "failed" ? "failed" : status === "canceled" ? "cancelled" : status === "redacted" ? "redacted" : status === "processing" ? "processing" : "requires_input";
   await env.DB.prepare(`UPDATE members SET stripe_identity_status=?,updated_at=? WHERE id=?`).bind(next, now(), memberId).run();
+  if (notifyFailure && ["requires_input", "failed", "cancelled", "redacted"].includes(next)) {
+    const member = await env.DB.prepare(`SELECT * FROM members WHERE id=?`).bind(memberId).first();
+    await sendStripeIdentityResultEmail(env, member, "failed").catch(error => console.error("Stripe Identity retry email failed", { memberId, message: clean(error?.message || "", 200) }));
+  }
   return next;
 }
 
-export async function refreshStripeIdentityForMember(env, member) {
+export async function refreshStripeIdentityForMember(env, member, { notifyFailure = false } = {}) {
   if (!member || member.stripe_identity_status === "verified") return member;
   const sessionId = String(member.stripe_identity_session_id || "").trim();
   if (!sessionId) return member;
@@ -1074,7 +1124,7 @@ export async function refreshStripeIdentityForMember(env, member) {
     const session = await stripeGet(env.STRIPE_SECRET_KEY, `/identity/verification_sessions/${encodeURIComponent(sessionId)}`);
     const sessionMemberId = String(session.metadata?.member_id || member.id);
     if (sessionMemberId !== member.id) return member;
-    const status = await applyStripeIdentityStatus(env, member.id, String(session.status || "requires_input"));
+    const status = await applyStripeIdentityStatus(env, member.id, String(session.status || "requires_input"), { notifyFailure });
     if (status && status !== member.stripe_identity_status) {
       return await env.DB.prepare(`SELECT * FROM members WHERE id=?`).bind(member.id).first() || member;
     }
@@ -2888,6 +2938,8 @@ export async function handlePlatformRoute(request, env, cors) {
   if (url.pathname === "/identity/sync" && request.method === "POST") {
     const auth = await requireMember(request, env, cors, { verified: false });
     if (auth.error) return auth.error;
+    let data = {};
+    try { data = await boundedJson(request, 1000); } catch { return json({ error: "Invalid status check request." }, 400, cors); }
     const sessionId = String(auth.member.stripe_identity_session_id || "").trim();
     if (!sessionId) return json({ status: auth.member.stripe_identity_status || "not_started" }, 200, cors);
     let session;
@@ -2898,7 +2950,7 @@ export async function handlePlatformRoute(request, env, cors) {
     }
     const sessionMemberId = String(session.metadata?.member_id || auth.member.id);
     if (sessionMemberId !== auth.member.id) return json({ error: "Stripe Identity session belongs to another account." }, 403, cors);
-    const status = await applyStripeIdentityStatus(env, auth.member.id, String(session.status || "requires_input"));
+    const status = await applyStripeIdentityStatus(env, auth.member.id, String(session.status || "requires_input"), { notifyFailure: data.notify === true });
     return json({ status, stripeStatus: session.status || "", verified: status === "verified" }, 200, cors);
   }
   if (url.pathname === "/seller/activate" && request.method === "POST") {

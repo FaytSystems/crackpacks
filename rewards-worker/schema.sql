@@ -17,6 +17,9 @@ CREATE TABLE IF NOT EXISTS members (
   referral_tagged_at TEXT,
   referral_qualified_at TEXT,
   referral_awarded_at TEXT,
+  stripe_identity_result_email_status TEXT NOT NULL DEFAULT ''
+    CHECK(stripe_identity_result_email_status IN ('','verified','failed')),
+  stripe_identity_result_email_sent_at TEXT,
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
   FOREIGN KEY(referred_by_member_id) REFERENCES members(id)
 );
