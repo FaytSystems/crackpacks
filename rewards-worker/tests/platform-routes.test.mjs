@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { chooseBestRecordingForSession, hasVerifiedSellerIdentity, usernameKey } from "../src/platform-routes.js";
+import { chooseBestRecordingForSession, hasSellerPortalAccess, hasVerifiedSellerIdentity, usernameKey } from "../src/platform-routes.js";
 
 test("Crack Packs User ID key blocks case, separator, and common leetspeak clones", () => {
   assert.equal(usernameKey("CRACKPACKS"), "crackpacks");
@@ -31,10 +31,14 @@ test("seller access requires email, passkey, internal state, and Stripe Identity
     email_verified_at: "2026-07-24T00:00:00.000Z",
     device_verified: 1,
     identity_status: "verified",
-    stripe_identity_status: "verified"
+    stripe_identity_status: "verified",
+    live_username: "RipWizardBreaks"
   };
   assert.equal(hasVerifiedSellerIdentity(complete), true);
   assert.equal(hasVerifiedSellerIdentity({ ...complete, stripe_identity_status: "not_started" }), false);
   assert.equal(hasVerifiedSellerIdentity({ ...complete, device_verified: 0 }), false);
   assert.equal(hasVerifiedSellerIdentity({ ...complete, identity_status: "pending_identity" }), false);
+  assert.equal(hasSellerPortalAccess(complete, { status: "active" }), true);
+  assert.equal(hasSellerPortalAccess({ ...complete, live_username: "" }, { status: "active" }), false);
+  assert.equal(hasSellerPortalAccess(complete, { status: "pending" }), false);
 });

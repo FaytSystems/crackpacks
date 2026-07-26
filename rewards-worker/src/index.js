@@ -239,6 +239,16 @@ function isAdmin(member, env) {
   const adminEmail = normalizeEmail(env.ADMIN_EMAIL);
   return Boolean(adminEmail && member && normalizeEmail(member.email) === adminEmail && member.email_verified_at && member.device_verified && member.identity_status === "verified" && member.stripe_identity_status === "verified");
 }
+function hasSellerPortalAccess(member, seller) {
+  return Boolean(
+    member?.email_verified_at &&
+    member?.device_verified &&
+    member?.identity_status === "verified" &&
+    member?.stripe_identity_status === "verified" &&
+    member?.live_username &&
+    seller?.status === "active"
+  );
+}
 const isOwnerEmail = (member, env) => Boolean(member && normalizeEmail(env.ADMIN_EMAIL) && normalizeEmail(member.email) === normalizeEmail(env.ADMIN_EMAIL));
 async function hasFreshAdminSession(request, member, env) {
   const adminToken = request.headers.get("X-Admin-Token") || "";
@@ -729,10 +739,9 @@ async function account(member, count, env, seller = null) {
   const invite = await inviteDetailsFor(member, env);
   const admin = isAdmin(member, env);
   const ownerEmail = isOwnerEmail(member, env);
-  const verifiedSeller = Boolean(member.email_verified_at && member.device_verified && member.identity_status === "verified" && member.stripe_identity_status === "verified" && seller?.status === "active");
-  const sellerAccess = admin || verifiedSeller;
-  const sellerStatus = admin ? "owner" : (seller?.status || "not_applied");
-  const roles = admin ? ["buyer", "seller", "master"] : (sellerAccess ? ["buyer", "seller"] : ["buyer"]);
+  const sellerAccess = hasSellerPortalAccess(member, seller);
+  const sellerStatus = seller?.status || "not_applied";
+  const roles = ["buyer", ...(sellerAccess ? ["seller"] : []), ...(admin ? ["master"] : [])];
   return {
     deviceVerified: Boolean(member.device_verified), profileComplete: member.identity_status === "verified", identityStatus: member.identity_status,
     passwordConfigured: Boolean(member.password_hash && member.password_salt),
@@ -884,7 +893,7 @@ async function route(request, env, cors, ctx) {
     const storeMember = await memberFromRequest(request, env);
     const seller = storeMember ? await env.DB.prepare(`SELECT status FROM breaker_profiles WHERE member_id=?`).bind(storeMember.id).first() : null;
     if (!storeMember) return response({ error: "Sign in to the Seller Portal to view store inventory." }, 401, cors);
-    if (storeMember.identity_status !== "verified" || storeMember.stripe_identity_status !== "verified" || (!isAdmin(storeMember, env) && seller?.status !== "active") || storeMember.active_portal !== "seller") return response({ error: "Active Seller Portal access is required." }, 403, cors);
+    if (!hasSellerPortalAccess(storeMember, seller) || storeMember.active_portal !== "seller") return response({ error: "Active Seller Portal access is required." }, 403, cors);
     const market = url.searchParams.get("market") === "international" ? "international" : "us";
     const currency = String(url.searchParams.get("currency") || "USD").trim().toUpperCase();
     if (!STORE_CURRENCIES.has(currency)) return response({ error: "Choose a supported display currency." }, 400, cors);
@@ -947,7 +956,7 @@ async function route(request, env, cors, ctx) {
     const storeMember = await memberFromRequest(request, env);
     const seller = storeMember ? await env.DB.prepare(`SELECT status FROM breaker_profiles WHERE member_id=?`).bind(storeMember.id).first() : null;
     if (!storeMember) return response({ error: "Sign in to the Seller Portal to request shipping." }, 401, cors);
-    if (storeMember.identity_status !== "verified" || storeMember.stripe_identity_status !== "verified" || (!isAdmin(storeMember, env) && seller?.status !== "active") || storeMember.active_portal !== "seller") return response({ error: "Active Seller Portal access is required." }, 403, cors);
+    if (!hasSellerPortalAccess(storeMember, seller) || storeMember.active_portal !== "seller") return response({ error: "Active Seller Portal access is required." }, 403, cors);
     if (String(env.STORE_COMING_SOON || "true") !== "false" || String(env.STORE_CHECKOUT_ENABLED || "false") !== "true") {
       return response({ error: "Live carrier quotes are not enabled while the store is marked Coming Soon.", code: "SHIPPING_NOT_CONFIGURED" }, 503, cors);
     }

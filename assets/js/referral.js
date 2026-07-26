@@ -839,7 +839,7 @@
     show("[data-password-panel]", false);
     sellerActivationFinalizePending = false;
     show("[data-dashboard]", true);
-    if (sellerAllowed || data.isAdmin) setSellerUpgradeRequested(false);
+    if (sellerAllowed) setSellerUpgradeRequested(false);
     $("[data-member-name]").textContent = data.buyerUsername || data.firstName || "Collector";
     const rolesNode = $("[data-account-role-badges]");
     if (rolesNode) rolesNode.innerHTML = roles.map(role => `<span class="account-role-badge" data-role="${escapeHtml(role)}">${escapeHtml(role === "master" ? "Master Account" : role === "seller" ? "Seller Account" : "Buyer Account")}</span>`).join("");

@@ -46,6 +46,11 @@ export const hasVerifiedSellerIdentity = member => Boolean(
   member?.identity_status === "verified" &&
   member?.stripe_identity_status === "verified"
 );
+export const hasSellerPortalAccess = (member, profile) => Boolean(
+  hasVerifiedSellerIdentity(member) &&
+  member?.live_username &&
+  profile?.status === "active"
+);
 async function requireMember(request, env, cors, { verified = true, seller = false } = {}) {
   const member = await memberFromRequest(request, env);
   if (!member) return { error: json({ error: "Sign in to continue." }, 401, cors) };
@@ -53,8 +58,7 @@ async function requireMember(request, env, cors, { verified = true, seller = fal
     return { error: json({ error: "Complete email, passkey, and identity verification first." }, 403, cors) };
   }
   const profile = seller ? await sellerProfile(env, member.id) : null;
-  if (seller && !hasVerifiedSellerIdentity(member)) return { error: json({ error: "Complete Seller ID, passkey, legal profile, and Stripe Identity verification first." }, 403, cors) };
-  if (seller && profile?.status !== "active" && normalizeEmail(member.email) !== normalizeEmail(env.ADMIN_EMAIL)) return { error: json({ error: "Active Seller Portal access is required." }, 403, cors) };
+  if (seller && !hasSellerPortalAccess(member, profile)) return { error: json({ error: "Complete Seller ID, passkey, legal profile, Stripe ID verification, and account activation first." }, 403, cors) };
   return { member, profile };
 }
 async function requireOwner(request, env, cors) {
@@ -2698,19 +2702,20 @@ export async function handlePlatformRoute(request, env, cors) {
     const fullyVerified = hasVerifiedSellerIdentity(auth.member);
     const ownerEmail = normalizeEmail(auth.member.email) === normalizeEmail(env.ADMIN_EMAIL);
     const owner = fullyVerified && ownerEmail;
-    const sellerAllowed = owner || (fullyVerified && profile?.status === "active");
+    const sellerAllowed = hasSellerPortalAccess(auth.member, profile);
     const requestedPortal = String(auth.member.active_portal || "buyer");
     const activePortal = owner && requestedPortal === "master"
       ? "master"
       : (sellerAllowed && requestedPortal === "seller" ? "seller" : "buyer");
+    const roles = ["buyer", ...(sellerAllowed ? ["seller"] : []), ...(owner ? ["master"] : [])];
     return json({
       activePortal,
       sellerAccess: sellerAllowed,
-      sellerStatus: owner ? "owner" : profile?.status || "not_applied",
+      sellerStatus: profile?.status || "not_applied",
       isMaster: owner,
       isMasterCandidate: ownerEmail,
       isOwnerEmail: ownerEmail,
-      roles: owner ? ["buyer", "seller", "master"] : (sellerAllowed ? ["buyer", "seller"] : ["buyer"])
+      roles
     }, 200, cors);
   }
   if (url.pathname === "/portal/mode" && request.method === "POST") {
@@ -2720,7 +2725,7 @@ export async function handlePlatformRoute(request, env, cors) {
     const fullyVerified = hasVerifiedSellerIdentity(auth.member);
     const owner = fullyVerified && normalizeEmail(auth.member.email) === normalizeEmail(env.ADMIN_EMAIL);
     const profile = await sellerProfile(env, auth.member.id);
-    const sellerAllowed = owner || (fullyVerified && profile?.status === "active");
+    const sellerAllowed = hasSellerPortalAccess(auth.member, profile);
     const requestedMode = data.mode === "master" ? "master" : (data.mode === "seller" ? "seller" : "buyer");
     const mode = requestedMode === "master" ? "master" : (requestedMode === "seller" ? "seller" : "buyer");
     if (mode === "master" && !owner) return json({ error: "Master Portal access is restricted to the master account." }, 403, cors);
