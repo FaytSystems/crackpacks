@@ -460,7 +460,7 @@
   async function loadAccount() {
     if (!token) return;
     try {
-      const data = await request("/me");
+      const data = await request(isSellerSetupIntent() || identityReturnRequested ? "/me?syncIdentity=1" : "/me");
       renderAccount(data);
       return data;
     } catch {

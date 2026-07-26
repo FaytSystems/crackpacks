@@ -34,10 +34,12 @@
     window.location.href = sellerSetupUrl();
   };
   const accountMenuMarkup = () => {
+    const sellerAction = portalState.sellerAccess ? "data-open-seller-portal" : "data-start-seller-upgrade";
+    const sellerLabel = portalState.sellerAccess ? "Seller Portal" : "Seller Verification";
     return `
       <div class="nav-account-bubbles" aria-label="Account portal switcher">
         <button class="nav-account-bubble ${portalState.activePortal !== "seller" ? "is-active" : ""}" type="button" data-open-buyer-portal>Buyer</button>
-        <button class="nav-account-bubble ${portalState.activePortal === "seller" ? "is-active" : ""}" type="button" data-start-seller-upgrade>Seller Verification</button>
+        <button class="nav-account-bubble ${portalState.activePortal === "seller" ? "is-active" : ""}" type="button" ${sellerAction}>${sellerLabel}</button>
       </div>
       <a href="${buyerProfileUrl}"><strong>Profile</strong><small>Invites, rewards, orders and account tools</small></a>
     `;
@@ -142,8 +144,10 @@
       return;
     }
     if (seller) {
-      routeToSellerSetup();
-      return;
+      if (!portalState.sellerAccess) {
+        routeToSellerSetup();
+        return;
+      }
     }
     try {
       const response = await fetch(`${rewardsApi}/portal/mode`, {

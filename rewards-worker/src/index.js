@@ -3,7 +3,7 @@ import { issueOwnerReferral, ownerReferralSlotAt, verifyOwnerReferral } from "./
 import { campaignWeekAt, parseCampaignExpiryHours } from "./campaign-time.js";
 import { calculateChannelPricing, channelPricingErrors } from "./channel-pricing.js";
 import { sanitizeEasyPostTracker, verifyEasyPostWebhook } from "./easypost-tracking.js";
-import { handlePlatformRoute, runStreamCreditCycle, usernameKey } from "./platform-routes.js";
+import { handlePlatformRoute, refreshStripeIdentityForMember, runStreamCreditCycle, usernameKey } from "./platform-routes.js";
 
 const VERSION = "5.0.0";
 const CAMPAIGN_REWARD_TYPES = new Set(["percent", "free_shipping", "pick_a_pack", "pack_draft", "free_single", "product"]);
@@ -1299,7 +1299,10 @@ async function route(request, env, cors, ctx) {
   }
   const member = await memberFromRequest(request, env);
   if (!member) return response({ error: "Sign in is required." }, 401, cors);
-  if (url.pathname === "/me" && request.method === "GET") return response(await accountFor(member, env), 200, cors);
+  if (url.pathname === "/me" && request.method === "GET") {
+    const accountMember = url.searchParams.get("syncIdentity") === "1" ? await refreshStripeIdentityForMember(env, member) : member;
+    return response(await accountFor(accountMember, env), 200, cors);
+  }
   if (url.pathname === "/auth/password/set" && request.method === "POST") {
     const data = await body(request);
     const passwordError = validatePassword(data.password);

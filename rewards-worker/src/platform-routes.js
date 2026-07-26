@@ -35,6 +35,13 @@ async function digest(value, secret = "") {
   const bytes = await crypto.subtle.digest("SHA-256", encoder.encode(`${secret}:${value}`));
   return [...new Uint8Array(bytes)].map(byte => byte.toString(16).padStart(2, "0")).join("");
 }
+async function identityFingerprintForMember(member, env) {
+  const first = clean(member?.first_name, 60).toLowerCase();
+  const last = clean(member?.last_name, 60).toLowerCase();
+  const birth = clean(member?.birth_date, 10);
+  if (!first || !last || !/^\d{4}-\d{2}-\d{2}$/.test(birth)) return "";
+  return digest(`${first}|${last}|${birth}`, env.IDENTITY_PEPPER || env.AUTH_SECRET);
+}
 async function memberFromRequest(request, env) {
   const token = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
   if (!token) return null;
@@ -1041,8 +1048,9 @@ async function applyStripeIdentityStatus(env, memberId, status) {
   if (!validUuid(memberId)) return "";
   if (status === "verified") {
     const member = await env.DB.prepare(`SELECT * FROM members WHERE id=?`).bind(memberId).first();
-    if (!member?.identity_fingerprint) return "requires_input";
-    const collision = await env.DB.prepare(`SELECT id FROM members WHERE identity_fingerprint=? AND id<>? AND identity_status='verified'`).bind(member.identity_fingerprint, member.id).first();
+    const identityFingerprint = member?.identity_fingerprint || await identityFingerprintForMember(member, env);
+    if (!identityFingerprint) return "requires_input";
+    const collision = await env.DB.prepare(`SELECT id FROM members WHERE identity_fingerprint=? AND id<>? AND identity_status='verified'`).bind(identityFingerprint, member.id).first();
     if (collision) {
       await env.DB.batch([
         env.DB.prepare(`UPDATE members SET stripe_identity_status='manual_review',identity_status='pending_review',updated_at=? WHERE id=?`).bind(now(), member.id),
@@ -1050,12 +1058,30 @@ async function applyStripeIdentityStatus(env, memberId, status) {
       ]);
       return "manual_review";
     }
-    await env.DB.prepare(`UPDATE members SET stripe_identity_status='verified',identity_status='verified',referral_qualified_at=COALESCE(referral_qualified_at,?),updated_at=? WHERE id=?`).bind(now(), now(), member.id).run();
+    await env.DB.prepare(`UPDATE members SET identity_fingerprint=?,stripe_identity_status='verified',identity_status='verified',referral_qualified_at=COALESCE(referral_qualified_at,?),updated_at=? WHERE id=?`).bind(identityFingerprint, now(), now(), member.id).run();
     return "verified";
   }
   const next = status === "canceled" ? "cancelled" : status === "redacted" ? "redacted" : status === "processing" ? "processing" : "requires_input";
   await env.DB.prepare(`UPDATE members SET stripe_identity_status=?,updated_at=? WHERE id=?`).bind(next, now(), memberId).run();
   return next;
+}
+
+export async function refreshStripeIdentityForMember(env, member) {
+  if (!member || member.stripe_identity_status === "verified") return member;
+  const sessionId = String(member.stripe_identity_session_id || "").trim();
+  if (!sessionId) return member;
+  try {
+    const session = await stripeGet(env.STRIPE_SECRET_KEY, `/identity/verification_sessions/${encodeURIComponent(sessionId)}`);
+    const sessionMemberId = String(session.metadata?.member_id || member.id);
+    if (sessionMemberId !== member.id) return member;
+    const status = await applyStripeIdentityStatus(env, member.id, String(session.status || "requires_input"));
+    if (status && status !== member.stripe_identity_status) {
+      return await env.DB.prepare(`SELECT * FROM members WHERE id=?`).bind(member.id).first() || member;
+    }
+  } catch (error) {
+    console.warn("Stripe Identity auto-sync failed", { memberId: member.id, message: clean(error?.stripeMessage || error?.message || "", 200) });
+  }
+  return member;
 }
 
 async function handleIdentityEvent(env, event) {
@@ -2738,6 +2764,7 @@ export async function handlePlatformRoute(request, env, cors) {
   if (url.pathname === "/portal/status" && request.method === "GET") {
     const auth = await requireMember(request, env, cors, { verified: false });
     if (auth.error) return auth.error;
+    auth.member = await refreshStripeIdentityForMember(env, auth.member);
     const profile = await sellerProfile(env, auth.member.id);
     const ownerEmail = isMasterEmail(auth.member.email, env);
     const owner = hasMasterPortalAccess(auth.member, env);
@@ -2760,6 +2787,7 @@ export async function handlePlatformRoute(request, env, cors) {
   if (url.pathname === "/portal/mode" && request.method === "POST") {
     const auth = await requireMember(request, env, cors, { verified: false });
     if (auth.error) return auth.error;
+    auth.member = await refreshStripeIdentityForMember(env, auth.member);
     const data = await boundedJson(request, 1000);
     const owner = hasMasterPortalAccess(auth.member, env);
     const profile = await sellerProfile(env, auth.member.id);
