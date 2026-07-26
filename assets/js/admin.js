@@ -1700,7 +1700,7 @@
     if (!memberToken) { show("[data-admin-login]", true); initializeTurnstile(); return; }
     let account;
     try { account = await request("/me"); } catch { localStorage.removeItem("cp_rewards_token"); memberToken = ""; show("[data-admin-login]", true); initializeTurnstile(); return; }
-    if (!account.deviceVerified || !account.profileComplete) { show("[data-admin-setup]", true); return; }
+    if (!account.deviceVerified || !account.profileComplete || (account.isMasterCandidate && account.stripeIdentityStatus !== "verified")) { show("[data-admin-setup]", true); return; }
     if (!account.isAdmin) { show("[data-admin-denied]", true); return; }
     if (!adminToken) { show("[data-admin-step-up]", true); return; }
     try { await refreshDashboard(); show("[data-admin-dashboard]", true); }

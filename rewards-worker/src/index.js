@@ -236,8 +236,19 @@ async function memberFromRequest(request, env) {
   return env.DB.prepare(`SELECT m.* FROM sessions s JOIN members m ON m.id=s.member_id WHERE s.token_hash=? AND s.expires_at>?`).bind(tokenHash, now()).first();
 }
 function isAdmin(member, env) {
-  const adminEmail = normalizeEmail(env.ADMIN_EMAIL);
-  return Boolean(adminEmail && member && normalizeEmail(member.email) === adminEmail && member.email_verified_at && member.device_verified && member.identity_status === "verified" && member.stripe_identity_status === "verified");
+  return Boolean(isMasterEmail(member?.email, env) && member?.email_verified_at && member?.device_verified && member?.identity_status === "verified" && member?.stripe_identity_status === "verified");
+}
+function masterEmails(env) {
+  return new Set([
+    normalizeEmail(env.ADMIN_EMAIL),
+    ...String(env.MASTER_EMAILS || "").split(",").map(normalizeEmail)
+  ].filter(Boolean));
+}
+function primaryMasterEmail(env) {
+  return normalizeEmail(env.ADMIN_EMAIL) || [...masterEmails(env)][0] || "";
+}
+function isMasterEmail(email, env) {
+  return masterEmails(env).has(normalizeEmail(email));
 }
 function hasSellerPortalAccess(member, seller) {
   return Boolean(
@@ -249,7 +260,7 @@ function hasSellerPortalAccess(member, seller) {
     seller?.status === "active"
   );
 }
-const isOwnerEmail = (member, env) => Boolean(member && normalizeEmail(env.ADMIN_EMAIL) && normalizeEmail(member.email) === normalizeEmail(env.ADMIN_EMAIL));
+const isOwnerEmail = (member, env) => Boolean(member && isMasterEmail(member.email, env));
 async function hasFreshAdminSession(request, member, env) {
   const adminToken = request.headers.get("X-Admin-Token") || "";
   if (!adminToken || !isAdmin(member, env)) return false;
@@ -920,7 +931,7 @@ async function route(request, env, cors, ctx) {
       WHERE lower(owner.email)=? AND i.is_store_visible=1 AND i.is_active=1
       ORDER BY CASE WHEN i.quantity>0 THEN 0 ELSE 1 END,i.created_at DESC,i.name COLLATE NOCASE
       LIMIT 200
-    `).bind(inventoryEpoch, normalizeEmail(env.ADMIN_EMAIL)).all();
+    `).bind(inventoryEpoch, primaryMasterEmail(env)).all();
     let fx = null;
     let currencyWarning = "";
     try { fx = await ecbFxQuote(currency); }
@@ -990,7 +1001,7 @@ async function route(request, env, cors, ctx) {
       ),0) committed_units
       FROM inventory_items i JOIN members owner ON owner.id=i.owner_member_id
       WHERE i.public_slug=? AND i.is_store_visible=1 AND i.is_active=1 AND lower(owner.email)=?
-    `).bind(quoteEpoch, slug, normalizeEmail(env.ADMIN_EMAIL)).first();
+    `).bind(quoteEpoch, slug, primaryMasterEmail(env)).first();
     if (!item) return response({ error: "Store product not found." }, 404, cors);
     if (Number(item.quantity || 0) - Number(item.committed_units || 0) < quantity) return response({ error: "This product is not currently available." }, 409, cors);
     const market = address.country === "US" ? "us" : "international";
@@ -1040,7 +1051,8 @@ async function route(request, env, cors, ctx) {
     const epochMs = Date.now();
     const serverNow = new Date(epochMs).toISOString();
     if (ownerToken) {
-      const owner = normalizeEmail(env.ADMIN_EMAIL) ? await env.DB.prepare(`SELECT id FROM members WHERE email=? AND identity_status='verified'`).bind(normalizeEmail(env.ADMIN_EMAIL)).first() : null;
+      const ownerEmail = primaryMasterEmail(env);
+      const owner = ownerEmail ? await env.DB.prepare(`SELECT id FROM members WHERE email=? AND identity_status='verified'`).bind(ownerEmail).first() : null;
       const slot = ownerReferralSlotAt(epochMs);
       const credentialValid = Boolean(owner && await verifyOwnerReferral(ownerToken, env.SITE_URL, owner.id, env.OWNER_REFERRAL_SECRET, epochMs));
       const isActive = Boolean(credentialValid && await ownerReferralIsActive(env, owner.id, slot.id));
@@ -1067,8 +1079,9 @@ async function route(request, env, cors, ctx) {
   }
   if (url.pathname === "/public/owner-referral" && request.method === "GET") {
     const fallbackSignupUrl = `${env.SITE_URL}/referral.html?mode=signup`;
-    const owner = normalizeEmail(env.ADMIN_EMAIL)
-      ? await env.DB.prepare(`SELECT id,email FROM members WHERE email=? AND identity_status='verified'`).bind(normalizeEmail(env.ADMIN_EMAIL)).first()
+    const ownerEmail = primaryMasterEmail(env);
+    const owner = ownerEmail
+      ? await env.DB.prepare(`SELECT id,email FROM members WHERE email=? AND identity_status='verified'`).bind(ownerEmail).first()
       : null;
     if (!owner) return response({ ok: true, signupUrl: fallbackSignupUrl, sellerSignupUrl: fallbackSignupUrl, active: false }, 200, cors);
     const epochMs = Date.now();
@@ -1103,7 +1116,7 @@ async function route(request, env, cors, ctx) {
       return response({ error: "Too many active verification links. Use the newest email link, or wait a few minutes for the older links to expire.", retryAfterSeconds }, 429, { ...cors, "Retry-After": String(retryAfterSeconds) });
     }
     const flowMatches = authFlow === "admin"
-      ? Boolean(existingMember) && email === normalizeEmail(env.ADMIN_EMAIL)
+      ? Boolean(existingMember) && isMasterEmail(email, env)
       : true;
     const linkToken = randomString(48); const created = now();
     const rawReferralCode = authFlow === "signup" ? boundedString(data.referralCode, 16) : "";
@@ -1117,7 +1130,8 @@ async function route(request, env, cors, ctx) {
     let referralSource = "";
     let ownerReferralRejected = false;
     if (ownerReferralToken) {
-      const owner = normalizeEmail(env.ADMIN_EMAIL) ? await env.DB.prepare(`SELECT id,email FROM members WHERE email=? AND identity_status='verified'`).bind(normalizeEmail(env.ADMIN_EMAIL)).first() : null;
+      const ownerEmail = primaryMasterEmail(env);
+      const owner = ownerEmail ? await env.DB.prepare(`SELECT id,email FROM members WHERE email=? AND identity_status='verified'`).bind(ownerEmail).first() : null;
       const slot = ownerReferralSlotAt(Date.now());
       const credentialValid = Boolean(owner && normalizeEmail(owner.email) !== email && await verifyOwnerReferral(ownerReferralToken, env.SITE_URL, owner.id, env.OWNER_REFERRAL_SECRET));
       if (credentialValid && await ownerReferralIsActive(env, owner.id, slot.id)) {
@@ -1146,7 +1160,7 @@ async function route(request, env, cors, ctx) {
       if (!activationMatches) return response({ error: "That seller activation link is invalid, expired, or belongs to another account." }, 403, cors);
       verifyParams.set("seller_activation", sellerActivationToken);
     }
-    if (authFlow !== "admin" && email !== normalizeEmail(env.ADMIN_EMAIL)) {
+    if (authFlow !== "admin" && !isMasterEmail(email, env)) {
       const offerToken = offerTokenValue(data.offerToken);
       if (offerToken) {
         const offer = await env.DB.prepare(`SELECT id FROM offer_campaigns WHERE offer_token=?`).bind(offerToken).first();
@@ -1194,7 +1208,7 @@ async function route(request, env, cors, ctx) {
     const email = record.email;
     const authFlow = ["signin", "signup", "admin"].includes(record.auth_flow) ? record.auth_flow : "legacy";
     let member = await env.DB.prepare(`SELECT * FROM members WHERE email=?`).bind(email).first();
-    if (authFlow === "admin" && email !== normalizeEmail(env.ADMIN_EMAIL)) return response({ error: "Owner access required." }, 403, cors);
+    if (authFlow === "admin" && !isMasterEmail(email, env)) return response({ error: "Owner access required." }, 403, cors);
     if (authFlow !== "signup" && !member) return response({ error: "No account was found. Return to Profile and choose Create Account." }, 404, cors);
     if (authFlow === "signup" && member) return response({ error: "An account already exists for this email. Return to Profile and choose Sign In." }, 409, cors);
     if (authFlow === "signup") {
@@ -2091,8 +2105,8 @@ async function route(request, env, cors, ctx) {
         AND (?='' OR created_at>=?) AND (?='' OR created_at<=?)
         AND (?='' OR lower(email) LIKE ? OR lower(COALESCE(first_name,'') || ' ' || COALESCE(last_name,'')) LIKE ? OR lower(COALESCE(live_username,'')) LIKE ?)
       ORDER BY created_at DESC LIMIT 250
-    `).bind(includeOwner ? 1 : 0, normalizeEmail(env.ADMIN_EMAIL), from, from, to, to, query, search, search, search).all();
-    return response({ members: (rows.results || []).map(row => ({ id: row.id, email: row.email, firstName: row.first_name || "", lastName: row.last_name || "", liveUsername: row.live_username || "", createdAt: row.created_at, qualifiedAt: row.referral_qualified_at || null, isOwner: normalizeEmail(row.email) === normalizeEmail(env.ADMIN_EMAIL) })) }, 200, cors);
+    `).bind(includeOwner ? 1 : 0, primaryMasterEmail(env), from, from, to, to, query, search, search, search).all();
+    return response({ members: (rows.results || []).map(row => ({ id: row.id, email: row.email, firstName: row.first_name || "", lastName: row.last_name || "", liveUsername: row.live_username || "", createdAt: row.created_at, qualifiedAt: row.referral_qualified_at || null, isOwner: isMasterEmail(row.email, env) })) }, 200, cors);
   }
   if (url.pathname === "/admin/orders" && request.method === "GET") {
     if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
@@ -2177,7 +2191,7 @@ async function route(request, env, cors, ctx) {
     if (!message || message.length < 3) return response({ error: "Enter an email message from 3 to 5,000 characters." }, 400, cors);
     let rows;
     if (audience === "all") {
-      rows = await env.DB.prepare(`SELECT id,email,first_name,live_username FROM members WHERE email_verified_at IS NOT NULL AND identity_status='verified' AND email<>? ORDER BY created_at LIMIT 101`).bind(normalizeEmail(env.ADMIN_EMAIL)).all();
+      rows = await env.DB.prepare(`SELECT id,email,first_name,live_username FROM members WHERE email_verified_at IS NOT NULL AND identity_status='verified' AND email<>? ORDER BY created_at LIMIT 101`).bind(primaryMasterEmail(env)).all();
     } else if (audience === "tier") {
       const ranges = { crew: [3, 10], breaker: [10, 25], headliner: [25, 50], legend: [50, 1000000] };
       const range = ranges[String(data?.tierName || "").toLowerCase()];
@@ -2187,12 +2201,12 @@ async function route(request, env, cors, ctx) {
         FROM members member LEFT JOIN members referral ON referral.referred_by_member_id=member.id AND referral.referral_qualified_at IS NOT NULL AND referral.identity_status='verified'
         WHERE member.email_verified_at IS NOT NULL AND member.identity_status='verified' AND member.email<>?
         GROUP BY member.id HAVING referral_count>=? AND referral_count<? ORDER BY member.created_at LIMIT 101
-      `).bind(normalizeEmail(env.ADMIN_EMAIL), range[0], range[1]).all();
+      `).bind(primaryMasterEmail(env), range[0], range[1]).all();
     } else {
       const memberIds = Array.isArray(data?.memberIds) ? [...new Set(data.memberIds.filter(value => typeof value === "string" && /^[0-9a-f-]{36}$/i.test(value)))].slice(0, 101) : [];
       if (!memberIds.length) return response({ error: "Add at least one member before sending." }, 400, cors);
       const placeholders = memberIds.map(() => "?").join(",");
-      rows = await env.DB.prepare(`SELECT id,email,first_name,live_username FROM members WHERE id IN (${placeholders}) AND email_verified_at IS NOT NULL AND identity_status='verified' AND email<>?`).bind(...memberIds, normalizeEmail(env.ADMIN_EMAIL)).all();
+      rows = await env.DB.prepare(`SELECT id,email,first_name,live_username FROM members WHERE id IN (${placeholders}) AND email_verified_at IS NOT NULL AND identity_status='verified' AND email<>?`).bind(...memberIds, primaryMasterEmail(env)).all();
     }
     const recipients = rows.results || [];
     if (!recipients.length) return response({ error: "No verified member recipients matched this message." }, 400, cors);

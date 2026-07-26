@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { chooseBestRecordingForSession, hasSellerPortalAccess, hasVerifiedSellerIdentity, usernameKey } from "../src/platform-routes.js";
+import { chooseBestRecordingForSession, hasMasterPortalAccess, hasSellerPortalAccess, hasVerifiedSellerIdentity, isMasterEmail, usernameKey } from "../src/platform-routes.js";
 
 test("Crack Packs User ID key blocks case, separator, and common leetspeak clones", () => {
   assert.equal(usernameKey("CRACKPACKS"), "crackpacks");
@@ -41,4 +41,20 @@ test("seller access requires email, passkey, internal state, and Stripe Identity
   assert.equal(hasSellerPortalAccess(complete, { status: "active" }), true);
   assert.equal(hasSellerPortalAccess({ ...complete, live_username: "" }, { status: "active" }), false);
   assert.equal(hasSellerPortalAccess(complete, { status: "pending" }), false);
+});
+
+test("master account recognizes configured emails but still requires ID verification", () => {
+  const env = { ADMIN_EMAIL: "owner@crackpacks.com", MASTER_EMAILS: "robertreese@faytsystems.com" };
+  const complete = {
+    email: "robertreese@faytsystems.com",
+    email_verified_at: "2026-07-24T00:00:00.000Z",
+    device_verified: 1,
+    identity_status: "verified",
+    stripe_identity_status: "verified"
+  };
+  assert.equal(isMasterEmail("robertreese@faytsystems.com", env), true);
+  assert.equal(hasMasterPortalAccess(complete, env), true);
+  assert.equal(hasMasterPortalAccess({ ...complete, stripe_identity_status: "not_started" }, env), false);
+  assert.equal(hasMasterPortalAccess({ ...complete, device_verified: 0 }, env), false);
+  assert.equal(hasMasterPortalAccess({ ...complete, email: "seller@example.com" }, env), false);
 });

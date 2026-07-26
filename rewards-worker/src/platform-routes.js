@@ -51,6 +51,16 @@ export const hasSellerPortalAccess = (member, profile) => Boolean(
   member?.live_username &&
   profile?.status === "active"
 );
+const masterEmails = env => new Set([
+  normalizeEmail(env.ADMIN_EMAIL),
+  ...String(env.MASTER_EMAILS || "").split(",").map(normalizeEmail)
+].filter(Boolean));
+const primaryMasterEmail = env => normalizeEmail(env.ADMIN_EMAIL) || [...masterEmails(env)][0] || "";
+export const isMasterEmail = (email, env) => masterEmails(env).has(normalizeEmail(email));
+export const hasMasterPortalAccess = (member, env) => Boolean(
+  isMasterEmail(member?.email, env) &&
+  hasVerifiedSellerIdentity(member)
+);
 async function requireMember(request, env, cors, { verified = true, seller = false } = {}) {
   const member = await memberFromRequest(request, env);
   if (!member) return { error: json({ error: "Sign in to continue." }, 401, cors) };
@@ -64,7 +74,7 @@ async function requireMember(request, env, cors, { verified = true, seller = fal
 async function requireOwner(request, env, cors) {
   const auth = await requireMember(request, env, cors);
   if (auth.error) return auth;
-  if (normalizeEmail(auth.member.email) !== normalizeEmail(env.ADMIN_EMAIL)) return { error: json({ error: "Owner access required." }, 403, cors) };
+  if (!hasMasterPortalAccess(auth.member, env)) return { error: json({ error: "Complete Master account email, passkey, legal profile, and Stripe ID verification first." }, 403, cors) };
   const adminToken = request.headers.get("X-Admin-Token") || "";
   const fresh = adminToken && await env.DB.prepare(`SELECT member_id FROM admin_sessions WHERE token_hash=? AND member_id=? AND expires_at>?`)
     .bind(await digest(adminToken, env.AUTH_SECRET), auth.member.id, now()).first();
@@ -814,7 +824,7 @@ async function completeStoreOrder(env, session) {
     console.log("EasyPost auto-label skipped", { orderId, ownerMemberId: reservation.owner_member_id, reason: autoLabel.reason });
   }
   await sendOrderEmail(env, reservation.email, `Order ${number} confirmed`, `<h1>Payment received</h1><p>Your Crack Packs order <strong>${number}</strong> is confirmed.</p><p>${clean(reservation.product_name, 120)} × ${Number(reservation.quantity)}</p><p>Tracking will appear in your Profile after the label is purchased.</p>`, `order-customer-${orderId}`);
-  await sendOrderEmail(env, normalizeEmail(env.ORDER_NOTIFY_EMAIL || env.ADMIN_EMAIL), `New paid order ${number}`, `<h1>New paid order</h1><p><strong>${number}</strong></p><p>${clean(reservation.product_name, 120)} × ${Number(reservation.quantity)}</p><p>Open the Master Dashboard to purchase the label.</p>`, `order-owner-${orderId}`);
+  await sendOrderEmail(env, normalizeEmail(env.ORDER_NOTIFY_EMAIL || primaryMasterEmail(env)), `New paid order ${number}`, `<h1>New paid order</h1><p><strong>${number}</strong></p><p>${clean(reservation.product_name, 120)} × ${Number(reservation.quantity)}</p><p>Open the Master Dashboard to purchase the label.</p>`, `order-owner-${orderId}`);
 }
 
 async function completeGift(env, session) {
@@ -2699,9 +2709,8 @@ export async function handlePlatformRoute(request, env, cors) {
     const auth = await requireMember(request, env, cors, { verified: false });
     if (auth.error) return auth.error;
     const profile = await sellerProfile(env, auth.member.id);
-    const fullyVerified = hasVerifiedSellerIdentity(auth.member);
-    const ownerEmail = normalizeEmail(auth.member.email) === normalizeEmail(env.ADMIN_EMAIL);
-    const owner = fullyVerified && ownerEmail;
+    const ownerEmail = isMasterEmail(auth.member.email, env);
+    const owner = hasMasterPortalAccess(auth.member, env);
     const sellerAllowed = hasSellerPortalAccess(auth.member, profile);
     const requestedPortal = String(auth.member.active_portal || "buyer");
     const activePortal = owner && requestedPortal === "master"
@@ -2722,8 +2731,7 @@ export async function handlePlatformRoute(request, env, cors) {
     const auth = await requireMember(request, env, cors, { verified: false });
     if (auth.error) return auth.error;
     const data = await boundedJson(request, 1000);
-    const fullyVerified = hasVerifiedSellerIdentity(auth.member);
-    const owner = fullyVerified && normalizeEmail(auth.member.email) === normalizeEmail(env.ADMIN_EMAIL);
+    const owner = hasMasterPortalAccess(auth.member, env);
     const profile = await sellerProfile(env, auth.member.id);
     const sellerAllowed = hasSellerPortalAccess(auth.member, profile);
     const requestedMode = data.mode === "master" ? "master" : (data.mode === "seller" ? "seller" : "buyer");
