@@ -70,8 +70,8 @@
     signin: {
       kicker: "Returning collector",
       title: "Sign in to your Profile",
-      description: "Enter your Crack Packs email and password.",
-      emailLabel: "Account email",
+      description: "Enter your Crack Packs email or User ID and password.",
+      emailLabel: "Account email or User ID",
       sendLabel: "Sign in",
       modalTitle: "Check inbox for your sign-in link",
       modalCopy: "If this email belongs to a Crack Packs account, open the secure sign-in link within 10 minutes. If setup is incomplete, the page will continue with password, Buyer ID, and any requested Seller ID verification steps.",
@@ -92,8 +92,8 @@
     signin: {
       kicker: "Seller setup - Step 1 of 5",
       title: "Sign in to start Seller verification",
-      description: "Use the email and password for the account that will own this Seller ID. New sellers can choose Create Account to verify email first.",
-      emailLabel: "Seller account email",
+      description: "Use the email or User ID and password for the account that will own this Seller ID. New sellers can choose Create Account to verify email first.",
+      emailLabel: "Seller email or User ID",
       sendLabel: "Sign in to Seller setup",
       modalTitle: "Check inbox for your seller sign-in link",
       modalCopy: "Open the secure email link, then finish Seller ID check, passkey, legal profile, Stripe ID verification, and account activation.",
@@ -140,6 +140,12 @@
     $("[data-auth-title]").textContent = copy.title;
     $("[data-auth-description]").textContent = copy.description;
     $("[data-auth-email-label]").textContent = copy.emailLabel;
+    const authIdentifierInput = $("[data-request-form] input[name='email']");
+    if (authIdentifierInput) {
+      authIdentifierInput.type = authMode === "signin" ? "text" : "email";
+      authIdentifierInput.autocomplete = authMode === "signin" ? "username" : "email";
+      authIdentifierInput.placeholder = authMode === "signin" ? "email@example.com or SellerID" : "collector@example.com";
+    }
     const passwordRow = $("[data-password-login-row]");
     if (passwordRow) passwordRow.hidden = authMode !== "signin";
     const sendButton = $("[data-send-verification]");
@@ -515,9 +521,9 @@
       const result = await request("/identity/sync", { method: "POST", body: JSON.stringify({ notify: true }) });
       const status = String(result.status || result.stripeStatus || "").toLowerCase();
       if (result.verified || status === "verified") {
-        showIdentityStatusPanel("PASS: Stripe ID verification is complete. Your acceptance email has been sent.", "success");
+        showIdentityStatusPanel("PASS: Stripe ID verification is complete. Complete account setup to activate Seller Portal access.", "success");
         $("[data-open-verified-seller-portal]").hidden = false;
-        setIdentityStatusResult("PASS accepted. Open Seller Portal when you are ready.", "success");
+        setIdentityStatusResult("PASS accepted. Complete account setup when you are ready. The final email sends after Seller Portal access is granted.", "success");
         return;
       }
       if (["processing", "manual_review", "pending_review"].includes(status)) {
@@ -547,7 +553,7 @@
     showIdentityStatusPanel();
     const account = await loadAccount().catch(() => null);
     if (account?.identityStatus === "verified" && account?.stripeIdentityStatus === "verified") {
-      showIdentityStatusPanel("PASS: Stripe ID verification is complete. Your acceptance email has been sent.", "success");
+      showIdentityStatusPanel("PASS: Stripe ID verification is complete. Complete account setup to activate Seller Portal access.", "success");
       $("[data-open-verified-seller-portal]").hidden = false;
     } else if (["processing", "manual_review"].includes(String(account?.stripeIdentityStatus || "").toLowerCase()) || account?.identityStatus === "pending_review") {
       showIdentityStatusPanel("VERIFY IN PROGRESS: Stripe has accepted your ID verification for processing. Check again in a moment.", "success");

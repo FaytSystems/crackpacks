@@ -233,7 +233,7 @@ test("identity sync refreshes a verified Stripe session into member status", asy
   assert.match(updates[0].sql, /stripe_identity_status='verified'/);
 });
 
-test("identity sync sends accepted email when Stripe verification passes", async t => {
+test("identity sync does not send accepted email before seller portal access", async t => {
   const originalFetch = globalThis.fetch;
   const member = {
     id: "db319ec3-aa9a-436a-a094-2fca08c85f8a",
@@ -298,9 +298,76 @@ test("identity sync sends accepted email when Stripe verification passes", async
   }), env, {});
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { status: "verified", stripeStatus: "verified", verified: true });
+  assert.equal(emails.length, 0);
+  assert.equal(updates.length, 1);
+  assert.match(updates[0].sql, /stripe_identity_status='verified'/);
+});
+
+test("seller portal activation sends accepted email with complete setup button", async () => {
+  const member = {
+    id: "db319ec3-aa9a-436a-a094-2fca08c85f8a",
+    email: "robertreese@faytsystems.com",
+    email_verified_at: "2026-07-24T00:00:00.000Z",
+    device_verified: 1,
+    first_name: "Robert",
+    last_name: "Reese",
+    birth_date: "1980-01-01",
+    identity_status: "verified",
+    stripe_identity_status: "verified",
+    stripe_identity_result_email_status: "",
+    live_username: "GARAGESALEdotcom",
+    active_portal: "buyer"
+  };
+  const updatedMember = { ...member, active_portal: "seller" };
+  const emails = [];
+  const updates = [];
+  const batches = [];
+  const env = {
+    AUTH_SECRET: "test-secret",
+    SITE_URL: "https://crackpacks.com",
+    REWARDS_EMAIL: {
+      send: async payload => {
+        emails.push(payload);
+        return { messageId: "email-pass" };
+      }
+    },
+    DB: {
+      prepare(sql) {
+        return {
+          bind(...args) {
+            return {
+              first: async () => {
+                if (sql.includes("JOIN members")) return member;
+                if (sql.includes("SELECT * FROM members WHERE id")) return updatedMember;
+                return null;
+              },
+              all: async () => ({ results: [] }),
+              run: async () => {
+                updates.push({ sql, args });
+                return { success: true };
+              }
+            };
+          }
+        };
+      },
+      batch: async statements => {
+        batches.push(statements);
+        return statements.map(() => ({ success: true }));
+      }
+    }
+  };
+  const response = await handlePlatformRoute(new Request("https://api.crackpacks.test/profile/live-username", {
+    method: "POST",
+    headers: { Authorization: "Bearer session-token" },
+    body: JSON.stringify({ liveUsername: "GARAGESALEdotcom", activateSeller: true })
+  }), env, {});
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { liveUsername: "GARAGESALEdotcom", sellerActivated: true, activePortal: "seller" });
+  assert.equal(batches.length, 1);
   assert.equal(emails.length, 1);
   assert.equal(emails[0].subject, "Crack Packs ID verification accepted");
-  assert.match(emails[0].html, /LOG-IN/);
+  assert.match(emails[0].html, /COMPLETE ACCOUNT SET-UP/);
+  assert.match(emails[0].text, /email or User ID and password/);
   assert.match(updates.at(-1).sql, /stripe_identity_result_email_status/);
   assert.equal(updates.at(-1).args[0], "verified");
 });

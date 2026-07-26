@@ -658,10 +658,10 @@ async function sendStripeIdentityResultEmail(env, member, result) {
   const loginUrl = `${siteUrl(env)}/referral.html?mode=signin&return=seller`;
   const isVerified = result === "verified";
   const subject = isVerified ? "Crack Packs ID verification accepted" : "Crack Packs ID verification needs another try";
-  const buttonLabel = isVerified ? "LOG-IN" : "RETRY VERIFY ID";
-  const title = isVerified ? "Your ID verification was accepted" : "Your ID verification needs another try";
+  const buttonLabel = isVerified ? "COMPLETE ACCOUNT SET-UP" : "RETRY VERIFY ID";
+  const title = isVerified ? "Your Seller Portal access is ready" : "Your ID verification needs another try";
   const copy = isVerified
-    ? "Stripe Identity returned a PASS result. Sign in to open your Crack Packs Seller Portal."
+    ? "Stripe Identity returned a PASS result, and Crack Packs has activated your Seller Portal access. Complete account setup by signing in with your email or User ID and password."
     : "Stripe Identity could not approve the verification attempt. Sign in and restart the secure ID check.";
   const html = `<div style="font-family:Arial,sans-serif;color:#111827"><h1 style="color:#151936">${title}</h1><p>${copy}</p><p><a href="${escapeHtml(loginUrl)}" style="display:inline-block;padding:18px 28px;background:#f8ff46;color:#070815;text-decoration:none;font-weight:900;border-radius:999px;letter-spacing:.08em">${buttonLabel}</a></p><p>If this was not you, contact support@crackpacks.com.</p></div>`;
   const text = `${title}\n\n${copy}\n\n${buttonLabel}: ${loginUrl}\n\nIf this was not you, contact support@crackpacks.com.`;
@@ -1104,7 +1104,6 @@ async function applyStripeIdentityStatus(env, memberId, status, { notifyFailure 
       return "manual_review";
     }
     await env.DB.prepare(`UPDATE members SET identity_fingerprint=?,stripe_identity_status='verified',identity_status='verified',referral_qualified_at=COALESCE(referral_qualified_at,?),updated_at=? WHERE id=?`).bind(identityFingerprint, now(), now(), member.id).run();
-    await sendStripeIdentityResultEmail(env, member, "verified").catch(error => console.error("Stripe Identity accepted email failed", { memberId: member.id, message: clean(error?.message || "", 200) }));
     return "verified";
   }
   const next = status === "failed" ? "failed" : status === "canceled" ? "cancelled" : status === "redacted" ? "redacted" : status === "processing" ? "processing" : "requires_input";
@@ -2847,6 +2846,10 @@ export async function handlePlatformRoute(request, env, cors) {
     if (mode === "master" && !owner) return json({ error: "Master Portal access is restricted to the master account." }, 403, cors);
     if (mode === "seller" && !sellerAllowed) return json({ error: "Complete Seller ID, passkey, legal profile, and Stripe ID verification before opening Seller Portal." }, 403, cors);
     await env.DB.prepare(`UPDATE members SET active_portal=?,updated_at=? WHERE id=?`).bind(mode, now(), auth.member.id).run();
+    if (mode === "seller" && sellerAllowed) {
+      await sendStripeIdentityResultEmail(env, auth.member, "verified")
+        .catch(error => console.error("Seller Portal mode email failed", { memberId: auth.member.id, message: clean(error?.message || "", 200) }));
+    }
     return json({ activePortal: mode }, 200, cors);
   }
   if (url.pathname === "/profile/live-username/check" && request.method === "POST") {
@@ -2896,9 +2899,11 @@ export async function handlePlatformRoute(request, env, cors) {
       env.DB.prepare(`UPDATE members SET live_username=?,live_username_key=?,active_portal=?,updated_at=? WHERE id=?`).bind(username, available.key, activateSeller ? "seller" : (auth.member.active_portal || "buyer"), stamp, auth.member.id),
       ...(activateSeller ? [env.DB.prepare(`INSERT INTO breaker_profiles(member_id,status,created_at,updated_at) VALUES(?,'active',?,?) ON CONFLICT(member_id) DO UPDATE SET status='active',updated_at=excluded.updated_at`).bind(auth.member.id, stamp, stamp)] : [])
     ]);
-    if (activateSeller && !auth.member.live_username) {
+    if (activateSeller) {
       const updatedMember = await env.DB.prepare(`SELECT * FROM members WHERE id=?`).bind(auth.member.id).first();
-      await sendSellerGrantedEmail(env, updatedMember, username);
+      if (!auth.member.live_username) await sendSellerGrantedEmail(env, updatedMember, username);
+      await sendStripeIdentityResultEmail(env, updatedMember, "verified")
+        .catch(error => console.error("Seller Portal access email failed", { memberId: auth.member.id, message: clean(error?.message || "", 200) }));
     }
     return json({ liveUsername: username, sellerActivated: activateSeller, activePortal: activateSeller ? "seller" : (auth.member.active_portal || "buyer") }, 200, cors);
   }
@@ -2966,6 +2971,9 @@ export async function handlePlatformRoute(request, env, cors) {
       env.DB.prepare(`UPDATE breaker_activation_codes SET used_at=?,used_by_member_id=?,target_member_id=? WHERE id=? AND used_at IS NULL`).bind(now(), auth.member.id, auth.member.id, row.id),
       env.DB.prepare(`UPDATE members SET active_portal='seller',updated_at=? WHERE id=?`).bind(now(), auth.member.id)
     ]);
+    const updatedMember = await env.DB.prepare(`SELECT * FROM members WHERE id=?`).bind(auth.member.id).first();
+    await sendStripeIdentityResultEmail(env, updatedMember, "verified")
+      .catch(error => console.error("Seller activation access email failed", { memberId: auth.member.id, message: clean(error?.message || "", 200) }));
     return json({ active: true, activePortal: "seller" }, 200, cors);
   }
   if (url.pathname === "/admin/sellers/activation" && request.method === "POST") {
@@ -3015,6 +3023,9 @@ export async function handlePlatformRoute(request, env, cors) {
           env.DB.prepare(`UPDATE members SET identity_status='verified',stripe_identity_status='verified',active_portal='seller',referral_qualified_at=COALESCE(referral_qualified_at,?),updated_at=? WHERE id=?`).bind(stamp, stamp, review.member_id),
           env.DB.prepare(`INSERT INTO breaker_profiles(member_id,status,created_at,updated_at) VALUES(?,'active',?,?) ON CONFLICT(member_id) DO UPDATE SET status='active',updated_at=excluded.updated_at`).bind(review.member_id, stamp, stamp)
         ]);
+        const updatedMember = await env.DB.prepare(`SELECT * FROM members WHERE id=?`).bind(review.member_id).first();
+        await sendStripeIdentityResultEmail(env, updatedMember, "verified")
+          .catch(error => console.error("Seller exception access email failed", { memberId: review.member_id, message: clean(error?.message || "", 200) }));
       } catch (error) {
         console.error("Duplicate seller exception approval failed", { reviewId: review.id, error: String(error?.message || error || "") });
         return json({ error: "The one additional Seller exception could not be granted or has already been used." }, 409, cors);

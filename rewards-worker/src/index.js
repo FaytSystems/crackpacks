@@ -1245,11 +1245,16 @@ async function route(request, env, cors, ctx) {
   }
   if (url.pathname === "/auth/password/login" && request.method === "POST") {
     const data = await body(request);
-    const email = normalizeEmail(data.email);
+    const identifier = String(data.email || "").trim();
+    const email = normalizeEmail(identifier);
+    const identifierIsEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    const loginUsernameKey = identifierIsEmail ? "" : usernameKey(identifier);
     const password = String(data.password || "");
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return response({ error: "Enter a valid email address." }, 400, cors);
+    if (!identifierIsEmail && loginUsernameKey.length < 3) return response({ error: "Enter a valid email address or User ID." }, 400, cors);
     if (!await verifyTurnstile(env, data.turnstileToken, request)) return response({ error: "Security check failed. Refresh the page and try again." }, 403, cors);
-    const member = await env.DB.prepare(`SELECT * FROM members WHERE email=?`).bind(email).first();
+    const member = identifierIsEmail
+      ? await env.DB.prepare(`SELECT * FROM members WHERE email=?`).bind(email).first()
+      : await env.DB.prepare(`SELECT * FROM members WHERE buyer_username_key=? OR live_username_key=?`).bind(loginUsernameKey, loginUsernameKey).first();
     const generic = { error: "Email or password is incorrect." };
     if (!member || !member.email_verified_at || !member.password_hash || !member.password_salt) return response(generic, 401, cors);
     if (member.password_locked_until && member.password_locked_until > now()) return response({ error: "Too many password attempts. Try again later." }, 429, cors);

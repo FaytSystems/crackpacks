@@ -89,7 +89,7 @@
             </ol>
           </div>
           <form data-request-form>
-            <label><span data-auth-email-label>Account email</span><input name="email" type="email" autocomplete="email" required maxlength="254" placeholder="collector@example.com"></label>
+            <label><span data-auth-email-label>Account email or User ID</span><input name="email" type="text" autocomplete="username" required maxlength="254" placeholder="email@example.com or SellerID"></label>
             <label data-password-login-row hidden>Password<input name="password" type="password" autocomplete="current-password" maxlength="128" placeholder="Your Crack Packs password"></label>
             <div data-turnstile></div>
             <button class="btn btn-primary" type="submit" data-send-verification disabled>Complete security check</button>
@@ -151,7 +151,7 @@
         <p data-identity-status-copy>Stripe has accepted your ID verification for processing. Check the live status when you are ready.</p>
         <button class="identity-status-bubble" type="button" data-check-stripe-identity-status>CHECK STATUS OF STRIPE ID VERIFY</button>
         <div class="identity-status-actions">
-          <button class="btn btn-primary" type="button" data-open-verified-seller-portal hidden>Open Seller Portal</button>
+          <button class="btn btn-primary" type="button" data-open-verified-seller-portal hidden>Complete Account Set-Up</button>
           <button class="btn btn-outline" type="button" data-retry-stripe-identity hidden>Retry Verify ID</button>
         </div>
         <div class="campaign-form-status identity-status-result" data-identity-status-result aria-live="polite"></div>
@@ -477,6 +477,6 @@
   <script src="assets/js/app.js?v=1.9.2"></script>
   <script src="assets/js/nav-profile.js?v=4.1.4"></script>
   <script src="assets/js/portal-mode.js?v=1.1.5"></script>
-  <script src="assets/js/referral.js?v=3.4.3"></script>
+  <script src="assets/js/referral.js?v=3.4.4"></script>
 </body>
 </html>
