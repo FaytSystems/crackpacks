@@ -9,6 +9,7 @@
   const ownerReferralToken = String(qs.get("owner_ref") || "").slice(0, 80);
   const hasAttachedReferral = Boolean(referralCode || ownerReferralToken);
   const verificationToken = String(qs.get("verify") || "");
+  const identityReturnRequested = qs.get("identity") === "return";
   const SELLER_ACTIVATION_KEY = "cp_pending_seller_activation";
   const querySellerActivationToken = String(qs.get("seller_activation") || "").slice(0, 120);
   if (querySellerActivationToken) localStorage.setItem(SELLER_ACTIVATION_KEY, querySellerActivationToken);
@@ -65,6 +66,7 @@
   let portalLauncherShown = false;
   let sellerActivationFinalizePending = false;
   const STREAM_CREDITS_REFRESH_FOCUS_GRACE_MS = 2 * 60 * 1000;
+  const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
   const authModeCopy = {
     signin: {
       kicker: "Returning collector",
@@ -460,9 +462,60 @@
     try {
       const data = await request("/me");
       renderAccount(data);
+      return data;
     } catch {
       localStorage.removeItem("cp_rewards_token"); token = "";
     }
+  }
+  const setSellerPortalState = () => {
+    localStorage.setItem("cp_can_seller_portal", "true");
+    localStorage.setItem("cp_portal_mode", "seller");
+    sessionStorage.setItem("cp_portal_mode", "seller");
+  };
+  async function enterSellerPortal() {
+    await request("/portal/mode", { method: "POST", body: JSON.stringify({ mode: "seller" }) });
+    setSellerPortalState();
+    window.location.replace("streams.html");
+  }
+  async function finalizeSellerIdentityReturn() {
+    if (!token) {
+      showStatus("Stripe ID verification returned. Sign in again so Crack Packs can finish Seller Portal activation.", "success");
+      show("[data-auth-panel]", true);
+      return false;
+    }
+    showStatus("Stripe ID verification returned. Finalizing Seller Portal activation...", "success");
+    setSellerUpgradeRequested(true);
+    try {
+      for (let attempt = 0; attempt < 10; attempt += 1) {
+        const account = await request("/me");
+        accountState = account;
+        if (account.sellerAccess) {
+          await enterSellerPortal();
+          return true;
+        }
+        if (account.sellerUsername && account.identityStatus === "verified" && account.stripeIdentityStatus === "verified") {
+          await request("/profile/live-username", { method: "POST", body: JSON.stringify({ liveUsername: account.sellerUsername, activateSeller: true }) });
+          await enterSellerPortal();
+          return true;
+        }
+        renderAccount(account);
+        const inReview = ["pending_review", "manual_review"].includes(account.identityStatus) || account.stripeIdentityStatus === "manual_review";
+        if (inReview) {
+          showStatus("Stripe ID verification is in manual review. Seller Portal will unlock as soon as it clears.", "success");
+          history.replaceState({}, document.title, location.pathname);
+          return false;
+        }
+        showStatus("Stripe ID verification is processing. Waiting for Stripe confirmation...", "success");
+        await sleep(1500);
+      }
+    } catch (error) {
+      history.replaceState({}, document.title, location.pathname);
+      showStatus(error.message || "Seller Portal could not open after Stripe verification. Refresh and try again.", "error");
+      return false;
+    }
+    history.replaceState({}, document.title, location.pathname);
+    showStatus("Stripe ID verification is still processing. Refresh this page in a moment and Seller Portal will open once Stripe confirms it.", "success");
+    return false;
   }
   function clearPersonalQr() {
     const image = $("[data-personal-qr]");
@@ -841,7 +894,7 @@
       show("[data-dashboard]", false);
       showStatus("Finalizing Seller access now that your ID verification is complete...", "success");
       request("/profile/live-username", { method: "POST", body: JSON.stringify({ liveUsername: data.sellerUsername, activateSeller: true }) })
-        .then(() => loadAccount())
+        .then(() => enterSellerPortal())
         .catch(error => {
           sellerActivationFinalizePending = false;
           showStatus(error.message, "error");
@@ -1535,6 +1588,10 @@
   });
   async function confirmEmailLink() {
     if (!verificationToken) {
+      if (identityReturnRequested) {
+        await finalizeSellerIdentityReturn();
+        return;
+      }
       await loadAccount();
       if (sellerActivationToken && token) {
         try {

@@ -120,6 +120,7 @@ test("identity session force starts a fresh Stripe check for already verified ac
   assert.equal(stripeCalls.length, 1);
   assert.match(stripeCalls[0].body, /type=document/);
   assert.match(stripeCalls[0].body, /metadata%5Bmember_id%5D=member-1/);
+  assert.match(stripeCalls[0].body, /return_url=https%3A%2F%2Fcrackpacks\.com%2Freferral\.html%3Fidentity%3Dreturn%26return%3Dseller/);
   assert.equal(updates.length, 1);
 });
 

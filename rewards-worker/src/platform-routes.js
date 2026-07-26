@@ -2807,7 +2807,7 @@ export async function handlePlatformRoute(request, env, cors) {
     if (auth.member.stripe_identity_status === "verified" && !forceFreshSession) return json({ verified: true }, 200, cors);
     const sessionEntries = [
       ["type", "document"],
-      ["return_url", `${siteUrl(env)}/referral.html?identity=return`],
+      ["return_url", `${siteUrl(env)}/referral.html?identity=return&return=seller`],
       ["metadata[member_id]", auth.member.id]
     ];
     let session;
