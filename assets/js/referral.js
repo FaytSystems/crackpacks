@@ -1194,13 +1194,24 @@
     event.preventDefault(); const form = Object.fromEntries(new FormData(event.currentTarget));
     const button = event.submitter;
     if (button) button.disabled = true;
+    const forceStripeFromLockedProfile = Boolean(accountState?.identityStatus === "verified" && accountState?.stripeIdentityStatus === "verified");
     try {
+      if (forceStripeFromLockedProfile) {
+        showStatus("Legal identity profile is already locked. Opening secure Stripe Identity verification...", "success");
+        await startStripeIdentity(button, { force: true });
+        return;
+      }
       const data = await request("/profile", { method: "POST", body: JSON.stringify(form) });
       renderAccount(data.account);
       showStatus("Legal profile saved. Opening secure Stripe Identity verification...", "success");
       await startStripeIdentity(button, { force: true });
     }
     catch (error) {
+      if (/identity profile is already verified/i.test(error.message || "")) {
+        showStatus("Legal identity profile is already locked. Opening secure Stripe Identity verification...", "success");
+        await startStripeIdentity(button, { force: true });
+        return;
+      }
       if (button) button.disabled = false;
       showStatus(error.message, "error");
     }
