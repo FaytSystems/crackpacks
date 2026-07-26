@@ -20,6 +20,10 @@ const json = (body, status = 200, cors = {}) => new Response(JSON.stringify(body
   status,
   headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...cors }
 });
+const stripeSafeError = (fallback, error) => {
+  const message = clean(error?.stripeMessage || "", 260);
+  return message ? `${fallback}: ${message}` : fallback;
+};
 const boundedJson = async (request, maxBytes = 12000) => {
   const length = Number(request.headers.get("Content-Length") || 0);
   if (Number.isFinite(length) && length > maxBytes) throw new Error("REQUEST_TOO_LARGE");
@@ -2801,14 +2805,27 @@ export async function handlePlatformRoute(request, env, cors) {
     const forceFreshSession = data.force === true || url.searchParams.get("force") === "1";
     if (!auth.member.device_verified || !auth.member.first_name || !auth.member.last_name || !auth.member.birth_date) return json({ error: "Complete your legal profile and passkey before Stripe Identity verification." }, 403, cors);
     if (auth.member.stripe_identity_status === "verified" && !forceFreshSession) return json({ verified: true }, 200, cors);
+    const sessionEntries = [
+      ["type", "document"],
+      ["return_url", `${siteUrl(env)}/referral.html?identity=return`],
+      ["metadata[member_id]", auth.member.id]
+    ];
     let session;
     try {
       session = await stripeRequest(env.STRIPE_SECRET_KEY, "/identity/verification_sessions", [
-        ["type", "document"], ["return_url", `${siteUrl(env)}/referral.html?identity=return`], ["metadata[member_id]", auth.member.id],
+        ...sessionEntries,
         ["options[document][require_matching_selfie]", "true"]
-      ], `identity-${auth.member.id}-${Date.now().toString().slice(0, -5)}`);
+      ], `identity-${auth.member.id}-${uid()}`);
     } catch (error) {
-      return json({ error: error.message === "STRIPE_NOT_CONFIGURED" ? "Stripe Identity is not configured." : "Stripe Identity could not start verification." }, 503, cors);
+      const selfieRejected = error.stripeParam === "options[document][require_matching_selfie]" || /require_matching_selfie/i.test(error.stripeMessage || "");
+      if (!selfieRejected) {
+        return json({ error: error.message === "STRIPE_NOT_CONFIGURED" ? "Stripe Identity is not configured." : stripeSafeError("Stripe Identity could not start verification", error) }, 503, cors);
+      }
+      try {
+        session = await stripeRequest(env.STRIPE_SECRET_KEY, "/identity/verification_sessions", sessionEntries, `identity-basic-${auth.member.id}-${uid()}`);
+      } catch (fallbackError) {
+        return json({ error: fallbackError.message === "STRIPE_NOT_CONFIGURED" ? "Stripe Identity is not configured." : stripeSafeError("Stripe Identity could not start verification", fallbackError) }, 503, cors);
+      }
     }
     await env.DB.prepare(`UPDATE members SET stripe_identity_session_id=?,stripe_identity_status=?,identity_status='pending_identity',updated_at=? WHERE id=?`)
       .bind(session.id, session.status === "requires_input" ? "requires_input" : "processing", now(), auth.member.id).run();

@@ -122,3 +122,53 @@ test("identity session force starts a fresh Stripe check for already verified ac
   assert.match(stripeCalls[0].body, /metadata%5Bmember_id%5D=member-1/);
   assert.equal(updates.length, 1);
 });
+
+test("identity session returns the Stripe provider reason when Stripe cannot start", async t => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    error: {
+      type: "invalid_request_error",
+      code: "account_invalid",
+      message: "Your Stripe account cannot create Identity verification sessions yet."
+    }
+  }), {
+    status: 400,
+    headers: { "Content-Type": "application/json" }
+  });
+  t.after(() => { globalThis.fetch = originalFetch; });
+
+  const member = {
+    id: "member-2",
+    email_verified_at: "2026-07-24T00:00:00.000Z",
+    device_verified: 1,
+    first_name: "Robert",
+    last_name: "Reese",
+    birth_date: "1980-01-01",
+    identity_status: "pending_identity",
+    stripe_identity_status: "not_started"
+  };
+  const env = {
+    AUTH_SECRET: "test-secret",
+    STRIPE_SECRET_KEY: "sk_test_identity",
+    SITE_URL: "https://crackpacks.com",
+    DB: {
+      prepare(sql) {
+        return {
+          bind() {
+            return {
+              first: async () => sql.includes("JOIN members") ? member : null,
+              run: async () => ({ success: true })
+            };
+          }
+        };
+      }
+    }
+  };
+  const response = await handlePlatformRoute(new Request("https://api.crackpacks.test/identity/session", {
+    method: "POST",
+    headers: { Authorization: "Bearer session-token" },
+    body: JSON.stringify({ force: true })
+  }), env, {});
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { error: "Stripe Identity could not start verification: Your Stripe account cannot create Identity verification sessions yet." });
+});

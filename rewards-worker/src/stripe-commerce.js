@@ -22,9 +22,13 @@ export async function stripeRequest(secretKey, path, entries = [], idempotencyKe
   });
   const payload = await result.json().catch(() => ({}));
   if (!result.ok) {
-    console.error("Stripe request failed", { status: result.status, type: payload?.error?.type || "", code: payload?.error?.code || "" });
+    console.error("Stripe request failed", { status: result.status, type: payload?.error?.type || "", code: payload?.error?.code || "", param: payload?.error?.param || "" });
     const error = new Error("STRIPE_PROVIDER_ERROR");
     error.stripeStatus = result.status;
+    error.stripeType = payload?.error?.type || "";
+    error.stripeCode = payload?.error?.code || "";
+    error.stripeParam = payload?.error?.param || "";
+    error.stripeMessage = payload?.error?.message || "";
     throw error;
   }
   return payload;
@@ -38,8 +42,14 @@ export async function stripeGet(secretKey, path) {
   });
   const payload = await result.json().catch(() => ({}));
   if (!result.ok) {
-    console.error("Stripe request failed", { status: result.status, type: payload?.error?.type || "", code: payload?.error?.code || "" });
-    throw new Error("STRIPE_PROVIDER_ERROR");
+    console.error("Stripe request failed", { status: result.status, type: payload?.error?.type || "", code: payload?.error?.code || "", param: payload?.error?.param || "" });
+    const error = new Error("STRIPE_PROVIDER_ERROR");
+    error.stripeStatus = result.status;
+    error.stripeType = payload?.error?.type || "";
+    error.stripeCode = payload?.error?.code || "";
+    error.stripeParam = payload?.error?.param || "";
+    error.stripeMessage = payload?.error?.message || "";
+    throw error;
   }
   return payload;
 }
