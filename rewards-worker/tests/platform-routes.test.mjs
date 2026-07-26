@@ -173,3 +173,62 @@ test("identity session returns the Stripe provider reason when Stripe cannot sta
   assert.equal(response.status, 503);
   assert.deepEqual(await response.json(), { error: "Stripe Identity could not start verification: Your Stripe account cannot create Identity verification sessions yet." });
 });
+
+test("identity sync refreshes a verified Stripe session into member status", async t => {
+  const originalFetch = globalThis.fetch;
+  const member = {
+    id: "db319ec3-aa9a-436a-a094-2fca08c85f8a",
+    email_verified_at: "2026-07-24T00:00:00.000Z",
+    device_verified: 1,
+    first_name: "Robert",
+    last_name: "Reese",
+    birth_date: "1980-01-01",
+    identity_fingerprint: "fingerprint-1",
+    identity_status: "pending_identity",
+    stripe_identity_status: "requires_input",
+    stripe_identity_session_id: "vs_sync_123"
+  };
+  globalThis.fetch = async url => {
+    assert.match(String(url), /\/v1\/identity\/verification_sessions\/vs_sync_123$/);
+    return new Response(JSON.stringify({ id: "vs_sync_123", status: "verified", metadata: { member_id: member.id } }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" }
+    });
+  };
+  t.after(() => { globalThis.fetch = originalFetch; });
+
+  const updates = [];
+  const env = {
+    AUTH_SECRET: "test-secret",
+    STRIPE_SECRET_KEY: "sk_test_identity",
+    DB: {
+      prepare(sql) {
+        return {
+          bind(...args) {
+            return {
+              first: async () => {
+                if (sql.includes("JOIN members")) return member;
+                if (sql.includes("SELECT * FROM members WHERE id")) return member;
+                if (sql.includes("identity_fingerprint")) return null;
+                return null;
+              },
+              run: async () => {
+                updates.push({ sql, args });
+                return { success: true };
+              }
+            };
+          }
+        };
+      }
+    }
+  };
+  const response = await handlePlatformRoute(new Request("https://api.crackpacks.test/identity/sync", {
+    method: "POST",
+    headers: { Authorization: "Bearer session-token" },
+    body: "{}"
+  }), env, {});
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { status: "verified", stripeStatus: "verified", verified: true });
+  assert.equal(updates.length, 1);
+  assert.match(updates[0].sql, /stripe_identity_status='verified'/);
+});

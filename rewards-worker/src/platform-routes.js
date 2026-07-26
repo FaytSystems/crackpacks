@@ -1037,25 +1037,36 @@ async function handleRefund(env, object) {
   }
 }
 
-async function handleIdentityEvent(env, event) {
-  const session = event.data?.object || {};
-  const memberId = String(session.metadata?.member_id || "");
-  if (!validUuid(memberId)) return;
-  if (event.type === "identity.verification_session.verified") {
+async function applyStripeIdentityStatus(env, memberId, status) {
+  if (!validUuid(memberId)) return "";
+  if (status === "verified") {
     const member = await env.DB.prepare(`SELECT * FROM members WHERE id=?`).bind(memberId).first();
-    if (!member?.identity_fingerprint) return;
+    if (!member?.identity_fingerprint) return "requires_input";
     const collision = await env.DB.prepare(`SELECT id FROM members WHERE identity_fingerprint=? AND id<>? AND identity_status='verified'`).bind(member.identity_fingerprint, member.id).first();
     if (collision) {
       await env.DB.batch([
         env.DB.prepare(`UPDATE members SET stripe_identity_status='manual_review',identity_status='pending_review',updated_at=? WHERE id=?`).bind(now(), member.id),
         env.DB.prepare(`INSERT INTO identity_review_queue(id,member_id,conflicting_member_id,reason,detail,created_at) VALUES(?,?,?,?,?,?)`).bind(uid(), member.id, collision.id, "identity_collision", "Stripe verified a document, but the protected identity fingerprint matches another account.", now())
       ]);
-    } else {
-      await env.DB.prepare(`UPDATE members SET stripe_identity_status='verified',identity_status='verified',referral_qualified_at=COALESCE(referral_qualified_at,?),updated_at=? WHERE id=?`).bind(now(), now(), member.id).run();
+      return "manual_review";
     }
+    await env.DB.prepare(`UPDATE members SET stripe_identity_status='verified',identity_status='verified',referral_qualified_at=COALESCE(referral_qualified_at,?),updated_at=? WHERE id=?`).bind(now(), now(), member.id).run();
+    return "verified";
+  }
+  const next = status === "canceled" ? "cancelled" : status === "redacted" ? "redacted" : status === "processing" ? "processing" : "requires_input";
+  await env.DB.prepare(`UPDATE members SET stripe_identity_status=?,updated_at=? WHERE id=?`).bind(next, now(), memberId).run();
+  return next;
+}
+
+async function handleIdentityEvent(env, event) {
+  const session = event.data?.object || {};
+  const memberId = String(session.metadata?.member_id || "");
+  if (!validUuid(memberId)) return;
+  if (event.type === "identity.verification_session.verified") {
+    await applyStripeIdentityStatus(env, memberId, "verified");
   } else {
-    const status = event.type.endsWith(".canceled") ? "cancelled" : event.type.endsWith(".redacted") ? "redacted" : "requires_input";
-    await env.DB.prepare(`UPDATE members SET stripe_identity_status=?,updated_at=? WHERE id=?`).bind(status, now(), memberId).run();
+    const status = event.type.endsWith(".canceled") ? "canceled" : event.type.endsWith(".redacted") ? "redacted" : "requires_input";
+    await applyStripeIdentityStatus(env, memberId, status);
   }
 }
 
@@ -2830,6 +2841,22 @@ export async function handlePlatformRoute(request, env, cors) {
     await env.DB.prepare(`UPDATE members SET stripe_identity_session_id=?,stripe_identity_status=?,identity_status='pending_identity',updated_at=? WHERE id=?`)
       .bind(session.id, session.status === "requires_input" ? "requires_input" : "processing", now(), auth.member.id).run();
     return json({ url: session.url, status: session.status }, 201, cors);
+  }
+  if (url.pathname === "/identity/sync" && request.method === "POST") {
+    const auth = await requireMember(request, env, cors, { verified: false });
+    if (auth.error) return auth.error;
+    const sessionId = String(auth.member.stripe_identity_session_id || "").trim();
+    if (!sessionId) return json({ status: auth.member.stripe_identity_status || "not_started" }, 200, cors);
+    let session;
+    try {
+      session = await stripeGet(env.STRIPE_SECRET_KEY, `/identity/verification_sessions/${encodeURIComponent(sessionId)}`);
+    } catch (error) {
+      return json({ error: error.message === "STRIPE_NOT_CONFIGURED" ? "Stripe Identity is not configured." : stripeSafeError("Stripe Identity status could not refresh", error) }, 503, cors);
+    }
+    const sessionMemberId = String(session.metadata?.member_id || auth.member.id);
+    if (sessionMemberId !== auth.member.id) return json({ error: "Stripe Identity session belongs to another account." }, 403, cors);
+    const status = await applyStripeIdentityStatus(env, auth.member.id, String(session.status || "requires_input"));
+    return json({ status, stripeStatus: session.status || "", verified: status === "verified" }, 200, cors);
   }
   if (url.pathname === "/seller/activate" && request.method === "POST") {
     const auth = await requireMember(request, env, cors);

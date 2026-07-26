@@ -487,6 +487,7 @@
     setSellerUpgradeRequested(true);
     try {
       for (let attempt = 0; attempt < 10; attempt += 1) {
+        await request("/identity/sync", { method: "POST", body: "{}" }).catch(() => {});
         const account = await request("/me");
         accountState = account;
         if (account.sellerAccess) {
