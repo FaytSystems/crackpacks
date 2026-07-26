@@ -2797,8 +2797,10 @@ export async function handlePlatformRoute(request, env, cors) {
   if (url.pathname === "/identity/session" && request.method === "POST") {
     const auth = await requireMember(request, env, cors, { verified: false });
     if (auth.error) return auth.error;
+    const data = await boundedJson(request, 1000);
+    const forceFreshSession = data.force === true || url.searchParams.get("force") === "1";
     if (!auth.member.device_verified || !auth.member.first_name || !auth.member.last_name || !auth.member.birth_date) return json({ error: "Complete your legal profile and passkey before Stripe Identity verification." }, 403, cors);
-    if (auth.member.stripe_identity_status === "verified") return json({ verified: true }, 200, cors);
+    if (auth.member.stripe_identity_status === "verified" && !forceFreshSession) return json({ verified: true }, 200, cors);
     let session;
     try {
       session = await stripeRequest(env.STRIPE_SECRET_KEY, "/identity/verification_sessions", [

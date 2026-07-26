@@ -1150,6 +1150,28 @@
     pendingSellerIdentityStart = false;
     $("[data-seller-identity-modal]").hidden = true;
   }));
+  const startStripeIdentity = async (button, { force = true } = {}) => {
+    if (button) button.disabled = true;
+    try {
+      showStatus("Opening secure Stripe Identity verification...", "success");
+      const identity = await request("/identity/session", { method: "POST", body: JSON.stringify({ force }) });
+      $("[data-seller-identity-modal]").hidden = true;
+      pendingSellerIdentityStart = false;
+      if (identity.url) {
+        location.href = identity.url;
+        return;
+      }
+      if (identity.verified) {
+        showStatus("Stripe Identity is already verified for this account.", "success");
+        await loadAccount();
+        return;
+      }
+      throw new Error("Stripe Identity did not return a verification page.");
+    } catch (error) {
+      if (button) button.disabled = false;
+      showStatus(error.message || "Stripe Identity could not start verification.", "error");
+    }
+  };
   $("[data-password-form]")?.addEventListener("submit", async event => {
     event.preventDefault();
     const form = Object.fromEntries(new FormData(event.currentTarget));
@@ -1170,43 +1192,25 @@
   });
   $("[data-profile-form]").addEventListener("submit", async event => {
     event.preventDefault(); const form = Object.fromEntries(new FormData(event.currentTarget));
+    const button = event.submitter;
+    if (button) button.disabled = true;
     try {
       const data = await request("/profile", { method: "POST", body: JSON.stringify(form) });
       renderAccount(data.account);
-      pendingSellerIdentityStart = true;
-      $("[data-seller-identity-modal]").hidden = false;
-      showStatus("Legal profile saved. Continue to the secure Stripe Identity check when ready.", "success");
+      showStatus("Legal profile saved. Opening secure Stripe Identity verification...", "success");
+      await startStripeIdentity(button, { force: true });
     }
-    catch (error) { showStatus(error.message, "error"); }
-  });
-  $("[data-seller-identity-continue]")?.addEventListener("click", async () => {
-    if (!pendingSellerIdentityStart) return;
-    const button = $("[data-seller-identity-continue]");
-    button.disabled = true;
-    try {
-      const identity = await request("/identity/session", { method: "POST", body: "{}" });
-      $("[data-seller-identity-modal]").hidden = true;
-      pendingSellerIdentityStart = false;
-      if (identity.verified) return loadAccount();
-      if (!identity.url) throw new Error("Stripe Identity did not return a verification page.");
-      location.href = identity.url;
-    } catch (error) {
-      button.disabled = false;
+    catch (error) {
+      if (button) button.disabled = false;
       showStatus(error.message, "error");
     }
+  });
+  $("[data-seller-identity-continue]")?.addEventListener("click", async event => {
+    pendingSellerIdentityStart = true;
+    await startStripeIdentity(event.currentTarget, { force: true });
   });
   $("[data-start-stripe-identity]").addEventListener("click", async event => {
-    const button = event.currentTarget;
-    button.disabled = true;
-    try {
-      const identity = await request("/identity/session", { method: "POST", body: "{}" });
-      if (identity.verified) return loadAccount();
-      if (!identity.url) throw new Error("Stripe Identity did not return a verification page.");
-      location.href = identity.url;
-    } catch (error) {
-      button.disabled = false;
-      showStatus(error.message, "error");
-    }
+    await startStripeIdentity(event.currentTarget, { force: true });
   });
   const toBase64url = buffer => btoa(String.fromCharCode(...new Uint8Array(buffer))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   const fromBase64url = value => Uint8Array.from(atob(value.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(value.length / 4) * 4, "=")), c => c.charCodeAt(0));
