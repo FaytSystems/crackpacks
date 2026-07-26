@@ -553,6 +553,12 @@
     if (value) sessionStorage.setItem(SELLER_UPGRADE_KEY, "true");
     else sessionStorage.removeItem(SELLER_UPGRADE_KEY);
   };
+  const selectSellerVerificationPanel = data => {
+    if (!data?.sellerUsername) return $("[data-seller-username-panel]");
+    if (!data.deviceVerified) return $("[data-device-panel]");
+    if (data.identityStatus !== "verified" || data.stripeIdentityStatus !== "verified" || data.sellerAccess) return $("[data-profile-panel]");
+    return $("[data-dashboard]");
+  };
   const beginSellerUpgradeFlow = (message = "Seller verification started. Reserve a Seller ID first, then complete passkey, legal profile, and Stripe ID verification.") => {
     setSellerUpgradeRequested(true);
     const launcher = $("[data-portal-launcher-modal]");
@@ -562,12 +568,11 @@
     }
     if (accountState) {
       renderAccount(accountState);
-      const nextPanel = !accountState.sellerUsername
-        ? $("[data-seller-username-panel]")
-        : (!accountState.deviceVerified
-          ? $("[data-device-panel]")
-          : ((accountState.identityStatus !== "verified" || accountState.stripeIdentityStatus !== "verified") ? $("[data-profile-panel]") : $("[data-dashboard]")));
+      const nextPanel = selectSellerVerificationPanel(accountState);
       nextPanel?.scrollIntoView({ behavior: "smooth", block: "start" });
+      if (nextPanel?.matches("[data-profile-panel]") && accountState.sellerAccess && accountState.identityStatus === "verified" && accountState.stripeIdentityStatus === "verified") {
+        message = "Seller verification review opened. Confirm legal details or open secure ID verification before using Seller Portal.";
+      }
     }
     showStatus(message, "success");
   };
@@ -772,7 +777,7 @@
       return;
     }
     show("[data-password-panel]", false);
-    if (needsSellerUpgradeFlow && !sellerAllowed && !needsSellerId && !data.deviceVerified) {
+    if (needsSellerUpgradeFlow && !needsSellerId && !data.deviceVerified) {
       show("[data-buyer-username-panel]", false);
       show("[data-device-panel]", true);
       show("[data-profile-panel]", false);
@@ -815,6 +820,22 @@
       return;
     }
     show("[data-profile-panel]", false);
+    if (needsSellerUpgradeFlow && sellerAllowed) {
+      show("[data-buyer-username-panel]", false);
+      show("[data-seller-username-panel]", false);
+      show("[data-device-panel]", false);
+      show("[data-profile-panel]", true);
+      show("[data-dashboard]", false);
+      const profileForm = $("[data-profile-form]");
+      profileForm.hidden = false;
+      profileForm.elements.firstName.value = data.firstName || "";
+      profileForm.elements.lastName.value = data.lastName || "";
+      profileForm.elements.birthDate.value = data.birthDate || "";
+      $("[data-stripe-identity-action]").hidden = false;
+      setSellerUpgradeRequested(false);
+      showStatus("Seller verification review opened. Confirm legal details or open secure ID verification before using Seller Portal.", "success");
+      return;
+    }
     if (needsSellerUpgradeFlow && data.sellerUsername && stripeSellerVerified && !sellerAllowed && !sellerActivationFinalizePending) {
       sellerActivationFinalizePending = true;
       show("[data-dashboard]", false);
@@ -1200,10 +1221,11 @@
       const data = await request("/device/register/verify", { method: "POST", body: JSON.stringify(payload) }); showStatus("Device passkey verified.", "success"); renderAccount(data.account);
     } catch (error) { showStatus(error.message || "Device verification was cancelled.", "error"); }
   });
-  document.querySelectorAll("[data-start-seller-upgrade]").forEach(button => {
-    button.addEventListener("click", () => {
-      beginSellerUpgradeFlow();
-    });
+  document.addEventListener("click", event => {
+    const button = event.target.closest("[data-start-seller-upgrade]");
+    if (!button || !root.contains(button)) return;
+    event.preventDefault();
+    beginSellerUpgradeFlow();
   });
   $("[data-check-buyer-username]")?.addEventListener("click", async () => {
     const input = $("[data-buyer-username]");
