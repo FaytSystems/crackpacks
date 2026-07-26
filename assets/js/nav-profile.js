@@ -33,13 +33,16 @@
     sessionStorage.setItem("cp_seller_upgrade_requested", "true");
     window.location.href = sellerSetupUrl();
   };
-  const accountMenuMarkup = () => `
-    <div class="nav-account-bubbles" aria-label="Account portal switcher">
-      <button class="nav-account-bubble ${portalState.activePortal !== "seller" ? "is-active" : ""}" type="button" data-open-buyer-portal>Buyer</button>
-      <button class="nav-account-bubble ${portalState.activePortal === "seller" ? "is-active" : ""}" type="button" data-open-seller-portal>Seller</button>
-    </div>
-    <a href="${buyerProfileUrl}"><strong>Profile</strong><small>Invites, rewards, orders and account tools</small></a>
-  `;
+  const accountMenuMarkup = () => {
+    const sellerLabel = portalState.sellerAccess ? "Seller" : "Seller Setup";
+    return `
+      <div class="nav-account-bubbles" aria-label="Account portal switcher">
+        <button class="nav-account-bubble ${portalState.activePortal !== "seller" ? "is-active" : ""}" type="button" data-open-buyer-portal>Buyer</button>
+        <button class="nav-account-bubble ${portalState.activePortal === "seller" ? "is-active" : ""}" type="button" data-open-seller-portal>${sellerLabel}</button>
+      </div>
+      <a href="${buyerProfileUrl}"><strong>Profile</strong><small>Invites, rewards, orders and account tools</small></a>
+    `;
+  };
 
   function ensureHeaderActionLinks() {
     const nav = document.querySelector(".site-nav");
@@ -110,7 +113,7 @@
       const status = await requestJson("/portal/status");
       portalState = {
         signedIn: true,
-        sellerAccess: Boolean(status.sellerAccess || status.isMaster),
+        sellerAccess: Boolean(status.sellerAccess),
         activePortal: status.sellerAccess && status.activePortal === "seller" ? "seller" : "buyer"
       };
     } catch {
@@ -120,6 +123,12 @@
   }
 
   document.addEventListener("click", async event => {
+    const sellerHeaderAction = event.target.closest("[data-header-create-show], [data-header-go-live]");
+    if (sellerHeaderAction && !portalState.sellerAccess) {
+      event.preventDefault();
+      routeToSellerSetup();
+      return;
+    }
     const accountMenu = event.target.closest("[data-nav-profile]");
     if (!accountMenu) return;
     const buyer = event.target.closest("[data-open-buyer-portal]");

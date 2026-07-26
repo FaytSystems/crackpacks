@@ -8,7 +8,7 @@
   <meta name="theme-color" content="#07091b">
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/css/styles.css?v=1.9.2">
-  <link rel="stylesheet" href="assets/css/referral.css?v=3.3.0">
+  <link rel="stylesheet" href="assets/css/referral.css?v=3.3.1">
   <link rel="stylesheet" href="assets/css/rewards-modal.css?v=2.2.0">
   <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.6.1">
 </head>
@@ -78,6 +78,16 @@
           <p class="eyebrow" data-auth-kicker>Returning collector</p>
           <h2 data-auth-title>Sign in to your Profile</h2>
           <p data-auth-description>Enter the email connected to your Crack Packs account. We will send a secure sign-in link.</p>
+          <div class="email-modal-steps seller-setup-roadmap" data-seller-setup-roadmap hidden>
+            <strong>Seller verification path</strong>
+            <ol>
+              <li>Step 1 of 5: verify the seller account email.</li>
+              <li>Step 2 of 5: check and reserve the Seller ID.</li>
+              <li>Step 3 of 5: create the secure device passkey.</li>
+              <li>Step 4 of 5: enter legal details for duplicate-account review.</li>
+              <li>Step 5 of 5: complete Stripe ID verification and account activation.</li>
+            </ol>
+          </div>
           <form data-request-form>
             <label><span data-auth-email-label>Account email</span><input name="email" type="email" autocomplete="email" required maxlength="254" placeholder="collector@example.com"></label>
             <label data-password-login-row hidden>Password<input name="password" type="password" autocomplete="current-password" maxlength="128" placeholder="Your Crack Packs password"></label>
@@ -88,7 +98,7 @@
       </section>
 
       <section class="reward-card" data-password-panel hidden>
-        <p class="eyebrow">Step 1 of 5</p>
+        <p class="eyebrow">Account security</p>
         <h2>Create your account password</h2>
         <p>Use this password for normal Sign In. After this, Crack Packs will also ask for a secure device passkey before protected seller and master tools.</p>
         <form data-password-form>
@@ -128,6 +138,7 @@
           <button class="btn btn-primary" type="submit">Continue to secure ID check</button>
         </form>
         <div class="stripe-identity-action" data-stripe-identity-action hidden>
+          <p class="eyebrow">Step 5 of 5</p>
           <p>Your legal profile is saved. Complete Stripe Identity's document-and-selfie check to finish account verification.</p>
           <button class="btn btn-primary" type="button" data-start-stripe-identity>Open secure ID verification</button>
           <p class="fine-print">Stripe handles the identity document. Crack Packs stores the verification result, not a copy of your full card or identity document.</p>
@@ -392,7 +403,7 @@
       <p data-email-modal-copy>Open the message from Crack Packs and click the secure link. It expires in 10 minutes and can only be used once.</p>
       <div class="email-modal-steps">
         <strong>Next steps</strong>
-        <ol>
+        <ol data-email-modal-steps>
           <li>Open the email from Crack Packs.</li>
           <li>Tap the secure account link in the message.</li>
           <li>Create your password, claim a Buyer ID, then optionally start Seller ID verification.</li>
@@ -440,7 +451,7 @@
     <button class="rewards-modal-backdrop" type="button" data-seller-identity-close aria-label="Close"></button>
     <section class="rewards-modal-card" role="dialog" aria-modal="true" aria-labelledby="seller-identity-title">
       <button class="rewards-modal-close" type="button" data-seller-identity-close aria-label="Close">&times;</button>
-      <p class="eyebrow">Seller verification</p>
+      <p class="eyebrow">Seller verification - Step 5 of 5</p>
       <h2 id="seller-identity-title">Continue seller ID verification</h2>
       <p>Your legal profile is saved. For security, Stripe Identity continues on this signed-in device.</p>
       <p class="fine-print">After Stripe verifies your identity, Crack Packs finishes the protected Seller ID activation so you can enter Seller Portal.</p>
@@ -452,8 +463,8 @@
   </div>
   <script src="assets/js/config.js?v=3.0.0"></script>
   <script src="assets/js/app.js?v=1.9.2"></script>
-  <script src="assets/js/nav-profile.js?v=4.1.1"></script>
-  <script src="assets/js/portal-mode.js?v=1.1.4"></script>
-  <script src="assets/js/referral.js?v=3.3.4"></script>
+  <script src="assets/js/nav-profile.js?v=4.1.2"></script>
+  <script src="assets/js/portal-mode.js?v=1.1.5"></script>
+  <script src="assets/js/referral.js?v=3.3.5"></script>
 </body>
 </html>

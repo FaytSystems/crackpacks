@@ -42,6 +42,10 @@
   let authRequestPending = false;
   let authMode = hasAttachedReferral || qs.get("mode") === "signup" ? "signup" : "signin";
   const returnTarget = String(qs.get("return") || "").trim().toLowerCase();
+  const SELLER_UPGRADE_KEY = "cp_seller_upgrade_requested";
+  const sellerIntentRequested = returnTarget === "seller";
+  if (sellerIntentRequested) sessionStorage.setItem(SELLER_UPGRADE_KEY, "true");
+  const isSellerSetupIntent = () => sellerIntentRequested || sessionStorage.getItem(SELLER_UPGRADE_KEY) === "true";
   let accountState = null;
   let welcomeDiscountLoaded = false;
   let attachedReferralValid = !hasAttachedReferral;
@@ -61,8 +65,6 @@
   let portalLauncherShown = false;
   let sellerActivationFinalizePending = false;
   const STREAM_CREDITS_REFRESH_FOCUS_GRACE_MS = 2 * 60 * 1000;
-  const SELLER_UPGRADE_KEY = "cp_seller_upgrade_requested";
-  if (returnTarget === "seller") sessionStorage.setItem(SELLER_UPGRADE_KEY, "true");
   const authModeCopy = {
     signin: {
       kicker: "Returning collector",
@@ -85,6 +87,29 @@
       sentStatus: "Signup link sent. Check your inbox to create your account."
     }
   };
+  const sellerAuthModeCopy = {
+    signin: {
+      kicker: "Seller setup - Step 1 of 5",
+      title: "Sign in to start Seller verification",
+      description: "Use the email and password for the account that will own this Seller ID. New sellers can choose Create Account to verify email first.",
+      emailLabel: "Seller account email",
+      sendLabel: "Sign in to Seller setup",
+      modalTitle: "Check inbox for your seller sign-in link",
+      modalCopy: "Open the secure email link, then finish Seller ID check, passkey, legal profile, Stripe ID verification, and account activation.",
+      sentStatus: "If that email matches an account, a secure seller setup link is on the way."
+    },
+    signup: {
+      kicker: "Seller setup - Step 1 of 5",
+      title: "Verify your seller email",
+      description: "Create the account that will own this Seller ID. After email verification, Crack Packs keeps you in the seller setup flow.",
+      emailLabel: "Seller account email",
+      sendLabel: "Email seller verification link",
+      modalTitle: "Check inbox to verify your seller account",
+      modalCopy: "Open the secure signup link, then complete Seller ID check, passkey, legal profile, Stripe ID verification, and protected account activation.",
+      sentStatus: "Seller verification email sent. Check your inbox to continue setup."
+    }
+  };
+  const authCopyForMode = mode => (isSellerSetupIntent() ? sellerAuthModeCopy : authModeCopy)[mode === "signup" ? "signup" : "signin"];
   function resetTurnstile() {
     turnstileTokenValue = "";
     if (turnstileWidgetId !== null && window.turnstile?.reset) {
@@ -100,7 +125,8 @@
       authRequestSent = false;
       resetTurnstile();
     }
-    const copy = authModeCopy[authMode];
+    const copy = authCopyForMode(authMode);
+    document.querySelectorAll("[data-seller-setup-roadmap]").forEach(node => { node.hidden = !isSellerSetupIntent(); });
     document.querySelectorAll("[data-auth-mode]").forEach(button => {
       const active = button.dataset.authMode === authMode;
       button.classList.toggle("is-active", active);
@@ -148,7 +174,7 @@
         showStatus("");
         const sendButton = $("[data-send-verification]");
         sendButton.disabled = false;
-        sendButton.textContent = authModeCopy[authMode].sendLabel;
+        sendButton.textContent = authCopyForMode(authMode).sendLabel;
       },
       "expired-callback": () => {
         turnstileTokenValue = "";
@@ -522,7 +548,7 @@
       const empty = document.createElement("div"); empty.className = "member-orders-empty"; empty.textContent = error.message; container.append(empty);
     }
   }
-  const sellerUpgradeRequested = () => sessionStorage.getItem(SELLER_UPGRADE_KEY) === "true";
+  const sellerUpgradeRequested = () => isSellerSetupIntent();
   const setSellerUpgradeRequested = value => {
     if (value) sessionStorage.setItem(SELLER_UPGRADE_KEY, "true");
     else sessionStorage.removeItem(SELLER_UPGRADE_KEY);
@@ -715,14 +741,16 @@
   }
   function renderAccount(data) {
     accountState = data;
-    const sellerAllowed = Boolean(data.sellerAccess);
+    const sellerAllowed = Boolean(data.sellerAccess && data.identityStatus === "verified" && data.stripeIdentityStatus === "verified");
     const stripeSellerVerified = data.identityStatus === "verified" && data.stripeIdentityStatus === "verified";
     const masterCandidate = Boolean(data.isMaster || data.isMasterCandidate || data.isOwnerEmail);
     const needsSellerUpgradeFlow = Boolean(sellerUpgradeRequested());
     const hasSellerLegalProfile = Boolean(data.hasSellerLegalProfile || (data.firstName && data.lastName && data.birthDate));
     const needsBuyerId = !data.buyerUsername;
     const needsSellerId = Boolean(needsSellerUpgradeFlow && !data.sellerUsername);
-    const roles = Array.isArray(data.roles) && data.roles.length ? data.roles : (data.isAdmin ? ["buyer", "seller", "master"] : (sellerAllowed ? ["buyer", "seller"] : ["buyer"]));
+    const reportedRoles = Array.isArray(data.roles) && data.roles.length ? data.roles : (data.isAdmin ? ["buyer", "seller", "master"] : (sellerAllowed ? ["buyer", "seller"] : ["buyer"]));
+    const roles = reportedRoles.filter(role => (role !== "seller" || sellerAllowed) && (role !== "master" || data.isMaster));
+    if (!roles.includes("buyer")) roles.unshift("buyer");
     localStorage.setItem("cp_can_seller_portal", sellerAllowed ? "true" : "false");
     if (!sellerAllowed && (sessionStorage.getItem("cp_portal_mode") || localStorage.getItem("cp_portal_mode")) === "seller") {
       sessionStorage.setItem("cp_portal_mode", "buyer");
@@ -820,7 +848,7 @@
     const sellerChoice = $("[data-portal-seller-choice]");
     if (sellerChoice) {
       sellerChoice.hidden = false;
-      sellerChoice.textContent = sellerAllowed ? "Seller Account" : "Create Seller Account";
+      sellerChoice.textContent = sellerAllowed ? "Seller Account" : "Seller Verification";
     }
     const masterChoice = $("[data-portal-master-choice]");
     if (masterChoice) masterChoice.hidden = !masterCandidate;
@@ -829,8 +857,8 @@
       sellerChoiceModal.hidden = false;
       const sellerTitle = sellerChoiceModal.querySelector("strong");
       const sellerCopy = sellerChoiceModal.querySelector("small");
-      if (sellerTitle) sellerTitle.textContent = sellerAllowed ? "Seller Account" : "Create Seller Account";
-      if (sellerCopy) sellerCopy.textContent = sellerAllowed ? "Go Live, inventory, listings, giveaways, and seller tools." : "Reserve a Seller ID first, then finish passkey, legal profile, and Stripe ID verification.";
+      if (sellerTitle) sellerTitle.textContent = sellerAllowed ? "Seller Account" : "Seller Verification";
+      if (sellerCopy) sellerCopy.textContent = sellerAllowed ? "Go Live, inventory, listings, giveaways, and seller tools." : "Start the required Seller ID check, passkey, legal profile, Stripe ID verification, and activation.";
     }
     const masterChoiceModal = $("[data-portal-master-choice-modal]");
     if (masterChoiceModal) masterChoiceModal.hidden = !masterCandidate;
@@ -1029,7 +1057,7 @@
         emailInput.disabled = false;
         authModeButtons.forEach(button => { button.disabled = false; });
         sendButton.disabled = false;
-        sendButton.textContent = authModeCopy[submittedMode].sendLabel;
+        sendButton.textContent = authCopyForMode(submittedMode).sendLabel;
         showStatus("This referral is not current. Ask for a new owner QR or remove the referral from the address.", "error");
         return;
       }
@@ -1043,7 +1071,7 @@
         token = data.token; localStorage.setItem("cp_rewards_token", token);
         authRequestSent = false;
         resetTurnstile();
-        showStatus("Signed in to your Profile.", "success");
+        showStatus(isSellerSetupIntent() ? "Signed in. Continue Seller verification." : "Signed in to your Profile.", "success");
         renderAccount(data.account);
         return;
       }
@@ -1053,9 +1081,15 @@
       sendButton.textContent = "Check Inbox 10 min code";
       sendButton.disabled = true;
       const deliveredMode = authResult.authFlow === "signin" || authResult.authFlow === "admin" ? "signin" : "signup";
-      const copy = authModeCopy[deliveredMode];
+      const copy = authCopyForMode(deliveredMode);
       $("[data-email-modal-title]").textContent = copy.modalTitle;
       $("[data-email-modal-copy]").textContent = copy.modalCopy;
+      const modalSteps = $("[data-email-modal-steps]");
+      if (modalSteps) {
+        modalSteps.innerHTML = isSellerSetupIntent()
+          ? "<li>Open the email from Crack Packs.</li><li>Tap the secure seller account link.</li><li>Finish Seller ID check, passkey, legal profile, Stripe ID verification, and activation.</li>"
+          : "<li>Open the email from Crack Packs.</li><li>Tap the secure account link in the message.</li><li>Create your password, claim a Buyer ID, then optionally start Seller ID verification.</li>";
+      }
       const help = $("[data-email-modal-help]");
       const helpUrl = safeHttpUrl(config.youtubeChannelUrl);
       if (helpUrl) {

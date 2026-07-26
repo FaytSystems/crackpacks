@@ -25,6 +25,7 @@
 .email-modal-steps strong{color:var(--electric)}
 .email-modal-steps ol{margin:0;padding-left:20px;color:#eef3ff}
 .email-modal-steps li+li{margin-top:6px}
+.seller-setup-roadmap{margin:18px 0 4px;border-color:rgba(248,255,70,.28);background:linear-gradient(120deg,rgba(248,255,70,.08),rgba(56,232,255,.06))}
 .email-modal-actions{justify-content:center;margin-bottom:14px}
 .referral-attached[data-state=checking]{border-color:var(--cyan);color:var(--cyan);background:rgba(56,232,255,.08)}
 .referral-attached[data-state=invalid]{border-color:var(--danger);color:#ffc4cf;background:rgba(255,75,111,.1);box-shadow:0 0 30px rgba(255,75,111,.08)}

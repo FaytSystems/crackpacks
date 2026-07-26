@@ -20,6 +20,23 @@
   const sellerPortalDestination = () => page === "streams" || page === "live" ? "streams.html" : "shop.html";
   const buyerPortalDestination = () => "shop.html";
   const sellerSetupDestination = () => authToken() ? "referral.html?return=seller" : "referral.html?mode=signin&return=seller";
+  const sellerToolHashes = new Set(["#go-live", "#create-show", "#seller-my-listings", "#seller-shipping"]);
+  const hasSellerToolIntent = () => page === "streams" && sellerToolHashes.has(location.hash);
+  const clearSellerPortalState = () => {
+    localStorage.setItem(SELLER_ALLOWED_KEY, "false");
+    sessionStorage.setItem(STORAGE_KEY, "buyer");
+    localStorage.setItem(STORAGE_KEY, "buyer");
+  };
+  const startSellerSetup = button => {
+    clearSellerPortalState();
+    sessionStorage.setItem("cp_seller_upgrade_requested", "true");
+    if (page === "rewards") {
+      if (button) button.disabled = false;
+      document.dispatchEvent(new CustomEvent("crackpacks:start-seller-upgrade"));
+      return;
+    }
+    window.location.href = sellerSetupDestination();
+  };
 
   const portalRequest = async (path, options = {}) => {
     if (!apiBase || !authToken()) throw new Error("Sign in to your Profile first.");
@@ -74,16 +91,7 @@
         setMode(result.activePortal || "seller");
         window.location.href = sellerPortalDestination();
       } catch (error) {
-        localStorage.setItem(SELLER_ALLOWED_KEY, "false");
-        sessionStorage.setItem(STORAGE_KEY, "buyer");
-        localStorage.setItem(STORAGE_KEY, "buyer");
-        if (page === "rewards") {
-          button.disabled = false;
-          sessionStorage.setItem("cp_seller_upgrade_requested", "true");
-          document.dispatchEvent(new CustomEvent("crackpacks:start-seller-upgrade"));
-          return;
-        }
-        window.location.href = sellerSetupDestination();
+        startSellerSetup(button);
       }
     });
   });
@@ -128,12 +136,15 @@
         : (status.sellerAccess && status.activePortal === "seller" ? "seller" : "buyer");
       mode = setMode(confirmed);
       applyPortalDom(mode);
+      if (!status.sellerAccess && hasSellerToolIntent()) startSellerSetup();
     }).catch(() => {
-      localStorage.setItem(SELLER_ALLOWED_KEY, "false");
+      clearSellerPortalState();
       localStorage.setItem(MASTER_ALLOWED_KEY, "false");
+      if (hasSellerToolIntent()) startSellerSetup();
     });
   } else {
-    localStorage.setItem(SELLER_ALLOWED_KEY, "false");
+    clearSellerPortalState();
     localStorage.setItem(MASTER_ALLOWED_KEY, "false");
+    if (hasSellerToolIntent()) startSellerSetup();
   }
 })();
