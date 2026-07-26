@@ -562,7 +562,11 @@
     }
     if (accountState) {
       renderAccount(accountState);
-      const nextPanel = !accountState.sellerUsername ? $("[data-seller-username-panel]") : (!accountState.deviceVerified ? $("[data-device-panel]") : $("[data-profile-panel]"));
+      const nextPanel = !accountState.sellerUsername
+        ? $("[data-seller-username-panel]")
+        : (!accountState.deviceVerified
+          ? $("[data-device-panel]")
+          : ((accountState.identityStatus !== "verified" || accountState.stripeIdentityStatus !== "verified") ? $("[data-profile-panel]") : $("[data-dashboard]")));
       nextPanel?.scrollIntoView({ behavior: "smooth", block: "start" });
     }
     showStatus(message, "success");
@@ -848,7 +852,7 @@
     const sellerChoice = $("[data-portal-seller-choice]");
     if (sellerChoice) {
       sellerChoice.hidden = false;
-      sellerChoice.textContent = sellerAllowed ? "Seller Account" : "Seller Verification";
+      sellerChoice.textContent = "Seller Verification";
     }
     const masterChoice = $("[data-portal-master-choice]");
     if (masterChoice) masterChoice.hidden = !masterCandidate;
@@ -857,8 +861,10 @@
       sellerChoiceModal.hidden = false;
       const sellerTitle = sellerChoiceModal.querySelector("strong");
       const sellerCopy = sellerChoiceModal.querySelector("small");
-      if (sellerTitle) sellerTitle.textContent = sellerAllowed ? "Seller Account" : "Seller Verification";
-      if (sellerCopy) sellerCopy.textContent = sellerAllowed ? "Go Live, inventory, listings, giveaways, and seller tools." : "Start the required Seller ID check, passkey, legal profile, Stripe ID verification, and activation.";
+      if (sellerTitle) sellerTitle.textContent = "Seller Verification";
+      if (sellerCopy) sellerCopy.textContent = sellerAllowed
+        ? "Review Seller ID, passkey, legal profile, Stripe ID verification, and activation before opening Seller Portal."
+        : "Start the required Seller ID check, passkey, legal profile, Stripe ID verification, and activation.";
     }
     const masterChoiceModal = $("[data-portal-master-choice-modal]");
     if (masterChoiceModal) masterChoiceModal.hidden = !masterCandidate;
@@ -1194,8 +1200,10 @@
       const data = await request("/device/register/verify", { method: "POST", body: JSON.stringify(payload) }); showStatus("Device passkey verified.", "success"); renderAccount(data.account);
     } catch (error) { showStatus(error.message || "Device verification was cancelled.", "error"); }
   });
-  $("[data-start-seller-upgrade]")?.addEventListener("click", () => {
-    beginSellerUpgradeFlow();
+  document.querySelectorAll("[data-start-seller-upgrade]").forEach(button => {
+    button.addEventListener("click", () => {
+      beginSellerUpgradeFlow();
+    });
   });
   $("[data-check-buyer-username]")?.addEventListener("click", async () => {
     const input = $("[data-buyer-username]");

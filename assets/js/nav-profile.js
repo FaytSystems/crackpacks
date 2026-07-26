@@ -34,11 +34,10 @@
     window.location.href = sellerSetupUrl();
   };
   const accountMenuMarkup = () => {
-    const sellerLabel = portalState.sellerAccess ? "Seller" : "Seller Setup";
     return `
       <div class="nav-account-bubbles" aria-label="Account portal switcher">
         <button class="nav-account-bubble ${portalState.activePortal !== "seller" ? "is-active" : ""}" type="button" data-open-buyer-portal>Buyer</button>
-        <button class="nav-account-bubble ${portalState.activePortal === "seller" ? "is-active" : ""}" type="button" data-open-seller-portal>${sellerLabel}</button>
+        <button class="nav-account-bubble ${portalState.activePortal === "seller" ? "is-active" : ""}" type="button" data-start-seller-upgrade>Seller Verification</button>
       </div>
       <a href="${buyerProfileUrl}"><strong>Profile</strong><small>Invites, rewards, orders and account tools</small></a>
     `;
@@ -132,7 +131,7 @@
     const accountMenu = event.target.closest("[data-nav-profile]");
     if (!accountMenu) return;
     const buyer = event.target.closest("[data-open-buyer-portal]");
-    const seller = event.target.closest("[data-open-seller-portal]");
+    const seller = event.target.closest("[data-start-seller-upgrade], [data-open-seller-portal]");
     if (!buyer && !seller) return;
     event.preventDefault();
     event.stopPropagation();
@@ -142,7 +141,7 @@
       else window.location.href = buyerProfileUrl;
       return;
     }
-    if (seller && !portalState.sellerAccess) {
+    if (seller) {
       routeToSellerSetup();
       return;
     }
