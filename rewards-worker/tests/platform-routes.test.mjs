@@ -681,6 +681,7 @@ test("seller stream input creates Cloudflare live input with current API body", 
     AUTH_SECRET: "test-secret",
     CLOUDFLARE_ACCOUNT_ID: "198a4ebd4ac3a23957f8d0431c273228",
     CLOUDFLARE_STREAM_API_TOKEN: "Bearer stream-token",
+    CLOUDFLARE_STREAM_CUSTOMER_CODE: "customer-test.cloudflarestream.com",
     DB: {
       prepare(sql) {
         return {
@@ -723,6 +724,7 @@ test("seller stream input creates Cloudflare live input with current API body", 
   assert.equal(payload.input.uid, "live_input_123");
   assert.equal(payload.input.rtmpsUrl, "rtmps://live.cloudflare.com:443/live/");
   assert.equal(payload.input.streamKey, "secret-stream-key");
+  assert.equal(payload.input.playbackUrl, "https://customer-test.cloudflarestream.com/live_input_123/iframe?autoplay=true&muted=true");
   assert.equal(cloudflareCalls.length, 2);
   const createBody = JSON.parse(cloudflareCalls[0].body);
   assert.equal(cloudflareCalls[0].headers.Authorization, "Bearer stream-token");
@@ -1074,7 +1076,7 @@ test("uploaded show thumbnail is served with immutable image headers", async () 
   assert.deepEqual(new Uint8Array(await response.arrayBuffer()), imageBytes);
 });
 
-test("seller can schedule owned personal-store inventory into a show", async () => {
+test("seller can create numbered auctions from one personal-store listing", async () => {
   const memberId = "11111111-1111-4111-8111-111111111111";
   const showId = "22222222-2222-4222-8222-222222222222";
   const listingId = "33333333-3333-4333-8333-333333333333";
@@ -1109,7 +1111,7 @@ test("seller can schedule owned personal-store inventory into a show", async () 
                     item_condition: "Near Mint",
                     image_url: "https://images.example.test/charizard.jpg",
                     sale_type: "cards",
-                    quantity: 2,
+                    quantity: 30,
                     status: "active",
                     linked_lot_status: ""
                   };
@@ -1131,22 +1133,36 @@ test("seller can schedule owned personal-store inventory into a show", async () 
   const response = await handlePlatformRoute(new Request(`https://api.crackpacks.test/seller/shows/${showId}/lots`, {
     method: "POST",
     headers: { Authorization: "Bearer session-token" },
-    body: JSON.stringify({ storeListingId: listingId, startingBid: 3, bidIncrement: 1 })
+    body: JSON.stringify({ storeListingId: listingId, startingBid: 3, bidIncrement: 1, lotCount: 3, numberStart: 1 })
   }), env, {});
 
   assert.equal(response.status, 201);
   const payload = await response.json();
   assert.equal(payload.status, "scheduled");
   assert.equal(payload.storeListingId, listingId);
+  assert.equal(payload.count, 3);
+  assert.equal(payload.ids.length, 3);
   assert.match(payload.id, /^[0-9a-f-]{36}$/);
   assert.equal(batches.length, 1);
-  assert.equal(batches[0].length, 2);
+  assert.equal(batches[0].length, 4);
   assert.match(batches[0][0].sql, /INSERT INTO breaker_auction_lots/);
-  assert.equal(batches[0][0].args[3], "Japanese Charizard");
+  assert.equal(batches[0][0].args[3], "Japanese Charizard #1");
   assert.equal(batches[0][0].args[5], 300);
-  assert.match(batches[0][1].sql, /UPDATE seller_store_listings/);
-  assert.equal(batches[0][1].args[0], showId);
-  assert.equal(batches[0][1].args[3], listingId);
+  assert.equal(batches[0][1].args[3], "Japanese Charizard #2");
+  assert.equal(batches[0][2].args[3], "Japanese Charizard #3");
+  assert.match(batches[0][3].sql, /UPDATE seller_store_listings/);
+  assert.equal(batches[0][3].args[0], showId);
+  assert.equal(batches[0][3].args[3], listingId);
+  assert.equal(batches[0][3].args[5], 3);
+
+  const overAvailableResponse = await handlePlatformRoute(new Request(`https://api.crackpacks.test/seller/shows/${showId}/lots`, {
+    method: "POST",
+    headers: { Authorization: "Bearer session-token" },
+    body: JSON.stringify({ storeListingId: listingId, startingBid: 3, bidIncrement: 1, lotCount: 31, numberStart: 1 })
+  }), env, {});
+  assert.equal(overAvailableResponse.status, 409);
+  assert.match((await overAvailableResponse.json()).error, /Only 30 units are available/);
+  assert.equal(batches.length, 1);
 });
 
 test("seller cannot schedule store inventory already assigned to an active lot", async () => {

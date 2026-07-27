@@ -85,7 +85,7 @@
       liveLink = document.createElement("a");
       liveLink.className = "nav-live nav-account-action nav-account-action-primary";
       liveLink.dataset.headerGoLive = "";
-      liveLink.textContent = "Go Live";
+      liveLink.textContent = "Broadcast Hub";
       nav.append(liveLink);
     }
     createLink.href = createShowHref();
@@ -196,7 +196,7 @@
         localStorage.setItem("cp_portal_mode", "seller");
         sessionStorage.setItem("cp_portal_mode", "seller");
       }
-      window.location.href = seller ? "streams.html" : buyerProfileUrl;
+      window.location.href = seller ? sellerGoLiveUrl : buyerProfileUrl;
     } catch {
       if (seller) routeToSellerSetup();
       else window.location.href = buyerProfileUrl;

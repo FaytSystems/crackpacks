@@ -3334,7 +3334,16 @@ async function sellerStreamInput(request, env, cors) {
     }
   }
   return json({
-    input: input ? { uid: input.cloudflare_live_input_uid, rtmpsUrl: input.rtmps_url, streamKey: input.rtmps_stream_key, srtUrl: input.srt_url, srtStreamId: input.srt_stream_id, srtPassphrase: input.srt_passphrase, status: input.status } : null,
+    input: input ? {
+      uid: input.cloudflare_live_input_uid,
+      rtmpsUrl: input.rtmps_url,
+      streamKey: input.rtmps_stream_key,
+      srtUrl: input.srt_url,
+      srtStreamId: input.srt_stream_id,
+      srtPassphrase: input.srt_passphrase,
+      status: input.status,
+      playbackUrl: playbackUrl(env, input.cloudflare_live_input_uid).replace("muted=false", "muted=true")
+    } : null,
     obsSetupCompletedAt
   }, 200, cors);
 }
@@ -3552,6 +3561,10 @@ async function createAuctionLot(request, env, cors, showId) {
   if (!show) return json({ error: "Show not found or already ended." }, 404, cors);
   const data = await boundedJson(request, 5000);
   const storeListingId = clean(data.storeListingId, 80);
+  const lotCount = Number(data.lotCount ?? 1);
+  const numberStart = Number(data.numberStart ?? 1);
+  if (!Number.isInteger(lotCount) || lotCount < 1 || lotCount > 100) return json({ error: "Create between 1 and 100 auctions at a time." }, 400, cors);
+  if (!Number.isInteger(numberStart) || numberStart < 1 || numberStart > 999999) return json({ error: "Auction numbering must start between 1 and 999999." }, 400, cors);
   let storeListing = null;
   if (storeListingId) {
     if (!validUuid(storeListingId)) return json({ error: "Choose valid inventory from your personal store." }, 400, cors);
@@ -3565,33 +3578,40 @@ async function createAuctionLot(request, env, cors, showId) {
     if (storeListing.status !== "active" || Number(storeListing.quantity || 0) < 1) {
       return json({ error: "Activate this store listing and make sure it has inventory before adding it to a show." }, 409, cors);
     }
+    if (lotCount > Number(storeListing.quantity || 0)) {
+      return json({ error: `Only ${Number(storeListing.quantity || 0)} units are available. Reduce the number of auctions.` }, 409, cors);
+    }
     if (["scheduled", "live"].includes(String(storeListing.linked_lot_status || ""))) {
       return json({ error: "That store listing is already assigned to a scheduled or live auction lot." }, 409, cors);
     }
   }
-  const title = clean(storeListing?.title || data.title, 160);
+  const title = clean(storeListing?.title || data.title, lotCount > 1 ? 148 : 160);
   const startingBid = Math.round(Number(data.startingBid) * 100);
   const increment = Math.round(Number(data.bidIncrement || 1) * 100);
   if (!title || !Number.isInteger(startingBid) || startingBid < 1 || !Number.isInteger(increment) || increment < 1) return json({ error: "Enter a title, starting bid, and bid increment." }, 400, cors);
-  const lotId = uid();
   const stamp = now();
   const description = clean(storeListing?.description || data.description, 1000);
   const imageUrl = clean(storeListing?.image_url || data.imageUrl, 500);
   const condition = clean(storeListing?.item_condition || data.condition, 80);
   const requestedSaleType = storeListing?.sale_type || data.saleType;
   const saleType = ["cards","breaks","singles","sealed","rip_ship","rtyh","buy_ship"].includes(requestedSaleType) ? requestedSaleType : "sealed";
-  const insertLot = env.DB.prepare(`INSERT INTO breaker_auction_lots(id,session_id,member_id,title,description,status,starting_bid_cents,bid_increment_cents,created_at,updated_at,image_url,item_condition,sale_type) VALUES(?,?,?,?,?,'scheduled',?,?,?,?,?,?,?)`)
-    .bind(lotId, showId, auth.member.id, title, description, startingBid, increment, stamp, stamp, imageUrl, condition, saleType);
+  const lotIds = Array.from({ length: lotCount }, () => uid());
+  const insertLots = lotIds.map((lotId, index) => {
+    const lotTitle = lotCount > 1 ? `${title} #${numberStart + index}` : title;
+    return env.DB.prepare(`INSERT INTO breaker_auction_lots(id,session_id,member_id,title,description,status,starting_bid_cents,bid_increment_cents,created_at,updated_at,image_url,item_condition,sale_type) VALUES(?,?,?,?,?,'scheduled',?,?,?,?,?,?,?)`)
+      .bind(lotId, showId, auth.member.id, lotTitle, description, startingBid, increment, stamp, stamp, imageUrl, condition, saleType);
+  });
   if (!storeListing) {
-    await insertLot.run();
-    return json({ id: lotId, status: "scheduled" }, 201, cors);
+    if (insertLots.length === 1) await insertLots[0].run();
+    else await env.DB.batch(insertLots);
+    return json({ id: lotIds[0], ids: lotIds, count: lotIds.length, status: "scheduled" }, 201, cors);
   }
   const results = await env.DB.batch([
-    insertLot,
+    ...insertLots,
     env.DB.prepare(`
       UPDATE seller_store_listings
       SET show_id=?,linked_lot_id=?,updated_at=?
-      WHERE id=? AND member_id=? AND status='active' AND quantity>0
+      WHERE id=? AND member_id=? AND status='active' AND quantity>=?
         AND (
           linked_lot_id IS NULL OR linked_lot_id=''
           OR NOT EXISTS (
@@ -3600,13 +3620,15 @@ async function createAuctionLot(request, env, cors, showId) {
               AND active_lot.status IN ('scheduled','live')
           )
         )
-    `).bind(showId, lotId, stamp, storeListing.id, auth.member.id)
+    `).bind(showId, lotIds[0], stamp, storeListing.id, auth.member.id, lotCount)
   ]);
-  if (Number(results?.[1]?.meta?.changes || 0) !== 1) {
-    await env.DB.prepare(`DELETE FROM breaker_auction_lots WHERE id=? AND member_id=? AND status='scheduled'`).bind(lotId, auth.member.id).run();
+  if (Number(results?.[insertLots.length]?.meta?.changes || 0) !== 1) {
+    await env.DB.batch(lotIds.map(lotId => (
+      env.DB.prepare(`DELETE FROM breaker_auction_lots WHERE id=? AND member_id=? AND status='scheduled'`).bind(lotId, auth.member.id)
+    )));
     return json({ error: "That store listing was assigned to another active lot. Refresh Shows and try again." }, 409, cors);
   }
-  return json({ id: lotId, status: "scheduled", storeListingId: storeListing.id }, 201, cors);
+  return json({ id: lotIds[0], ids: lotIds, count: lotIds.length, status: "scheduled", storeListingId: storeListing.id }, 201, cors);
 }
 
 async function changeAuctionStatus(request, env, cors, lotId, action) {

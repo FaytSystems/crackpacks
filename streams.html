@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Crack Packs Live Hub</title>
-  <meta name="description" content="Watch live streams, save upcoming shows, follow sellers, and fund gifted giveaways on Crack Packs.">
+  <title>Seller Broadcast Hub | Crack Packs</title>
+  <meta name="description" content="Run Crack Packs live shows with private OBS controls, show inventory, auction lots, simulcast tools, and shipping workflows.">
   <meta name="theme-color" content="#07091b">
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/css/styles.css?v=1.9.8">
   <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.6.4">
-  <link rel="stylesheet" href="assets/css/streams-hub.css?v=1.8.0">
+  <link rel="stylesheet" href="assets/css/streams-hub.css?v=1.9.0">
 </head>
 <body data-page="streams">
   <a class="skip-link" href="#main">Skip to content</a>
@@ -28,7 +28,7 @@
   </header>
 
   <main id="main" class="streams-shell">
-    <section class="container page-hero">
+    <section class="container page-hero" data-buyer-only hidden>
       <div class="reveal">
         <p class="eyebrow">Buyer Website</p>
         <h1>Live shows, saved watchlists, and <span>followed sellers.</span></h1>
@@ -41,17 +41,32 @@
       </div>
     </section>
 
+    <section class="container page-hero seller-broadcast-hero" data-seller-only hidden>
+      <div class="reveal">
+        <p class="eyebrow">Seller Account</p>
+        <h1>Seller <span>Broadcast Hub</span></h1>
+        <p>Run the full show from one private workspace: connect OBS, create and schedule shows, load inventory, control auction lots, simulcast, and prepare sold orders for shipping.</p>
+      </div>
+      <div class="actions">
+        <a class="btn btn-primary" href="#go-live">OBS &amp; Auction Cockpit</a>
+        <a class="btn btn-glass" href="#create-show">Create Show</a>
+        <a class="btn btn-outline" href="#seller-inventory">Manage Inventory</a>
+        <a class="btn btn-outline" href="live-shows.html">Open Public Live Feed</a>
+      </div>
+    </section>
+
     <nav class="container seller-portal-subnav" data-seller-only hidden aria-label="Seller Portal pages">
       <a class="seller-portal-subnav-link" href="live-shows.html">Live Feed</a>
-      <a class="seller-portal-subnav-link is-active" href="#go-live">Go Live</a>
+      <a class="seller-portal-subnav-link is-active" href="#go-live">Broadcast Hub</a>
       <a class="seller-portal-subnav-link" href="#seller-shows">Shows</a>
       <a class="seller-portal-subnav-link" href="#seller-my-listings">Listings</a>
+      <a class="seller-portal-subnav-link" href="#seller-inventory">Inventory</a>
       <a class="seller-portal-subnav-link" href="#seller-shipping">Shipping</a>
       <a class="seller-portal-subnav-link" href="shop.html?stock=1">Stock Store</a>
       <a class="seller-portal-subnav-link" href="referral.html">Account Hub</a>
     </nav>
 
-    <section class="container">
+    <section class="container" data-buyer-only hidden>
       <section class="holo-panel seller-identity-status-panel" data-seller-identity-status-panel hidden>
         <p class="eyebrow">Seller verification - Step 5 of 5</p>
         <h2>Stripe ID Verify Status</h2>
@@ -82,12 +97,30 @@
         </div>
       </div>
       <div class="hub-tabs seller-quick-tabs" data-seller-only hidden>
-        <a class="hub-tab is-active" href="#go-live">Go Live</a>
+        <a class="hub-tab is-active" href="#go-live">Broadcast Hub</a>
         <a class="hub-tab" href="#seller-shows">Shows</a>
         <a class="hub-tab" href="#seller-my-listings">My Listings</a>
+        <a class="hub-tab" href="#seller-inventory">Inventory</a>
         <a class="hub-tab seller-print-label-tab" href="#seller-shipping">Shipping</a>
       </div>
       <div class="seller-cockpit-grid seller-cockpit-grid-premium">
+        <article class="holo-panel seller-broadcast-monitor">
+          <div class="seller-broadcast-monitor-head">
+            <div>
+              <p class="eyebrow"><span class="live-pulse"></span> Seller Video Feed</p>
+              <h3>Broadcast monitor</h3>
+            </div>
+            <strong class="seller-broadcast-state" data-seller-broadcast-state>OBS connection needed</strong>
+          </div>
+          <div class="seller-broadcast-player-shell">
+            <div class="seller-broadcast-placeholder" data-seller-broadcast-placeholder>
+              <strong>Your live video will appear here.</strong>
+              <span>Create or load your OBS connection, then start streaming from OBS.</span>
+            </div>
+            <iframe data-seller-broadcast-player title="Seller live broadcast monitor" allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture" allowfullscreen hidden></iframe>
+          </div>
+          <p class="fine-print">This monitor follows your permanent Cloudflare Live Input. When OBS is disconnected, Cloudflare displays that the stream has not started.</p>
+        </article>
         <article class="holo-panel seller-stream-input">
           <h3>Private OBS connection</h3>
           <p class="fine-print">One-time OBS setup. Your Crack Packs RTMPS server and stream key stay saved to your seller profile until you regenerate them, but the live input is locked except during your active show window.</p>
@@ -213,9 +246,11 @@
             </label>
             <label>Starting bid ($)<input name="startingBid" type="number" min="0.01" max="100000" step="0.01" value="1.00" required></label>
             <label>Bid increment ($)<input name="bidIncrement" type="number" min="0.01" max="10000" step="0.01" value="1.00" required></label>
+            <label>Auctions to create<input name="lotCount" type="number" min="1" max="100" step="1" value="1" data-show-store-lot-count required></label>
+            <label>Numbering starts at<input name="numberStart" type="number" min="1" max="999999" step="1" value="1" data-show-store-number-start required></label>
           </div>
           <div class="seller-show-store-preview" data-show-store-preview aria-live="polite">Select personal-store inventory to preview it here.</div>
-          <button class="btn btn-primary" type="submit" data-show-store-submit disabled>Add selected inventory to show</button>
+          <button class="btn btn-primary" type="submit" data-show-store-submit disabled>Create auction from inventory</button>
         </form>
         <div class="campaign-form-status" data-show-store-status aria-live="polite"></div>
         <span class="section-anchor-alias" id="seller-my-listings" aria-hidden="true"></span>
@@ -399,7 +434,7 @@
       </div>
     </section>
 
-    <section class="container section">
+    <section class="container section" data-buyer-only hidden>
       <div class="section-heading reveal">
         <div>
           <p class="eyebrow">Gift a giveaway</p>
@@ -424,11 +459,25 @@
         </article>
       </div>
     </section>
+
+    <div class="seller-close-show-modal" data-close-show-modal hidden aria-hidden="true">
+      <button class="seller-close-show-backdrop" type="button" data-close-show-cancel aria-label="Cancel closing the stream"></button>
+      <section class="seller-close-show-dialog" role="dialog" aria-modal="true" aria-labelledby="close-show-title" aria-describedby="close-show-copy">
+        <p class="eyebrow">End Seller Broadcast</p>
+        <h2 id="close-show-title">Close this stream?</h2>
+        <p id="close-show-copy" data-close-show-copy>Closing the show ends the broadcast session and cancels every remaining scheduled or open auction.</p>
+        <div class="seller-close-show-actions">
+          <button class="btn btn-outline" type="button" data-close-show-cancel>Cancel</button>
+          <button class="btn btn-danger" type="button" data-close-show-confirm>YES CLOSE STREAM</button>
+        </div>
+        <div class="campaign-form-status" data-close-show-status aria-live="polite"></div>
+      </section>
+    </div>
   </main>
 
   <script src="assets/js/config.js?v=4.1.0"></script>
   <script src="assets/js/app.js?v=1.9.7"></script>
-  <script src="assets/js/portal-mode.js?v=1.1.6"></script>
-  <script src="assets/js/streams-hub.js?v=1.8.0"></script>
+  <script src="assets/js/portal-mode.js?v=1.2.0"></script>
+  <script src="assets/js/streams-hub.js?v=1.9.0"></script>
 </body>
 </html>

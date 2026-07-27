@@ -21,6 +21,8 @@
   let sellerOrderSearch = "";
   let sellerContextAuthorized = false;
   let showHashFocused = false;
+  let pendingCloseShowId = "";
+  let closeShowTrigger = null;
   const requestedHubTab = new URLSearchParams(location.search).get("tab") || "";
   let activeTab = ["all", "live", "upcoming", "followed", "watchlist"].includes(requestedHubTab)
     ? requestedHubTab
@@ -48,11 +50,20 @@
   function renderStreamInput(input) {
     const summary = $("[data-stream-connection-status]");
     const result = $("[data-stream-input-result]");
+    const player = $("[data-seller-broadcast-player]");
+    const placeholder = $("[data-seller-broadcast-placeholder]");
+    const broadcastState = $("[data-seller-broadcast-state]");
     if (!summary || !result) return;
     if (!input?.rtmpsUrl || !input?.streamKey) {
       hasSavedObsConnection = false;
       summary.textContent = "Not set up yet";
       result.hidden = true;
+      if (player) {
+        player.removeAttribute("src");
+        player.hidden = true;
+      }
+      if (placeholder) placeholder.hidden = false;
+      if (broadcastState) broadcastState.textContent = "OBS connection needed";
       syncStreamKeyButtons();
       return;
     }
@@ -61,6 +72,19 @@
     $("[data-stream-rtmps-url]").value = input.rtmpsUrl;
     $("[data-stream-key]").value = input.streamKey;
     result.hidden = false;
+    if (player && input.playbackUrl) {
+      if (player.getAttribute("src") !== input.playbackUrl) player.src = input.playbackUrl;
+      player.hidden = false;
+      if (placeholder) placeholder.hidden = true;
+      if (broadcastState) broadcastState.textContent = String(input.status || "").toLowerCase() === "enabled" ? "Broadcast input enabled" : "Ready for OBS";
+    } else {
+      if (player) {
+        player.removeAttribute("src");
+        player.hidden = true;
+      }
+      if (placeholder) placeholder.hidden = false;
+      if (broadcastState) broadcastState.textContent = "Video preview unavailable";
+    }
     syncStreamKeyButtons();
   }
   function renderYouTubeOutput(output) {
@@ -489,6 +513,25 @@
     }).join("") : `<div class="stream-empty">No auction lots are saved for this show.</div>`}`;
   }
 
+  function numberedLotSettings(item) {
+    const countInput = $("[data-show-store-lot-count]");
+    const startInput = $("[data-show-store-number-start]");
+    const available = Math.max(1, Math.min(100, Number(item?.quantity || 1)));
+    if (countInput) {
+      countInput.max = String(available);
+      const requested = Math.floor(Number(countInput.value || 1));
+      countInput.value = String(Math.max(1, Math.min(available, requested || 1)));
+    }
+    if (startInput) {
+      const requested = Math.floor(Number(startInput.value || 1));
+      startInput.value = String(Math.max(1, Math.min(999999, requested || 1)));
+    }
+    return {
+      count: Math.max(1, Number(countInput?.value || 1)),
+      start: Math.max(1, Number(startInput?.value || 1))
+    };
+  }
+
   function renderShowStoreInventoryPreview() {
     const preview = $("[data-show-store-preview]");
     const submit = $("[data-show-store-submit]");
@@ -503,7 +546,12 @@
       return;
     }
     const showMessage = show ? `Ready for ${show.title}.` : "Create or select an active show before adding this listing.";
-    preview.innerHTML = `<strong>${escapeHtml(item.title)}</strong><span>${Number(item.quantity || 0)} available · ${dollars(item.priceCents)} store price · ${escapeHtml(item.condition || "Condition pending")}</span><span>${escapeHtml(showMessage)}</span>`;
+    const numbering = numberedLotSettings(item);
+    const auctionMessage = numbering.count > 1
+      ? `Creates ${numbering.count} auctions: ${item.title} #${numbering.start} through ${item.title} #${numbering.start + numbering.count - 1}.`
+      : `Creates one auction: ${item.title}.`;
+    submit.textContent = numbering.count > 1 ? `Create ${numbering.count} numbered auctions` : "Create auction from inventory";
+    preview.innerHTML = `<strong>${escapeHtml(item.title)}</strong><span>${Number(item.quantity || 0)} available · ${dollars(item.priceCents)} store price · ${escapeHtml(item.condition || "Condition pending")}</span><span>${escapeHtml(auctionMessage)}</span><span>${escapeHtml(showMessage)}</span>`;
   }
 
   function renderShowStoreInventoryOptions() {
@@ -521,6 +569,17 @@
     if (available.some(item => item.id === prior)) select.value = prior;
     const count = $("[data-show-store-count]");
     if (count) count.textContent = `${available.length} available`;
+    if (!available.length) {
+      const countInput = $("[data-show-store-lot-count]");
+      const startInput = $("[data-show-store-number-start]");
+      if (countInput) {
+        countInput.max = "1";
+        countInput.value = "1";
+      }
+      if (startInput) startInput.value = "1";
+      const submit = $("[data-show-store-submit]");
+      if (submit) submit.textContent = "Create auction from inventory";
+    }
     renderShowStoreInventoryPreview();
   }
 
@@ -1142,6 +1201,8 @@
   $("[data-seller-social-refresh]")?.addEventListener("click", () => { updateSellerSocialComposer(); setStatus("[data-seller-social-status]", "Selected show link loaded.", "success"); });
   $("[data-listing-destination]")?.addEventListener("change", syncListingDestinationUi);
   $("[data-show-store-listing]")?.addEventListener("change", renderShowStoreInventoryPreview);
+  $("[data-show-store-lot-count]")?.addEventListener("input", renderShowStoreInventoryPreview);
+  $("[data-show-store-number-start]")?.addEventListener("input", renderShowStoreInventoryPreview);
   $("[data-seller-social-copy]")?.addEventListener("click", async () => {
     try { await copyText(sellerSocialCaption(selectedSellerShow())); setStatus("[data-seller-social-status]", "Show message and link copied.", "success"); }
     catch (error) { setStatus("[data-seller-social-status]", error.message, "error"); }
@@ -1186,18 +1247,24 @@
     const button = event.submitter || $("[data-show-store-submit]");
     button.disabled = true;
     try {
-      await api(`/seller/shows/${encodeURIComponent(showId)}/lots`, {
+      const result = await api(`/seller/shows/${encodeURIComponent(showId)}/lots`, {
         method: "POST",
         body: JSON.stringify({
           storeListingId,
           startingBid: Number(data.get("startingBid")),
-          bidIncrement: Number(data.get("bidIncrement"))
+          bidIncrement: Number(data.get("bidIncrement")),
+          lotCount: Number(data.get("lotCount")),
+          numberStart: Number(data.get("numberStart"))
         })
       });
       form.elements.startingBid.value = "1.00";
       form.elements.bidIncrement.value = "1.00";
+      form.elements.lotCount.value = "1";
+      form.elements.numberStart.value = "1";
       await Promise.all([loadSellerLots(showId), loadSellerStoreListings()]);
-      setStatus("[data-show-store-status]", "Store inventory added to the selected show.", "success");
+      setStatus("[data-show-store-status]", Number(result.count || 1) > 1
+        ? `${Number(result.count)} numbered auctions created from one inventory listing.`
+        : "Store inventory added to the selected show.", "success");
     } catch (error) {
       setStatus("[data-show-store-status]", error.message, "error");
     } finally {
@@ -1244,6 +1311,30 @@
     finally { button.disabled = false; }
   });
 
+  function openCloseShowModal(showId, trigger) {
+    const modal = $("[data-close-show-modal]");
+    const copy = $("[data-close-show-copy]");
+    const show = sellerShows.find(item => item.id === showId);
+    if (!modal || !showId) return;
+    pendingCloseShowId = showId;
+    closeShowTrigger = trigger || null;
+    if (copy) copy.textContent = `Closing ${show?.title || "this show"} ends the broadcast session and cancels every remaining scheduled or open auction.`;
+    setStatus("[data-close-show-status]", "");
+    modal.hidden = false;
+    modal.setAttribute("aria-hidden", "false");
+    $("[data-close-show-confirm]")?.focus();
+  }
+
+  function closeCloseShowModal({ restoreFocus = true } = {}) {
+    const modal = $("[data-close-show-modal]");
+    if (!modal) return;
+    modal.hidden = true;
+    modal.setAttribute("aria-hidden", "true");
+    pendingCloseShowId = "";
+    if (restoreFocus && closeShowTrigger?.isConnected) closeShowTrigger.focus();
+    closeShowTrigger = null;
+  }
+
   $("[data-seller-lot-list]")?.addEventListener("click", async event => {
     const action = event.target.closest("[data-lot-action]"); const end = event.target.closest("[data-end-show]");
     try {
@@ -1251,14 +1342,33 @@
         action.disabled = true;
         await api(`/seller/lots/${encodeURIComponent(action.dataset.lotId)}/${action.dataset.lotAction}`, { method: "POST", body: "{}" });
         await loadSellerLots($("[data-seller-show-select]").value);
-      } else if (end && confirm("End this show and cancel every open or scheduled auction lot?")) {
-        end.disabled = true;
-        const result = await api(`/seller/shows/${encodeURIComponent(end.dataset.endShow)}/end`, { method: "POST", body: "{}" });
-        await loadSellerShows();
-        const synced = result.streamCreditSync?.syncedVideos ? ` ${Number(result.streamCreditSync.syncedVideos)} recording source(s) synced.` : " Usage will also refresh on the next hourly cycle.";
-        setStatus("[data-seller-lot-status]", `Show ended. Stream Credits are syncing.${synced}`, "success");
+      } else if (end) {
+        openCloseShowModal(end.dataset.endShow, end);
       }
     } catch (error) { setStatus("[data-seller-lot-status]", error.message, "error"); }
+  });
+
+  $$("[data-close-show-cancel]").forEach(button => button.addEventListener("click", () => closeCloseShowModal()));
+  $("[data-close-show-confirm]")?.addEventListener("click", async event => {
+    const button = event.currentTarget;
+    if (!pendingCloseShowId) return;
+    const showId = pendingCloseShowId;
+    button.disabled = true;
+    setStatus("[data-close-show-status]", "Closing stream and cancelling remaining auctions...");
+    try {
+      const result = await api(`/seller/shows/${encodeURIComponent(showId)}/end`, { method: "POST", body: "{}" });
+      closeCloseShowModal({ restoreFocus: false });
+      await loadSellerShows();
+      const synced = result.streamCreditSync?.syncedVideos ? ` ${Number(result.streamCreditSync.syncedVideos)} recording source(s) synced.` : " Usage will also refresh on the next hourly cycle.";
+      setStatus("[data-seller-lot-status]", `Show ended. Stream Credits are syncing.${synced}`, "success");
+    } catch (error) {
+      setStatus("[data-close-show-status]", error.message, "error");
+    } finally {
+      button.disabled = false;
+    }
+  });
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape" && !$("[data-close-show-modal]")?.hidden) closeCloseShowModal();
   });
 
   $("[data-seller-store-list]")?.addEventListener("click", async event => {
