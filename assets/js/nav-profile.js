@@ -9,10 +9,11 @@
   const page = String(body?.dataset.page || "").toLowerCase();
   const buyerProfileUrl = "referral.html";
   const sellerSetupUrl = () => (token() ? "referral.html?return=seller" : "referral.html?mode=signin&return=seller");
+  const masterSetupUrl = () => (token() ? "admin.html" : "referral.html?mode=signin&portal=master");
   const sellerGoLiveUrl = "streams.html#go-live";
   const sellerCreateShowUrl = "streams.html#create-show";
   let ownerSignupUrl = "referral.html?mode=signup";
-  let portalState = { signedIn: false, sellerAccess: false, activePortal: "buyer" };
+  let portalState = { signedIn: false, sellerAccess: false, masterAccess: false, activePortal: "buyer" };
 
   const requestJson = async path => {
     if (!rewardsApi) throw new Error("Rewards service is not configured.");
@@ -33,13 +34,31 @@
     sessionStorage.setItem("cp_seller_upgrade_requested", "true");
     window.location.href = sellerSetupUrl();
   };
+  const syncHeaderAccountBubble = () => {
+    document.querySelectorAll("[data-header-account-bubble]").forEach(link => {
+      const signedIn = Boolean(token() && portalState.signedIn);
+      link.href = signedIn ? buyerProfileUrl : "referral.html?mode=signin";
+      link.dataset.accountState = signedIn ? "signed-in" : "signed-out";
+      link.setAttribute("aria-label", signedIn ? "Open your Crack Packs account dashboard" : "Sign in to Crack Packs");
+      const label = link.querySelector("span") || link;
+      label.textContent = signedIn ? "Account" : "Sign-In";
+    });
+  };
   const accountMenuMarkup = () => {
+    if (!portalState.signedIn) {
+      return `
+        <a href="referral.html?mode=signin"><strong>Sign In</strong><small>Open your buyer, seller, or master account.</small></a>
+        <a href="${ownerSignupUrl}"><strong>Create Account</strong><small>Verify email and start your Crack Packs profile.</small></a>
+      `;
+    }
     const sellerAction = portalState.sellerAccess ? "data-open-seller-portal" : "data-start-seller-upgrade";
-    const sellerLabel = portalState.sellerAccess ? "Seller Portal" : "Seller Verification";
+    const sellerLabel = portalState.sellerAccess ? "Seller Account" : "Seller Verification";
+    const masterButton = portalState.masterAccess ? '<button class="nav-account-bubble" type="button" data-open-master-portal>Master Account</button>' : "";
     return `
       <div class="nav-account-bubbles" aria-label="Account portal switcher">
-        <button class="nav-account-bubble ${portalState.activePortal !== "seller" ? "is-active" : ""}" type="button" data-open-buyer-portal>Buyer</button>
+        <button class="nav-account-bubble ${portalState.activePortal !== "seller" ? "is-active" : ""}" type="button" data-open-buyer-portal>Buyer Account</button>
         <button class="nav-account-bubble ${portalState.activePortal === "seller" ? "is-active" : ""}" type="button" ${sellerAction}>${sellerLabel}</button>
+        ${masterButton}
       </div>
       <a href="${buyerProfileUrl}"><strong>Profile</strong><small>Invites, rewards, orders and account tools</small></a>
     `;
@@ -77,7 +96,9 @@
       if (!trigger || !menu) return;
       trigger.innerHTML = `Account <span class="nav-profile-caret" aria-hidden="true">▼</span>`;
       menu.innerHTML = accountMenuMarkup();
+      if (!portalState.signedIn && trigger.firstChild) trigger.firstChild.textContent = "Profile ";
     });
+    syncHeaderAccountBubble();
     ensureHeaderActionLinks();
   }
 
@@ -106,7 +127,7 @@
       ownerSignupUrl = String(publicReferral?.sellerSignupUrl || publicReferral?.signupUrl || ownerSignupUrl);
     } catch {}
     if (!token() || !rewardsApi) {
-      portalState = { signedIn: false, sellerAccess: false, activePortal: "buyer" };
+      portalState = { signedIn: false, sellerAccess: false, masterAccess: false, activePortal: "buyer" };
       renderAccountMenus();
       return;
     }
@@ -115,10 +136,11 @@
       portalState = {
         signedIn: true,
         sellerAccess: Boolean(status.sellerAccess),
+        masterAccess: Boolean(status.isMaster || status.isAdmin || status.isOwnerEmail || status.isMasterCandidate),
         activePortal: status.sellerAccess && status.activePortal === "seller" ? "seller" : "buyer"
       };
     } catch {
-      portalState = { signedIn: false, sellerAccess: false, activePortal: "buyer" };
+      portalState = { signedIn: false, sellerAccess: false, masterAccess: false, activePortal: "buyer" };
     }
     renderAccountMenus();
   }
@@ -134,13 +156,19 @@
     if (!accountMenu) return;
     const buyer = event.target.closest("[data-open-buyer-portal]");
     const seller = event.target.closest("[data-start-seller-upgrade], [data-open-seller-portal]");
-    if (!buyer && !seller) return;
+    const master = event.target.closest("[data-open-master-portal]");
+    if (!buyer && !seller && !master) return;
     event.preventDefault();
     event.stopPropagation();
     if (typeof event.stopImmediatePropagation === "function") event.stopImmediatePropagation();
     if (!token() || !rewardsApi) {
       if (seller) routeToSellerSetup();
+      else if (master) window.location.href = masterSetupUrl();
       else window.location.href = buyerProfileUrl;
+      return;
+    }
+    if (master) {
+      window.location.href = masterSetupUrl();
       return;
     }
     if (seller) {
@@ -170,6 +198,7 @@
     }
   });
 
+  document.addEventListener("crackpacks:account-state-change", () => { loadNavAccountState(); });
   loadNavAccountState();
 
   const mountSocialFooter = () => {

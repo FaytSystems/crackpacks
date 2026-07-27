@@ -139,6 +139,46 @@
   border-color: rgba(255,255,255,0.32);
 }
 
+.seller-portal-subnav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: -12px auto 26px;
+  padding: 10px;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 18px;
+  background: radial-gradient(circle at 18% 0, rgba(255,78,219,0.12), transparent 36%), linear-gradient(115deg, rgba(17,22,58,0.94), rgba(8,10,31,0.96));
+  box-shadow: 0 18px 48px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.08);
+}
+
+.seller-portal-subnav-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 0 15px;
+  border: 1px solid rgba(255,255,255,0.16);
+  border-radius: 999px;
+  color: #fff;
+  background: rgba(255,255,255,0.045);
+  font-size: 0.82rem;
+  font-weight: 950;
+  line-height: 1.1;
+  text-align: center;
+  text-decoration: none;
+}
+
+.seller-portal-subnav-link:hover,
+.seller-portal-subnav-link:focus-visible,
+.seller-portal-subnav-link.is-active {
+  border-color: rgba(255,78,219,0.58);
+  color: #fff;
+  background: linear-gradient(115deg, rgba(255,78,219,0.42), rgba(56,232,255,0.24));
+  outline: none;
+  box-shadow: 0 0 28px rgba(255,78,219,0.16);
+}
+
 .seller-show-tools,
 .seller-release-panel {
   margin-top: 1.5rem;
@@ -895,6 +935,14 @@
 
   .seller-social-actions .btn {
     width: 100%;
+  }
+
+  .seller-portal-subnav {
+    align-items: stretch;
+  }
+
+  .seller-portal-subnav-link {
+    flex: 1 1 140px;
   }
 
   .seller-shipping-layout {

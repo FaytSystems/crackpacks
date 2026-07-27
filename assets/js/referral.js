@@ -470,6 +470,7 @@
       return data;
     } catch {
       localStorage.removeItem("cp_rewards_token"); token = "";
+      document.dispatchEvent(new CustomEvent("crackpacks:account-state-change"));
     }
   }
   const setSellerPortalState = () => {
@@ -994,22 +995,54 @@
     const rolesNode = $("[data-account-role-badges]");
     if (rolesNode) rolesNode.innerHTML = roles.map(role => `<span class="account-role-badge" data-role="${escapeHtml(role)}">${escapeHtml(role === "master" ? "Master Account" : role === "seller" ? "Seller Account" : "Buyer Account")}</span>`).join("");
     $("[data-admin-link]").hidden = !data.isAdmin;
+    document.querySelectorAll("[data-account-seller-tab]").forEach(button => {
+      button.hidden = false;
+      button.textContent = sellerAllowed ? "Seller Account" : "Seller Verification";
+      button.classList.toggle("is-active", sellerAllowed);
+      if (sellerAllowed) {
+        button.removeAttribute("data-start-seller-upgrade");
+        button.dataset.openSellerPortal = "";
+      } else {
+        button.removeAttribute("data-open-seller-portal");
+        button.dataset.startSellerUpgrade = "";
+      }
+    });
+    document.querySelectorAll("[data-seller-account-subnav]").forEach(node => { node.hidden = !sellerAllowed; });
+    document.querySelectorAll("[data-account-master-tab]").forEach(button => {
+      button.hidden = !masterCandidate;
+      button.classList.toggle("is-active", Boolean(data.isMaster || data.isAdmin));
+    });
+    document.querySelectorAll("[data-master-account-subnav]").forEach(node => { node.hidden = !masterCandidate; });
     show("[data-portal-choice-panel]", true);
     const sellerChoice = $("[data-portal-seller-choice]");
     if (sellerChoice) {
       sellerChoice.hidden = false;
-      sellerChoice.textContent = "Seller Verification";
+      sellerChoice.textContent = sellerAllowed ? "Seller Account" : "Seller Verification";
+      if (sellerAllowed) {
+        sellerChoice.removeAttribute("data-start-seller-upgrade");
+        sellerChoice.dataset.openSellerPortal = "";
+      } else {
+        sellerChoice.removeAttribute("data-open-seller-portal");
+        sellerChoice.dataset.startSellerUpgrade = "";
+      }
     }
     const masterChoice = $("[data-portal-master-choice]");
     if (masterChoice) masterChoice.hidden = !masterCandidate;
     const sellerChoiceModal = $("[data-portal-seller-choice-modal]");
     if (sellerChoiceModal) {
       sellerChoiceModal.hidden = false;
+      if (sellerAllowed) {
+        sellerChoiceModal.removeAttribute("data-start-seller-upgrade");
+        sellerChoiceModal.dataset.openSellerPortal = "";
+      } else {
+        sellerChoiceModal.removeAttribute("data-open-seller-portal");
+        sellerChoiceModal.dataset.startSellerUpgrade = "";
+      }
       const sellerTitle = sellerChoiceModal.querySelector("strong");
       const sellerCopy = sellerChoiceModal.querySelector("small");
-      if (sellerTitle) sellerTitle.textContent = "Seller Verification";
+      if (sellerTitle) sellerTitle.textContent = sellerAllowed ? "Seller Account" : "Seller Verification";
       if (sellerCopy) sellerCopy.textContent = sellerAllowed
-        ? "Review Seller ID, passkey, legal profile, Stripe ID verification, and activation before opening Seller Portal."
+        ? "Open Seller Portal pages for Go Live, shows, listings, shipping, and stock tools."
         : "Start the required Seller ID check, passkey, legal profile, Stripe ID verification, and activation.";
     }
     const masterChoiceModal = $("[data-portal-master-choice-modal]");
@@ -1378,10 +1411,29 @@
     } catch (error) { showStatus(error.message || "Device verification was cancelled.", "error"); }
   });
   document.addEventListener("click", event => {
-    const button = event.target.closest("[data-start-seller-upgrade]");
+    const sellerButton = event.target.closest("[data-start-seller-upgrade]");
+    const sellerPortalButton = event.target.closest("[data-open-seller-portal]");
+    const buyerButton = event.target.closest("[data-open-buyer-portal]");
+    const masterButton = event.target.closest("[data-open-master-portal]");
+    const button = sellerButton || sellerPortalButton || buyerButton || masterButton;
     if (!button || !root.contains(button)) return;
     event.preventDefault();
-    beginSellerUpgradeFlow();
+    if (sellerPortalButton) {
+      enterSellerPortal().catch(error => showStatus(error.message || "Seller Portal could not open yet.", "error"));
+      return;
+    }
+    if (sellerButton) {
+      beginSellerUpgradeFlow();
+      return;
+    }
+    if (masterButton) {
+      window.location.href = "admin.html";
+      return;
+    }
+    localStorage.setItem("cp_portal_mode", "buyer");
+    sessionStorage.setItem("cp_portal_mode", "buyer");
+    showStatus("Buyer Account selected. Use the dashboard links below for rewards, invites, orders, and checkout profile.", "success");
+    $("[data-dashboard]")?.scrollIntoView({ behavior: "smooth", block: "start" });
   });
   $("[data-check-buyer-username]")?.addEventListener("click", async () => {
     const input = $("[data-buyer-username]");
@@ -1700,6 +1752,7 @@
     try {
       const data = await request("/auth/verify-link", { method: "POST", body: JSON.stringify({ token: verificationToken }) });
       token = data.token; localStorage.setItem("cp_rewards_token", token);
+      document.dispatchEvent(new CustomEvent("crackpacks:account-state-change"));
       if (offerToken) localStorage.setItem("cp_campaign_offer_token", offerToken);
       history.replaceState({}, document.title, location.pathname);
       const accountReady = true;

@@ -73,6 +73,17 @@
     if (section === "sellers") refreshAdminReorders().catch(error => setAdminReordersStatus(error.message, "error"));
     if (section === "streaming") refreshStreamConfig().catch(error => setStreamConfigStatus(error.message, "error"));
   }
+  function requestedMasterSection() {
+    const key = decodeURIComponent(String(location.hash || "").replace(/^#/, "")).trim();
+    if (!key) return "";
+    return [...document.querySelectorAll("[data-master-section-button]")].some(button => button.dataset.masterSectionButton === key) ? key : "";
+  }
+  function openRequestedMasterSection() {
+    const section = requestedMasterSection();
+    if (!section) return false;
+    openMasterSection(section);
+    return true;
+  }
 
   const request = async (path, options = {}) => {
     const response = await fetch(`${api}${path}`, {
@@ -1713,6 +1724,7 @@
       await refreshOwnerReferral().catch(() => {});
       await refreshCampaigns().catch(error => showStatus(error.message, "error"));
     }
+    openRequestedMasterSection();
   }
 
   $("[data-admin-login-form]").addEventListener("submit", async event => {
@@ -1722,7 +1734,7 @@
     catch (error) { showStatus(error.message, "error"); }
   });
   $("[data-admin-passkey]").addEventListener("click", async () => {
-    try { await stepUp(); show("[data-admin-step-up]", false); show("[data-admin-dashboard]", true); await refreshDashboard(); await refreshOwnerReferral(); await refreshCampaigns(); showStatus("Owner passkey verified.", "success"); }
+    try { await stepUp(); show("[data-admin-step-up]", false); show("[data-admin-dashboard]", true); await refreshDashboard(); await refreshOwnerReferral(); await refreshCampaigns(); openRequestedMasterSection(); showStatus("Owner passkey verified.", "success"); }
     catch (error) { showStatus(error.message || "Owner passkey verification failed.", "error"); }
   });
   document.querySelectorAll("[data-admin-logout]").forEach(button => button.addEventListener("click", async () => {
@@ -1731,7 +1743,15 @@
     sessionStorage.removeItem("cp_admin_token"); localStorage.removeItem("cp_rewards_token"); location.href = "admin.html";
   }));
   document.querySelectorAll("[data-admin-email-close]").forEach(button => button.addEventListener("click", () => { $("[data-admin-email-modal]").hidden = true; }));
-  document.querySelectorAll("[data-master-section-button]").forEach(button => button.addEventListener("click", () => openMasterSection(button.dataset.masterSectionButton)));
+  document.querySelectorAll("[data-master-section-button]").forEach(button => button.addEventListener("click", () => {
+    const section = button.dataset.masterSectionButton;
+    if (section) history.replaceState({}, document.title, `${location.pathname}${location.search}#${section}`);
+    openMasterSection(section);
+  }));
+  window.addEventListener("hashchange", () => {
+    if ($("[data-admin-dashboard]")?.hidden) return;
+    openRequestedMasterSection();
+  });
   $("[data-stream-config-refresh]")?.addEventListener("click", () => refreshStreamConfig().catch(error => setStreamConfigStatus(error.message, "error")));
   $("[data-stream-config-form]")?.addEventListener("submit", saveStreamConfig);
   $("[data-stream-cycle-run]")?.addEventListener("click", async () => {
