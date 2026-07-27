@@ -618,7 +618,10 @@ async function ebayApplicationToken(env) {
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || !payload.access_token) {
       if (response.status === 400 || response.status === 401) {
-        throw new Error("eBay OAuth rejected EBAY_CLIENT_ID or EBAY_CLIENT_SECRET.");
+        throw new Error(
+          "eBay Production OAuth rejected EBAY_CLIENT_ID or EBAY_CLIENT_SECRET. " +
+          "Store the Production App ID and Production Cert ID, not Sandbox credentials or the Dev ID."
+        );
       }
       if (response.status === 429) {
         throw new Error("eBay OAuth rate limit reached. Please try again shortly.");

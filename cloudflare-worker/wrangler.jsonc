@@ -4,6 +4,12 @@
   "main": "src/index.js",
   "compatibility_date": "2026-07-15",
   "workers_dev": true,
+  "routes": [
+    {
+      "pattern": "api.crackpacks.com",
+      "custom_domain": true
+    }
+  ],
   "vars": {
     "ALLOWED_ORIGINS": "https://crackpacks.com,https://www.crackpacks.com,https://faytsystems.github.io,http://localhost:8080,http://127.0.0.1:8080",
     "EBAY_ENVIRONMENT": "production",
