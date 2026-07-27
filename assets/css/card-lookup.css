@@ -313,6 +313,26 @@
   letter-spacing: -.04em;
 }
 
+.lookup-ebay-card .lookup-card-body h2 {
+  display: -webkit-box;
+  min-height: 4.1em;
+  overflow: hidden;
+  font-size: 1.12rem;
+  line-height: 1.22;
+  letter-spacing: 0;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.lookup-ebay-card .lookup-card-media {
+  background: #0d1228;
+}
+
+.lookup-ebay-card .lookup-card-media img {
+  width: 100%;
+  object-fit: contain;
+}
+
 .lookup-meta {
   display: flex;
   flex-wrap: wrap;

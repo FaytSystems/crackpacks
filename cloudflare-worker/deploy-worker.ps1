@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-    [switch]$SetSecret
+    [switch]$SetSecret,
+    [switch]$SetEbaySecrets
 )
 
 $ErrorActionPreference = "Stop"
@@ -37,6 +38,17 @@ if ($SetSecret) {
     if ($LASTEXITCODE -ne 0) { throw "Secret creation failed." }
 }
 
+if ($SetEbaySecrets) {
+    Write-Host "Enter the eBay Production App ID / Client ID when prompted." -ForegroundColor Yellow
+    npx wrangler secret put EBAY_CLIENT_ID
+    if ($LASTEXITCODE -ne 0) { throw "eBay Client ID secret creation failed." }
+
+    Write-Host "Enter the eBay Production Cert ID / Client Secret when prompted." -ForegroundColor Yellow
+    npx wrangler secret put EBAY_CLIENT_SECRET
+    if ($LASTEXITCODE -ne 0) { throw "eBay Client Secret creation failed." }
+}
+
 Write-Host "Worker deployment complete." -ForegroundColor Green
 Write-Host "Add api.crackpacks.com as a Custom Domain in the Worker dashboard, then test:" -ForegroundColor Green
 Write-Host "https://api.crackpacks.com/health"
+Write-Host "https://api.crackpacks.com/ebay?term=charizard&page=1&pageSize=6"

@@ -3,6 +3,7 @@
 window.CRACKPACKS_CONFIG = {
   liveHubUrl: "streams.html",
   cardApiUrl: "https://api.crackpacks.com/cards",
+  ebayApiUrl: "https://api.crackpacks.com/ebay",
   rewardsApiUrl: "https://rewards-api.crackpacks.com",
   turnstileSiteKey: "0x4AAAAAAD3RxD5Wyh6r4B_p",
   youtubeLiveStatusUrl: "https://live-api.crackpacks.com/status",

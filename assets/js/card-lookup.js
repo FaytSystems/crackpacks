@@ -3,6 +3,7 @@
 
   const config = window.CRACKPACKS_CONFIG || {};
   const apiUrl = config.cardApiUrl || "https://api.crackpacks.com/cards";
+  const ebayApiUrl = config.ebayApiUrl || "https://api.crackpacks.com/ebay";
 
   const form = document.querySelector("[data-price-check-form]");
   if (!form) return;
@@ -243,15 +244,19 @@
     '"': "&quot;"
   }[character]));
 
-  const money = value => {
+  const money = (value, currency = "USD") => {
     const number = Number(value);
     if (!Number.isFinite(number)) return null;
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    }).format(number);
+    try {
+      return new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency: String(currency || "USD").toUpperCase(),
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      }).format(number);
+    } catch {
+      return `${number.toFixed(2)} ${String(currency || "USD").toUpperCase()}`;
+    }
   };
 
   const compactNumber = value => new Intl.NumberFormat("en-US").format(Number(value) || 0);
@@ -314,7 +319,7 @@
       return `Reason: Pokemon result cards from the current API are English catalog records; selected ${currentLanguageLabel()} searches open live source pages instead.`;
     }
     if (!series.apiBacked) {
-      return `Reason: ${series.label} does not have a direct card database connected here yet, so Crack Packs opens live sold/listing source pages for current prices.`;
+      return `Reason: ${series.label} does not have a specialized catalog connected here yet, so Crack Packs checks active eBay listings and manual sold/listing sources.`;
     }
     return "";
   }
@@ -525,6 +530,67 @@
     `;
   }
 
+  function renderEbayListing(listing) {
+    const image = listing?.image || "";
+    const url = listing?.url || "";
+    const price = money(listing?.price?.value, listing?.price?.currency);
+    const shipping = money(listing?.shipping?.value, listing?.shipping?.currency);
+    const location = [
+      listing?.location?.city,
+      listing?.location?.stateOrProvince,
+      listing?.location?.country
+    ].filter(Boolean).join(", ");
+    const buyingOptions = Array.isArray(listing?.buyingOptions)
+      ? listing.buyingOptions.map(value => String(value).replace(/_/g, " ").toLowerCase()).join(" / ")
+      : "";
+
+    return `
+      <article class="lookup-card lookup-ebay-card holo-panel">
+        <div class="lookup-card-media">
+          ${image
+            ? `<img src="${escapeHtml(image)}" alt="${escapeHtml(listing.title || "eBay collectible listing")}" loading="lazy" decoding="async">`
+            : `<div class="lookup-image-missing" aria-label="Listing image unavailable">Listing image unavailable</div>`
+          }
+          <span class="lookup-rarity">eBay active listing</span>
+          <span class="holo-sheen" aria-hidden="true"></span>
+        </div>
+        <div class="lookup-card-body">
+          <p class="card-kicker">Current eBay listing</p>
+          <h2>${escapeHtml(listing?.title || "Untitled eBay listing")}</h2>
+          <div class="lookup-meta">
+            <span>${escapeHtml(listing?.condition || "Condition not listed")}</span>
+            ${buyingOptions ? `<strong>${escapeHtml(buyingOptions)}</strong>` : ""}
+            ${listing?.seller ? `<span>Seller: ${escapeHtml(listing.seller)}</span>` : ""}
+            ${location ? `<span>${escapeHtml(location)}</span>` : ""}
+          </div>
+
+          <div class="lookup-pricing" aria-label="eBay active-listing price">
+            <div class="lookup-pricing-heading">
+              <strong>Current asking price</strong>
+              <span>Active listing</span>
+            </div>
+            ${priceRowMarkup({
+              label: "eBay listing price",
+              value: price || "Price unavailable",
+              detail: [
+                shipping ? `${shipping} shipping` : "Shipping not returned",
+                "Active listing, not a completed sale"
+              ].join(" - "),
+              url
+            })}
+          </div>
+
+          <div class="lookup-card-actions">
+            ${url
+              ? `<a class="btn btn-small btn-primary" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">View listing on eBay</a>`
+              : `<span class="lookup-no-link">eBay did not return a usable listing link.</span>`
+            }
+          </div>
+        </div>
+      </article>
+    `;
+  }
+
   function renderMarketSourceCard(source, index) {
     return `
       <article class="lookup-card lookup-marketplace-card holo-panel">
@@ -645,6 +711,131 @@
     return parts.join(" ");
   }
 
+  async function fetchEbayListings(series, { page = 1, pageSize: requestedPageSize = 6, signal } = {}) {
+    const query = new URLSearchParams({
+      term: marketQuery(series, state.term),
+      category: state.mainCategory,
+      series: state.series,
+      language: state.language,
+      page: String(page),
+      pageSize: String(requestedPageSize)
+    });
+
+    try {
+      const response = await fetch(`${ebayApiUrl}?${query.toString()}`, {
+        method: "GET",
+        headers: { Accept: "application/json" },
+        signal
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        return {
+          data: [],
+          count: 0,
+          totalCount: 0,
+          error: payload.error || `eBay search returned HTTP ${response.status}.`
+        };
+      }
+      return {
+        ...payload,
+        data: Array.isArray(payload.data) ? payload.data : [],
+        error: ""
+      };
+    } catch (error) {
+      if (error?.name === "AbortError") throw error;
+      return {
+        data: [],
+        count: 0,
+        totalCount: 0,
+        error: error?.message || "The eBay listing service could not be reached."
+      };
+    }
+  }
+
+  async function searchMarketplaceOnly(selectedSeries, { scroll = false, sourceReason = "" } = {}) {
+    state.loading = true;
+    if (state.controller) state.controller.abort();
+    state.controller = new AbortController();
+
+    clearMessages();
+    setHidden(summary, true);
+    results.setAttribute("aria-busy", "true");
+    results.innerHTML = skeletonCards(Math.min(state.pageSize, 8));
+    submit.disabled = true;
+    setStatus(`Searching active eBay listings for "${state.term}" in ${currentLanguageLabel()}...`);
+    updateUrl();
+
+    try {
+      const ebayPayload = await fetchEbayListings(selectedSeries, {
+        page: state.page,
+        pageSize: state.pageSize,
+        signal: state.controller.signal
+      });
+      const listings = ebayPayload.data;
+      const sourceCards = marketSourceCards(selectedSeries, state.term);
+
+      state.count = listings.length;
+      state.totalCount = listings.length
+        ? Number(ebayPayload.totalCount) || listings.length
+        : 0;
+      results.innerHTML = [
+        ...listings.map(renderEbayListing),
+        ...sourceCards.map(renderMarketSourceCard)
+      ].join("");
+
+      if (ebayPayload.error) {
+        setHidden(errorBox, false);
+        if (errorText) {
+          errorText.textContent = `${ebayPayload.error} Manual market-source links are shown below.`;
+        }
+        setStatus(`Reason: ${ebayPayload.error} ${sourceReason}`.trim());
+      } else if (!listings.length) {
+        const reason = ebayPayload?.meta?.reason ||
+          "eBay returned no active listings. Try fewer keywords, another spelling, or a broader category.";
+        setHidden(empty, false);
+        if (emptyText) emptyText.textContent = `Reason: ${reason}`;
+        setStatus(`Reason: ${reason} Manual market-source links are shown below.`);
+      } else {
+        const first = ((state.page - 1) * state.pageSize) + 1;
+        const last = first + listings.length - 1;
+        setStatus(
+          `Showing active eBay listings ${compactNumber(first)}-${compactNumber(last)} of ${compactNumber(state.totalCount)}. ` +
+          "These are current asking prices, not completed-sale prices."
+        );
+      }
+
+      if (summary) {
+        summary.textContent = listings.length
+          ? `${compactNumber(state.totalCount)} active eBay listing${state.totalCount === 1 ? "" : "s"} for "${state.term}"`
+          : `${sourceCards.length} manual price source${sourceCards.length === 1 ? "" : "s"} for "${state.term}"`;
+        summary.hidden = false;
+      }
+
+      renderCloseMatches(
+        suggestionsForCurrentSeries(state.term)
+          .filter(match => normalize(match) !== normalize(state.term))
+          .slice(0, 6)
+      );
+      updatePager();
+      if (scroll) {
+        document.querySelector("#lookup-results")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    } catch (error) {
+      if (error?.name === "AbortError") return;
+      const sourceCards = marketSourceCards(selectedSeries, state.term);
+      state.count = 0;
+      state.totalCount = 0;
+      results.innerHTML = sourceCards.map(renderMarketSourceCard).join("");
+      showError(`${error?.message || "The eBay listing service could not be reached."} Manual market-source links are shown instead.`);
+      setHidden(pager, true);
+    } finally {
+      state.loading = false;
+      results.removeAttribute("aria-busy");
+      submit.disabled = false;
+      updatePager();
+    }
+  }
+
   async function searchCards({ scroll = false } = {}) {
     const term = input.value.trim();
     if (term.length < 2) {
@@ -669,26 +860,7 @@
     const sourceReason = sourceModeReason(selectedSeries);
 
     if (!usesApiForCurrentSearch(selectedSeries)) {
-      if (state.controller) state.controller.abort();
-      state.page = 1;
-      state.loading = false;
-      state.count = 0;
-      submit.disabled = false;
-      clearMessages();
-      const cards = marketSourceCards(selectedSeries, state.term);
-      state.totalCount = cards.length;
-      results.removeAttribute("aria-busy");
-      results.innerHTML = cards.map(renderMarketSourceCard).join("");
-      setHidden(pager, true);
-      if (summary) {
-        summary.textContent = `${compactNumber(cards.length)} live source page${cards.length === 1 ? "" : "s"} for "${state.term}"`;
-        summary.hidden = false;
-      }
-      renderCloseMatches(suggestionsForCurrentSeries(state.term).filter(match => normalize(match) !== normalize(state.term)).slice(0, 6));
-      setStatus(`${sourceReason} Open these source pages to see current sold/listing prices.`);
-      updateUrl();
-      if (scroll) document.querySelector("#lookup-results")?.scrollIntoView({ behavior: "smooth", block: "start" });
-      return;
+      return searchMarketplaceOnly(selectedSeries, { scroll, sourceReason });
     }
     state.loading = true;
 
@@ -713,6 +885,11 @@
       pageSize: String(state.pageSize),
       orderBy: state.orderBy
     });
+    const ebayPromise = fetchEbayListings(selectedSeries, {
+      page: 1,
+      pageSize: 6,
+      signal: state.controller.signal
+    });
 
     try {
       const response = await fetch(`${apiUrl}?${query.toString()}`, {
@@ -736,29 +913,44 @@
       state.count = Number(payload.count) || cards.length;
       state.totalCount = Number(payload.totalCount) || cards.length;
 
+      const ebayPayload = await ebayPromise;
+      const ebayListings = ebayPayload.data;
       const sourceCards = marketSourceCards(selectedSeries, state.term);
       results.innerHTML = [
         ...cards.map(renderCard),
-        ...(cards.length ? sourceCards.slice(0, 3).map((source, index) => renderMarketSourceCard(source, index)) : [])
+        ...ebayListings.map(renderEbayListing),
+        ...sourceCards.slice(0, cards.length ? 2 : 3).map((source, index) => renderMarketSourceCard(source, index))
       ].join("");
 
       if (!cards.length) {
         const reason = noResultReason(selectedSeries, payload);
         setHidden(empty, false);
-        if (emptyText) emptyText.textContent = reason;
-        setStatus(reason);
+        if (emptyText) {
+          emptyText.textContent = ebayListings.length
+            ? `${reason} ${ebayListings.length} active eBay listing${ebayListings.length === 1 ? " was" : "s were"} found.`
+            : reason;
+        }
+        setStatus(
+          ebayListings.length
+            ? `${reason} Showing ${ebayListings.length} active eBay listing${ebayListings.length === 1 ? "" : "s"}.`
+            : `${reason}${ebayPayload.error ? ` eBay reason: ${ebayPayload.error}` : ""}`
+        );
         renderCloseMatches(suggestionsForCurrentSeries(state.term).filter(match => normalize(match) !== normalize(state.term)).slice(0, 6));
-        results.innerHTML = sourceCards.map(renderMarketSourceCard).join("");
-        state.totalCount = sourceCards.length;
+        state.totalCount = 0;
         setHidden(pager, true);
         if (summary) {
-          summary.textContent = `No exact ${selectedSeries.label} database card; ${sourceCards.length} live price source${sourceCards.length === 1 ? "" : "s"} shown`;
+          summary.textContent = `No exact ${selectedSeries.label} database card; ${ebayListings.length} active eBay listing${ebayListings.length === 1 ? "" : "s"} shown`;
           summary.hidden = false;
         }
       } else {
         const first = ((state.page - 1) * state.pageSize) + 1;
         const last = first + cards.length - 1;
-        setStatus(`Showing ${compactNumber(first)}-${compactNumber(last)} of ${compactNumber(state.totalCount)} database matches, plus live source links for current price checks.`);
+        setStatus(
+          `Showing ${compactNumber(first)}-${compactNumber(last)} of ${compactNumber(state.totalCount)} database matches` +
+          (ebayListings.length
+            ? `, plus ${ebayListings.length} active eBay listing${ebayListings.length === 1 ? "" : "s"}.`
+            : `. eBay live-listing reason: ${ebayPayload.error || "No active matches were returned."}`)
+        );
         renderCloseMatches([]);
         if (summary) {
           summary.textContent = `${compactNumber(state.totalCount)} estimated match${state.totalCount === 1 ? "" : "es"} for "${state.term}"`;
@@ -772,12 +964,25 @@
         document.querySelector("#lookup-results")?.scrollIntoView({ behavior: "smooth", block: "start" });
       }
     } catch (error) {
+      const ebayPayload = await ebayPromise.catch(ebayError => ({
+        data: [],
+        error: ebayError?.message || "The eBay listing request stopped."
+      }));
       if (error?.name === "AbortError") return;
+      const ebayListings = Array.isArray(ebayPayload.data) ? ebayPayload.data : [];
       const sourceCards = marketSourceCards(selectedSeries, state.term);
-      results.innerHTML = sourceCards.map(renderMarketSourceCard).join("");
-      state.totalCount = sourceCards.length;
+      results.innerHTML = [
+        ...ebayListings.map(renderEbayListing),
+        ...sourceCards.map(renderMarketSourceCard)
+      ].join("");
+      state.totalCount = 0;
       updatePager();
-      showError(`${error?.message || "The card search service could not be reached."} Reason: the live database call failed, so source-linked price pages are shown instead.`);
+      showError(
+        `${error?.message || "The card search service could not be reached."} ` +
+        (ebayListings.length
+          ? `The database call failed, but ${ebayListings.length} active eBay listing${ebayListings.length === 1 ? " is" : "s are"} shown.`
+          : `The database call failed. eBay reason: ${ebayPayload.error || "No active listings were returned."}`)
+      );
       renderCloseMatches(suggestionsForCurrentSeries(state.term).filter(match => normalize(match) !== normalize(state.term)).slice(0, 6));
     } finally {
       state.loading = false;

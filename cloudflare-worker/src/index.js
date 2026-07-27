@@ -3,10 +3,16 @@
 const POKEMON_API_BASE = "https://api.pokemontcg.io/v2";
 const SCRYFALL_API_BASE = "https://api.scryfall.com";
 const APITCG_API_BASE = "https://api.apitcg.com/api";
+const EBAY_PRODUCTION_API_BASE = "https://api.ebay.com";
+const EBAY_SANDBOX_API_BASE = "https://api.sandbox.ebay.com";
+const EBAY_OAUTH_SCOPE = "https://api.ebay.com/oauth/api_scope";
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 48;
 const CACHE_SECONDS = 300;
-const WORKER_VERSION = "2.2.0";
+const EBAY_CACHE_SECONDS = 180;
+const WORKER_VERSION = "2.3.0";
+let ebayTokenCache = null;
+let ebayTokenRequest = null;
 const API_TCG_SERIES = new Map([
   ["onepiece", "one-piece"],
   ["yugioh", "yugioh"],
@@ -151,6 +157,30 @@ function validSeries(value) {
 function validLanguage(value) {
   const language = String(value || "any").trim().toLowerCase();
   return SUPPORTED_LOOKUP_LANGUAGES.has(language) ? language : "any";
+}
+
+function ebayEnvironment(env) {
+  return String(env.EBAY_ENVIRONMENT || "production").trim().toLowerCase() === "sandbox"
+    ? "sandbox"
+    : "production";
+}
+
+function ebayApiBase(env) {
+  return ebayEnvironment(env) === "sandbox"
+    ? EBAY_SANDBOX_API_BASE
+    : EBAY_PRODUCTION_API_BASE;
+}
+
+function ebayMarketplaceId(env) {
+  const marketplaceId = String(env.EBAY_MARKETPLACE_ID || "EBAY_US").trim().toUpperCase();
+  return /^EBAY_[A-Z]{2,3}$/.test(marketplaceId) ? marketplaceId : "EBAY_US";
+}
+
+function ebayConfigured(env) {
+  return Boolean(
+    String(env.EBAY_CLIENT_ID || "").trim() &&
+    String(env.EBAY_CLIENT_SECRET || "").trim()
+  );
 }
 
 function magicLanguageCode(language) {
@@ -545,6 +575,226 @@ async function handleApiTcgCards(incomingUrl, env, cors, series, language = "any
   );
 }
 
+async function ebayApplicationToken(env) {
+  const clientId = String(env.EBAY_CLIENT_ID || "").trim();
+  const clientSecret = String(env.EBAY_CLIENT_SECRET || "").trim();
+  const environment = ebayEnvironment(env);
+  const now = Date.now();
+
+  if (!clientId || !clientSecret) {
+    throw new Error("eBay search is not configured. Add EBAY_CLIENT_ID and EBAY_CLIENT_SECRET as Worker secrets.");
+  }
+
+  if (
+    ebayTokenCache &&
+    ebayTokenCache.clientId === clientId &&
+    ebayTokenCache.environment === environment &&
+    ebayTokenCache.expiresAt > now + 60_000
+  ) {
+    return ebayTokenCache.accessToken;
+  }
+
+  if (ebayTokenRequest) return ebayTokenRequest;
+
+  ebayTokenRequest = (async () => {
+    let response;
+    try {
+      response = await fetch(`${ebayApiBase(env)}/identity/v1/oauth2/token`, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          Authorization: `Basic ${btoa(`${clientId}:${clientSecret}`)}`,
+          "Content-Type": "application/x-www-form-urlencoded"
+        },
+        body: new URLSearchParams({
+          grant_type: "client_credentials",
+          scope: EBAY_OAUTH_SCOPE
+        }).toString()
+      });
+    } catch {
+      throw new Error("eBay OAuth could not be reached. Please try again shortly.");
+    }
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.access_token) {
+      if (response.status === 400 || response.status === 401) {
+        throw new Error("eBay OAuth rejected EBAY_CLIENT_ID or EBAY_CLIENT_SECRET.");
+      }
+      if (response.status === 429) {
+        throw new Error("eBay OAuth rate limit reached. Please try again shortly.");
+      }
+      throw new Error("eBay OAuth could not create an application access token.");
+    }
+
+    const expiresIn = boundedInteger(payload.expires_in, 7200, 120, 86400);
+    ebayTokenCache = {
+      accessToken: payload.access_token,
+      clientId,
+      environment,
+      expiresAt: Date.now() + (expiresIn * 1000)
+    };
+    return ebayTokenCache.accessToken;
+  })();
+
+  try {
+    return await ebayTokenRequest;
+  } finally {
+    ebayTokenRequest = null;
+  }
+}
+
+function ebayErrorMessage(payload, status) {
+  const message = stringValue(
+    payload?.errors?.[0]?.longMessage,
+    payload?.errors?.[0]?.message,
+    payload?.error_description,
+    payload?.message
+  );
+  if (status === 401) return "eBay rejected the application token. Check the Production keyset.";
+  if (status === 403) return "eBay Browse API access is not enabled for this Production keyset.";
+  if (status === 429) return "eBay search has reached its current request limit. Please try again later.";
+  return message ? `eBay search rejected the request: ${message}` : "eBay search rejected the request.";
+}
+
+function ebayListing(item) {
+  const shippingOption = Array.isArray(item.shippingOptions)
+    ? item.shippingOptions.find(option => numericPrice(option?.shippingCost?.value) !== null)
+    : null;
+  const location = item.itemLocation && typeof item.itemLocation === "object"
+    ? item.itemLocation
+    : {};
+
+  return {
+    source: "ebay",
+    id: stringValue(item.itemId, item.legacyItemId, crypto.randomUUID()),
+    title: stringValue(item.title, item.shortDescription, "Untitled eBay listing"),
+    image: firstUrl(
+      item.image?.imageUrl,
+      item.thumbnailImages?.map(image => image?.imageUrl),
+      item.additionalImages?.map(image => image?.imageUrl)
+    ),
+    url: firstUrl(item.itemAffiliateWebUrl, item.itemWebUrl),
+    condition: stringValue(item.condition, item.conditionId, "Condition not listed"),
+    seller: stringValue(item.seller?.username),
+    price: {
+      value: numericPrice(item.price?.value),
+      currency: stringValue(item.price?.currency, "USD")
+    },
+    shipping: shippingOption
+      ? {
+          value: numericPrice(shippingOption.shippingCost?.value),
+          currency: stringValue(shippingOption.shippingCost?.currency, item.price?.currency, "USD"),
+          type: stringValue(shippingOption.shippingCostType)
+        }
+      : null,
+    buyingOptions: Array.isArray(item.buyingOptions) ? item.buyingOptions.filter(Boolean) : [],
+    location: {
+      city: stringValue(location.city),
+      stateOrProvince: stringValue(location.stateOrProvince),
+      country: stringValue(location.country)
+    },
+    itemCreationDate: stringValue(item.itemCreationDate),
+    itemEndDate: stringValue(item.itemEndDate)
+  };
+}
+
+async function handleEbayListings(incomingUrl, env, cors) {
+  if (!ebayConfigured(env)) {
+    return jsonResponse(
+      { error: "eBay search is not configured. Add EBAY_CLIENT_ID and EBAY_CLIENT_SECRET as Worker secrets." },
+      503,
+      cors
+    );
+  }
+
+  const term = sanitizeSearchTerm(incomingUrl.searchParams.get("term"));
+  const page = boundedInteger(incomingUrl.searchParams.get("page"), 1, 1, 200);
+  const pageSize = boundedInteger(incomingUrl.searchParams.get("pageSize"), 12, 1, MAX_PAGE_SIZE);
+  const offset = (page - 1) * pageSize;
+
+  if (term.length < 2) {
+    return jsonResponse(
+      { error: "Enter at least two characters to search eBay listings." },
+      400,
+      cors
+    );
+  }
+
+  let accessToken;
+  try {
+    accessToken = await ebayApplicationToken(env);
+  } catch (error) {
+    return jsonResponse(
+      { error: error?.message || "eBay OAuth could not start." },
+      503,
+      cors
+    );
+  }
+
+  const upstreamUrl = new URL(`${ebayApiBase(env)}/buy/browse/v1/item_summary/search`);
+  upstreamUrl.searchParams.set("q", term);
+  upstreamUrl.searchParams.set("limit", String(pageSize));
+  upstreamUrl.searchParams.set("offset", String(offset));
+
+  let upstreamResponse;
+  try {
+    upstreamResponse = await fetch(upstreamUrl.toString(), {
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${accessToken}`,
+        "X-EBAY-C-MARKETPLACE-ID": ebayMarketplaceId(env)
+      },
+      cf: {
+        cacheEverything: true,
+        cacheTtl: EBAY_CACHE_SECONDS
+      }
+    });
+  } catch {
+    return jsonResponse(
+      { error: "eBay listings could not be reached. Please try again shortly." },
+      502,
+      cors
+    );
+  }
+
+  const payload = await upstreamResponse.json().catch(() => ({}));
+  if (!upstreamResponse.ok) {
+    return jsonResponse(
+      { error: ebayErrorMessage(payload, upstreamResponse.status) },
+      upstreamResponse.status >= 500 ? 502 : upstreamResponse.status,
+      cors
+    );
+  }
+
+  const itemSummaries = Array.isArray(payload.itemSummaries) ? payload.itemSummaries : [];
+  const data = itemSummaries.map(ebayListing).filter(listing => listing.url);
+  return jsonResponse(
+    {
+      data,
+      page,
+      pageSize,
+      count: data.length,
+      totalCount: Number(payload.total) || data.length,
+      meta: {
+        workerVersion: WORKER_VERSION,
+        source: "ebay-browse",
+        priceType: "active-listing",
+        submittedTerm: term,
+        environment: ebayEnvironment(env),
+        marketplaceId: ebayMarketplaceId(env),
+        reason: data.length
+          ? ""
+          : "eBay returned no active listings for this search. Try fewer keywords or a broader category."
+      }
+    },
+    200,
+    {
+      ...cors,
+      "Cache-Control": `public, max-age=${EBAY_CACHE_SECONDS}`
+    }
+  );
+}
+
 function magicQuery(term, field, language = "any") {
   const quoted = `"${term.replace(/"/g, "")}"`;
   let query;
@@ -653,6 +903,9 @@ export default {
           version: WORKER_VERSION,
           pokemonApiKeyConfigured: Boolean(env.POKEMON_TCG_API_KEY),
           apiTcgConfigured: Boolean(env.APITCG_API_KEY),
+          ebayConfigured: ebayConfigured(env),
+          ebayEnvironment: ebayEnvironment(env),
+          ebayMarketplaceId: ebayMarketplaceId(env),
           magicConfigured: true,
           supportedFields: ["all", "name", "set", "number", "rarity", "type"],
           supportedApiTcgSeries: Object.fromEntries(API_TCG_SERIES),
@@ -669,6 +922,10 @@ export default {
 
     if (url.pathname === "/cards") {
       return handleCards(request, env, cors);
+    }
+
+    if (url.pathname === "/ebay") {
+      return handleEbayListings(url, env, cors);
     }
 
     return jsonResponse({ error: "Not found." }, 404, cors);
