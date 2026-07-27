@@ -9,7 +9,7 @@
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/css/styles.css?v=1.9.8">
   <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.6.4">
-  <link rel="stylesheet" href="assets/css/streams-hub.css?v=1.5.0">
+  <link rel="stylesheet" href="assets/css/streams-hub.css?v=1.6.0">
 </head>
 <body data-page="streams">
   <a class="skip-link" href="#main">Skip to content</a>
@@ -44,7 +44,7 @@
     <nav class="container seller-portal-subnav" data-seller-only hidden aria-label="Seller Portal pages">
       <a class="seller-portal-subnav-link" href="streams.html">Live Feed</a>
       <a class="seller-portal-subnav-link is-active" href="#go-live">Go Live</a>
-      <a class="seller-portal-subnav-link" href="#create-show">Create Show</a>
+      <a class="seller-portal-subnav-link" href="#seller-shows">Shows</a>
       <a class="seller-portal-subnav-link" href="#seller-my-listings">Listings</a>
       <a class="seller-portal-subnav-link" href="#seller-shipping">Shipping</a>
       <a class="seller-portal-subnav-link" href="shop.html?stock=1">Stock Store</a>
@@ -83,7 +83,7 @@
       </div>
       <div class="hub-tabs seller-quick-tabs" data-seller-only hidden>
         <a class="hub-tab is-active" href="#go-live">Go Live</a>
-        <a class="hub-tab" href="#create-show">Create Show</a>
+        <a class="hub-tab" href="#seller-shows">Shows</a>
         <a class="hub-tab" href="#seller-my-listings">My Listings</a>
         <a class="hub-tab seller-print-label-tab" href="#seller-shipping">Shipping</a>
       </div>
@@ -168,7 +168,8 @@
           <p class="fine-print">After your first successful key creation, this guide stays tucked away unless you open it with the OBS setup guide button.</p>
           <p class="fine-print">If the RTMPS server and key do not appear, stop before changing OBS and contact Crack Packs support. A site administrator must repair the Cloudflare Stream service or platform token; sellers should never create or submit that token.</p>
         </article>
-        <article class="holo-panel" id="create-show">
+        <article class="holo-panel seller-shows-create" id="create-show">
+          <p class="eyebrow">Shows</p>
           <h3>Create a show</h3>
           <form class="seller-giveaway-form" data-seller-show-form>
             <label>Show title<input name="title" required maxlength="160" placeholder="Friday Night Crack Packs"></label>
@@ -179,9 +180,38 @@
           <div class="campaign-form-status" data-seller-show-status aria-live="polite"></div>
         </article>
       </div>
-      <div class="holo-panel seller-show-manager" id="seller-my-listings">
-        <div class="seller-show-manager-head"><h3>Your shows, auction lots, and store listings</h3><button class="btn btn-outline btn-small" type="button" data-seller-shows-refresh>Refresh</button></div>
+      <div class="holo-panel seller-show-manager" id="seller-shows">
+        <div class="seller-show-manager-head">
+          <div>
+            <p class="eyebrow">Show inventory</p>
+            <h3>Build a show from your personal store</h3>
+          </div>
+          <button class="btn btn-outline btn-small" type="button" data-seller-shows-refresh>Refresh</button>
+        </div>
         <label>Manage show<select data-seller-show-select><option value="">Create a show first</option></select></label>
+        <form class="seller-lot-form seller-show-store-form" data-show-store-form>
+          <div class="seller-show-store-head">
+            <div>
+              <strong>Add personal-store inventory</strong>
+              <p class="fine-print">Choose one active listing from your store and schedule it as an auction lot in the selected show.</p>
+            </div>
+            <span class="seller-show-store-count" data-show-store-count>0 available</span>
+          </div>
+          <div class="field-grid">
+            <label>Personal store inventory
+              <select name="storeListingId" data-show-store-listing required>
+                <option value="">No active store inventory</option>
+              </select>
+            </label>
+            <label>Starting bid ($)<input name="startingBid" type="number" min="0.01" max="100000" step="0.01" value="1.00" required></label>
+            <label>Bid increment ($)<input name="bidIncrement" type="number" min="0.01" max="10000" step="0.01" value="1.00" required></label>
+          </div>
+          <div class="seller-show-store-preview" data-show-store-preview aria-live="polite">Select personal-store inventory to preview it here.</div>
+          <button class="btn btn-primary" type="submit" data-show-store-submit disabled>Add selected inventory to show</button>
+        </form>
+        <div class="campaign-form-status" data-show-store-status aria-live="polite"></div>
+        <span class="section-anchor-alias" id="seller-my-listings" aria-hidden="true"></span>
+        <div class="seller-listing-divider"><span>Manual listing</span></div>
         <form class="seller-lot-form" data-seller-lot-form>
           <div class="field-grid">
             <label>Listing destination<select name="listingDestination" data-listing-destination><option value="show">Add to show</option><option value="store">Add to store</option></select></label>
@@ -390,7 +420,7 @@
 
   <script src="assets/js/config.js?v=4.1.0"></script>
   <script src="assets/js/app.js?v=1.9.7"></script>
-  <script src="assets/js/portal-mode.js?v=1.1.5"></script>
-  <script src="assets/js/streams-hub.js?v=1.5.0"></script>
+  <script src="assets/js/portal-mode.js?v=1.1.6"></script>
+  <script src="assets/js/streams-hub.js?v=1.6.0"></script>
 </body>
 </html>

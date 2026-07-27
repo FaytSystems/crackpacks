@@ -88,6 +88,17 @@
     const showId = $("[data-seller-show-select]")?.value || "";
     return sellerShows.find(show => show.id === showId) || null;
   };
+  const selectedShowStoreListing = () => {
+    const listingId = $("[data-show-store-listing]")?.value || "";
+    return sellerStoreListings.find(item => item.id === listingId) || null;
+  };
+  const syncSellerSectionNav = () => {
+    const requested = location.hash || "#go-live";
+    const activeHash = requested === "#create-show" ? "#seller-shows" : requested;
+    $$(".seller-portal-subnav-link[href^='#'], .seller-quick-tabs a[href^='#']").forEach(link => {
+      link.classList.toggle("is-active", link.getAttribute("href") === activeHash);
+    });
+  };
   const sellerSocialCaption = show => {
     if (!show) throw new Error("Choose a show first.");
     const message = String($("[data-seller-social-message]")?.value || "").trim() || `I'm live on Crack Packs: ${show.title}`;
@@ -383,6 +394,7 @@
     if (active.some(show => show.id === current)) select.value = current;
     else if (active.length) select.value = active[0].id;
     updateSellerSocialComposer();
+    renderShowStoreInventoryOptions();
     loadSellerLots(select.value).catch(error => setStatus("[data-seller-lot-status]", error.message, "error"));
   }
 
@@ -410,10 +422,44 @@
     }).join("") : `<div class="stream-empty">No auction lots are saved for this show.</div>`}`;
   }
 
+  function renderShowStoreInventoryPreview() {
+    const preview = $("[data-show-store-preview]");
+    const submit = $("[data-show-store-submit]");
+    if (!preview || !submit) return;
+    const show = selectedSellerShow();
+    const item = selectedShowStoreListing();
+    submit.disabled = !show || !item;
+    if (!item) {
+      preview.textContent = sellerStoreListings.some(listing => listing.status === "active" && Number(listing.quantity || 0) > 0)
+        ? "Every active store listing is already assigned to a scheduled or live lot."
+        : "No active personal-store inventory is available. Add or activate a listing below first.";
+      return;
+    }
+    const showMessage = show ? `Ready for ${show.title}.` : "Create or select an active show before adding this listing.";
+    preview.innerHTML = `<strong>${escapeHtml(item.title)}</strong><span>${Number(item.quantity || 0)} available · ${dollars(item.priceCents)} store price · ${escapeHtml(item.condition || "Condition pending")}</span><span>${escapeHtml(showMessage)}</span>`;
+  }
+
+  function renderShowStoreInventoryOptions() {
+    const select = $("[data-show-store-listing]");
+    if (!select) return;
+    const prior = select.value;
+    const available = sellerStoreListings.filter(item => (
+      item.status === "active" &&
+      Number(item.quantity || 0) > 0 &&
+      !["scheduled", "live"].includes(String(item.linkedLotStatus || "").toLowerCase())
+    ));
+    select.innerHTML = `<option value="">${available.length ? "Choose store inventory" : "No unassigned store inventory"}</option>${available.map(item => (
+      `<option value="${escapeHtml(item.id)}">${escapeHtml(item.title)} · ${Number(item.quantity || 0)} available · ${dollars(item.priceCents)}</option>`
+    )).join("")}`;
+    if (available.some(item => item.id === prior)) select.value = prior;
+    const count = $("[data-show-store-count]");
+    if (count) count.textContent = `${available.length} available`;
+    renderShowStoreInventoryPreview();
+  }
+
   function renderSellerStoreListings() {
     const list = $("[data-seller-store-list]");
-    if (!list) return;
-    list.innerHTML = sellerStoreListings.length ? sellerStoreListings.map(item => `
+    if (list) list.innerHTML = sellerStoreListings.length ? sellerStoreListings.map(item => `
       <article class="seller-lot-item">
         <div>
           <strong>${escapeHtml(item.title)}</strong>
@@ -425,6 +471,7 @@
         </div>
       </article>
     `).join("") : `<div class="stream-empty">No store listings yet. Use “Add to store” to publish products into the buyer marketplace.</div>`;
+    renderShowStoreInventoryOptions();
   }
 
   async function loadSellerLots(showId) {
@@ -994,11 +1041,13 @@
 
   $("[data-seller-show-select]")?.addEventListener("change", event => {
     updateSellerSocialComposer();
+    renderShowStoreInventoryPreview();
     loadSellerLots(event.currentTarget.value).catch(error => setStatus("[data-seller-lot-status]", error.message, "error"));
   });
   $("[data-seller-shows-refresh]")?.addEventListener("click", () => loadSellerShows().catch(error => setStatus("[data-seller-show-status]", error.message, "error")));
   $("[data-seller-social-refresh]")?.addEventListener("click", () => { updateSellerSocialComposer(); setStatus("[data-seller-social-status]", "Selected show link loaded.", "success"); });
   $("[data-listing-destination]")?.addEventListener("change", syncListingDestinationUi);
+  $("[data-show-store-listing]")?.addEventListener("change", renderShowStoreInventoryPreview);
   $("[data-seller-social-copy]")?.addEventListener("click", async () => {
     try { await copyText(sellerSocialCaption(selectedSellerShow())); setStatus("[data-seller-social-status]", "Show message and link copied.", "success"); }
     catch (error) { setStatus("[data-seller-social-status]", error.message, "error"); }
@@ -1030,6 +1079,36 @@
       await copyText(caption);
       setStatus("[data-seller-social-status]", "Selected social pages opened. Message and show link copied for paste.", "success");
     } catch (error) { setStatus("[data-seller-social-status]", error.message, "error"); }
+  });
+
+  $("[data-show-store-form]")?.addEventListener("submit", async event => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const showId = $("[data-seller-show-select]")?.value || "";
+    const storeListingId = String(data.get("storeListingId") || "");
+    if (!showId) { setStatus("[data-show-store-status]", "Create or choose an active show first.", "error"); return; }
+    if (!storeListingId) { setStatus("[data-show-store-status]", "Choose inventory from your personal store.", "error"); return; }
+    const button = event.submitter || $("[data-show-store-submit]");
+    button.disabled = true;
+    try {
+      await api(`/seller/shows/${encodeURIComponent(showId)}/lots`, {
+        method: "POST",
+        body: JSON.stringify({
+          storeListingId,
+          startingBid: Number(data.get("startingBid")),
+          bidIncrement: Number(data.get("bidIncrement"))
+        })
+      });
+      form.elements.startingBid.value = "1.00";
+      form.elements.bidIncrement.value = "1.00";
+      await Promise.all([loadSellerLots(showId), loadSellerStoreListings()]);
+      setStatus("[data-show-store-status]", "Store inventory added to the selected show.", "success");
+    } catch (error) {
+      setStatus("[data-show-store-status]", error.message, "error");
+    } finally {
+      renderShowStoreInventoryPreview();
+    }
   });
 
   $("[data-seller-lot-form]")?.addEventListener("submit", async event => {
@@ -1243,6 +1322,8 @@
 
   loadShows();
   if (!viewerOnly) {
+    syncSellerSectionNav();
+    window.addEventListener("hashchange", syncSellerSectionNav);
     syncListingDestinationUi();
     loadSellerContext();
   }

@@ -2673,6 +2673,7 @@ function storeListingView(row) {
     sellerUsername: row.live_username || clean(`${row.first_name || ""} ${row.last_name || ""}`, 120) || "Seller",
     showId: row.show_id || "",
     linkedLotId: row.linked_lot_id || "",
+    linkedLotStatus: row.linked_lot_status || row.matched_lot_status || "",
     series: row.inventory_series || "pokemon",
     productCategoryKey: row.product_category_key || "tcg",
     productCategoryLabel: sellerCategoryLabel(row.product_category_key || "tcg"),
@@ -3423,14 +3424,62 @@ async function createAuctionLot(request, env, cors, showId) {
   const show = await env.DB.prepare(`SELECT id FROM breaker_stream_sessions WHERE id=? AND member_id=? AND status IN ('open','live')`).bind(showId, auth.member.id).first();
   if (!show) return json({ error: "Show not found or already ended." }, 404, cors);
   const data = await boundedJson(request, 5000);
-  const title = clean(data.title, 160);
+  const storeListingId = clean(data.storeListingId, 80);
+  let storeListing = null;
+  if (storeListingId) {
+    if (!validUuid(storeListingId)) return json({ error: "Choose valid inventory from your personal store." }, 400, cors);
+    storeListing = await env.DB.prepare(`
+      SELECT listing.*,lot.status linked_lot_status
+      FROM seller_store_listings listing
+      LEFT JOIN breaker_auction_lots lot ON lot.id=listing.linked_lot_id
+      WHERE listing.id=? AND listing.member_id=?
+    `).bind(storeListingId, auth.member.id).first();
+    if (!storeListing) return json({ error: "That personal-store listing was not found in your seller account." }, 404, cors);
+    if (storeListing.status !== "active" || Number(storeListing.quantity || 0) < 1) {
+      return json({ error: "Activate this store listing and make sure it has inventory before adding it to a show." }, 409, cors);
+    }
+    if (["scheduled", "live"].includes(String(storeListing.linked_lot_status || ""))) {
+      return json({ error: "That store listing is already assigned to a scheduled or live auction lot." }, 409, cors);
+    }
+  }
+  const title = clean(storeListing?.title || data.title, 160);
   const startingBid = Math.round(Number(data.startingBid) * 100);
   const increment = Math.round(Number(data.bidIncrement || 1) * 100);
   if (!title || !Number.isInteger(startingBid) || startingBid < 1 || !Number.isInteger(increment) || increment < 1) return json({ error: "Enter a title, starting bid, and bid increment." }, 400, cors);
   const lotId = uid();
-  await env.DB.prepare(`INSERT INTO breaker_auction_lots(id,session_id,member_id,title,description,status,starting_bid_cents,bid_increment_cents,created_at,updated_at,image_url,item_condition,sale_type) VALUES(?,?,?,?,?,'scheduled',?,?,?,?,?,?,?)`)
-    .bind(lotId, showId, auth.member.id, title, clean(data.description, 1000), startingBid, increment, now(), now(), clean(data.imageUrl, 500), clean(data.condition, 80), ["cards","breaks","singles","sealed","rip_ship","rtyh","buy_ship"].includes(data.saleType) ? data.saleType : "sealed").run();
-  return json({ id: lotId, status: "scheduled" }, 201, cors);
+  const stamp = now();
+  const description = clean(storeListing?.description || data.description, 1000);
+  const imageUrl = clean(storeListing?.image_url || data.imageUrl, 500);
+  const condition = clean(storeListing?.item_condition || data.condition, 80);
+  const requestedSaleType = storeListing?.sale_type || data.saleType;
+  const saleType = ["cards","breaks","singles","sealed","rip_ship","rtyh","buy_ship"].includes(requestedSaleType) ? requestedSaleType : "sealed";
+  const insertLot = env.DB.prepare(`INSERT INTO breaker_auction_lots(id,session_id,member_id,title,description,status,starting_bid_cents,bid_increment_cents,created_at,updated_at,image_url,item_condition,sale_type) VALUES(?,?,?,?,?,'scheduled',?,?,?,?,?,?,?)`)
+    .bind(lotId, showId, auth.member.id, title, description, startingBid, increment, stamp, stamp, imageUrl, condition, saleType);
+  if (!storeListing) {
+    await insertLot.run();
+    return json({ id: lotId, status: "scheduled" }, 201, cors);
+  }
+  const results = await env.DB.batch([
+    insertLot,
+    env.DB.prepare(`
+      UPDATE seller_store_listings
+      SET show_id=?,linked_lot_id=?,updated_at=?
+      WHERE id=? AND member_id=? AND status='active' AND quantity>0
+        AND (
+          linked_lot_id IS NULL OR linked_lot_id=''
+          OR NOT EXISTS (
+            SELECT 1 FROM breaker_auction_lots active_lot
+            WHERE active_lot.id=seller_store_listings.linked_lot_id
+              AND active_lot.status IN ('scheduled','live')
+          )
+        )
+    `).bind(showId, lotId, stamp, storeListing.id, auth.member.id)
+  ]);
+  if (Number(results?.[1]?.meta?.changes || 0) !== 1) {
+    await env.DB.prepare(`DELETE FROM breaker_auction_lots WHERE id=? AND member_id=? AND status='scheduled'`).bind(lotId, auth.member.id).run();
+    return json({ error: "That store listing was assigned to another active lot. Refresh Shows and try again." }, 409, cors);
+  }
+  return json({ id: lotId, status: "scheduled", storeListingId: storeListing.id }, 201, cors);
 }
 
 async function changeAuctionStatus(request, env, cors, lotId, action) {

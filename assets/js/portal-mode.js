@@ -20,7 +20,7 @@
   const sellerPortalDestination = () => page === "streams" || page === "live" ? "streams.html" : "shop.html";
   const buyerPortalDestination = () => "shop.html";
   const sellerSetupDestination = () => authToken() ? "referral.html?return=seller" : "referral.html?mode=signin&return=seller";
-  const sellerToolHashes = new Set(["#go-live", "#create-show", "#seller-my-listings", "#seller-shipping"]);
+  const sellerToolHashes = new Set(["#go-live", "#seller-shows", "#create-show", "#seller-my-listings", "#seller-shipping"]);
   const hasSellerToolIntent = () => page === "streams" && sellerToolHashes.has(location.hash);
   const clearSellerPortalState = () => {
     localStorage.setItem(SELLER_ALLOWED_KEY, "false");

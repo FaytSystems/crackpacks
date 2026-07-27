@@ -856,3 +856,131 @@ test("seller stream input verifies account-owned Cloudflare tokens", async t => 
   assert.ok(!cloudflareCalls.some(call => call.url.endsWith("/user/tokens/verify")));
   assert.equal(cloudflareCalls.at(-1).headers.Authorization, "Bearer cfat_stream-token");
 });
+
+test("seller can schedule owned personal-store inventory into a show", async () => {
+  const memberId = "11111111-1111-4111-8111-111111111111";
+  const showId = "22222222-2222-4222-8222-222222222222";
+  const listingId = "33333333-3333-4333-8333-333333333333";
+  const member = {
+    id: memberId,
+    email_verified_at: "2026-07-24T00:00:00.000Z",
+    device_verified: 1,
+    identity_status: "verified",
+    stripe_identity_status: "verified",
+    live_username: "ShowBuilder"
+  };
+  const batches = [];
+  const env = {
+    AUTH_SECRET: "test-secret",
+    DB: {
+      prepare(sql) {
+        return {
+          bind(...args) {
+            return {
+              sql,
+              args,
+              first: async () => {
+                if (sql.includes("JOIN members m")) return member;
+                if (sql.includes("FROM breaker_profiles")) return { status: "active" };
+                if (sql.includes("SELECT id FROM breaker_stream_sessions")) return { id: showId };
+                if (sql.includes("FROM seller_store_listings listing")) {
+                  return {
+                    id: listingId,
+                    member_id: memberId,
+                    title: "Japanese Charizard",
+                    description: "Store inventory",
+                    item_condition: "Near Mint",
+                    image_url: "https://images.example.test/charizard.jpg",
+                    sale_type: "cards",
+                    quantity: 2,
+                    status: "active",
+                    linked_lot_status: ""
+                  };
+                }
+                return null;
+              },
+              run: async () => ({ success: true, meta: { changes: 1 } })
+            };
+          }
+        };
+      },
+      batch: async statements => {
+        batches.push(statements);
+        return statements.map(() => ({ success: true, meta: { changes: 1 } }));
+      }
+    }
+  };
+
+  const response = await handlePlatformRoute(new Request(`https://api.crackpacks.test/seller/shows/${showId}/lots`, {
+    method: "POST",
+    headers: { Authorization: "Bearer session-token" },
+    body: JSON.stringify({ storeListingId: listingId, startingBid: 3, bidIncrement: 1 })
+  }), env, {});
+
+  assert.equal(response.status, 201);
+  const payload = await response.json();
+  assert.equal(payload.status, "scheduled");
+  assert.equal(payload.storeListingId, listingId);
+  assert.match(payload.id, /^[0-9a-f-]{36}$/);
+  assert.equal(batches.length, 1);
+  assert.equal(batches[0].length, 2);
+  assert.match(batches[0][0].sql, /INSERT INTO breaker_auction_lots/);
+  assert.equal(batches[0][0].args[3], "Japanese Charizard");
+  assert.equal(batches[0][0].args[5], 300);
+  assert.match(batches[0][1].sql, /UPDATE seller_store_listings/);
+  assert.equal(batches[0][1].args[0], showId);
+  assert.equal(batches[0][1].args[3], listingId);
+});
+
+test("seller cannot schedule store inventory already assigned to an active lot", async () => {
+  const memberId = "11111111-1111-4111-8111-111111111111";
+  const showId = "22222222-2222-4222-8222-222222222222";
+  const listingId = "33333333-3333-4333-8333-333333333333";
+  let batchCalled = false;
+  const env = {
+    AUTH_SECRET: "test-secret",
+    DB: {
+      prepare(sql) {
+        return {
+          bind() {
+            return {
+              first: async () => {
+                if (sql.includes("JOIN members m")) {
+                  return {
+                    id: memberId,
+                    email_verified_at: "2026-07-24T00:00:00.000Z",
+                    device_verified: 1,
+                    identity_status: "verified",
+                    stripe_identity_status: "verified",
+                    live_username: "ShowBuilder"
+                  };
+                }
+                if (sql.includes("FROM breaker_profiles")) return { status: "active" };
+                if (sql.includes("SELECT id FROM breaker_stream_sessions")) return { id: showId };
+                if (sql.includes("FROM seller_store_listings listing")) {
+                  return { id: listingId, member_id: memberId, title: "Already Scheduled", quantity: 1, status: "active", linked_lot_status: "scheduled" };
+                }
+                return null;
+              },
+              run: async () => ({ success: true, meta: { changes: 1 } })
+            };
+          }
+        };
+      },
+      batch: async () => {
+        batchCalled = true;
+        return [];
+      }
+    }
+  };
+
+  const response = await handlePlatformRoute(new Request(`https://api.crackpacks.test/seller/shows/${showId}/lots`, {
+    method: "POST",
+    headers: { Authorization: "Bearer session-token" },
+    body: JSON.stringify({ storeListingId: listingId, startingBid: 1, bidIncrement: 1 })
+  }), env, {});
+
+  assert.equal(response.status, 409);
+  assert.match((await response.json()).error, /already assigned/);
+  assert.equal(batchCalled, false);
+});
