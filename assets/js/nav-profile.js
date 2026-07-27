@@ -60,7 +60,10 @@
         <button class="nav-account-bubble ${portalState.activePortal === "seller" ? "is-active" : ""}" type="button" ${sellerAction}>${sellerLabel}</button>
         ${masterButton}
       </div>
-      <a href="${buyerProfileUrl}"><strong>Profile</strong><small>Invites, rewards, orders and account tools</small></a>
+      <div class="nav-account-menu-section" aria-label="Profile settings">
+        <a href="referral.html?view=account"><strong>Account Details</strong><small>Name, email, address, password, and saved payments</small></a>
+        <a href="referral.html?view=credits"><strong>Subscribe / Credits</strong><small>Usage, balances, plan tiers, and a-la-carte credits</small></a>
+      </div>
     `;
   };
 
@@ -94,9 +97,8 @@
       const trigger = profile.querySelector("[data-profile-trigger]");
       const menu = profile.querySelector(".nav-profile-menu");
       if (!trigger || !menu) return;
-      trigger.innerHTML = `Account <span class="nav-profile-caret" aria-hidden="true">▼</span>`;
+      trigger.innerHTML = `Profile <span class="nav-profile-caret" aria-hidden="true">&#9660;</span>`;
       menu.innerHTML = accountMenuMarkup();
-      if (!portalState.signedIn && trigger.firstChild) trigger.firstChild.textContent = "Profile ";
     });
     syncHeaderAccountBubble();
     ensureHeaderActionLinks();

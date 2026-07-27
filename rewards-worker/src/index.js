@@ -132,6 +132,14 @@ async function passwordDigest(password, saltBase64url, pepper) {
   const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt: base64urlToBytes(saltBase64url), iterations: PASSWORD_ITERATIONS }, keyMaterial, 256);
   return bytesToBase64url(new Uint8Array(bits));
 }
+function constantTimeTextEqual(left, right) {
+  const a = encoder.encode(String(left || ""));
+  const b = encoder.encode(String(right || ""));
+  const length = Math.max(a.length, b.length);
+  let difference = a.length ^ b.length;
+  for (let index = 0; index < length; index += 1) difference |= (a[index] || 0) ^ (b[index] || 0);
+  return difference === 0;
+}
 async function newPasswordRecord(password, pepper) {
   const salt = bytesToBase64url(crypto.getRandomValues(new Uint8Array(24)));
   return { salt, digest: await passwordDigest(password, salt, pepper) };
@@ -755,7 +763,7 @@ async function account(member, count, env, seller = null) {
   const roles = ["buyer", ...(sellerAccess ? ["seller"] : []), ...(admin ? ["master"] : [])];
   return {
     deviceVerified: Boolean(member.device_verified), profileComplete: member.identity_status === "verified", identityStatus: member.identity_status,
-    passwordConfigured: Boolean(member.password_hash && member.password_salt),
+    passwordConfigured: Boolean(member.password_hash && member.password_salt), email: member.email,
     stripeIdentityStatus: member.stripe_identity_status || "not_started", firstName: member.first_name, lastName: member.last_name || "", birthDate: member.birth_date || "",
     hasSellerLegalProfile: Boolean(member.first_name && member.last_name && member.birth_date),
     buyerUsername: member.buyer_username || "", sellerUsername: member.live_username || "", liveUsername: member.live_username || member.buyer_username || "",
@@ -1265,7 +1273,7 @@ async function route(request, env, cors, ctx) {
       console.error("Password login hash failed", { name: error?.name || "", message: error?.message || "" });
       return response({ error: "Password sign-in could not finish in this Worker request. Try again in a moment." }, 503, cors);
     }
-    if (digest !== member.password_hash) {
+    if (!constantTimeTextEqual(digest, member.password_hash)) {
       const attempts = Number(member.password_failed_attempts || 0) + 1;
       const lockedUntil = attempts >= 8 ? new Date(Date.now() + 15 * 60e3).toISOString() : null;
       try {
@@ -1309,6 +1317,7 @@ async function route(request, env, cors, ctx) {
     return response(await accountFor(accountMember, env), 200, cors);
   }
   if (url.pathname === "/auth/password/set" && request.method === "POST") {
+    if (member.password_hash && member.password_salt) return response({ error: "Use Change Password from Account Details to replace an existing password." }, 409, cors);
     const data = await body(request);
     const passwordError = validatePassword(data.password);
     if (passwordError) return response({ error: passwordError }, 400, cors);
@@ -1329,6 +1338,57 @@ async function route(request, env, cors, ctx) {
     const updated = await env.DB.prepare(`SELECT * FROM members WHERE id=?`).bind(member.id).first();
     await audit(env, request, "password_set", member.id);
     return response({ account: await accountFor(updated, env) }, 200, cors);
+  }
+  if (url.pathname === "/auth/password/change" && request.method === "POST") {
+    const data = await body(request);
+    if (!member.password_hash || !member.password_salt) return response({ error: "Create your account password before changing it." }, 409, cors);
+    const passwordError = validatePassword(data.password);
+    if (passwordError) return response({ error: passwordError }, 400, cors);
+    if (data.password !== data.confirmPassword) return response({ error: "New passwords do not match." }, 400, cors);
+    let currentDigest;
+    try {
+      currentDigest = await passwordDigest(String(data.currentPassword || ""), member.password_salt, env.AUTH_SECRET);
+    } catch (error) {
+      console.error("Password change verification failed", { name: error?.name || "", message: error?.message || "" });
+      return response({ error: "Password verification could not finish. Try again in a moment." }, 503, cors);
+    }
+    if (!constantTimeTextEqual(currentDigest, member.password_hash)) {
+      await audit(env, request, "password_change_rejected", member.id);
+      return response({ error: "Current password is incorrect." }, 401, cors);
+    }
+    let replacementDigest;
+    try {
+      replacementDigest = await passwordDigest(data.password, member.password_salt, env.AUTH_SECRET);
+    } catch (error) {
+      console.error("Password change comparison failed", { name: error?.name || "", message: error?.message || "" });
+      return response({ error: "Password change could not finish. Try again in a moment." }, 503, cors);
+    }
+    if (constantTimeTextEqual(replacementDigest, member.password_hash)) {
+      return response({ error: "Choose a new password that is different from the current password." }, 400, cors);
+    }
+    let record;
+    try {
+      record = await newPasswordRecord(data.password, env.AUTH_SECRET);
+    } catch (error) {
+      console.error("Password change hash failed", { name: error?.name || "", message: error?.message || "" });
+      return response({ error: "Password change could not finish. Try again in a moment." }, 503, cors);
+    }
+    const stamp = now();
+    try {
+      await env.DB.batch([
+        env.DB.prepare(`UPDATE members SET password_hash=?,password_salt=?,password_updated_at=?,password_failed_attempts=0,password_locked_until=NULL,updated_at=? WHERE id=?`)
+          .bind(record.digest, record.salt, stamp, stamp, member.id),
+        env.DB.prepare(`DELETE FROM sessions WHERE member_id=?`).bind(member.id),
+        env.DB.prepare(`DELETE FROM admin_sessions WHERE member_id=?`).bind(member.id)
+      ]);
+    } catch (error) {
+      if (passwordSchemaMissing(error)) return response({ error: "Password changes are not ready yet. Run the remote D1 password migration, then deploy again." }, 503, cors);
+      throw error;
+    }
+    const token = await issueMemberSession(env, member.id);
+    const updated = await env.DB.prepare(`SELECT * FROM members WHERE id=?`).bind(member.id).first();
+    await audit(env, request, "password_changed", member.id);
+    return response({ token, account: await accountFor(updated, env) }, 200, cors);
   }
   if (url.pathname === "/profile/referral/qr" && request.method === "POST") {
     if (!member.device_verified || member.identity_status !== "verified") return response({ error: "Complete account verification before generating a referral QR." }, 403, cors);

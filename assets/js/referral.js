@@ -4,6 +4,7 @@
   const config = window.CRACKPACKS_CONFIG || {};
   const api = String(config.rewardsApiUrl || "").replace(/\/$/, "");
   const qs = new URLSearchParams(location.search);
+  const requestedAccountView = ["account", "credits"].includes(qs.get("view")) ? qs.get("view") : "";
   const requestedPortal = qs.get("portal") === "master" ? "master" : "";
   const referralCode = (qs.get("ref") || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 16);
   const ownerReferralToken = String(qs.get("owner_ref") || "").slice(0, 80);
@@ -60,6 +61,11 @@
   let streamCreditsNextRefreshTimer = null;
   let streamCreditsLastLoadedAt = 0;
   let streamCreditsRefreshInFlight = false;
+  let selectedStreamPlanCode = "";
+  let streamCreditPurchaseRate = { unitPrice: 1.50, subscriber: false };
+  let streamSubscriptionState = null;
+  let requestedAccountViewHandled = false;
+  let streamCheckoutResultHandled = false;
   let checkedBuyerUsername = "";
   let checkedSellerUsername = "";
   let pendingSellerIdentityStart = false;
@@ -733,9 +739,17 @@
     const container = $("[data-stream-credits-comparison]");
     container.replaceChildren();
     const comparisons = Array.isArray(result?.comparison) ? result.comparison : [];
+    const availableCodes = comparisons.map(plan => String(plan.code || ""));
+    const recommendedCode = String(result?.recommendedPlan?.code || "");
+    const currentPlanCode = String(result?.currentPlanCode || "");
+    if (!availableCodes.includes(selectedStreamPlanCode)) {
+      selectedStreamPlanCode = availableCodes.includes(currentPlanCode) ? currentPlanCode : recommendedCode;
+    }
     comparisons.forEach(plan => {
       const card = document.createElement("article");
-      card.className = "campaign-member-claim";
+      card.className = "stream-plan-row";
+      card.classList.toggle("is-selected", plan.code === selectedStreamPlanCode);
+      card.classList.toggle("is-recommended", plan.code === recommendedCode);
       const main = document.createElement("div");
       const title = document.createElement("h4");
       title.textContent = `${plan.name} - $${Number(plan.monthlyPrice || 0).toFixed(2)}/mo`;
@@ -744,18 +758,77 @@
       const detail = document.createElement("p");
       detail.textContent = `Overage ${Number(plan.projectedOverageCredits || 0).toFixed(2)} | Rebate $${Number(plan.projectedUnusedRebate || 0).toFixed(2)} | Net $${Number(plan.projectedNetCost || 0).toFixed(2)}`;
       main.append(title, reward, detail);
-      if (plan.projectedSavings > 0) {
-        const warning = document.createElement("p");
-        warning.textContent = `${plan.name} could cost $${Number(plan.projectedSavings).toFixed(2)} more than the recommendation.`;
-        main.append(warning);
+      const badges = document.createElement("div");
+      badges.className = "stream-plan-badges";
+      if (plan.code === recommendedCode) {
+        const recommended = document.createElement("span");
+        recommended.textContent = "Calculator recommendation";
+        badges.append(recommended);
       }
-      card.append(main);
+      if (plan.code === currentPlanCode) {
+        const current = document.createElement("span");
+        current.textContent = "Current plan";
+        badges.append(current);
+      }
+      if (badges.childElementCount) main.append(badges);
+      const select = document.createElement("button");
+      select.className = plan.code === selectedStreamPlanCode ? "btn btn-primary btn-small" : "btn btn-outline btn-small";
+      select.type = "button";
+      select.textContent = plan.code === selectedStreamPlanCode ? "Selected" : `Select ${plan.name}`;
+      select.setAttribute("aria-pressed", String(plan.code === selectedStreamPlanCode));
+      select.addEventListener("click", () => {
+        selectedStreamPlanCode = plan.code;
+        renderStreamCreditComparison(result);
+      });
+      card.append(main, select);
       container.append(card);
     });
+    const selectedPlan = comparisons.find(plan => plan.code === selectedStreamPlanCode);
+    const checkoutButton = $("[data-stream-plan-checkout]");
+    if (checkoutButton) {
+      checkoutButton.disabled = !selectedPlan;
+      checkoutButton.textContent = selectedPlan ? `Checkout ${selectedPlan.name}` : "Choose a plan";
+    }
+  }
+  function updateStreamCreditPurchaseQuote() {
+    const input = $("[data-stream-credit-quantity]");
+    const buyButton = $("[data-stream-credit-buy]");
+    if (!input || !buyButton) return;
+    const quantity = Number(input.value);
+    const hundredths = Math.round(quantity * 100);
+    const valid = Number.isFinite(quantity) && hundredths >= 100 && hundredths <= 1000000 && Math.abs((quantity * 100) - hundredths) < 1e-7;
+    const rate = Number(streamCreditPurchaseRate.unitPrice || 1.50);
+    const total = valid ? Math.round((hundredths / 100) * rate * 100) / 100 : 0;
+    $("[data-stream-credit-rate]").textContent = `$${rate.toFixed(2)} per credit`;
+    $("[data-stream-credit-total]").textContent = valid ? `$${total.toFixed(2)}` : "Enter 1.00 or more";
+    $("[data-stream-credit-rate-note]").textContent = streamCreditPurchaseRate.subscriber
+      ? "Subscriber rate for a paid plan this month"
+      : "Standard a-la-carte rate; subscribers pay $1.25 per credit";
+    buyButton.disabled = !valid;
   }
   function renderStreamCreditDashboard(data) {
     const dashboard = data?.dashboard;
     const projection = data?.projection;
+    if (Object.prototype.hasOwnProperty.call(data || {}, "subscription")) streamSubscriptionState = data.subscription || null;
+    const subscription = streamSubscriptionState;
+    const subscriptionStatus = String(subscription?.stripeSubscriptionStatus || "").toLowerCase();
+    const statusLabel = subscriptionStatus
+      ? subscriptionStatus.replace(/_/g, " ").replace(/\b\w/g, character => character.toUpperCase())
+      : subscription?.selectedPlanName ? "Awaiting Stripe checkout" : "Not subscribed";
+    $("[data-current-stream-plan]").textContent = subscription?.selectedPlanName || "No active subscription";
+    $("[data-current-stream-status]").textContent = statusLabel;
+    const manageSubscription = $("[data-manage-subscription]");
+    if (manageSubscription) manageSubscription.hidden = !subscriptionStatus;
+    const planCheckout = $("[data-stream-plan-checkout]");
+    const hasManageableSubscription = Boolean(subscriptionStatus && !["canceled", "unpaid", "incomplete_expired"].includes(subscriptionStatus));
+    if (planCheckout) planCheckout.hidden = hasManageableSubscription;
+    if (data?.creditPurchase) {
+      streamCreditPurchaseRate = {
+        unitPrice: Number(data.creditPurchase.unitPrice || 1.50),
+        subscriber: Boolean(data.creditPurchase.subscriber)
+      };
+    }
+    updateStreamCreditPurchaseQuote();
     const summary = $("[data-stream-credits-summary]");
     if (!dashboard || !projection?.recommendedPlan) {
       summary.hidden = true;
@@ -766,13 +839,15 @@
     const meter = $("[data-stream-credit-meter]");
     if (meter) {
       const included = Number(dashboard.includedCredits || projection.recommendedPlan.includedCredits || 0);
+      const prepaid = Number(dashboard.prepaidCreditsBalance || 0);
       const used = Number(dashboard.actualCreditsUsed || 0);
       const remaining = Number(dashboard.creditsRemaining || 0);
-      const utilization = included > 0 ? Math.min(100, Math.max(0, (used / included) * 100)) : 0;
+      const utilization = Math.min(100, Math.max(0, Number(dashboard.utilization || 0)));
       meter.hidden = false;
       $("[data-stream-credits-remaining]").textContent = remaining.toFixed(2);
       $("[data-stream-credits-used]").textContent = used.toFixed(2);
       $("[data-stream-credits-included]").textContent = included.toFixed(2);
+      $("[data-stream-credits-prepaid]").textContent = prepaid.toFixed(2);
       $("[data-stream-credits-utilization]").textContent = `${utilization.toFixed(0)}%`;
       const fill = $("[data-stream-credits-fill]");
       if (fill) fill.style.width = `${utilization}%`;
@@ -805,7 +880,7 @@
     });
     card.append(main);
     panel.append(card);
-    renderStreamCreditComparison({ comparison: projection.comparison });
+    renderStreamCreditComparison({ comparison: projection.comparison, recommendedPlan: projection.recommendedPlan, currentPlanCode: subscription?.selectedPlanCode || "" });
   }
   function updateStreamCreditSyncNote(message = "", kind = "") {
     const node = $("[data-stream-credits-sync-note]");
@@ -858,7 +933,18 @@
       scheduleTopOfHourStreamCreditRefresh();
       if (!silent) {
         const refreshedAt = new Date(streamCreditsLastLoadedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-        streamCreditStatus(`Credits Remaining updated at ${refreshedAt}.`, "success");
+        const planResult = qs.get("streamPlan");
+        const creditResult = qs.get("streamCredits");
+        if (!streamCheckoutResultHandled && planResult === "success") {
+          streamCreditStatus("Stripe accepted the subscription checkout. The plan activates after payment confirmation, then the first-show checklist is emailed to the account address.", "success");
+        } else if (!streamCheckoutResultHandled && creditResult === "success") {
+          streamCreditStatus("Stripe accepted the Stream Credit purchase. The balance updates after payment confirmation.", "success");
+        } else if (!streamCheckoutResultHandled && [planResult, creditResult].includes("cancelled")) {
+          streamCreditStatus("Stripe checkout was cancelled. No new purchase was completed.", "error");
+        } else {
+          streamCreditStatus(`Credits Remaining updated at ${refreshedAt}.`, "success");
+        }
+        streamCheckoutResultHandled = true;
       } else if (trigger === "hourly") {
         updateStreamCreditSyncNote(`Credits Remaining auto-updated at ${new Date(streamCreditsLastLoadedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}. Next sync is scheduled for the top of the next hour.`);
       }
@@ -992,6 +1078,10 @@
     show("[data-dashboard]", true);
     if (sellerAllowed) setSellerUpgradeRequested(false);
     $("[data-member-name]").textContent = data.buyerUsername || data.firstName || "Collector";
+    const accountName = [data.firstName, data.lastName].filter(Boolean).join(" ") || data.buyerUsername || "Not provided";
+    $("[data-account-name]").textContent = accountName;
+    $("[data-account-email]").textContent = data.email || "Not provided";
+    $("[data-account-buyer-id]").textContent = data.buyerUsername || "Not provided";
     const rolesNode = $("[data-account-role-badges]");
     if (rolesNode) rolesNode.innerHTML = roles.map(role => `<span class="account-role-badge" data-role="${escapeHtml(role)}">${escapeHtml(role === "master" ? "Master Account" : role === "seller" ? "Seller Account" : "Buyer Account")}</span>`).join("");
     $("[data-admin-link]").hidden = !data.isAdmin;
@@ -1048,7 +1138,7 @@
     const masterChoiceModal = $("[data-portal-master-choice-modal]");
     if (masterChoiceModal) masterChoiceModal.hidden = !masterCandidate;
     const launcher = $("[data-portal-launcher-modal]");
-    if (launcher && !portalLauncherShown) {
+    if (launcher && !portalLauncherShown && !requestedAccountView) {
       launcher.hidden = false;
       launcher.setAttribute("aria-hidden", "false");
       portalLauncherShown = true;
@@ -1087,7 +1177,10 @@
     $("[data-shipping-country]").value = shipping.country || "US";
     $("[data-payment-method-label]").textContent = data.paymentMethod ? `${String(data.paymentMethod.brand || "Card").toUpperCase()} ending in ${data.paymentMethod.last4}` : "No payment method saved";
     $("[data-add-payment-method]").textContent = data.paymentMethod ? "Replace payment method" : "Add payment method";
+    const manageBilling = $("[data-manage-billing]");
+    if (manageBilling) manageBilling.hidden = !data.paymentMethod;
     if (qs.get("billing") === "success") showContactStatus(data.paymentMethod ? "Payment method saved securely by Stripe." : "Stripe accepted the payment method. Waiting for webhook confirmation; refresh in a moment.", data.paymentMethod ? "success" : "");
+    if (qs.get("billing") === "return") showContactStatus("Returned from Stripe billing management. Your saved payment details will refresh after Stripe confirms any changes.", "success");
     $("[data-next-tier]").textContent = data.nextTier ? `${data.nextTier.remaining} more verified friend${data.nextTier.remaining === 1 ? "" : "s"} to unlock ${data.nextTier.name}: ${data.nextTier.reward}.` : "You have reached the highest published reward tier.";
     const tierTrack = $("[data-tier-track]"); tierTrack.replaceChildren();
     (Array.isArray(data.tiers) ? data.tiers : []).forEach(tier => {
@@ -1098,6 +1191,10 @@
     loadMyCampaigns();
     loadMyOrders();
     if (sellerAllowed) refreshStreamCreditDashboard();
+    if (requestedAccountView && !requestedAccountViewHandled) {
+      requestedAccountViewHandled = true;
+      queueMicrotask(() => openAccountView(requestedAccountView, { behavior: "auto", updateUrl: false }));
+    }
     if (data.referredSignup && !welcomeDiscountLoaded && !offerToken && !activeOffer) {
       welcomeDiscountLoaded = true;
       show("[data-discount-panel]", true);
@@ -1536,19 +1633,42 @@
     $("[data-invite-copy-modal]").hidden = false;
     showStatus("Invitation link copied.", "success");
   }
-  document.querySelectorAll("[data-view]").forEach(button => button.addEventListener("click", async () => {
-    const inviteView = button.dataset.view === "invite";
-    show("[data-discount-panel]", button.dataset.view === "discount");
+  async function openAccountView(view, { behavior = "smooth", updateUrl = true } = {}) {
+    const requested = String(view || "").toLowerCase();
+    const inviteView = requested === "invite";
+    show("[data-discount-panel]", requested === "discount");
     show("[data-invite-panel]", inviteView);
-    if (button.dataset.view === "orders") {
-      await loadMyOrders();
-      $("[data-orders-panel]").scrollIntoView({ behavior: "smooth", block: "start" });
+    document.querySelectorAll(".account-dashboard-settings [data-view]").forEach(button => {
+      button.classList.toggle("is-active", button.dataset.view === requested);
+      button.setAttribute("aria-pressed", String(button.dataset.view === requested));
+    });
+    if (["account", "credits"].includes(requested) && updateUrl) {
+      const nextUrl = new URL(location.href);
+      nextUrl.searchParams.set("view", requested);
+      history.replaceState({}, document.title, `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`);
     }
-    if (button.dataset.view === "account") $("[data-account-panel]").scrollIntoView({ behavior: "smooth", block: "start" });
+    if (requested === "orders") {
+      await loadMyOrders();
+      $("[data-orders-panel]").scrollIntoView({ behavior, block: "start" });
+    }
+    if (requested === "account") $("[data-account-panel]").scrollIntoView({ behavior, block: "start" });
+    if (requested === "credits") {
+      if (!accountState?.sellerAccess && !accountState?.isAdmin) {
+        show("[data-seller-upgrade-panel]", true);
+        $("[data-seller-upgrade-panel]").scrollIntoView({ behavior, block: "start" });
+        showStatus("Seller verification is required before purchasing a streaming subscription or Stream Credits.", "error");
+      } else {
+        await refreshStreamCreditDashboard({ silent: true, trigger: "view" });
+        $("[data-stream-credits-panel]").scrollIntoView({ behavior, block: "start" });
+      }
+    }
     if (inviteView && !accountState?.ownerReferralDashboardOnly) {
       try { await copyInviteLink(); }
       catch (error) { showStatus(error.message, "error"); }
     }
+  }
+  document.querySelectorAll("[data-view]").forEach(button => button.addEventListener("click", () => {
+    openAccountView(button.dataset.view).catch(error => showStatus(error.message, "error"));
   }));
   async function claimDiscount({ welcome = false } = {}) {
     const data = await request("/discount/claim", { method: "POST" });
@@ -1663,6 +1783,55 @@
       location.href = result.url;
     } catch (error) { button.disabled = false; showContactStatus(error.message, "error"); }
   });
+  document.querySelectorAll("[data-manage-billing], [data-manage-subscription]").forEach(button => {
+    button.addEventListener("click", async event => {
+      const current = event.currentTarget;
+      current.disabled = true;
+      const isSubscription = current.hasAttribute("data-manage-subscription");
+      if (isSubscription) streamCreditStatus("Opening Stripe subscription management...");
+      else showContactStatus("Opening Stripe billing management...");
+      try {
+        const result = await request("/billing/portal", { method: "POST", body: "{}" });
+        if (!result.url) throw new Error("Stripe did not return a billing-management page.");
+        location.href = result.url;
+      } catch (error) {
+        current.disabled = false;
+        if (isSubscription) streamCreditStatus(error.message, "error");
+        else showContactStatus(error.message, "error");
+      }
+    });
+  });
+  $("[data-password-change-form]")?.addEventListener("submit", async event => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const button = event.submitter;
+    const statusNode = $("[data-password-change-status]");
+    const values = new FormData(form);
+    if (button) button.disabled = true;
+    statusNode.textContent = "Changing password...";
+    statusNode.dataset.kind = "";
+    try {
+      const result = await request("/auth/password/change", { method: "POST", body: JSON.stringify({
+        currentPassword: values.get("currentPassword"),
+        password: values.get("password"),
+        confirmPassword: values.get("confirmPassword")
+      }) });
+      if (result.token) {
+        token = result.token;
+        localStorage.setItem("cp_rewards_token", token);
+        document.dispatchEvent(new CustomEvent("crackpacks:account-state-change"));
+      }
+      form.reset();
+      statusNode.textContent = "Password changed. Other signed-in sessions were closed.";
+      statusNode.dataset.kind = "success";
+      if (result.account) renderAccount(result.account);
+    } catch (error) {
+      statusNode.textContent = error.message;
+      statusNode.dataset.kind = "error";
+    } finally {
+      if (button) button.disabled = false;
+    }
+  });
   $("[data-stream-credits-refresh]")?.addEventListener("click", () => refreshStreamCreditDashboard());
   $("[data-stream-credits-calculate]")?.addEventListener("click", async () => {
     try {
@@ -1680,8 +1849,10 @@
       streamCreditStatus("Saving seller plan...");
       const base = readStreamCreditForm();
       const recommendation = await request("/seller/stream-credits/calculate", { method: "POST", body: JSON.stringify(base) });
-      await request("/seller/stream-credits/subscription", { method: "POST", body: JSON.stringify({ ...base, selectedPlanCode: recommendation.recommendedPlan?.code }) });
-      streamCreditStatus(`Saved ${recommendation.recommendedPlan?.name || "seller"} plan inputs.`, "success");
+      const selectedCode = selectedStreamPlanCode || recommendation.recommendedPlan?.code;
+      const selectedPlan = recommendation.plans?.find(plan => plan.code === selectedCode) || recommendation.recommendedPlan;
+      await request("/seller/stream-credits/subscription", { method: "POST", body: JSON.stringify({ ...base, selectedPlanCode: selectedCode }) });
+      streamCreditStatus(`Saved ${selectedPlan?.name || "seller"} plan inputs.`, "success");
       await refreshStreamCreditDashboard();
     } catch (error) {
       streamCreditStatus(error.message, "error");
@@ -1692,20 +1863,28 @@
       streamCreditStatus("Opening Stripe checkout for your seller plan...");
       const base = readStreamCreditForm();
       const recommendation = await request("/seller/stream-credits/calculate", { method: "POST", body: JSON.stringify(base) });
-      const result = await request("/seller/stream-credits/checkout-plan", { method: "POST", body: JSON.stringify({ ...base, selectedPlanCode: recommendation.recommendedPlan?.code }) });
+      const selectedCode = selectedStreamPlanCode || recommendation.recommendedPlan?.code;
+      const result = await request("/seller/stream-credits/checkout-plan", { method: "POST", body: JSON.stringify({ ...base, selectedPlanCode: selectedCode }) });
       if (!result.checkoutUrl) throw new Error("Stripe did not return a plan checkout page.");
       location.href = result.checkoutUrl;
     } catch (error) {
       streamCreditStatus(error.message, "error");
     }
   });
-  $("[data-stream-credit-buy]")?.addEventListener("click", async () => {
+  $("[data-stream-credit-quantity]")?.addEventListener("input", updateStreamCreditPurchaseQuote);
+  updateStreamCreditPurchaseQuote();
+  $("[data-stream-credit-purchase-form]")?.addEventListener("submit", async event => {
+    event.preventDefault();
+    const button = event.submitter;
+    if (button) button.disabled = true;
     try {
       streamCreditStatus("Opening Stripe checkout for prepaid Stream Credits...");
-      const result = await request("/seller/stream-credits/checkout-credits", { method: "POST", body: JSON.stringify({ creditQuantity: 25 }) });
+      const creditQuantity = Number($("[data-stream-credit-quantity]").value);
+      const result = await request("/seller/stream-credits/checkout-credits", { method: "POST", body: JSON.stringify({ creditQuantity }) });
       if (!result.checkoutUrl) throw new Error("Stripe did not return a prepaid-credit checkout page.");
       location.href = result.checkoutUrl;
     } catch (error) {
+      if (button) button.disabled = false;
       streamCreditStatus(error.message, "error");
     }
   });

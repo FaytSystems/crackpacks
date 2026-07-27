@@ -136,6 +136,188 @@
   color: #fff;
 }
 
+.account-dashboard-settings {
+  border-color: rgba(56,232,255,.24);
+  background: linear-gradient(115deg, rgba(56,232,255,.075), rgba(248,255,70,.055));
+}
+
+.account-detail-grid,
+.stream-subscription-state {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
+  margin: 1.35rem 0;
+  border-block: 1px solid rgba(255,255,255,.13);
+}
+
+.account-detail-grid > div,
+.stream-subscription-state > div {
+  display: grid;
+  gap: .35rem;
+  min-width: 0;
+  padding: 1rem;
+  border-right: 1px solid rgba(255,255,255,.13);
+}
+
+.account-detail-grid > div:last-child,
+.stream-subscription-state > div:last-of-type {
+  border-right: 0;
+}
+
+.account-detail-grid span,
+.stream-subscription-state span {
+  color: var(--muted);
+  font-size: .76rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.account-detail-grid strong,
+.stream-subscription-state strong {
+  overflow-wrap: anywhere;
+  color: #fff;
+  font-size: 1rem;
+}
+
+.stream-subscription-state {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.stream-subscription-state > .btn {
+  margin: 0 1rem;
+}
+
+.account-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 2rem;
+  padding-top: 1.4rem;
+  border-top: 1px solid rgba(255,255,255,.13);
+}
+
+.account-section-title .eyebrow {
+  margin-bottom: .3rem;
+}
+
+.account-section-title h4 {
+  margin: 0;
+  color: #fff;
+  font-size: 1.18rem;
+}
+
+.payment-method-row > .actions {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.password-change-form {
+  max-width: 760px;
+}
+
+.stream-plan-list {
+  display: grid;
+  gap: .75rem;
+  margin-top: 1.35rem;
+}
+
+.stream-plan-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 0;
+  border-block-end: 1px solid rgba(255,255,255,.13);
+}
+
+.stream-plan-row h4 {
+  margin: 0 0 .3rem;
+  color: #fff;
+  font-size: 1.05rem;
+}
+
+.stream-plan-row p {
+  margin: .2rem 0;
+  color: var(--muted);
+  font-size: .86rem;
+}
+
+.stream-plan-row.is-selected {
+  border-color: rgba(248,255,70,.7);
+}
+
+.stream-plan-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .45rem;
+  margin-top: .55rem;
+}
+
+.stream-plan-badges span {
+  display: inline-flex;
+  padding: .3rem .55rem;
+  border: 1px solid rgba(56,232,255,.3);
+  border-radius: 999px;
+  color: var(--cyan);
+  background: rgba(56,232,255,.08);
+  font-size: .7rem;
+  font-weight: 900;
+}
+
+.stream-credit-purchase-form {
+  grid-template-columns: minmax(220px, 1fr) minmax(190px, .7fr) auto;
+  align-items: end;
+  margin-top: 1.6rem;
+  padding: 1.2rem 0;
+  border-block: 1px solid rgba(248,255,70,.28);
+}
+
+.stream-credit-purchase-form small {
+  color: var(--muted);
+}
+
+.stream-credit-quote {
+  display: grid;
+  gap: .3rem;
+}
+
+.stream-credit-quote span,
+.stream-credit-quote small {
+  color: var(--muted);
+}
+
+.stream-credit-quote strong {
+  color: var(--electric);
+  font-size: 1.8rem;
+  line-height: 1;
+}
+
+@media(max-width:760px) {
+  .account-detail-grid,
+  .stream-subscription-state,
+  .stream-credit-purchase-form {
+    grid-template-columns: 1fr;
+  }
+  .account-detail-grid > div,
+  .stream-subscription-state > div {
+    border-right: 0;
+    border-bottom: 1px solid rgba(255,255,255,.1);
+  }
+  .stream-subscription-state > .btn {
+    width: calc(100% - 2rem);
+    margin: 1rem;
+  }
+  .stream-plan-row {
+    grid-template-columns: 1fr;
+  }
+  .stream-plan-row .btn,
+  .stream-credit-purchase-form .btn {
+    width: 100%;
+  }
+}
+
 .portal-launcher-modal[hidden] {
   display: none !important;
 }

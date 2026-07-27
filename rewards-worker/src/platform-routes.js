@@ -4,6 +4,7 @@ import {
   DEFAULT_PLANS as STREAM_DEFAULT_PLANS,
   calculateActualCredits,
   calculateProjection,
+  creditPurchaseQuote,
   estimateDashboard,
   nextAlertThreshold,
   normalizeConfig,
@@ -184,6 +185,7 @@ async function latestStreamCreditConfig(env) {
     monthDays: row.month_days,
     streamCreditUnderlyingValue: row.stream_credit_underlying_value,
     prepaidExtraCreditPrice: row.prepaid_extra_credit_price,
+    subscriberExtraCreditPrice: row.subscriber_extra_credit_price,
     paygOveragePrice: row.payg_overage_price,
     unusedCreditRebateRate: row.unused_credit_rebate_rate,
     finalizationDelayHours: row.finalization_delay_hours,
@@ -228,15 +230,16 @@ async function seedStreamCreditDefaults(env, memberId = null) {
     statements.push(env.DB.prepare(`
       INSERT INTO stream_credit_config_versions(
         id,effective_at,created_at,created_by_member_id,delivery_minutes_per_credit,storage_minutes_per_credit,replay_reserve_percentage,safety_buffer_percentage,
-        recording_retention_days,month_days,stream_credit_underlying_value,prepaid_extra_credit_price,payg_overage_price,unused_credit_rebate_rate,
+        recording_retention_days,month_days,stream_credit_underlying_value,prepaid_extra_credit_price,subscriber_extra_credit_price,payg_overage_price,unused_credit_rebate_rate,
         finalization_delay_hours,protected_evidence_reserve_credits,auto_refill_package_sizes_json,spending_limit_default,cash_out_threshold,
         prepaid_credit_expiration_months,stripe_domestic_rate,stripe_domestic_fixed_fee,cloudflare_credit_cost_assumption,notes
-      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     `).bind(
       uid(), stamp, stamp, memberId,
       STREAM_DEFAULT_CONFIG.deliveryMinutesPerCredit, STREAM_DEFAULT_CONFIG.storageMinutesPerCredit, STREAM_DEFAULT_CONFIG.replayReservePercentage,
       STREAM_DEFAULT_CONFIG.safetyBufferPercentage, STREAM_DEFAULT_CONFIG.recordingRetentionDays, STREAM_DEFAULT_CONFIG.monthDays,
-      STREAM_DEFAULT_CONFIG.streamCreditUnderlyingValue, STREAM_DEFAULT_CONFIG.prepaidExtraCreditPrice, STREAM_DEFAULT_CONFIG.paygOveragePrice,
+      STREAM_DEFAULT_CONFIG.streamCreditUnderlyingValue, STREAM_DEFAULT_CONFIG.prepaidExtraCreditPrice, STREAM_DEFAULT_CONFIG.subscriberExtraCreditPrice,
+      STREAM_DEFAULT_CONFIG.paygOveragePrice,
       STREAM_DEFAULT_CONFIG.unusedCreditRebateRate, STREAM_DEFAULT_CONFIG.finalizationDelayHours, STREAM_DEFAULT_CONFIG.protectedEvidenceReserveCredits,
       JSON.stringify(STREAM_DEFAULT_CONFIG.autoRefillPackageSizes), STREAM_DEFAULT_CONFIG.spendingLimitDefault, STREAM_DEFAULT_CONFIG.cashOutThreshold,
       STREAM_DEFAULT_CONFIG.prepaidCreditExpirationMonths, STREAM_DEFAULT_CONFIG.stripeDomesticRate, STREAM_DEFAULT_CONFIG.stripeDomesticFixedFee,
@@ -267,6 +270,7 @@ function streamConfigResponse(row, config) {
     monthDays: config.monthDays,
     streamCreditUnderlyingValue: config.streamCreditUnderlyingValue,
     prepaidExtraCreditPrice: config.prepaidExtraCreditPrice,
+    subscriberExtraCreditPrice: config.subscriberExtraCreditPrice,
     paygOveragePrice: config.paygOveragePrice,
     unusedCreditRebateRate: config.unusedCreditRebateRate,
     finalizationDelayHours: config.finalizationDelayHours,
@@ -300,6 +304,22 @@ async function streamCreditCalculator(request, env, cors) {
   }, 200, cors);
 }
 
+async function sellerHasSubscriberCreditRate(env, memberId, subscription = null) {
+  const current = subscription || await env.DB.prepare(`SELECT * FROM seller_stream_subscriptions WHERE member_id=?`).bind(memberId).first();
+  const status = String(current?.stripe_subscription_status || "").toLowerCase();
+  const periodEnd = Date.parse(String(current?.stripe_current_period_end || ""));
+  if (["active", "trialing"].includes(status) && (!Number.isFinite(periodEnd) || periodEnd > Date.now())) return true;
+  const monthStart = new Date();
+  monthStart.setUTCDate(1);
+  monthStart.setUTCHours(0, 0, 0, 0);
+  const paidThisMonth = await env.DB.prepare(`
+    SELECT id FROM seller_stream_checkout_sessions
+    WHERE member_id=? AND kind='subscription' AND status='paid' AND updated_at>=?
+    LIMIT 1
+  `).bind(memberId, monthStart.toISOString()).first();
+  return Boolean(paidThisMonth);
+}
+
 async function streamCreditDashboard(request, env, cors) {
   const auth = await requireMember(request, env, cors, { seller: true });
   if (auth.error) return auth.error;
@@ -307,6 +327,8 @@ async function streamCreditDashboard(request, env, cors) {
   const { row, config } = await latestStreamCreditConfig(env);
   const plans = await latestStreamCreditPlans(env);
   const subscription = await env.DB.prepare(`SELECT * FROM seller_stream_subscriptions WHERE member_id=?`).bind(auth.member.id).first();
+  const subscriberCreditRate = await sellerHasSubscriberCreditRate(env, auth.member.id, subscription);
+  const creditPurchase = creditPurchaseQuote(1, { subscriber: subscriberCreditRate }, config);
   const monthKey = monthKeyAt();
   const usage = await env.DB.prepare(`SELECT * FROM seller_stream_usage_snapshots WHERE member_id=? AND month_key=?`).bind(auth.member.id, monthKey).first();
   const projection = calculateProjection(subscription || {}, config, plans);
@@ -352,6 +374,7 @@ async function streamCreditDashboard(request, env, cors) {
       finalizedAt: usage.finalized_at
     } : null,
     dashboard,
+    creditPurchase,
     projection: { metrics: projection.metrics, recommendedPlan: projection.recommendedPlan, lowerTierComparison: projection.lowerTierComparison, comparison: projection.comparison },
     ledger: ledgerRows.results || [],
     nextAlertThreshold: threshold
@@ -481,14 +504,20 @@ async function startStreamPlanCheckout(request, env, cors) {
   const selectedPlanCode = String(data.selectedPlanCode || "").toLowerCase();
   const plan = plans.find(entry => entry.code === selectedPlanCode && Number.isFinite(entry.monthlyPrice));
   if (!plan) return json({ error: "Choose a paid seller plan." }, 400, cors);
+  const existingSubscription = await env.DB.prepare(`SELECT stripe_subscription_id,stripe_subscription_status FROM seller_stream_subscriptions WHERE member_id=?`).bind(auth.member.id).first();
+  const existingStatus = String(existingSubscription?.stripe_subscription_status || "").toLowerCase();
+  if (existingSubscription?.stripe_subscription_id && !["", "canceled", "unpaid", "incomplete_expired"].includes(existingStatus)) {
+    return json({ error: "A Stripe seller subscription already exists. Use Manage Subscription to change billing." }, 409, cors);
+  }
   const customerId = await ensureStripeCustomerForMember(env, auth.member);
   const sessionId = uid();
   const expiresAt = new Date(Date.now() + 30 * 60e3).toISOString();
   const session = await stripeRequest(env.STRIPE_SECRET_KEY, "/checkout/sessions", [
     ["mode", "subscription"],
     ["customer", customerId],
-    ["success_url", `${siteUrl(env)}/referral.html?streamPlan=success`],
-    ["cancel_url", `${siteUrl(env)}/referral.html?streamPlan=cancelled`],
+    ["client_reference_id", auth.member.id],
+    ["success_url", `${siteUrl(env)}/referral.html?view=credits&streamPlan=success`],
+    ["cancel_url", `${siteUrl(env)}/referral.html?view=credits&streamPlan=cancelled`],
     ["line_items[0][price_data][currency]", "usd"],
     ["line_items[0][price_data][product_data][name]", `Crack Packs ${plan.name} seller plan`],
     ["line_items[0][price_data][product_data][description]", `${Number(plan.includedCredits || 0).toFixed(2)} monthly Stream Credits included`],
@@ -500,7 +529,10 @@ async function startStreamPlanCheckout(request, env, cors) {
     ["metadata[selected_plan_code]", plan.code],
     ["metadata[selected_plan_name]", plan.name],
     ["metadata[included_credits]", Number(plan.includedCredits || 0)],
-    ["metadata[monthly_price]", Number(plan.monthlyPrice || 0)]
+    ["metadata[monthly_price]", Number(plan.monthlyPrice || 0)],
+    ["subscription_data[metadata][kind]", "stream_plan_subscription"],
+    ["subscription_data[metadata][member_id]", auth.member.id],
+    ["subscription_data[metadata][selected_plan_code]", plan.code]
   ], `stream-plan-${auth.member.id}-${plan.code}-${Date.now()}`);
   await env.DB.prepare(`
     INSERT INTO seller_stream_checkout_sessions(id,member_id,kind,stripe_checkout_session_id,stripe_customer_id,selected_plan_code,selected_plan_name,total_amount,currency,status,expires_at,created_at,updated_at)
@@ -516,33 +548,42 @@ async function startStreamCreditPurchase(request, env, cors) {
   if (auth.error) return auth.error;
   await seedStreamCreditDefaults(env, auth.member.id);
   const data = await boundedJson(request, 2000);
-  const quantity = Math.max(1, Math.min(10000, Number(data.creditQuantity || 0)));
-  if (!Number.isFinite(quantity) || quantity <= 0) return json({ error: "Choose how many prepaid credits to buy." }, 400, cors);
   const { config } = await latestStreamCreditConfig(env);
+  const subscription = await env.DB.prepare(`SELECT * FROM seller_stream_subscriptions WHERE member_id=?`).bind(auth.member.id).first();
+  const subscriberCreditRate = await sellerHasSubscriberCreditRate(env, auth.member.id, subscription);
+  const quote = creditPurchaseQuote(data.creditQuantity, { subscriber: subscriberCreditRate }, config);
+  if (!quote) return json({ error: "Choose 1.00 to 10,000.00 credits in increments of 0.01." }, 400, cors);
+  const quantity = quote.quantity;
+  if (!subscription) {
+    const stamp = now();
+    await env.DB.prepare(`INSERT OR IGNORE INTO seller_stream_subscriptions(member_id,created_at,updated_at) VALUES(?,?,?)`)
+      .bind(auth.member.id, stamp, stamp).run();
+  }
   const customerId = await ensureStripeCustomerForMember(env, auth.member);
-  const totalAmount = round2(quantity * config.prepaidExtraCreditPrice);
+  const totalAmount = quote.totalAmount;
   const sessionId = uid();
   const expiresAt = new Date(Date.now() + 30 * 60e3).toISOString();
   const session = await stripeRequest(env.STRIPE_SECRET_KEY, "/checkout/sessions", [
     ["mode", "payment"],
     ["customer", customerId],
-    ["success_url", `${siteUrl(env)}/referral.html?streamCredits=success`],
-    ["cancel_url", `${siteUrl(env)}/referral.html?streamCredits=cancelled`],
+    ["success_url", `${siteUrl(env)}/referral.html?view=credits&streamCredits=success`],
+    ["cancel_url", `${siteUrl(env)}/referral.html?view=credits&streamCredits=cancelled`],
     ["line_items[0][price_data][currency]", "usd"],
-    ["line_items[0][price_data][product_data][name]", `Crack Packs prepaid Stream Credits (${quantity})`],
-    ["line_items[0][price_data][product_data][description]", `Prepaid rollover credits at $${config.prepaidExtraCreditPrice.toFixed(2)} per credit`],
-    ["line_items[0][price_data][unit_amount]", Math.round(config.prepaidExtraCreditPrice * 100)],
-    ["line_items[0][quantity]", Math.round(quantity)],
+    ["line_items[0][price_data][product_data][name]", `Crack Packs Stream Credits (${quantity.toFixed(2)})`],
+    ["line_items[0][price_data][product_data][description]", `${quantity.toFixed(2)} rollover credits at $${quote.unitPrice.toFixed(2)} per credit`],
+    ["line_items[0][price_data][unit_amount]", quote.amountCents],
+    ["line_items[0][quantity]", 1],
     ["metadata[kind]", "stream_credit_purchase"],
     ["metadata[member_id]", auth.member.id],
     ["metadata[credit_quantity]", quantity],
-    ["metadata[unit_price]", config.prepaidExtraCreditPrice]
+    ["metadata[unit_price]", quote.unitPrice],
+    ["metadata[subscriber_price]", quote.subscriber ? "true" : "false"]
   ], `stream-credit-${auth.member.id}-${Date.now()}`);
   await env.DB.prepare(`
     INSERT INTO seller_stream_checkout_sessions(id,member_id,kind,stripe_checkout_session_id,stripe_customer_id,credit_quantity,total_amount,currency,status,expires_at,created_at,updated_at)
     VALUES(?,?,?,?,?,?,?,?,'open',?,?,?)
   `).bind(sessionId, auth.member.id, "prepaid_credits", session.id, customerId, quantity, totalAmount, "USD", expiresAt, now(), now()).run();
-  return json({ checkoutUrl: session.url, sessionId: session.id, creditQuantity: quantity, totalAmount }, 201, cors);
+  return json({ checkoutUrl: session.url, sessionId: session.id, creditQuantity: quantity, unitPrice: quote.unitPrice, totalAmount, subscriberPrice: quote.subscriber }, 201, cors);
 }
 
 async function getStreamCreditConfig(request, env, cors) {
@@ -567,14 +608,14 @@ async function saveStreamCreditConfig(request, env, cors) {
     env.DB.prepare(`
       INSERT INTO stream_credit_config_versions(
         id,effective_at,created_at,created_by_member_id,delivery_minutes_per_credit,storage_minutes_per_credit,replay_reserve_percentage,safety_buffer_percentage,
-        recording_retention_days,month_days,stream_credit_underlying_value,prepaid_extra_credit_price,payg_overage_price,unused_credit_rebate_rate,finalization_delay_hours,
+        recording_retention_days,month_days,stream_credit_underlying_value,prepaid_extra_credit_price,subscriber_extra_credit_price,payg_overage_price,unused_credit_rebate_rate,finalization_delay_hours,
         protected_evidence_reserve_credits,auto_refill_package_sizes_json,spending_limit_default,cash_out_threshold,prepaid_credit_expiration_months,stripe_domestic_rate,
         stripe_domestic_fixed_fee,cloudflare_credit_cost_assumption,notes
-      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     `).bind(
       uid(), effectiveAt, stamp, auth.member.id, config.deliveryMinutesPerCredit, config.storageMinutesPerCredit, config.replayReservePercentage,
       config.safetyBufferPercentage, config.recordingRetentionDays, config.monthDays, config.streamCreditUnderlyingValue, config.prepaidExtraCreditPrice,
-      config.paygOveragePrice, config.unusedCreditRebateRate, config.finalizationDelayHours, config.protectedEvidenceReserveCredits,
+      config.subscriberExtraCreditPrice, config.paygOveragePrice, config.unusedCreditRebateRate, config.finalizationDelayHours, config.protectedEvidenceReserveCredits,
       JSON.stringify(config.autoRefillPackageSizes), config.spendingLimitDefault, config.cashOutThreshold, config.prepaidCreditExpirationMonths,
       config.stripeDomesticRate, config.stripeDomesticFixedFee, config.cloudflareCreditCostAssumption, clean(data.notes, 300)
     )
@@ -662,6 +703,40 @@ async function sendSellerGrantedEmail(env, member, liveUsername) {
   const accountUrl = `${siteUrl(env)}/referral.html`;
   const html = `<div style="font-family:Arial,sans-serif;color:#111827"><h1 style="color:#151936">Seller account granted</h1><p>Thank you for signing up.</p><p><strong>Your Crack Packs Seller ID:</strong> ${escapeHtml(liveUsername)}</p><p><strong>Your refer-a-friend URL:</strong><br><a href="${escapeHtml(referralUrl)}">${escapeHtml(referralUrl)}</a></p><p>Please follow or check out our socials for frequent codes to redeem on your account.</p><p>If you earn 100 sign-ups, you get a ticket to our annual Raffle Bonanza. Each ticket is a winner.</p><p><a href="${escapeHtml(accountUrl)}" style="display:inline-block;padding:14px 22px;background:#f8ff46;color:#070815;text-decoration:none;font-weight:bold;border-radius:10px">Go to account</a></p></div>`;
   await sendTransactionalEmail(env, member.email, "Crack Packs seller account granted", html, `seller-granted-${member.id}`);
+}
+async function sendSellerSubscriptionOnboardingEmail(env, member, subscription) {
+  if (!member?.email || !subscription) return false;
+  const existing = String(subscription.onboarding_email_sent_at || "");
+  if (existing && !existing.startsWith("pending:")) return false;
+  const pendingAt = existing.startsWith("pending:") ? Date.parse(existing.slice(8, 32)) : NaN;
+  if (Number.isFinite(pendingAt) && pendingAt > Date.now() - 15 * 60e3) return false;
+  const reservation = `pending:${now()}:${uid()}`;
+  const claimed = await env.DB.prepare(`UPDATE seller_stream_subscriptions SET onboarding_email_sent_at=?,updated_at=? WHERE member_id=? AND COALESCE(onboarding_email_sent_at,'')=?`)
+    .bind(reservation, now(), member.id, existing).run();
+  if (Number(claimed.meta?.changes || 0) !== 1) return false;
+  const base = siteUrl(env);
+  const creditsUrl = `${base}/referral.html?view=credits`;
+  const createKeyUrl = `${base}/streams.html#go-live`;
+  const createShowUrl = `${base}/streams.html#create-show`;
+  const inventoryUrl = `${base}/streams.html#seller-inventory`;
+  const shippingUrl = `${base}/streams.html#seller-shipping`;
+  const planName = clean(subscription.selected_plan_name || "Seller", 60);
+  const html = `<div style="font-family:Arial,sans-serif;color:#111827;line-height:1.55"><h1 style="color:#151936">Your ${escapeHtml(planName)} plan is active</h1><p>Stripe confirmed your Crack Packs seller subscription. Keep this checklist for your first show.</p><ol><li><strong>Create your stream key.</strong> Open <a href="${escapeHtml(createKeyUrl)}">Go Live</a> and create the Cloudflare Stream input.</li><li><strong>Set up OBS.</strong> Copy the server and stream key into OBS, then run a private test.</li><li><strong>Create your inventory.</strong> Add products, quantities, prices, and packed shipment details in <a href="${escapeHtml(inventoryUrl)}">Seller Inventory</a>.</li><li><strong>Build the show.</strong> <a href="${escapeHtml(createShowUrl)}">Create a show</a>, attach inventory, and confirm the <a href="${escapeHtml(shippingUrl)}">shipping rates</a> used by its listings.</li></ol><p><a href="${escapeHtml(creditsUrl)}" style="display:inline-block;padding:15px 24px;background:#f8ff46;color:#070815;text-decoration:none;font-weight:900;border-radius:999px">OPEN SUBSCRIPTION &amp; CREDITS</a></p><p>Need help before going live? Reply to this email or contact support@crackpacks.com.</p></div>`;
+  const text = `Your ${planName} plan is active\n\nStripe confirmed your Crack Packs seller subscription.\n\nFIRST SHOW CHECKLIST\n1. Create your stream key: ${createKeyUrl}\n2. Set up OBS with the server and stream key, then run a private test.\n3. Create inventory with quantities, prices, and packed shipment details: ${inventoryUrl}\n4. Create the show, attach inventory, and confirm shipping rates: ${createShowUrl}\n\nSubscription and credits: ${creditsUrl}\nShipping: ${shippingUrl}\n\nNeed help? support@crackpacks.com`;
+  const sent = await sendTransactionalEmail(env, member.email, `Your Crack Packs ${planName} plan and first-show checklist`, html, `seller-plan-onboarding-${subscription.stripe_subscription_id || member.id}`, {
+    fromAddress: "alerts@crackpacks.com",
+    fromName: "Crack Packs Seller Setup",
+    text
+  });
+  if (!sent) {
+    await env.DB.prepare(`UPDATE seller_stream_subscriptions SET onboarding_email_sent_at=NULL,updated_at=? WHERE member_id=? AND onboarding_email_sent_at=?`)
+      .bind(now(), member.id, reservation).run();
+    return false;
+  }
+  const stamp = now();
+  await env.DB.prepare(`UPDATE seller_stream_subscriptions SET onboarding_email_sent_at=?,updated_at=? WHERE member_id=? AND onboarding_email_sent_at=?`)
+    .bind(stamp, stamp, member.id, reservation).run();
+  return true;
 }
 async function sendStripeIdentityResultEmail(env, member, result) {
   if (!member?.id || !member.email || !["verified", "failed"].includes(result)) return false;
@@ -957,17 +1032,24 @@ async function completeStreamPlanSubscription(env, session) {
     env.DB.prepare(`UPDATE members SET stripe_customer_id=COALESCE(NULLIF(?,''),stripe_customer_id),updated_at=? WHERE id=?`).bind(customerId, now(), memberId)
   ]);
   const saved = await env.DB.prepare(`SELECT * FROM seller_stream_subscriptions WHERE member_id=?`).bind(memberId).first();
-  if (saved) await grantIncludedMonthlyCredits(env, memberId, saved, config);
+  if (saved) {
+    await grantIncludedMonthlyCredits(env, memberId, saved, config);
+    const member = await env.DB.prepare(`SELECT * FROM members WHERE id=?`).bind(memberId).first();
+    if (member) await sendSellerSubscriptionOnboardingEmail(env, member, saved);
+  }
 }
 
 async function completeStreamCreditPurchase(env, session) {
-  const memberId = String(session.metadata?.member_id || "");
-  if (!validUuid(memberId)) return;
-  const creditQuantity = Number(session.metadata?.credit_quantity || 0);
-  if (!(creditQuantity > 0)) return;
-  const { config } = await latestStreamCreditConfig(env);
+  const metadataMemberId = String(session.metadata?.member_id || "");
+  if (!validUuid(metadataMemberId)) return;
   const checkout = await env.DB.prepare(`SELECT * FROM seller_stream_checkout_sessions WHERE stripe_checkout_session_id=? AND kind='prepaid_credits'`).bind(session.id).first();
   if (!checkout || checkout.status === "paid") return;
+  if (checkout.member_id !== metadataMemberId) return;
+  const memberId = checkout.member_id;
+  const creditQuantity = Number(checkout.credit_quantity || 0);
+  if (!(creditQuantity > 0)) return;
+  const { config } = await latestStreamCreditConfig(env);
+  const paidTotal = Number(checkout.total_amount || (Number(session.amount_total || 0) / 100) || 0);
   const stamp = now();
   await env.DB.batch([
     env.DB.prepare(`UPDATE seller_stream_checkout_sessions SET status='paid',updated_at=? WHERE id=?`).bind(stamp, checkout.id),
@@ -976,7 +1058,7 @@ async function completeStreamCreditPurchase(env, session) {
       INSERT INTO seller_stream_credit_ledger(
         id,member_id,transaction_id,credit_source,credit_quantity,dollar_value,usage_category,status,created_at,expiration_at,administrator_adjustment_reason
       ) VALUES(?,?,?,?,?,?,?,?,?,?,?)
-    `).bind(uid(), memberId, `prepaid-${session.id}`, "prepaid_rollover", creditQuantity, round2(creditQuantity * config.streamCreditUnderlyingValue), "credit_purchase", "available", stamp, new Date(Date.now() + config.prepaidCreditExpirationMonths * 30 * 86400e3).toISOString(), "Prepaid credit purchase")
+    `).bind(uid(), memberId, `prepaid-${session.id}`, "prepaid_rollover", creditQuantity, round2(paidTotal), "credit_purchase", "available", stamp, new Date(Date.now() + config.prepaidCreditExpirationMonths * 30 * 86400e3).toISOString(), "Prepaid credit purchase")
   ]);
 }
 
@@ -1032,6 +1114,10 @@ async function runStreamCreditCycle(env, { notify = true } = {}) {
   `).bind(monthKeyAt()).all();
   let alertsSent = 0;
   for (const row of subscriptions.results || []) {
+    if (["active", "trialing"].includes(String(row.stripe_subscription_status || "").toLowerCase()) && (!row.onboarding_email_sent_at || String(row.onboarding_email_sent_at).startsWith("pending:"))) {
+      await sendSellerSubscriptionOnboardingEmail(env, { id: row.member_id, email: row.email }, row)
+        .catch(error => console.error("Seller subscription onboarding retry failed", { memberId: row.member_id, message: clean(error?.message || "", 200) }));
+    }
     const dashboard = estimateDashboard(row, row, config, plans);
     for (const threshold of [50, 75, 90, 100]) {
       if (dashboard.utilization < threshold) continue;
@@ -1156,6 +1242,19 @@ async function handleIdentityEvent(env, event) {
   }
 }
 
+async function syncStreamSubscriptionStatus(env, subscription) {
+  const subscriptionId = String(subscription?.id || "");
+  if (!subscriptionId) return;
+  const periodEnd = subscription.current_period_end
+    ? new Date(Number(subscription.current_period_end) * 1000).toISOString()
+    : null;
+  await env.DB.prepare(`
+    UPDATE seller_stream_subscriptions
+    SET stripe_subscription_status=?,stripe_current_period_end=?,updated_at=?
+    WHERE stripe_subscription_id=?
+  `).bind(clean(subscription.status || "", 40), periodEnd, now(), subscriptionId).run();
+}
+
 async function stripeWebhook(request, env, cors) {
   if (!env.STRIPE_WEBHOOK_SECRET) return json({ error: "Stripe webhook is not configured." }, 503, cors);
   const rawBody = await request.text();
@@ -1198,6 +1297,8 @@ async function stripeWebhook(request, env, cors) {
       await env.DB.prepare(`UPDATE seller_stream_subscriptions SET stripe_subscription_status='past_due',stripe_last_invoice_id=?,updated_at=? WHERE stripe_subscription_id=?`)
         .bind(clean(invoice.id || "", 80), now(), subscriptionId).run();
     }
+  } else if (event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {
+    await syncStreamSubscriptionStatus(env, event.data?.object || {});
   } else if (event.type === "charge.refunded") {
     await handleRefund(env, event.data?.object || {});
   } else if (event.type.startsWith("identity.verification_session.")) {
@@ -1245,6 +1346,24 @@ async function startBillingSetup(request, env, cors) {
     return json({ url: session.url }, 201, cors);
   } catch (error) {
     return json({ error: error.message === "STRIPE_NOT_CONFIGURED" ? "Stripe billing is not configured." : "Stripe could not open payment setup." }, 503, cors);
+  }
+}
+
+async function startBillingPortal(request, env, cors) {
+  const auth = await requireMember(request, env, cors);
+  if (auth.error) return auth.error;
+  try {
+    const customerId = await ensureStripeCustomerForMember(env, auth.member);
+    const session = await stripeRequest(env.STRIPE_SECRET_KEY, "/billing_portal/sessions", [
+      ["customer", customerId],
+      ["return_url", `${siteUrl(env)}/referral.html?view=account&billing=return`]
+    ], `billing-portal-${auth.member.id}-${Date.now()}`);
+    return json({ url: session.url }, 201, cors);
+  } catch (error) {
+    const message = error.message === "STRIPE_NOT_CONFIGURED"
+      ? "Stripe billing is not configured."
+      : stripeSafeError("Stripe Billing Portal could not open", error);
+    return json({ error: message }, 503, cors);
   }
 }
 
@@ -2873,6 +2992,7 @@ export async function handlePlatformRoute(request, env, cors) {
   if (url.pathname === "/gifted-giveaways/checkout" && request.method === "POST") return createGiftCheckout(request, env, cors);
   if (url.pathname === "/profile/contact" && request.method === "POST") return saveBuyerContact(request, env, cors);
   if (url.pathname === "/billing/setup" && request.method === "POST") return startBillingSetup(request, env, cors);
+  if (url.pathname === "/billing/portal" && request.method === "POST") return startBillingPortal(request, env, cors);
   if (url.pathname === "/portal/status" && request.method === "GET") {
     const auth = await requireMember(request, env, cors, { verified: false });
     if (auth.error) return auth.error;

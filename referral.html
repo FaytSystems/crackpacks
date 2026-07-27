@@ -8,9 +8,9 @@
   <meta name="theme-color" content="#07091b">
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/css/styles.css?v=1.9.7">
-  <link rel="stylesheet" href="assets/css/referral.css?v=3.4.1">
+  <link rel="stylesheet" href="assets/css/referral.css?v=3.5.0">
   <link rel="stylesheet" href="assets/css/rewards-modal.css?v=2.2.0">
-  <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.6.2">
+  <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.6.3">
 </head>
 <body data-page="rewards">
   <a class="skip-link" href="#main">Skip to content</a>
@@ -193,11 +193,14 @@
           <button class="account-subnav-pill" type="button" data-start-seller-upgrade data-account-seller-tab>Seller Verification</button>
           <button class="account-subnav-pill" type="button" data-open-master-portal data-account-master-tab hidden>Master Account</button>
         </nav>
+        <nav class="account-dashboard-subnav account-dashboard-settings" aria-label="Profile settings pages">
+          <button class="account-subnav-pill" type="button" data-view="account">Account Details</button>
+          <button class="account-subnav-pill" type="button" data-view="credits">Subscribe / Credits</button>
+        </nav>
         <nav class="account-dashboard-subnav account-dashboard-pages" aria-label="Buyer account pages">
           <button class="account-subnav-link" type="button" data-view="discount">Rewards</button>
           <button class="account-subnav-link" type="button" data-view="invite">Invites</button>
           <button class="account-subnav-link" type="button" data-view="orders">Orders</button>
-          <button class="account-subnav-link" type="button" data-view="account">Checkout Profile</button>
           <a class="account-subnav-link" href="shop.html">Buyer Store</a>
           <a class="account-subnav-link" href="streams.html">Live Feed</a>
         </nav>
@@ -331,11 +334,16 @@
         </section>
         <section class="reward-card" data-seller-only data-stream-credits-panel hidden>
           <div class="campaign-history-head">
-            <div><p class="eyebrow">Streaming plans</p><h3>Find the right streaming plan</h3></div>
+            <div><p class="eyebrow">Subscribe / Credits</p><h3>Streaming plans and credit balance</h3></div>
             <button class="btn btn-outline btn-small" type="button" data-stream-credits-refresh>Refresh</button>
           </div>
           <p>Tell Crack Packs how often you expect to stream and the size of your usual live audience. We’ll estimate your Stream Credit usage and recommend the plan projected to cost the least.</p>
           <p class="fine-print" data-stream-credits-sync-note>Credits Remaining updates when you refresh.</p>
+          <div class="stream-subscription-state" data-stream-subscription-state>
+            <div><span>Current plan</span><strong data-current-stream-plan>No active subscription</strong></div>
+            <div><span>Stripe status</span><strong data-current-stream-status>Not subscribed</strong></div>
+            <button class="btn btn-outline btn-small" type="button" data-manage-subscription hidden>Manage Subscription</button>
+          </div>
           <div class="stream-credit-meter" data-stream-credit-meter hidden>
             <div class="stream-credit-meter-main">
               <span>Credits Remaining</span>
@@ -345,6 +353,7 @@
             <div class="stream-credit-meter-meta">
               <span><b data-stream-credits-used>0.00</b> used</span>
               <span><b data-stream-credits-included>0.00</b> included</span>
+              <span><b data-stream-credits-prepaid>0.00</b> purchased</span>
               <span><b data-stream-credits-utilization>0%</b> utilization</span>
             </div>
           </div>
@@ -364,7 +373,6 @@
               <button class="btn btn-outline" type="button" data-stream-credits-calculate>Calculate</button>
               <button class="btn btn-primary" type="submit">Save seller plan</button>
               <button class="btn btn-outline" type="button" data-stream-plan-checkout>Start plan checkout</button>
-              <button class="btn btn-outline" type="button" data-stream-credit-buy>Buy 25 credits</button>
             </div>
           </form>
           <div class="progress-summary" data-stream-credits-summary hidden>
@@ -373,7 +381,19 @@
             <div><span>Projected usage</span><strong data-stream-project-base>-</strong></div>
             <div><span>Buffered capacity</span><strong data-stream-project-buffer>-</strong></div>
           </div>
-          <div class="campaign-claims" data-stream-credits-comparison aria-live="polite"></div>
+          <div class="stream-plan-list" data-stream-credits-comparison aria-live="polite"></div>
+          <form class="stream-credit-purchase-form" data-stream-credit-purchase-form>
+            <div>
+              <label>Additional credits<input name="creditQuantity" data-stream-credit-quantity type="number" min="1" max="10000" step="0.01" value="1.00" inputmode="decimal" required></label>
+              <small>Minimum 1.00 credit. Increase the amount in 0.01-credit steps.</small>
+            </div>
+            <div class="stream-credit-quote" aria-live="polite">
+              <span data-stream-credit-rate>$1.50 per credit</span>
+              <strong data-stream-credit-total>$1.50</strong>
+              <small data-stream-credit-rate-note>Standard a-la-carte rate</small>
+            </div>
+            <button class="btn btn-primary" type="submit" data-stream-credit-buy>Buy Credits</button>
+          </form>
           <div class="campaign-claims" data-stream-credits-dashboard aria-live="polite"></div>
         </section>
         <section class="reward-card progress-card">
@@ -395,9 +415,17 @@
           </form>
         </section>
         <section class="reward-card profile-settings-card" data-account-panel>
-          <p class="eyebrow">Buyer checkout profile</p>
-          <h3>Shipping, phone, and payment</h3>
-          <p>Save the address used for checkout and auction fulfillment. Card details are entered directly on Stripe and are never stored by Crack Packs.</p>
+          <p class="eyebrow">Account Details</p>
+          <h3>Personal details and account security</h3>
+          <div class="account-detail-grid">
+            <div><span>Name</span><strong data-account-name>Not provided</strong></div>
+            <div><span>Email</span><strong data-account-email>Not provided</strong></div>
+            <div><span>Buyer ID</span><strong data-account-buyer-id>Not provided</strong></div>
+          </div>
+          <div class="account-section-title">
+            <div><p class="eyebrow">Shipping address</p><h4>Checkout and fulfillment</h4></div>
+          </div>
+          <p>Save the address used for checkout and auction fulfillment.</p>
           <form class="username-settings-form" data-contact-form>
             <div class="field-grid">
               <label>Phone number<input name="phone" data-contact-phone type="tel" autocomplete="tel" maxlength="32" required placeholder="+1 555 555 0123"></label>
@@ -414,10 +442,29 @@
             <button class="btn btn-outline" type="submit">Save checkout profile</button>
           </form>
           <div class="campaign-form-status" data-contact-status aria-live="polite"></div>
+          <div class="account-section-title">
+            <div><p class="eyebrow">Saved payments</p><h4>Stripe billing methods</h4></div>
+          </div>
+          <p>Card details are entered directly on Stripe and are never stored by Crack Packs.</p>
           <div class="payment-method-row">
             <div><strong data-payment-method-label>No payment method saved</strong><small>Stripe securely stores the card for authorized checkout and future instant-auction payment.</small></div>
-            <button class="btn btn-primary" type="button" data-add-payment-method>Add payment method</button>
+            <div class="actions">
+              <button class="btn btn-primary" type="button" data-add-payment-method>Add payment method</button>
+              <button class="btn btn-outline" type="button" data-manage-billing hidden>Manage saved payments</button>
+            </div>
           </div>
+          <div class="account-section-title">
+            <div><p class="eyebrow">Password</p><h4>Change account password</h4></div>
+          </div>
+          <form class="password-change-form" data-password-change-form>
+            <label>Current password<input name="currentPassword" type="password" autocomplete="current-password" required maxlength="128"></label>
+            <div class="field-grid">
+              <label>New password<input name="password" type="password" autocomplete="new-password" required minlength="10" maxlength="128"></label>
+              <label>Confirm new password<input name="confirmPassword" type="password" autocomplete="new-password" required minlength="10" maxlength="128"></label>
+            </div>
+            <button class="btn btn-outline" type="submit">Change password</button>
+            <div class="campaign-form-status" data-password-change-status aria-live="polite"></div>
+          </form>
         </section>
         <section class="reward-card social-links-card">
           <p class="eyebrow">Crack_Pots Social Links</p>
@@ -504,8 +551,8 @@
   </div>
   <script src="assets/js/config.js?v=3.0.0"></script>
   <script src="assets/js/app.js?v=1.9.6"></script>
-  <script src="assets/js/nav-profile.js?v=4.1.5"></script>
+  <script src="assets/js/nav-profile.js?v=4.2.0"></script>
   <script src="assets/js/portal-mode.js?v=1.1.5"></script>
-  <script src="assets/js/referral.js?v=3.4.7"></script>
+  <script src="assets/js/referral.js?v=3.5.0"></script>
 </body>
 </html>

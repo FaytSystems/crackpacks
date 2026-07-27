@@ -8,7 +8,8 @@ const DEFAULT_CONFIG = Object.freeze({
   recordingRetentionDays: 90,
   monthDays: 30,
   streamCreditUnderlyingValue: 1,
-  prepaidExtraCreditPrice: 1.85,
+  prepaidExtraCreditPrice: 1.50,
+  subscriberExtraCreditPrice: 1.25,
   paygOveragePrice: 2.25,
   unusedCreditRebateRate: 1,
   finalizationDelayHours: 72,
@@ -44,6 +45,7 @@ function normalizeConfig(input = {}) {
   config.monthDays = Number(config.monthDays || DEFAULT_CONFIG.monthDays);
   config.streamCreditUnderlyingValue = Number(config.streamCreditUnderlyingValue || DEFAULT_CONFIG.streamCreditUnderlyingValue);
   config.prepaidExtraCreditPrice = Number(config.prepaidExtraCreditPrice || DEFAULT_CONFIG.prepaidExtraCreditPrice);
+  config.subscriberExtraCreditPrice = Number(config.subscriberExtraCreditPrice || DEFAULT_CONFIG.subscriberExtraCreditPrice);
   config.paygOveragePrice = Number(config.paygOveragePrice || DEFAULT_CONFIG.paygOveragePrice);
   config.unusedCreditRebateRate = Number(config.unusedCreditRebateRate || DEFAULT_CONFIG.unusedCreditRebateRate);
   config.finalizationDelayHours = Number(config.finalizationDelayHours || DEFAULT_CONFIG.finalizationDelayHours);
@@ -167,6 +169,25 @@ function calculateActualCredits(usage = {}, rawConfig = DEFAULT_CONFIG) {
   return round2((deliveredMinutes / config.deliveryMinutesPerCredit) + (storedMinutes / config.storageMinutesPerCredit));
 }
 
+function creditPurchaseQuote(rawQuantity, { subscriber = false } = {}, rawConfig = DEFAULT_CONFIG) {
+  const numericQuantity = Number(rawQuantity);
+  if (!Number.isFinite(numericQuantity)) return null;
+  const hundredths = Math.round(numericQuantity * 100);
+  if (Math.abs((numericQuantity * 100) - hundredths) > 1e-7 || hundredths < 100 || hundredths > 1_000_000) return null;
+  const quantity = hundredths / 100;
+  const config = normalizeConfig(rawConfig);
+  const unitPrice = subscriber ? config.subscriberExtraCreditPrice : config.prepaidExtraCreditPrice;
+  const amountCents = Math.round(quantity * unitPrice * 100);
+  if (!Number.isInteger(amountCents) || amountCents < 50) return null;
+  return {
+    quantity,
+    subscriber: Boolean(subscriber),
+    unitPrice: round2(unitPrice),
+    amountCents,
+    totalAmount: round2(amountCents / 100)
+  };
+}
+
 function estimateDashboard(subscription = {}, usage = {}, rawConfig = DEFAULT_CONFIG, rawPlans = DEFAULT_PLANS) {
   const projection = calculateProjection({
     averageConcurrentViewers: subscription.average_concurrent_viewers,
@@ -177,17 +198,21 @@ function estimateDashboard(subscription = {}, usage = {}, rawConfig = DEFAULT_CO
     safetyBufferPercentage: subscription.safety_buffer_percentage
   }, rawConfig, rawPlans);
   const includedCredits = Number(subscription.included_credits ?? projection.recommendedPlan?.includedCredits ?? 0);
+  const prepaidCreditsBalance = Number(subscription.prepaid_credits_balance || 0);
+  const totalCreditsAvailable = round2(includedCredits + prepaidCreditsBalance);
   const actualCreditsUsed = calculateActualCredits({
     actualDeliveredMinutes: usage.actual_delivered_minutes,
     actualStoredMinutes: usage.actual_stored_minutes
   }, rawConfig);
-  const creditsRemaining = round2(Math.max(0, includedCredits - actualCreditsUsed));
+  const creditsRemaining = round2(Math.max(0, totalCreditsAvailable - actualCreditsUsed));
   const projectedUnusedCredits = round2(Math.max(0, includedCredits - projection.metrics.projectedBaseCredits));
   const projectedRebate = round2(projectedUnusedCredits * projection.config.unusedCreditRebateRate);
   const projectedOverage = round2(Math.max(0, projection.metrics.projectedBaseCredits - includedCredits));
-  const utilization = includedCredits > 0 ? round2((actualCreditsUsed / includedCredits) * 100) : 0;
+  const utilization = totalCreditsAvailable > 0 ? round2((actualCreditsUsed / totalCreditsAvailable) * 100) : 0;
   return {
     includedCredits: round2(includedCredits),
+    prepaidCreditsBalance: round2(prepaidCreditsBalance),
+    totalCreditsAvailable,
     actualCreditsUsed,
     creditsRemaining,
     projectedEndOfMonthUsage: projection.metrics.projectedBaseCredits,
@@ -212,6 +237,7 @@ export {
   normalizePlans,
   calculateProjection,
   calculateActualCredits,
+  creditPurchaseQuote,
   estimateDashboard,
   nextAlertThreshold,
   round2

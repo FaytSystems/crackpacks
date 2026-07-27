@@ -20,15 +20,28 @@ Required Worker secrets:
 
 Subscribe the Stripe webhook to `checkout.session.completed`,
 `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`,
-`checkout.session.expired`, `charge.refunded`,
+`checkout.session.expired`, `invoice.payment_succeeded`, `invoice.payment_failed`,
+`customer.subscription.updated`, `customer.subscription.deleted`, `charge.refunded`,
 `identity.verification_session.verified`,
 `identity.verification_session.requires_input`,
 `identity.verification_session.canceled`, and
 `identity.verification_session.redacted`.
 
 The same signed Stripe endpoint handles store orders, paid gifted giveaways,
-buyer payment-method setup, refunds, and Stripe Identity results:
+buyer payment-method setup, seller subscription and credit payments, refunds,
+and Stripe Identity results:
 `https://rewards-api.crackpacks.com/webhooks/stripe`.
+
+Enable and configure the Stripe Customer Portal in both test mode and live mode
+under **Settings > Billing > Customer portal**. Allow customers to update saved
+payment methods and cancel or change subscriptions. The Account Details and
+Subscribe / Credits pages create short-lived portal sessions on demand.
+
+Paid seller subscription checkouts use Stripe subscription mode. After the
+signed paid webhook activates the plan and grants the monthly credits, the
+Worker sends the verified seller a first-show checklist covering stream-key
+creation, OBS setup, inventory, show setup, and shipping rates. The message is
+idempotent and is sent only once for the seller's first confirmed plan.
 
 ## Platform v5 launch controls
 

@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   calculateActualCredits,
   calculateProjection,
+  creditPurchaseQuote,
   estimateDashboard
 } from "../src/stream-credits.js";
 
@@ -50,4 +51,39 @@ test("dashboard estimate reports remaining credits and projected rebate", () => 
   assert.equal(dashboard.actualCreditsUsed, 11);
   assert.equal(dashboard.creditsRemaining, 119);
   assert.ok(dashboard.projectedRebate >= 0);
+});
+
+test("a-la-carte credit quote accepts hundredths and applies account pricing", () => {
+  assert.deepEqual(creditPurchaseQuote(1.01), {
+    quantity: 1.01,
+    subscriber: false,
+    unitPrice: 1.5,
+    amountCents: 152,
+    totalAmount: 1.52
+  });
+  assert.deepEqual(creditPurchaseQuote("25.25", { subscriber: true }), {
+    quantity: 25.25,
+    subscriber: true,
+    unitPrice: 1.25,
+    amountCents: 3156,
+    totalAmount: 31.56
+  });
+});
+
+test("a-la-carte credit quote enforces minimum and two-decimal precision", () => {
+  assert.equal(creditPurchaseQuote(0.99), null);
+  assert.equal(creditPurchaseQuote(1.001), null);
+  assert.equal(creditPurchaseQuote(10000.01), null);
+});
+
+test("dashboard remaining balance includes purchased rollover credits", () => {
+  const dashboard = estimateDashboard({
+    included_credits: 30,
+    prepaid_credits_balance: 4.25
+  }, {
+    actual_delivered_minutes: 5000,
+    actual_stored_minutes: 0
+  });
+  assert.equal(dashboard.totalCreditsAvailable, 34.25);
+  assert.equal(dashboard.creditsRemaining, 29.25);
 });

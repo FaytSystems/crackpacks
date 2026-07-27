@@ -202,7 +202,8 @@
     form.recordingRetentionDays.value = config.recordingRetentionDays ?? 90;
     form.finalizationDelayHours.value = config.finalizationDelayHours ?? 72;
     form.streamCreditUnderlyingValue.value = config.streamCreditUnderlyingValue ?? 1;
-    form.prepaidExtraCreditPrice.value = config.prepaidExtraCreditPrice ?? 1.85;
+    form.prepaidExtraCreditPrice.value = config.prepaidExtraCreditPrice ?? 1.50;
+    form.subscriberExtraCreditPrice.value = config.subscriberExtraCreditPrice ?? 1.25;
     form.paygOveragePrice.value = config.paygOveragePrice ?? 2.25;
     form.unusedCreditRebateRate.value = config.unusedCreditRebateRate ?? 1;
     form.cashOutThreshold.value = config.cashOutThreshold ?? 25;
@@ -235,6 +236,7 @@
       finalizationDelayHours: Number(data.get("finalizationDelayHours") || 0),
       streamCreditUnderlyingValue: Number(data.get("streamCreditUnderlyingValue") || 0),
       prepaidExtraCreditPrice: Number(data.get("prepaidExtraCreditPrice") || 0),
+      subscriberExtraCreditPrice: Number(data.get("subscriberExtraCreditPrice") || 0),
       paygOveragePrice: Number(data.get("paygOveragePrice") || 0),
       unusedCreditRebateRate: Number(data.get("unusedCreditRebateRate") || 0),
       cashOutThreshold: Number(data.get("cashOutThreshold") || 0),
