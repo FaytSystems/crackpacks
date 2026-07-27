@@ -15,6 +15,8 @@ Required Worker secrets:
 - `SHIP_FROM_ADDRESS_JSON` — real ship-from name, address, phone, and email.
 - `RESEND_API_KEY` — verified `crackpacks.com` sending domain.
 - `BUSINESS_POSTAL_ADDRESS` — valid postal address shown in member announcements.
+- `CLOUDFLARE_STREAM_API_TOKEN` — account-owned or user-owned Cloudflare API
+  token scoped to the Crack Packs account with **Account > Stream > Edit**.
 
 Subscribe the Stripe webhook to `checkout.session.completed`,
 `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`,
@@ -48,6 +50,43 @@ buyer payment-method setup, refunds, and Stripe Identity results:
   refuses to open a lot or accept a bid while the flag is false.
 
 Apply migrations `0024` through `0027` before deploying Worker v5.
+
+### Cloudflare Stream live-input key setup
+
+This is a one-time platform-administrator setup. Sellers click **Create Key**
+inside Crack Packs; they do not create Cloudflare tokens and do not need OBS
+configured before that button works.
+
+1. In the Cloudflare dashboard, select the account whose ID is configured as
+   `CLOUDFLARE_ACCOUNT_ID`, then open **Stream** and complete **Get started** so
+   Stream is enabled for that account.
+2. Open **Manage Account > Account API Tokens** and select **Create Token**.
+   A user token from **My Profile > API Tokens** also works, but an account token
+   is preferred for this production service.
+3. Name it `Crack Packs Stream Live Inputs`.
+4. Add permission **Account > Stream > Edit**. Cloudflare's API documentation
+   may describe the same accepted permission as `Stream Write`.
+5. Restrict **Account Resources** to the exact account used by
+   `CLOUDFLARE_ACCOUNT_ID`. Do not select a different zone or account.
+6. Create the token and copy only the secret value shown once. New account
+   tokens normally begin with `cfat_`; new user tokens normally begin with
+   `cfut_`. Do not copy `Bearer`, quotation marks, a curl command, or a header.
+7. From PowerShell, store it through Wrangler's private prompt:
+
+   ```powershell
+   Set-Location "C:\Users\UrsaMajor\OneDrive\Desktop\PROJECT\crackpacks-origin-main\rewards-worker"
+   npx wrangler secret put CLOUDFLARE_STREAM_API_TOKEN
+   ```
+
+8. Paste only the token when Wrangler prompts, submit it, and then deploy the
+   current Worker with `npm run deploy`.
+9. Sign in to a seller account, open **Go Live**, click **Create Key** once, and
+   wait for both the RTMPS server and Stream key to appear. Only after those two
+   values exist should the seller open OBS and paste them into
+   **Settings > Stream > Custom**.
+
+The Worker accepts both Cloudflare token types and checks each with its matching
+verification endpoint. A Global API Key (`cfk_`) is not the Stream API token.
 
 ### Seller YouTube simulcasting
 
@@ -95,6 +134,7 @@ The included internal checker accepts any valid verified email address and enfor
    - `npx wrangler secret put OWNER_REFERRAL_SECRET`
    - `npx wrangler secret put EASYPOST_TEST_API_KEY`
    - `npx wrangler secret put SHIP_FROM_ADDRESS_JSON`
+   - `npx wrangler secret put CLOUDFLARE_STREAM_API_TOKEN`
 5. Run `npm run db:remote`.
 6. Configure Cloudflare Email Routing so `rewards@crackpacks.com`,
    `orders@crackpacks.com`, `alerts@crackpacks.com`,

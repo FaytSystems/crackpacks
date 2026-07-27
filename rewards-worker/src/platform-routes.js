@@ -2324,17 +2324,27 @@ function cloudflareProviderDetail(response, payload, responseText) {
 async function cloudflareVerifyToken(env) {
   const token = cloudflareStreamToken(env);
   if (!token) throw new Error("STREAM_NOT_CONFIGURED");
-  const response = await fetch("https://api.cloudflare.com/client/v4/user/tokens/verify", {
-    method: "GET",
-    headers: { Authorization: `Bearer ${token}` }
-  });
-  const responseText = await response.text().catch(() => "");
-  const payload = responseText ? (() => { try { return JSON.parse(responseText); } catch { return {}; } })() : {};
-  if (!response.ok || payload.success === false) {
-    const providerError = cloudflareProviderDetail(response, payload, responseText);
-    throw new Error(providerError ? `STREAM_PROVIDER_ERROR:${providerError}` : "STREAM_PROVIDER_ERROR");
+  const accountId = cloudflareAccountId(env);
+  const userVerification = { type: "user", url: "https://api.cloudflare.com/client/v4/user/tokens/verify" };
+  const accountVerification = accountId
+    ? { type: "account", url: `https://api.cloudflare.com/client/v4/accounts/${accountId}/tokens/verify` }
+    : null;
+  const verificationRequests = /^cfat_/i.test(token)
+    ? [accountVerification, userVerification]
+    : [userVerification, accountVerification];
+  const failures = [];
+  for (const verification of verificationRequests.filter(Boolean)) {
+    const response = await fetch(verification.url, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const responseText = await response.text().catch(() => "");
+    const payload = responseText ? (() => { try { return JSON.parse(responseText); } catch { return {}; } })() : {};
+    if (response.ok && payload.success !== false) return payload.result || payload;
+    failures.push(`${verification.type} token check: ${cloudflareProviderDetail(response, payload, responseText)}`);
   }
-  return payload.result || payload;
+  const providerError = clean(failures.join("; "), 240);
+  throw new Error(providerError ? `STREAM_PROVIDER_ERROR:${providerError}` : "STREAM_PROVIDER_ERROR");
 }
 
 async function cloudflareRequest(env, path, options = {}) {

@@ -153,20 +153,20 @@
         </article>
         <article class="holo-panel obs-setup-guide obs-setup-guide-premium" data-stream-setup-guide hidden data-stream-guide-premium>
           <div class="obs-setup-guide-badge">First-time seller setup</div>
-          <strong>OBS setup</strong>
-          <p class="obs-setup-guide-intro">Create your Crack Packs key once, paste it into OBS, and you are ready to reuse the same connection for future shows until you intentionally rotate it.</p>
+          <strong>Create your key, then connect OBS</strong>
+          <p class="obs-setup-guide-intro">Create your private connection on Crack Packs first. Sellers do not need a Cloudflare login or Cloudflare API token.</p>
           <ol>
-            <li>Click <span>Create key</span> to generate your private Crack Packs stream input.</li>
+            <li>Click <span>Create Key</span> once and leave this page open while Crack Packs requests a private live input.</li>
+            <li>Wait for <span>OBS key created and displayed</span>. The RTMPS server and Stream key fields will appear on this page.</li>
+            <li>Copy both values and keep the Stream key private. Use <span>Save</span> if you also want a local backup of the key.</li>
             <li>Open OBS and go to <span>Settings &gt; Stream</span>.</li>
             <li>Set <span>Service</span> to <span>Custom</span>.</li>
-            <li>Paste the <span>RTMPS server</span> into OBS Server.</li>
-            <li>Paste the <span>Stream key</span> into OBS Stream Key.</li>
-            <li>Save OBS. Future shows reuse this same saved key until you choose <span>Regenerate stream key</span>.</li>
-            <li>Your key is tied to your seller account and the live input stays locked outside your active show window.</li>
-            <li>Start streaming in OBS before opening auctions on the site.</li>
+            <li>Paste the <span>RTMPS server</span> into OBS Server and the <span>Stream key</span> into OBS Stream Key.</li>
+            <li>Save OBS. Future shows reuse this connection until you intentionally choose <span>Regenerate Key</span>.</li>
+            <li>Start streaming in OBS before opening auctions on Crack Packs.</li>
           </ol>
           <p class="fine-print">After your first successful key creation, this guide stays tucked away unless you open it with the OBS setup guide button.</p>
-          <p class="fine-print">If Cloudflare creation fails, the guide still applies once the stream input is fixed. The most common causes are a missing Stream token permission or the Stream service not being enabled on the Cloudflare account.</p>
+          <p class="fine-print">If the RTMPS server and key do not appear, stop before changing OBS and contact Crack Packs support. A site administrator must repair the Cloudflare Stream service or platform token; sellers should never create or submit that token.</p>
         </article>
         <article class="holo-panel" id="create-show">
           <h3>Create a show</h3>
