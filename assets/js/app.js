@@ -24,7 +24,7 @@
 
   document.querySelectorAll(".nav-youtube").forEach(link => { link.remove(); });
   document.querySelectorAll(".site-nav .nav-live[data-live-hub], .site-nav .nav-live[data-live]").forEach(link => { link.remove(); });
-  document.querySelectorAll('.site-nav > a[href="streams.html"]').forEach(link => {
+  document.querySelectorAll('.site-nav > a[href="streams.html"], .site-nav > a[href="live-shows.html"]').forEach(link => {
     if (/^live(?: feed| hub)?$/i.test(link.textContent.trim())) link.remove();
   });
 
@@ -33,7 +33,7 @@
     const brand = shell?.querySelector(".brand");
     if (!shell || !brand || shell.querySelector(".nav-live-star")) return;
     shell.classList.add("has-live-star");
-    const url = config.liveHubUrl || "streams.html";
+    const url = config.liveHubUrl || "live-shows.html";
     const link = document.createElement("a");
     link.className = "nav-live-star";
     link.href = url;

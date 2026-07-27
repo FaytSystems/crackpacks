@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Live Shows | Crack Packs</title>
+  <meta name="description" content="Watch live Crack Packs shows, follow sellers, save upcoming streams, and support show giveaways.">
+  <meta name="theme-color" content="#07091b">
+  <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/css/styles.css?v=1.9.8">
+  <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.6.4">
+  <link rel="stylesheet" href="assets/css/streams-hub.css?v=1.5.0">
+</head>
+<body data-page="live-shows" data-live-shows-only="true" data-default-hub-tab="live">
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="container nav-shell">
+      <a class="brand" href="index.html" aria-label="Crack Packs home"><img src="assets/images/logo.svg" alt="Crack Packs"></a>
+      <button class="menu-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="site-nav"><span></span><span></span><span></span></button>
+      <nav class="site-nav" id="site-nav" aria-label="Primary navigation">
+        <a href="index.html">Home</a>
+        <a href="releases.html">Releases</a>
+        <a href="card-lookup.html">Card Search ($)</a>
+        <a href="referral.html">Profile</a>
+        <a href="shop.html">Store</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main" class="streams-shell">
+    <section class="container page-hero live-shows-hero">
+      <div class="reveal">
+        <p class="eyebrow"><span class="live-pulse"></span> Crack Packs Live</p>
+        <h1>Live <span>Shows</span></h1>
+        <p>One live destination for buyers, sellers, and collectors. Watch active shows, save upcoming streams, follow sellers, and support the show queue.</p>
+      </div>
+      <div class="actions">
+        <a class="btn btn-primary" href="shop.html">Browse Marketplace</a>
+        <a class="btn btn-glass" href="referral.html">Open Account</a>
+        <a class="btn btn-outline" href="streams.html#go-live">Seller Show Tools</a>
+      </div>
+    </section>
+
+    <section class="container live-shows-browser" aria-labelledby="live-shows-heading">
+      <div class="section-heading reveal">
+        <div>
+          <p class="eyebrow">Live and scheduled</p>
+          <h2 id="live-shows-heading">Find your next <span>show.</span></h2>
+        </div>
+      </div>
+      <div class="hub-tabs" role="tablist" aria-label="Live show views">
+        <button class="hub-tab is-active" type="button" role="tab" aria-selected="true" data-hub-tab="live">Live Now</button>
+        <button class="hub-tab" type="button" role="tab" aria-selected="false" data-hub-tab="upcoming">Upcoming</button>
+        <button class="hub-tab" type="button" role="tab" aria-selected="false" data-hub-tab="followed">Followed</button>
+        <button class="hub-tab" type="button" role="tab" aria-selected="false" data-hub-tab="watchlist">Saved Watchlist</button>
+      </div>
+      <div class="streams-grid" data-streams-list></div>
+      <div class="stream-empty" data-streams-empty hidden>No live shows are broadcasting right now. Check Upcoming for the next scheduled show.</div>
+    </section>
+
+    <section class="container section" aria-labelledby="gift-show-heading">
+      <div class="section-heading reveal">
+        <div>
+          <p class="eyebrow">Support a show</p>
+          <h2 id="gift-show-heading">Fund a seller <span>giveaway.</span></h2>
+          <p>Select Donate to Show on a live or upcoming show, then choose an eligible item from that seller's inventory.</p>
+        </div>
+      </div>
+      <div class="giveaway-grid live-shows-support-grid">
+        <article class="holo-panel">
+          <form class="gifted-giveaway-form" data-gifted-giveaway-form>
+            <input type="hidden" name="showId" data-gifted-show-id>
+            <p class="fine-print" data-gifted-show-title>Select a show above with Donate to Show.</p>
+            <label>Giveaway product<select name="inventoryItemId" data-gifted-product required><option value="">Select a show first</option></select></label>
+            <label>Message to seller<textarea name="note" rows="3" maxlength="300" placeholder="Add a note for the seller"></textarea></label>
+            <button class="btn btn-primary" type="submit">Fund Giveaway Securely</button>
+          </form>
+        </article>
+        <article class="holo-panel live-shows-account-panel">
+          <p class="eyebrow">Buyer and seller access</p>
+          <h3>Watch from any account.</h3>
+          <p>Buyer, seller, employee, and master accounts all use this same live-show feed. Seller broadcast controls remain private inside Seller Show Tools.</p>
+          <a class="btn btn-outline" href="referral.html">Open Account Dashboard</a>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <script src="assets/js/config.js?v=4.1.0"></script>
+  <script src="assets/js/app.js?v=1.9.7"></script>
+  <script src="assets/js/portal-mode.js?v=1.1.5"></script>
+  <script src="assets/js/streams-hub.js?v=1.5.0"></script>
+  <script src="assets/js/nav-profile.js?v=4.3.1"></script>
+</body>
+</html>

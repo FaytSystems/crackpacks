@@ -71,7 +71,7 @@ function facebookConfiguration(env) {
   const pageId = validFacebookPageId(env.FACEBOOK_PAGE_ID);
   const pageAccessToken = String(env.FACEBOOK_PAGE_ACCESS_TOKEN || "").trim();
   const appSecret = String(env.FACEBOOK_APP_SECRET || "").trim();
-  const liveHubUrl = safeCrackPacksUrl(env.CRACKPACKS_LIVE_URL || "https://crackpacks.com/streams.html");
+  const liveHubUrl = safeCrackPacksUrl(env.CRACKPACKS_LIVE_URL || "https://crackpacks.com/live-shows.html");
 
   return {
     enabled: enabled(env.FACEBOOK_AUTO_POST_ENABLED),

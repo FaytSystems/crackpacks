@@ -286,9 +286,9 @@
           </div>
           <div class="store-show-card-actions">
             <a class="btn btn-primary btn-small" href="${show.livePageUrl || `live.html?show=${encodeURIComponent(show.id || "")}`}">${show.state === "live" ? "Watch live sale" : "Open show page"}</a>
-            <a class="btn btn-outline btn-small" href="streams.html">Live hub</a>
+            <a class="btn btn-outline btn-small" href="live-shows.html">Live shows</a>
           </div>
-        </article>`).join("") || `<article class="store-show-card"><h3>No matching show yet</h3><p>Try a broader search, or check the seller live hub page for new inventory and auctions.</p><div class="store-show-card-actions"><a class="btn btn-primary btn-small" href="streams.html">Open live hub</a></div></article>`}
+        </article>`).join("") || `<article class="store-show-card"><h3>No matching show yet</h3><p>Try a broader search, or check the live shows page for new inventory and auctions.</p><div class="store-show-card-actions"><a class="btn btn-primary btn-small" href="live-shows.html">Open live shows</a></div></article>`}
     `;
     showModal.hidden = false;
     showModal.setAttribute("aria-hidden", "false");

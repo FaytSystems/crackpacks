@@ -1,7 +1,7 @@
 // D:\crackpacks\crackpacks-github-ready\assets\js\config.js
 
 window.CRACKPACKS_CONFIG = {
-  liveHubUrl: "streams.html",
+  liveHubUrl: "live-shows.html",
   cardApiUrl: "https://api.crackpacks.com/cards",
   ebayApiUrl: "https://api.crackpacks.com/ebay",
   rewardsApiUrl: "https://rewards-api.crackpacks.com",

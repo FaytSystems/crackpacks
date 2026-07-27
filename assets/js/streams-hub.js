@@ -5,6 +5,7 @@
   const token = () => localStorage.getItem("cp_rewards_token") || "";
   const $ = selector => document.querySelector(selector);
   const $$ = selector => [...document.querySelectorAll(selector)];
+  const viewerOnly = document.body?.dataset.liveShowsOnly === "true";
   let shows = [];
   let savedGiveaways = [];
   let giftedQueue = [];
@@ -19,7 +20,7 @@
   let sellerOrderTab = "all";
   let sellerOrderSearch = "";
   let sellerContextAuthorized = false;
-  let activeTab = "watchlist";
+  let activeTab = document.body?.dataset.defaultHubTab || "watchlist";
   let hasSavedObsConnection = false;
   let obsGuideDismissedForSession = false;
   let obsGuideCompletedAt = "";
@@ -773,7 +774,12 @@
 
   $$('[data-hub-tab]').forEach(button => button.addEventListener("click", () => {
     activeTab = button.dataset.hubTab || "watchlist";
-    $$('[data-hub-tab]').forEach(node => node.classList.toggle("is-active", node === button)); renderShows();
+    $$('[data-hub-tab]').forEach(node => {
+      const active = node === button;
+      node.classList.toggle("is-active", active);
+      if (node.hasAttribute("role")) node.setAttribute("aria-selected", String(active));
+    });
+    renderShows();
   }));
 
   $("[data-seller-identity-check]")?.addEventListener("click", async event => {
@@ -1236,6 +1242,8 @@
   });
 
   loadShows();
-  syncListingDestinationUi();
-  loadSellerContext();
+  if (!viewerOnly) {
+    syncListingDestinationUi();
+    loadSellerContext();
+  }
 })();

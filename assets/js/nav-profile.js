@@ -235,7 +235,7 @@
             <span class="crack-social-arrow" aria-hidden="true">&#8599;</span>
           </a>
 
-          <a class="crack-social-link crack-social-live" href="streams.html" target="_blank" rel="noopener noreferrer" aria-label="Open Crack Packs live streams (opens in a new tab)">
+          <a class="crack-social-link crack-social-live" href="${config.liveHubUrl || "live-shows.html"}" aria-label="Open Crack Packs live shows">
             <svg class="crack-social-icon" viewBox="0 0 72 72" aria-hidden="true" focusable="false">
               <path class="crack-social-icon-shadow" d="M17 17 55 12 63 51 26 61 10 49Z"/>
               <path class="crack-social-icon-panel" d="m14 13 38-5 8 39-37 10L7 45Z"/>

@@ -8,7 +8,7 @@
       { key: "facebook", label: "Facebook", icon: "f", url: config.facebookUrl },
       { key: "instagram", label: "Instagram", icon: "◎", url: config.instagramUrl },
       { key: "x", label: "X", icon: "X", url: config.xUrl },
-      { key: "live", label: "Live Hub", icon: "⚡", url: config.liveHubUrl || "streams.html", internal: true }
+      { key: "live", label: "Live Shows", icon: "⚡", url: config.liveHubUrl || "live-shows.html", internal: true }
     ].filter(link => link.url);
     const section = document.createElement("section");
     section.className = "crackpacks-social-footer";

@@ -2,6 +2,31 @@
   padding: 2rem 0 4rem;
 }
 
+.live-shows-hero {
+  min-height: min(520px, 62vh);
+  align-content: center;
+}
+
+.live-shows-browser {
+  padding-top: 1rem;
+}
+
+.live-shows-support-grid {
+  align-items: stretch;
+}
+
+.live-shows-account-panel {
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  gap: 0.85rem;
+}
+
+.live-shows-account-panel > * {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
 .streams-grid,
 .watchlist-grid,
 .giveaway-grid {
