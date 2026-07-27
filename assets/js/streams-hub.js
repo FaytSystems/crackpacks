@@ -20,7 +20,10 @@
   let sellerOrderTab = "all";
   let sellerOrderSearch = "";
   let sellerContextAuthorized = false;
-  let activeTab = document.body?.dataset.defaultHubTab || "watchlist";
+  const requestedHubTab = new URLSearchParams(location.search).get("tab") || "";
+  let activeTab = ["all", "live", "upcoming", "followed", "watchlist"].includes(requestedHubTab)
+    ? requestedHubTab
+    : document.body?.dataset.defaultHubTab || "watchlist";
   let hasSavedObsConnection = false;
   let obsGuideDismissedForSession = false;
   let obsGuideCompletedAt = "";
@@ -210,19 +213,43 @@
     syncStreamGuideVisibility({ forceOpen: true, firstOpen: obsGuideTriggeredByCreate && !hasSavedObsConnection && !hasCompletedObsGuide() });
   }
 
-  const showCard = show => `
-    <article class="stream-card holo-panel">
-      <img src="${escapeHtml(show.image || "assets/images/banner-cosmic.svg")}" alt="${escapeHtml(show.title)}">
+  const showCard = show => {
+    const showUrl = `live.html?show=${encodeURIComponent(show.id)}`;
+    const featuredLot = show.featuredLot || null;
+    const lotLabel = featuredLot?.status === "live" ? "Currently for sale" : "First item queued";
+    const lotPrice = featuredLot ? dollars(featuredLot.startingBidCents) : "";
+    const currentBid = featuredLot?.currentBidCents != null && Number(featuredLot.currentBidCents) > Number(featuredLot.startingBidCents)
+      ? `<span>Current bid <strong>${dollars(featuredLot.currentBidCents)}</strong></span>`
+      : "";
+    const inventoryState = featuredLot?.status === "live" ? "Bidding open" : featuredLot ? "First item queued" : "Inventory pending";
+    return `
+    <article class="stream-card holo-panel" id="show-${escapeHtml(show.id)}">
+      <a class="stream-card-thumbnail" href="${showUrl}" aria-label="Open ${escapeHtml(show.title)}">
+        <img src="${escapeHtml(show.image || "assets/images/banner-cosmic.svg")}" alt="${escapeHtml(show.title)}" loading="lazy">
+      </a>
       <div class="stream-card-top"><span class="stream-pill ${escapeHtml(show.state)}">${show.state === "live" ? "LIVE NOW" : "UPCOMING"}</span><span class="viewer-pill">${Number(show.viewers || 0)} viewers</span></div>
       <h3>${escapeHtml(show.title)}</h3><p><strong>${escapeHtml(show.sellerUsername)}</strong></p>
-      <div class="stream-card-meta"><span>${escapeHtml(show.state === "live" ? "Live now" : dateLabel(show.startsAt))}</span><span>${show.state === "live" ? "Bidding open" : "Save the date"}</span></div>
+      <div class="stream-card-featured-lot">
+        ${featuredLot ? `
+          <span class="stream-card-lot-label">${lotLabel}</span>
+          <strong>${escapeHtml(featuredLot.title)}</strong>
+          <div><span>Starting bid <strong>${lotPrice}</strong></span>${currentBid}</div>
+        ` : `
+          <span class="stream-card-lot-label">Show inventory</span>
+          <strong>First item coming soon</strong>
+          <span>The seller is preparing this show's inventory.</span>
+        `}
+      </div>
+      <div class="stream-card-meta"><span>${escapeHtml(show.state === "live" ? "Live now" : dateLabel(show.startsAt))}</span><span>${inventoryState}</span></div>
       <div class="stream-card-actions">
+        <a class="btn btn-primary btn-small" href="${showUrl}">${show.state === "live" ? "Watch &amp; Bid" : "View Show"}</a>
         <button class="btn btn-outline btn-small" type="button" data-watch="${show.id}">${show.saved ? "Saved" : "Add to Watchlist"}</button>
         <button class="btn btn-outline btn-small" type="button" data-follow="${show.sellerId}">${show.followed ? "Following" : "Follow"}</button>
-        ${show.state === "upcoming" ? `<button class="btn btn-outline btn-small" type="button" data-calendar="${show.id}">Add to Calendar</button>` : `<a class="btn btn-primary btn-small" href="live.html?show=${show.id}">Watch &amp; Bid</a>`}
+        ${show.state === "upcoming" ? `<button class="btn btn-outline btn-small" type="button" data-calendar="${show.id}">Add to Calendar</button>` : ""}
         <button class="btn btn-primary btn-small" type="button" data-open-gifted="${show.id}">Donate to Show</button>
       </div>
     </article>`;
+  };
 
   function renderShows() {
     let filtered = shows;
@@ -230,6 +257,11 @@
     if (activeTab === "live") filtered = shows.filter(show => show.state === "live");
     if (activeTab === "upcoming") filtered = shows.filter(show => show.state === "upcoming");
     if (activeTab === "followed") filtered = shows.filter(show => show.followed);
+    $$('[data-hub-tab]').forEach(node => {
+      const active = node.dataset.hubTab === activeTab;
+      node.classList.toggle("is-active", active);
+      if (node.hasAttribute("role")) node.setAttribute("aria-selected", String(active));
+    });
     $("[data-streams-list]").innerHTML = filtered.map(showCard).join("");
     $("[data-streams-empty]").hidden = filtered.length > 0;
   }
@@ -1033,8 +1065,15 @@
     event.preventDefault(); const form = event.currentTarget; const data = new FormData(form); const button = event.submitter; button.disabled = true;
     try {
       const scheduledValue = String(data.get("scheduledAt") || "");
-      await api("/seller/shows", { method: "POST", body: JSON.stringify({ title: data.get("title"), scheduledAt: scheduledValue ? new Date(scheduledValue).toISOString() : null, thumbnailUrl: data.get("thumbnailUrl") }) });
-      form.reset(); await loadSellerShows(); setStatus("[data-seller-show-status]", "Show saved.", "success");
+      const created = await api("/seller/shows", { method: "POST", body: JSON.stringify({ title: data.get("title"), scheduledAt: scheduledValue ? new Date(scheduledValue).toISOString() : null, thumbnailUrl: data.get("thumbnailUrl") }) });
+      form.reset();
+      await Promise.all([loadSellerShows(), loadShows()]);
+      const publicLink = $("[data-seller-show-public-link]");
+      if (publicLink) {
+        publicLink.href = created.liveShowsUrl || `live-shows.html?tab=upcoming#show-${encodeURIComponent(created.id)}`;
+        publicLink.hidden = false;
+      }
+      setStatus("[data-seller-show-status]", "Show saved and published to Live Shows.", "success");
     } catch (error) { setStatus("[data-seller-show-status]", error.message, "error"); }
     finally { button.disabled = false; }
   });
@@ -1321,6 +1360,9 @@
   });
 
   loadShows();
+  setInterval(() => {
+    if (!document.hidden) loadShows();
+  }, 15000);
   if (!viewerOnly) {
     syncSellerSectionNav();
     window.addEventListener("hashchange", syncSellerSectionNav);

@@ -6,3 +6,34 @@
   border-radius: 1rem;
   background: #03040d;
 }
+
+.live-show-thumbnail {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  margin-top: 28px;
+  border: 1px solid rgba(56, 232, 255, .28);
+  border-radius: 1rem;
+  object-fit: cover;
+  background: #03040d;
+}
+
+.live-show-thumbnail[hidden] {
+  display: none;
+}
+
+.live-bid-card[data-state="scheduled"] {
+  border-color: rgba(248, 255, 70, .5);
+  box-shadow: 0 0 28px rgba(248, 255, 70, .12), 0 30px 80px rgba(0, 0, 0, .35);
+}
+
+.slide-bid button:disabled,
+.custom-bid-form input:disabled,
+.custom-bid-form button:disabled {
+  cursor: not-allowed;
+  opacity: .55;
+}
+
+.slide-bid button:disabled {
+  font-size: .76rem;
+}

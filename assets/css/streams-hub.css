@@ -51,6 +51,53 @@
   margin-bottom: 1rem;
 }
 
+.stream-card-thumbnail {
+  display: block;
+  border-radius: 1rem;
+}
+
+.stream-card-thumbnail:focus-visible {
+  outline: 2px solid var(--electric);
+  outline-offset: 4px;
+}
+
+.stream-card-featured-lot {
+  display: grid;
+  gap: 0.35rem;
+  min-height: 112px;
+  margin: 0.9rem 0;
+  padding: 0.85rem 0;
+  border-top: 1px solid rgba(56, 232, 255, 0.2);
+  border-bottom: 1px solid rgba(255, 78, 219, 0.18);
+  color: rgba(255,255,255,0.72);
+}
+
+.stream-card-featured-lot > strong {
+  color: #fff;
+  font-size: 1.05rem;
+}
+
+.stream-card-featured-lot > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem 1rem;
+}
+
+.stream-card-featured-lot > div > span {
+  color: rgba(255,255,255,0.7);
+}
+
+.stream-card-featured-lot > div strong {
+  color: var(--electric);
+}
+
+.stream-card-lot-label {
+  color: #72ffa4;
+  font-size: 0.72rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
 .stream-card-top,
 .stream-card-meta,
 .stream-card-actions,

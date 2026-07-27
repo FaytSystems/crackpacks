@@ -11,8 +11,12 @@
   const els = {
     card: $("[data-live-bid-card]"),
     status: $("[data-live-status]"),
+    showTitle: $("[data-live-show-title]"),
+    showThumbnail: $("[data-live-show-thumbnail]"),
     title: $("[data-lot-title]"),
     description: $("[data-lot-description]"),
+    currentLabel: $("[data-current-bid-label]"),
+    nextLabel: $("[data-next-bid-label]"),
     current: $("[data-current-bid]"),
     next: $("[data-next-bid]"),
     copy: $("[data-bid-state-copy]"),
@@ -21,6 +25,8 @@
     handle: $("[data-slide-handle]"),
     fill: $("[data-slide-fill]"),
     customForm: $("[data-custom-bid-form]"),
+    customCurrentLabel: $("[data-custom-current-label]"),
+    customMinLabel: $("[data-custom-min-label]"),
     customCurrent: $("[data-custom-live-current]"),
     customMin: $("[data-custom-live-min]"),
     customHelp: $("[data-custom-bid-help]"),
@@ -53,12 +59,28 @@
     if (els.handle) els.handle.style.left = `calc(${Math.min(value, 42)}% + 6px)`;
   };
 
+  const setBiddingEnabled = enabled => {
+    if (els.handle) {
+      els.handle.disabled = !enabled;
+      els.handle.setAttribute("aria-disabled", String(!enabled));
+      els.handle.textContent = enabled ? "SLIDE TO BID" : "BIDDING OPENS LIVE";
+    }
+    if (els.customForm) {
+      Array.from(els.customForm.elements).forEach(control => {
+        control.disabled = !enabled;
+      });
+    }
+  };
+
   const syncCustomBidWindow = () => {
     if (!els.customForm) return;
     const input = els.customForm.elements.bidAmount;
+    const scheduled = lot?.status === "scheduled";
     const currentCents = Number(lot?.currentBidCents || lot?.startingBidCents || 0);
-    const minCents = Number(lot?.minNextBidCents || 0);
+    const minCents = scheduled ? Number(lot?.bidIncrementCents || 0) : Number(lot?.minNextBidCents || 0);
 
+    if (els.customCurrentLabel) els.customCurrentLabel.textContent = scheduled ? "Starting bid" : "Live current bid";
+    if (els.customMinLabel) els.customMinLabel.textContent = scheduled ? "Bid increment" : "Minimum next bid";
     if (els.customCurrent) els.customCurrent.textContent = money(currentCents);
     if (els.customMin) els.customMin.textContent = money(minCents);
 
@@ -74,7 +96,9 @@
     }
 
     if (els.customHelp) {
-      els.customHelp.textContent = minCents
+      els.customHelp.textContent = scheduled
+        ? `Bidding opens when the seller starts this item at ${money(currentCents)}.`
+        : minCents
         ? `Rolling live bid is ${money(currentCents)}. Your bid must stay at or above ${money(minCents)}.`
         : "Enter the amount you want to bid. This updates live while the auction moves.";
     }
@@ -89,32 +113,44 @@
 
   const render = (nextLot) => {
     lot = nextLot || null;
-    if (lot?.playbackUrl) setPlayback(lot.playbackUrl);
+    if (lot?.status === "live" && lot.playbackUrl) setPlayback(lot.playbackUrl);
     if (!lot) {
       els.card.dataset.state = "ready";
       els.status.textContent = "No auction is live yet. Keep this page open.";
       els.title.textContent = "No live auction yet";
       els.description.textContent = "Waiting for the breaker to open the next lot.";
+      if (els.currentLabel) els.currentLabel.textContent = "Current bid";
+      if (els.nextLabel) els.nextLabel.textContent = "Next slide bid";
       els.current.textContent = "$0.00";
       els.next.textContent = "$0.00";
       els.copy.textContent = token() ? "Ready when the next auction starts." : "Sign in to your Profile before bidding.";
       els.flash.hidden = true;
       lastRenderedBidCents = 0;
+      setBiddingEnabled(false);
       syncCustomBidWindow();
       setSlider(0);
       return;
     }
 
+    const scheduled = lot.status === "scheduled";
+    const live = lot.status === "live";
     const nextCurrent = Number(lot.currentBidCents || lot.startingBidCents || 0);
-    els.card.dataset.state = lot.viewerBidState || "ready";
-    els.status.textContent = lot.status === "live" ? "Auction live now." : "Auction just closed.";
+    els.card.dataset.state = scheduled ? "scheduled" : lot.viewerBidState || "ready";
+    els.status.textContent = scheduled
+      ? "Show published. This auction item is queued."
+      : live
+      ? "Auction live now."
+      : "Auction just closed.";
     els.title.textContent = lot.title || "Live auction";
-    els.description.textContent = lot.description || "Slide to bid, or set your own bid amount.";
+    els.description.textContent = lot.description || (scheduled ? "Bidding opens when the seller starts this item." : "Slide to bid, or set your own bid amount.");
+    if (els.currentLabel) els.currentLabel.textContent = scheduled ? "Starting bid" : "Current bid";
+    if (els.nextLabel) els.nextLabel.textContent = scheduled ? "Bid increment" : "Next slide bid";
     els.current.textContent = money(nextCurrent);
-    els.next.textContent = money(lot.minNextBidCents);
+    els.next.textContent = money(scheduled ? lot.bidIncrementCents : lot.minNextBidCents);
     animateBidIfRaised(nextCurrent);
 
-    if (!token()) els.copy.textContent = "Sign in to bid. Watching is fine, bidding needs a verified Profile.";
+    if (scheduled) els.copy.textContent = "This item is ready. Bidding unlocks when the seller starts the auction.";
+    else if (!token()) els.copy.textContent = "Sign in to bid. Watching is fine, bidding needs a verified Profile.";
     else if (lot.viewerBidState === "winning") els.copy.textContent = "You're winning. The custom bid box is still tracking the live number.";
     else if (lot.viewerBidState === "losing") els.copy.textContent = "You're losing. The bid box is rolling live, so underbids get bumped to the minimum.";
     else els.copy.textContent = "Slide for the next bid, or use Set Your Bid for your own dollar amount.";
@@ -127,22 +163,46 @@
     }
 
     lastRenderedBidCents = nextCurrent;
+    setBiddingEnabled(live);
     syncCustomBidWindow();
     setSlider(0);
   };
 
   const setPlayback = url => {
-    if (!url || url === activePlaybackUrl || !els.player) return;
-    activePlaybackUrl = url;
-    els.player.src = url;
+    if (!url || !els.player) return;
+    if (url !== activePlaybackUrl) {
+      activePlaybackUrl = url;
+      els.player.src = url;
+    }
     els.player.hidden = false;
+    if (els.showThumbnail) els.showThumbnail.hidden = true;
     if (els.placeholder) els.placeholder.hidden = true;
+  };
+
+  const renderShow = show => {
+    const title = show?.title || "Crack Packs Live Auction";
+    if (els.showTitle) els.showTitle.textContent = title;
+    document.title = `${title} | Crack Packs`;
+    if (show?.status === "live" && show.playbackUrl) {
+      setPlayback(show.playbackUrl);
+      return;
+    }
+    if (els.player) els.player.hidden = true;
+    if (els.showThumbnail && show?.imageUrl) {
+      els.showThumbnail.src = show.imageUrl;
+      els.showThumbnail.alt = `${title} show thumbnail`;
+      els.showThumbnail.hidden = false;
+      if (els.placeholder) els.placeholder.hidden = true;
+      return;
+    }
+    if (els.showThumbnail) els.showThumbnail.hidden = true;
+    if (els.placeholder) els.placeholder.hidden = false;
   };
 
   const refresh = async () => {
     try {
       const data = await api(`/live/auction${showId ? `?show=${encodeURIComponent(showId)}` : ""}`, { method: "GET" });
-      if (data.show?.playbackUrl) setPlayback(data.show.playbackUrl);
+      renderShow(data.show);
       if (els.viewers) els.viewers.textContent = String(data.show?.viewerCount ?? data.lot?.viewerCount ?? 0);
       render(data.lot);
     } catch (err) {

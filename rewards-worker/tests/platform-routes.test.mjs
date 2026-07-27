@@ -857,6 +857,125 @@ test("seller stream input verifies account-owned Cloudflare tokens", async t => 
   assert.equal(cloudflareCalls.at(-1).headers.Authorization, "Bearer cfat_stream-token");
 });
 
+test("live show list includes the featured item and its starting bid", async () => {
+  const showId = "22222222-2222-4222-8222-222222222222";
+  const lotId = "33333333-3333-4333-8333-333333333333";
+  const env = {
+    DB: {
+      prepare(sql) {
+        return {
+          bind(...args) {
+            return {
+              all: async () => {
+                assert.match(sql, /LEFT JOIN breaker_auction_lots featured_lot/);
+                assert.equal(args.length, 3);
+                return {
+                  results: [{
+                    id: showId,
+                    seller_member_id: "11111111-1111-4111-8111-111111111111",
+                    live_username: "ShowBuilder",
+                    title: "Sunday Slabs",
+                    status: "open",
+                    viewer_count: 0,
+                    thumbnail_url: "https://images.example.test/show.jpg",
+                    scheduled_at: "2026-07-27T20:00:00.000Z",
+                    saved: 0,
+                    followed: 0,
+                    featured_lot_id: lotId,
+                    featured_lot_title: "Japanese Charizard",
+                    featured_lot_status: "scheduled",
+                    featured_lot_starting_bid_cents: 500,
+                    featured_lot_current_bid_cents: null,
+                    featured_lot_image_url: "https://images.example.test/charizard.jpg",
+                    featured_lot_condition: "Near Mint"
+                  }]
+                };
+              }
+            };
+          }
+        };
+      }
+    }
+  };
+
+  const response = await handlePlatformRoute(new Request("https://api.crackpacks.test/live/shows"), env, {});
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.shows.length, 1);
+  assert.equal(payload.shows[0].title, "Sunday Slabs");
+  assert.equal(payload.shows[0].state, "upcoming");
+  assert.equal(payload.shows[0].image, "https://images.example.test/show.jpg");
+  assert.equal(payload.shows[0].featuredLot.title, "Japanese Charizard");
+  assert.equal(payload.shows[0].featuredLot.startingBidCents, 500);
+  assert.equal(payload.shows[0].featuredLot.currentBidCents, null);
+});
+
+test("dedicated live show endpoint returns its thumbnail and first queued item", async () => {
+  const showId = "22222222-2222-4222-8222-222222222222";
+  const lotId = "33333333-3333-4333-8333-333333333333";
+  const env = {
+    CLOUDFLARE_STREAM_CUSTOMER_CODE: "customer-test.cloudflarestream.com",
+    DB: {
+      prepare(sql) {
+        return {
+          bind(...args) {
+            return {
+              first: async () => {
+                if (sql.includes("FROM breaker_auction_lots lot")) {
+                  assert.equal(args[0], showId);
+                  assert.equal(args[1], showId);
+                  assert.equal(args[3], showId);
+                  return {
+                    id: lotId,
+                    session_id: showId,
+                    member_id: "11111111-1111-4111-8111-111111111111",
+                    title: "Japanese Charizard",
+                    description: "Near Mint card",
+                    status: "scheduled",
+                    starting_bid_cents: 500,
+                    bid_increment_cents: 100,
+                    current_bid_cents: null,
+                    image_url: "https://images.example.test/charizard.jpg",
+                    item_condition: "Near Mint",
+                    sale_type: "cards",
+                    viewer_count: 0,
+                    cloudflare_live_input_uid: "stream-input-123"
+                  };
+                }
+                if (sql.includes("FROM breaker_stream_sessions")) {
+                  assert.deepEqual(args, [showId]);
+                  return {
+                    id: showId,
+                    title: "Sunday Slabs",
+                    status: "open",
+                    viewer_count: 0,
+                    cloudflare_live_input_uid: "stream-input-123",
+                    thumbnail_url: "https://images.example.test/show.jpg",
+                    scheduled_at: "2026-07-27T20:00:00.000Z",
+                    started_at: "2026-07-27T20:00:00.000Z"
+                  };
+                }
+                return null;
+              }
+            };
+          }
+        };
+      }
+    }
+  };
+
+  const response = await handlePlatformRoute(new Request(`https://api.crackpacks.test/live/auction?show=${showId}`), env, {});
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.show.title, "Sunday Slabs");
+  assert.equal(payload.show.status, "open");
+  assert.equal(payload.show.imageUrl, "https://images.example.test/show.jpg");
+  assert.equal(payload.lot.title, "Japanese Charizard");
+  assert.equal(payload.lot.status, "scheduled");
+  assert.equal(payload.lot.startingBidCents, 500);
+  assert.equal(payload.lot.bidIncrementCents, 100);
+});
+
 test("seller can schedule owned personal-store inventory into a show", async () => {
   const memberId = "11111111-1111-4111-8111-111111111111";
   const showId = "22222222-2222-4222-8222-222222222222";

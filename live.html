@@ -7,7 +7,7 @@
   <meta name="description" content="Watch Crack Packs breaker streams and slide to bid live.">
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/css/styles.css?v=1.9.8">
-  <link rel="stylesheet" href="assets/css/live.css?v=1.0.0">
+  <link rel="stylesheet" href="assets/css/live.css?v=1.1.0">
 </head>
 <body data-page="live">
   <header class="site-header">
@@ -20,9 +20,10 @@
     <section class="container live-stage">
       <div class="live-video-card">
         <p class="eyebrow">Breaker live</p>
-        <h1>Crack Packs <span>Live Auction.</span></h1>
+        <h1 data-live-show-title>Crack Packs Live Auction.</h1>
         <p data-live-status>Loading the current auction...</p>
         <p class="viewer-pill"><strong data-live-viewers>0</strong> watching</p>
+        <img class="live-show-thumbnail" data-live-show-thumbnail src="" alt="" hidden>
         <div class="live-video-placeholder" data-live-video-placeholder>Stream player connects here when a breaker session is live.</div>
         <iframe class="live-stream-player" data-live-stream-player title="Crack Packs live stream" allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture" allowfullscreen hidden></iframe>
       </div>
@@ -32,8 +33,8 @@
         <h2 data-lot-title>No live auction yet</h2>
         <p data-lot-description>Waiting for the breaker to open the next lot.</p>
         <div class="bid-meter">
-          <div><span>Current bid</span><strong data-current-bid>$0.00</strong></div>
-          <div><span>Next slide bid</span><strong data-next-bid>$0.00</strong></div>
+          <div><span data-current-bid-label>Current bid</span><strong data-current-bid>$0.00</strong></div>
+          <div><span data-next-bid-label>Next slide bid</span><strong data-next-bid>$0.00</strong></div>
         </div>
         <div class="slide-bid" data-slide-bid>
           <span data-slide-fill></span>
@@ -42,11 +43,11 @@
         <form class="custom-bid-form" data-custom-bid-form>
           <div class="custom-bid-live">
             <div>
-              <span>Live current bid</span>
+              <span data-custom-current-label>Live current bid</span>
               <strong data-custom-live-current>$0.00</strong>
             </div>
             <div>
-              <span>Minimum next bid</span>
+              <span data-custom-min-label>Minimum next bid</span>
               <strong data-custom-live-min>$0.00</strong>
             </div>
           </div>
@@ -64,6 +65,6 @@
   <script src="assets/js/config.js?v=4.1.0"></script>
   <script src="assets/js/app.js?v=1.9.7"></script>
   <script src="assets/js/portal-mode.js?v=1.1.5"></script>
-  <script src="assets/js/live.js?v=1.0.0"></script>
+  <script src="assets/js/live.js?v=1.1.0"></script>
 </body>
 </html>

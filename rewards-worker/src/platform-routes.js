@@ -1879,14 +1879,32 @@ async function currentAuction(request, env, cors, url) {
     SELECT lot.*,session.viewer_count,session.cloudflare_live_input_uid,winner.live_username winning_display
     FROM breaker_auction_lots lot JOIN breaker_stream_sessions session ON session.id=lot.session_id
     LEFT JOIN members winner ON winner.id=lot.winning_member_id
-    WHERE (?='' OR session.id=?) AND lot.status IN ('live','sold') AND (lot.status='live' OR lot.winner_banner_until>?)
-    ORDER BY CASE lot.status WHEN 'live' THEN 0 ELSE 1 END,lot.updated_at DESC LIMIT 1
-  `).bind(requestedShow, requestedShow, now()).first();
+    WHERE (?='' OR session.id=?)
+      AND (
+        lot.status='live'
+        OR (lot.status='sold' AND lot.winner_banner_until>?)
+        OR (?<>'' AND lot.status='scheduled')
+      )
+    ORDER BY CASE lot.status WHEN 'live' THEN 0 WHEN 'sold' THEN 1 ELSE 2 END,
+      CASE WHEN lot.status='scheduled' THEN lot.created_at END ASC,
+      lot.updated_at DESC
+    LIMIT 1
+  `).bind(requestedShow, requestedShow, now(), requestedShow).first();
   let show = null;
   const showId = requestedShow || row?.session_id || "";
   if (showId) {
-    const session = await env.DB.prepare(`SELECT id,title,status,viewer_count,cloudflare_live_input_uid FROM breaker_stream_sessions WHERE id=? AND status IN ('open','live','recording_ready')`).bind(showId).first();
-    if (session) show = { id: session.id, title: session.title, status: session.status, viewerCount: Number(session.viewer_count || 0), playbackUrl: playbackUrl(env, session.cloudflare_live_input_uid) };
+    const session = await env.DB.prepare(`SELECT id,title,status,viewer_count,cloudflare_live_input_uid,thumbnail_url,scheduled_at,started_at FROM breaker_stream_sessions WHERE id=? AND status IN ('open','live','recording_ready')`).bind(showId).first();
+    if (session) {
+      show = {
+        id: session.id,
+        title: session.title,
+        status: session.status,
+        viewerCount: Number(session.viewer_count || 0),
+        imageUrl: session.thumbnail_url || "assets/images/banner-cosmic.svg",
+        startsAt: session.scheduled_at || session.started_at || "",
+        playbackUrl: playbackUrl(env, session.cloudflare_live_input_uid)
+      };
+    }
   }
   return json({ lot: auctionView(row, member?.id || "", env), show, serverNow: now() }, 200, cors);
 }
@@ -2137,17 +2155,36 @@ async function listShows(request, env, cors) {
   const viewer = await memberFromRequest(request, env);
   const rows = await env.DB.prepare(`
     SELECT session.*,seller.live_username,seller.id seller_member_id,
+      featured_lot.id featured_lot_id,featured_lot.title featured_lot_title,featured_lot.status featured_lot_status,
+      featured_lot.starting_bid_cents featured_lot_starting_bid_cents,featured_lot.current_bid_cents featured_lot_current_bid_cents,
+      featured_lot.image_url featured_lot_image_url,featured_lot.item_condition featured_lot_condition,
       EXISTS(SELECT 1 FROM stream_watchlists watch WHERE watch.stream_session_id=session.id AND watch.member_id=?) saved,
       EXISTS(SELECT 1 FROM stream_follows follow WHERE follow.seller_member_id=session.member_id AND follow.follower_member_id=?) followed
     FROM breaker_stream_sessions session JOIN members seller ON seller.id=session.member_id
     JOIN breaker_profiles profile ON profile.member_id=session.member_id AND profile.status='active'
+    LEFT JOIN breaker_auction_lots featured_lot ON featured_lot.id=(
+      SELECT lot.id
+      FROM breaker_auction_lots lot
+      WHERE lot.session_id=session.id AND lot.member_id=session.member_id AND lot.status IN ('live','scheduled')
+      ORDER BY CASE lot.status WHEN 'live' THEN 0 ELSE 1 END,lot.created_at ASC
+      LIMIT 1
+    )
     WHERE session.status IN ('open','live','recording_ready') OR (session.scheduled_at IS NOT NULL AND session.scheduled_at>?)
     ORDER BY CASE session.status WHEN 'live' THEN 0 ELSE 1 END,COALESCE(session.scheduled_at,session.started_at) ASC LIMIT 100
   `).bind(viewer?.id || "", viewer?.id || "", now()).all();
   return json({ shows: (rows.results || []).map(row => ({
     id: row.id, sellerId: row.seller_member_id, sellerUsername: row.live_username || "Seller", title: row.title || "Crack Packs live show",
     state: row.status === "live" ? "live" : "upcoming", viewers: Number(row.viewer_count || 0), image: row.thumbnail_url || "assets/images/banner-cosmic.svg",
-    startsAt: row.scheduled_at || row.started_at, saved: Boolean(row.saved), followed: Boolean(row.followed), streamUid: row.cloudflare_recording_video_uid || ""
+    startsAt: row.scheduled_at || row.started_at, saved: Boolean(row.saved), followed: Boolean(row.followed), streamUid: row.cloudflare_recording_video_uid || "",
+    featuredLot: row.featured_lot_id ? {
+      id: row.featured_lot_id,
+      title: row.featured_lot_title || "Show item",
+      status: row.featured_lot_status || "scheduled",
+      startingBidCents: Number(row.featured_lot_starting_bid_cents || 0),
+      currentBidCents: row.featured_lot_current_bid_cents == null ? null : Number(row.featured_lot_current_bid_cents),
+      imageUrl: row.featured_lot_image_url || "",
+      condition: row.featured_lot_condition || ""
+    } : null
   })) }, 200, cors);
 }
 
@@ -3371,6 +3408,10 @@ async function sellerShows(request, env, cors) {
   const data = await boundedJson(request, 5000);
   const title = clean(data.title, 160);
   if (!title) return json({ error: "Enter a show title." }, 400, cors);
+  const thumbnailUrl = clean(data.thumbnailUrl, 500);
+  if (thumbnailUrl && !/^https:\/\//i.test(thumbnailUrl) && !/^assets\/images\/[a-z0-9._/-]+$/i.test(thumbnailUrl)) {
+    return json({ error: "Show thumbnail must use HTTPS or a local assets/images path." }, 400, cors);
+  }
   const input = await env.DB.prepare(`SELECT * FROM breaker_stream_inputs WHERE member_id=?`).bind(auth.member.id).first();
   if (!input) return json({ error: "Create your private OBS stream input first." }, 409, cors);
   const scheduledAt = data.scheduledAt && Number.isFinite(Date.parse(data.scheduledAt)) ? new Date(data.scheduledAt).toISOString() : null;
@@ -3378,9 +3419,16 @@ async function sellerShows(request, env, cors) {
   const slug = `${clean(auth.member.live_username || "seller", 32).toLowerCase()}-${showId.slice(0, 8)}`;
   await setLiveInputEnabled(env, input.cloudflare_live_input_uid, true).catch(() => null);
   await env.DB.prepare(`INSERT INTO breaker_stream_sessions(id,member_id,cloudflare_live_input_uid,title,status,started_at,created_at,updated_at,public_slug,scheduled_at,thumbnail_url) VALUES(?,?,?,?,?,?,?,?,?,?,?)`)
-    .bind(showId, auth.member.id, input.cloudflare_live_input_uid, title, "open", scheduledAt || stamp, stamp, stamp, slug, scheduledAt, clean(data.thumbnailUrl, 500)).run();
+    .bind(showId, auth.member.id, input.cloudflare_live_input_uid, title, "open", scheduledAt || stamp, stamp, stamp, slug, scheduledAt, thumbnailUrl).run();
   await env.DB.prepare(`UPDATE breaker_stream_inputs SET status='enabled',updated_at=? WHERE member_id=?`).bind(stamp, auth.member.id).run();
-  return json({ id: showId, slug, status: "open" }, 201, cors);
+  const base = siteUrl(env);
+  return json({
+    id: showId,
+    slug,
+    status: "open",
+    livePageUrl: `${base}/live.html?show=${encodeURIComponent(showId)}`,
+    liveShowsUrl: `${base}/live-shows.html?tab=upcoming#show-${encodeURIComponent(showId)}`
+  }, 201, cors);
 }
 
 async function sellerShowLots(request, env, cors, showId) {
