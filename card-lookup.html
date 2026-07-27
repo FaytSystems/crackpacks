@@ -3,17 +3,17 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Trading Card Search &amp; Price Check | Crack Packs</title>
-  <meta name="description" content="Search trading cards, sports cards, sealed products, graded slabs, and collectibles, then open live market pages for current price references.">
+  <title>Card, Sports &amp; Memorabilia Search | Crack Packs</title>
+  <meta name="description" content="Search TCG cards, sports cards, memorabilia, sealed products, graded slabs, and collectibles with language-aware market source links and close-match suggestions.">
   <meta name="theme-color" content="#07091b">
   <meta property="og:title" content="Card Search &amp; Price Check | Crack Packs">
-  <meta property="og:description" content="Find cards and collectibles, view returned details, and open source market pages for price checks.">
+  <meta property="og:description" content="Find cards, sports collectibles, memorabilia, and market source pages with language-aware search helpers.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://crackpacks.com/card-lookup.html">
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="stylesheet" href="assets/css/styles.css?v=1.9.3">
-  <link rel="stylesheet" href="assets/css/card-lookup.css?v=1.6.0">
+  <link rel="stylesheet" href="assets/css/styles.css?v=1.9.4">
+  <link rel="stylesheet" href="assets/css/card-lookup.css?v=1.7.0">
   <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.6.1">
   
   <!-- CRACK PACKS CONTACT ASSETS:START -->
@@ -47,38 +47,33 @@
         <div class="lookup-hero-copy reveal">
           <p class="eyebrow">Live collector tool</p>
           <h1>Card search.<span>Price check.</span></h1>
-          <p>Search trading cards, sports cards, sealed products, graded slabs, and collectibles by name, set, number, rarity, type, or keyword. Review returned card data when available, then open the source market pages behind each price reference.</p>
+          <p>Search TCG cards, sports cards, sealed products, graded slabs, memorabilia, apparel, signed pieces, and collectible equipment by name, set, number, rarity, type, language, or keyword. Review returned card data when available, then open the source market pages behind each price reference.</p>
           <div class="lookup-proof" aria-label="Search features">
-            <span>Card + collectible tabs</span>
+            <span>TCG / Sports / Memorabilia</span>
+            <span>Language filters</span>
+            <span>Close-match help</span>
             <span>Source-linked prices</span>
-            <span>Desktop + mobile</span>
-            <span>No API key exposed</span>
           </div>
         </div>
 
         <div class="lookup-search-panel holo-panel reveal">
-          <div class="card-series-tabs" data-card-series-tabs role="group" aria-label="Choose card or collectible type">
-            <button class="card-series-tab is-active" type="button" data-card-series="pokemon"><span>PK</span>Pokemon</button>
-            <button class="card-series-tab" type="button" data-card-series="magic"><span>MTG</span>Magic</button>
-            <button class="card-series-tab" type="button" data-card-series="yugioh"><span>YG</span>Yu-Gi-Oh!</button>
-            <button class="card-series-tab" type="button" data-card-series="sports"><span>SP</span>Sports cards</button>
-            <button class="card-series-tab" type="button" data-card-series="lorcana"><span>LC</span>Lorcana</button>
-            <button class="card-series-tab" type="button" data-card-series="onepiece"><span>OP</span>One Piece</button>
-            <button class="card-series-tab" type="button" data-card-series="dragonball"><span>DB</span>Dragon Ball</button>
-            <button class="card-series-tab" type="button" data-card-series="digimon"><span>DG</span>Digimon</button>
-            <button class="card-series-tab" type="button" data-card-series="fab"><span>FAB</span>Flesh and Blood</button>
-            <button class="card-series-tab" type="button" data-card-series="weiss"><span>WS</span>Weiss Schwarz</button>
-            <button class="card-series-tab" type="button" data-card-series="graded"><span>10</span>Graded slabs</button>
-            <button class="card-series-tab" type="button" data-card-series="sealed"><span>BX</span>Sealed boxes</button>
-            <button class="card-series-tab" type="button" data-card-series="collectibles"><span>CO</span>Collectibles</button>
-          </div>
+          <div class="lookup-main-categories" data-main-category-tabs role="group" aria-label="Choose main search category"></div>
+          <div class="card-series-tabs" data-card-series-tabs role="group" aria-label="Choose TCG, sport, or memorabilia type"></div>
           <form data-price-check-form>
             <label class="lookup-field">
-              <span>What card are you checking?</span>
-              <input type="search" data-price-check-term minlength="2" maxlength="80" autocomplete="off" placeholder="Try Charizard, Jordan rookie, booster box, PSA 10..." required>
+              <span>What item are you checking?</span>
+              <input type="search" data-price-check-term minlength="2" maxlength="80" autocomplete="off" list="price-check-suggestions" placeholder="Try Japanese Charizard, Messi rookie, signed jersey, PSA 10..." required>
+              <datalist id="price-check-suggestions" data-price-check-suggestions></datalist>
             </label>
 
             <div class="lookup-search-row">
+              <label class="lookup-field lookup-language-field">
+                <span>Language / region</span>
+                <select data-price-check-language>
+                  <option value="any">Any language</option>
+                </select>
+              </label>
+
               <label class="lookup-field">
                 <span>Search in</span>
                 <select data-price-check-field>
@@ -91,18 +86,19 @@
                 </select>
               </label>
 
+            </div>
+
+            <div class="lookup-search-row lookup-search-row-secondary">
               <label class="lookup-field">
                 <span>Sort results</span>
                 <select data-price-check-order>
                   <option value="-set.releaseDate">Newest sets first</option>
                   <option value="set.releaseDate">Oldest sets first</option>
-                  <option value="name">Card name A-Z</option>
-                  <option value="-name">Card name Z-A</option>
+                  <option value="name">Name A-Z</option>
+                  <option value="-name">Name Z-A</option>
                 </select>
               </label>
-            </div>
 
-            <div class="lookup-search-row lookup-search-row-secondary">
               <label class="lookup-field">
                 <span>Results per page</span>
                 <select data-price-check-size>
@@ -113,22 +109,24 @@
                   <option value="48">48 cards</option>
                 </select>
               </label>
-              <div class="lookup-search-actions">
-                <button class="btn btn-primary" type="submit" data-price-check-submit>Search &amp; check prices</button>
-                <button class="btn btn-glass" type="button" data-price-check-reset>Clear</button>
-              </div>
+            </div>
+
+            <div class="lookup-search-actions">
+              <button class="btn btn-primary" type="submit" data-price-check-submit>Search &amp; check prices</button>
+              <button class="btn btn-glass" type="button" data-price-check-reset>Clear</button>
             </div>
           </form>
 
           <div class="lookup-examples" aria-label="Example searches">
             <span>Quick searches:</span>
-            <button class="lookup-example" type="button" data-price-check-example="Charizard" data-price-check-field="name" data-price-check-series="pokemon">Charizard</button>
+            <button class="lookup-example" type="button" data-price-check-example="Charizard" data-price-check-field="name" data-price-check-series="pokemon" data-price-check-language="ja">Japanese Charizard</button>
             <button class="lookup-example" type="button" data-price-check-example="Black Lotus" data-price-check-field="name" data-price-check-series="magic">Black Lotus</button>
-            <button class="lookup-example" type="button" data-price-check-example="Michael Jordan rookie" data-price-check-field="name" data-price-check-series="sports">Jordan rookie</button>
-            <button class="lookup-example" type="button" data-price-check-example="booster box" data-price-check-field="name" data-price-check-series="sealed">Booster box</button>
+            <button class="lookup-example" type="button" data-price-check-example="Lionel Messi rookie" data-price-check-field="name" data-price-check-series="soccer">Messi rookie</button>
+            <button class="lookup-example" type="button" data-price-check-example="signed baseball" data-price-check-field="name" data-price-check-series="signed">Signed baseball</button>
+            <button class="lookup-example" type="button" data-price-check-example="Monkey D Luffy manga" data-price-check-field="name" data-price-check-series="onepiece">One Piece manga</button>
           </div>
 
-          <p class="lookup-disclaimer">Market values and marketplace pages are third-party references, can be delayed, and may vary by condition, printing, language, grading, seller, fees, and recent sales. Open the linked source before buying, selling, or setting a starting bid.</p>
+          <p class="lookup-disclaimer">API-backed rows are database references. Broad TCG, sports, and memorabilia searches open live third-party source pages because exact all-market sold-price ingestion requires approved marketplace data access. Values may vary by condition, printing, language, grading, seller, fees, and recent sales.</p>
         </div>
       </div>
     </section>
@@ -145,7 +143,8 @@
 
         <div class="lookup-status" data-price-check-status role="status" aria-live="polite">Choose a category, then search by name, set, number, rarity, type, or keyword.</div>
         <div class="lookup-state lookup-error" data-price-check-error hidden><strong>Search unavailable</strong><span data-price-check-error-text></span></div>
-        <div class="lookup-state" data-price-check-empty hidden><strong>No matching results found.</strong><span>Try a shorter term, another field, or a different spelling.</span></div>
+        <div class="lookup-state" data-price-check-empty hidden><strong>No matching results found.</strong><span data-price-check-empty-text>Try a shorter term, another field, or a different spelling.</span></div>
+        <div class="lookup-close-matches" data-close-match-suggestions hidden></div>
         <div class="lookup-grid" data-price-check-results></div>
 
         <nav class="lookup-pager" data-price-check-pager aria-label="Card search pages" hidden>
@@ -174,7 +173,7 @@
         <a href="shop.html">Store</a>
         <a href="releases.html">Release Radar</a>
         <a href="card-lookup.html">Card Search &amp; Price Check</a>
-        <a data-live href="#">Live Hub</a>
+        <a data-live-hub href="streams.html">Live Hub</a>
       </div>
       <div class="footer-links"><h3>Contact</h3><a data-email href="#">hello@crackpacks.com</a><a href="https://github.com/FaytSystems/crackpacks" target="_blank" rel="noopener noreferrer">GitHub repository ↗</a></div>
     </div>
@@ -192,7 +191,7 @@
   <script src="assets/js/portal-mode.js?v=1.1.5"></script>
   <script src="assets/js/data.js?v=1.5.0"></script>
   <script src="assets/js/app.js?v=1.9.3"></script>
-  <script src="assets/js/card-lookup.js?v=1.6.0"></script>
+  <script src="assets/js/card-lookup.js?v=1.7.0"></script>
 
 
 <!-- CRACK PACKS CONTACT MODAL:START -->

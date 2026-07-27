@@ -133,6 +133,11 @@
   color: #8d92af;
 }
 
+.lookup-language-field select {
+  border-color: rgba(248,255,70,.26);
+  background-color: rgba(5,6,21,.82);
+}
+
 .lookup-search-row {
   display: grid;
   grid-template-columns: 1.35fr 1fr;
@@ -477,6 +482,48 @@
   color: var(--muted);
 }
 
+.lookup-close-matches {
+  display: grid;
+  gap: 12px;
+  margin: -6px 0 22px;
+  padding: 18px;
+  border: 1px solid rgba(248,255,70,.18);
+  border-radius: 18px;
+  background: rgba(248,255,70,.045);
+}
+
+.lookup-close-matches strong {
+  color: var(--electric);
+  font-size: .76rem;
+  font-weight: 950;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.lookup-close-matches div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.lookup-close-match {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 999px;
+  color: #eef1ff;
+  background: rgba(5,6,21,.72);
+  font-size: .82rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.lookup-close-match:hover {
+  color: #070815;
+  border-color: var(--electric);
+  background: var(--electric);
+}
+
 .lookup-error {
   border-color: rgba(255,85,118,.38);
   background: rgba(255,85,118,.08);
@@ -620,6 +667,59 @@
     flex-wrap: wrap;
   }
 }
+
+.lookup-main-categories {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.lookup-main-tab {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 4px 10px;
+  min-height: 82px;
+  padding: 12px;
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 20px;
+  color: #eef1ff;
+  background: rgba(5, 10, 30, .7);
+  text-align: left;
+  cursor: pointer;
+}
+
+.lookup-main-tab span {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  color: #070815;
+  background: var(--electric);
+  font-size: .68rem;
+  font-weight: 1000;
+}
+
+.lookup-main-tab strong {
+  font-size: .86rem;
+  line-height: 1.05;
+}
+
+.lookup-main-tab small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: .68rem;
+  line-height: 1.25;
+}
+
+.lookup-main-tab.is-active {
+  border-color: rgba(248,255,70,.52);
+  background: linear-gradient(135deg, rgba(248,255,70,.18), rgba(56,232,255,.1));
+  box-shadow: 0 0 24px rgba(248,255,70,.11);
+}
+
 .card-series-tabs {
   display: flex;
   gap: 0.65rem;
@@ -664,4 +764,10 @@
   border-color: rgba(89, 224, 255, 0.65);
   background: linear-gradient(135deg, rgba(46, 208, 255, 0.24), rgba(230, 86, 255, 0.2));
   box-shadow: 0 0 24px rgba(66, 211, 255, 0.15);
+}
+
+@media (max-width: 720px) {
+  .lookup-main-categories {
+    grid-template-columns: 1fr;
+  }
 }

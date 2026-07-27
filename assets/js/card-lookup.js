@@ -10,12 +10,14 @@
   const input = form.querySelector("[data-price-check-term]");
   const field = form.querySelector("[data-price-check-field]");
   const order = form.querySelector("[data-price-check-order]");
+  const language = form.querySelector("[data-price-check-language]");
   const pageSize = form.querySelector("[data-price-check-size]");
   const submit = form.querySelector("[data-price-check-submit]");
   const reset = form.querySelector("[data-price-check-reset]");
   const results = document.querySelector("[data-price-check-results]");
   const status = document.querySelector("[data-price-check-status]");
   const empty = document.querySelector("[data-price-check-empty]");
+  const emptyText = document.querySelector("[data-price-check-empty-text]");
   const errorBox = document.querySelector("[data-price-check-error]");
   const errorText = document.querySelector("[data-price-check-error-text]");
   const pager = document.querySelector("[data-price-check-pager]");
@@ -24,12 +26,17 @@
   const pageLabel = document.querySelector("[data-price-check-page]");
   const summary = document.querySelector("[data-price-check-summary]");
   const seriesTabs = document.querySelector("[data-card-series-tabs]");
+  const mainCategoryTabs = document.querySelector("[data-main-category-tabs]");
+  const suggestionList = document.querySelector("[data-price-check-suggestions]");
+  const closeMatches = document.querySelector("[data-close-match-suggestions]");
 
   const state = {
     term: "",
     field: "all",
     orderBy: "-set.releaseDate",
+    mainCategory: "tcg",
     series: "pokemon",
+    language: "any",
     pageSize: 20,
     page: 1,
     totalCount: 0,
@@ -38,37 +45,141 @@
     controller: null
   };
 
-  const seriesOptions = [
-    { id: "pokemon", label: "Pokemon", short: "PK", apiBacked: true, querySuffix: "Pokemon card", marketGroup: "tcg" },
-    { id: "magic", label: "Magic", short: "MTG", apiBacked: true, querySuffix: "Magic the Gathering card", marketGroup: "tcg" },
-    { id: "yugioh", label: "Yu-Gi-Oh!", short: "YG", querySuffix: "Yu-Gi-Oh card", marketGroup: "tcg" },
-    { id: "sports", label: "Sports cards", short: "SP", querySuffix: "sports card", marketGroup: "sports" },
-    { id: "lorcana", label: "Lorcana", short: "LC", querySuffix: "Disney Lorcana card", marketGroup: "tcg" },
-    { id: "onepiece", label: "One Piece", short: "OP", querySuffix: "One Piece card game card", marketGroup: "tcg" },
-    { id: "dragonball", label: "Dragon Ball", short: "DB", querySuffix: "Dragon Ball Super card game card", marketGroup: "tcg" },
-    { id: "digimon", label: "Digimon", short: "DG", querySuffix: "Digimon card game card", marketGroup: "tcg" },
-    { id: "fab", label: "Flesh and Blood", short: "FAB", querySuffix: "Flesh and Blood TCG card", marketGroup: "tcg" },
-    { id: "weiss", label: "Weiss Schwarz", short: "WS", querySuffix: "Weiss Schwarz card", marketGroup: "tcg" },
-    { id: "graded", label: "Graded slabs", short: "10", querySuffix: "graded trading card PSA BGS CGC", marketGroup: "graded" },
-    { id: "sealed", label: "Sealed boxes", short: "BX", querySuffix: "sealed trading card box", marketGroup: "sealed" },
-    { id: "collectibles", label: "Collectibles", short: "CO", querySuffix: "collectible", marketGroup: "collectibles" }
+  const languageSets = {
+    tcg: [
+      ["any", "Any language"],
+      ["en", "English"],
+      ["ja", "Japanese"],
+      ["zh-cn", "Chinese - Simplified"],
+      ["zh-tw", "Chinese - Traditional"],
+      ["ko", "Korean"],
+      ["fr", "French"],
+      ["de", "German"],
+      ["it", "Italian"],
+      ["es", "Spanish"],
+      ["pt", "Portuguese"],
+      ["pt-br", "Portuguese - Brazil"],
+      ["nl", "Dutch"],
+      ["pl", "Polish"],
+      ["ru", "Russian"],
+      ["id", "Indonesian"],
+      ["th", "Thai"]
+    ],
+    magic: [
+      ["any", "Any language"],
+      ["en", "English"],
+      ["ja", "Japanese"],
+      ["zh-cn", "Chinese - Simplified"],
+      ["zh-tw", "Chinese - Traditional"],
+      ["ko", "Korean"],
+      ["fr", "French"],
+      ["de", "German"],
+      ["it", "Italian"],
+      ["es", "Spanish"],
+      ["pt", "Portuguese"],
+      ["ru", "Russian"],
+      ["he", "Hebrew"],
+      ["la", "Latin"],
+      ["grc", "Ancient Greek"],
+      ["ar", "Arabic"]
+    ],
+    sports: [
+      ["any", "Any language / region"],
+      ["en", "English"],
+      ["ja", "Japanese"],
+      ["zh-cn", "Chinese"],
+      ["ko", "Korean"],
+      ["es", "Spanish"],
+      ["fr", "French"],
+      ["de", "German"],
+      ["it", "Italian"],
+      ["pt", "Portuguese"]
+    ],
+    memorabilia: [
+      ["any", "Any language / region"],
+      ["en", "English"],
+      ["ja", "Japanese"],
+      ["zh-cn", "Chinese"],
+      ["ko", "Korean"],
+      ["es", "Spanish"],
+      ["fr", "French"],
+      ["de", "German"],
+      ["it", "Italian"],
+      ["pt", "Portuguese"]
+    ]
+  };
+
+  const mainCategories = [
+    { id: "tcg", label: "TCG Games", short: "TCG", description: "Pokemon, Magic, One Piece and other trading-card games" },
+    { id: "sports", label: "Sports", short: "SP", description: "Soccer, football, basketball, baseball, hockey and more" },
+    { id: "memorabilia", label: "Memorabilia", short: "MEM", description: "Signed pieces, apparel, equipment, cups, mugs and collectibles" }
   ];
+
+  const seriesOptions = [
+    { id: "pokemon", mainCategory: "tcg", label: "Pokemon", short: "PK", apiBacked: true, languageSet: "tcg", querySuffix: "Pokemon TCG card", marketGroup: "tcg", suggestions: ["Charizard", "Pikachu", "Eevee", "Mewtwo", "Japanese Charizard", "Korean Pikachu", "Chinese Pokemon booster box", "PSA 10 Charizard"] },
+    { id: "magic", mainCategory: "tcg", label: "Magic", short: "MTG", apiBacked: true, languageSet: "magic", querySuffix: "Magic the Gathering card", marketGroup: "tcg", suggestions: ["Black Lotus", "Sol Ring", "Lightning Bolt", "Mana Crypt", "Japanese Liliana", "Korean Magic foil", "Chinese Magic booster box"] },
+    { id: "onepiece", mainCategory: "tcg", label: "One Piece", short: "OP", querySuffix: "One Piece card game card", marketGroup: "tcg", suggestions: ["Monkey D Luffy manga", "Roronoa Zoro", "Nami parallel", "One Piece booster box", "Japanese One Piece card"] },
+    { id: "yugioh", mainCategory: "tcg", label: "Yu-Gi-Oh!", short: "YG", querySuffix: "Yu-Gi-Oh card", marketGroup: "tcg", suggestions: ["Blue-Eyes White Dragon", "Dark Magician", "Exodia", "Starlight Rare", "Japanese Yu-Gi-Oh card", "Korean Blue-Eyes"] },
+    { id: "lorcana", mainCategory: "tcg", label: "Lorcana", short: "LC", querySuffix: "Disney Lorcana card", marketGroup: "tcg", suggestions: ["Elsa Spirit of Winter", "Mickey Mouse Brave Little Tailor", "Lorcana enchanted", "Lorcana booster box"] },
+    { id: "dragonball", mainCategory: "tcg", label: "Dragon Ball", short: "DB", querySuffix: "Dragon Ball Super card game card", marketGroup: "tcg", suggestions: ["Son Goku SCR", "Vegeta SPR", "Dragon Ball booster box", "Japanese Dragon Ball card"] },
+    { id: "digimon", mainCategory: "tcg", label: "Digimon", short: "DG", querySuffix: "Digimon card game card", marketGroup: "tcg", suggestions: ["Omnimon", "WarGreymon", "Digimon alternate art", "Digimon booster box"] },
+    { id: "fab", mainCategory: "tcg", label: "Flesh and Blood", short: "FAB", querySuffix: "Flesh and Blood TCG card", marketGroup: "tcg", suggestions: ["Command and Conquer", "Fyendal's Spring Tunic", "Cold Foil", "Flesh and Blood booster box"] },
+    { id: "weiss", mainCategory: "tcg", label: "Weiss Schwarz", short: "WS", querySuffix: "Weiss Schwarz card", marketGroup: "tcg", suggestions: ["Weiss Schwarz signed SP", "Attack on Titan SP", "Hololive SSP", "Japanese Weiss Schwarz"] },
+    { id: "starwars", mainCategory: "tcg", label: "Star Wars Unlimited", short: "SWU", querySuffix: "Star Wars Unlimited card", marketGroup: "tcg", suggestions: ["Darth Vader", "Luke Skywalker showcase", "Star Wars Unlimited booster box"] },
+    { id: "unionarena", mainCategory: "tcg", label: "Union Arena", short: "UA", querySuffix: "Union Arena card", marketGroup: "tcg", suggestions: ["Union Arena signed", "Jujutsu Kaisen Union Arena", "Hunter x Hunter Union Arena"] },
+    { id: "cardfight", mainCategory: "tcg", label: "Cardfight Vanguard", short: "VG", querySuffix: "Cardfight Vanguard card", marketGroup: "tcg", suggestions: ["Cardfight Vanguard SP", "Blaster Blade", "Vanguard booster box"] },
+    { id: "shadowverse", mainCategory: "tcg", label: "Shadowverse Evolve", short: "SV", querySuffix: "Shadowverse Evolve card", marketGroup: "tcg", suggestions: ["Shadowverse Evolve leader", "Uma Musume leader", "Shadowverse booster box"] },
+    { id: "graded", mainCategory: "tcg", label: "Graded slabs", short: "10", querySuffix: "graded trading card PSA BGS CGC", marketGroup: "graded", suggestions: ["PSA 10 Charizard", "BGS 10 Black Label", "CGC Pristine Pokemon", "PSA 10 manga Luffy"] },
+    { id: "sealed", mainCategory: "tcg", label: "Sealed boxes", short: "BX", querySuffix: "sealed trading card booster box", marketGroup: "sealed", suggestions: ["Pokemon booster box", "Japanese booster box", "Magic collector booster box", "One Piece booster box"] },
+    { id: "other_tcg", mainCategory: "tcg", label: "Other TCG", short: "TCG+", querySuffix: "trading card game card", marketGroup: "tcg", suggestions: ["MetaZoo card", "Grand Archive card", "Universus card", "Final Fantasy TCG card"] },
+
+    { id: "sports_all", mainCategory: "sports", label: "All sports", short: "ALL", querySuffix: "sports card", marketGroup: "sports", suggestions: ["Michael Jordan rookie", "Tom Brady rookie", "Lionel Messi rookie", "Shohei Ohtani rookie", "Wayne Gretzky rookie"] },
+    { id: "baseball", mainCategory: "sports", label: "Baseball", short: "BB", querySuffix: "baseball card", marketGroup: "sports", suggestions: ["Shohei Ohtani rookie", "Ken Griffey Jr rookie", "Mickey Mantle", "Topps Chrome baseball"] },
+    { id: "basketball", mainCategory: "sports", label: "Basketball", short: "BK", querySuffix: "basketball card", marketGroup: "sports", suggestions: ["Michael Jordan rookie", "LeBron James rookie", "Kobe Bryant rookie", "Victor Wembanyama rookie"] },
+    { id: "football", mainCategory: "sports", label: "Football", short: "FB", querySuffix: "football card", marketGroup: "sports", suggestions: ["Tom Brady rookie", "Patrick Mahomes rookie", "CJ Stroud rookie", "Prizm football"] },
+    { id: "soccer", mainCategory: "sports", label: "Soccer", short: "SC", querySuffix: "soccer card", marketGroup: "sports", suggestions: ["Lionel Messi rookie", "Cristiano Ronaldo rookie", "Kylian Mbappe rookie", "Panini soccer"] },
+    { id: "hockey", mainCategory: "sports", label: "Hockey", short: "HK", querySuffix: "hockey card", marketGroup: "sports", suggestions: ["Wayne Gretzky rookie", "Connor McDavid rookie", "Connor Bedard Young Guns", "Upper Deck hockey"] },
+    { id: "racing", mainCategory: "sports", label: "Racing", short: "RC", querySuffix: "racing card", marketGroup: "sports", suggestions: ["Lewis Hamilton card", "Dale Earnhardt card", "Max Verstappen card"] },
+    { id: "wrestling", mainCategory: "sports", label: "Wrestling", short: "WR", querySuffix: "wrestling card", marketGroup: "sports", suggestions: ["Hulk Hogan card", "The Rock rookie", "WWE Prizm"] },
+    { id: "golf", mainCategory: "sports", label: "Golf", short: "GF", querySuffix: "golf card", marketGroup: "sports", suggestions: ["Tiger Woods rookie", "Upper Deck golf", "Rory McIlroy card"] },
+    { id: "tennis", mainCategory: "sports", label: "Tennis", short: "TN", querySuffix: "tennis card", marketGroup: "sports", suggestions: ["Serena Williams card", "Roger Federer card", "Carlos Alcaraz rookie"] },
+    { id: "combat", mainCategory: "sports", label: "UFC / Boxing", short: "UFC", querySuffix: "UFC boxing card", marketGroup: "sports", suggestions: ["Conor McGregor card", "Muhammad Ali card", "UFC Prizm"] },
+
+    { id: "memorabilia_all", mainCategory: "memorabilia", label: "All memorabilia", short: "ALL", querySuffix: "sports memorabilia collectible", marketGroup: "memorabilia", suggestions: ["signed jersey", "game used jersey", "signed baseball", "signed hockey stick", "signed football helmet"] },
+    { id: "signed", mainCategory: "memorabilia", label: "Signed", short: "SIG", querySuffix: "signed autograph memorabilia", marketGroup: "memorabilia", suggestions: ["signed Michael Jordan jersey", "signed baseball", "signed Pokemon card", "signed photo"] },
+    { id: "jerseys", mainCategory: "memorabilia", label: "Game jerseys", short: "JER", querySuffix: "game used jersey memorabilia", marketGroup: "memorabilia", suggestions: ["game used jersey", "signed jersey", "match worn soccer jersey"] },
+    { id: "hats", mainCategory: "memorabilia", label: "Hats", short: "HAT", querySuffix: "collectible hat cap memorabilia", marketGroup: "memorabilia", suggestions: ["signed hat", "team cap collectible", "game used hat"] },
+    { id: "tees", mainCategory: "memorabilia", label: "Tee shirts", short: "TEE", querySuffix: "tee shirt collectible memorabilia", marketGroup: "memorabilia", suggestions: ["vintage team tee", "signed tee shirt", "concert tee collectible"] },
+    { id: "cups_mugs", mainCategory: "memorabilia", label: "Cups / mugs", short: "CUP", querySuffix: "cup mug collectible memorabilia", marketGroup: "memorabilia", suggestions: ["team mug", "stadium cup", "vintage sports cup"] },
+    { id: "pennants", mainCategory: "memorabilia", label: "Pennants", short: "PEN", querySuffix: "pennant collectible memorabilia", marketGroup: "memorabilia", suggestions: ["vintage pennant", "team pennant", "World Series pennant"] },
+    { id: "baseballs_mem", mainCategory: "memorabilia", label: "Baseballs", short: "BALL", querySuffix: "signed baseball memorabilia", marketGroup: "memorabilia", suggestions: ["signed baseball", "game used baseball", "World Series baseball"] },
+    { id: "equipment", mainCategory: "memorabilia", label: "Equipment", short: "EQ", querySuffix: "game used sports equipment memorabilia", marketGroup: "memorabilia", suggestions: ["game used equipment", "signed helmet", "game used cleats"] },
+    { id: "hockey_sticks", mainCategory: "memorabilia", label: "Hockey sticks", short: "STK", querySuffix: "game used hockey stick memorabilia", marketGroup: "memorabilia", suggestions: ["signed hockey stick", "game used hockey stick", "Wayne Gretzky stick"] },
+    { id: "bats", mainCategory: "memorabilia", label: "Baseball bats", short: "BAT", querySuffix: "game used baseball bat memorabilia", marketGroup: "memorabilia", suggestions: ["signed baseball bat", "game used bat", "Louisville Slugger signed"] },
+    { id: "gloves", mainCategory: "memorabilia", label: "Gloves", short: "GLV", querySuffix: "game used glove memorabilia", marketGroup: "memorabilia", suggestions: ["game used glove", "signed boxing glove", "baseball glove signed"] },
+    { id: "shoes", mainCategory: "memorabilia", label: "Shoes", short: "SHOE", querySuffix: "game used shoes sneakers memorabilia", marketGroup: "memorabilia", suggestions: ["game worn shoes", "signed sneakers", "Michael Jordan game shoes"] },
+    { id: "tickets_programs", mainCategory: "memorabilia", label: "Tickets / programs", short: "TIX", querySuffix: "ticket program collectible memorabilia", marketGroup: "memorabilia", suggestions: ["Super Bowl ticket", "World Series program", "vintage ticket stub"] },
+    { id: "photos_posters", mainCategory: "memorabilia", label: "Photos / posters", short: "PIC", querySuffix: "photo poster collectible memorabilia", marketGroup: "memorabilia", suggestions: ["signed photo", "movie poster signed", "sports poster"] }
+  ];
+
   const seriesMap = new Map(seriesOptions.map(option => [option.id, option]));
   const seriesIds = new Set(seriesOptions.map(option => option.id));
+  const mainCategoryIds = new Set(mainCategories.map(option => option.id));
+
   const priceSources = [
     {
       id: "ebay-sold",
       title: "eBay sold listings",
       priceLabel: "Recent sold prices",
       note: "Completed sales and accepted-offer pages when eBay exposes them.",
-      groups: ["tcg", "sports", "graded", "sealed", "collectibles"],
+      groups: ["tcg", "sports", "graded", "sealed", "memorabilia"],
       url: query => `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(query)}&LH_Complete=1&LH_Sold=1`
     },
     {
       id: "tcgplayer",
       title: "TCGplayer marketplace",
       priceLabel: "Current marketplace prices",
-      note: "Listings and product pages for trading-card games.",
+      note: "Listings and product pages for many trading-card games.",
       groups: ["tcg", "sealed"],
       url: query => `https://www.tcgplayer.com/search/all/product?q=${encodeURIComponent(query)}`
     },
@@ -77,15 +188,23 @@
       title: "PriceCharting",
       priceLabel: "Charted sold prices",
       note: "Ungraded and graded market charts where available.",
-      groups: ["tcg", "sports", "graded", "sealed", "collectibles"],
+      groups: ["tcg", "sports", "graded", "sealed", "memorabilia"],
       url: query => `https://www.pricecharting.com/search-products?q=${encodeURIComponent(query)}&type=prices`
+    },
+    {
+      id: "130point",
+      title: "130 Point sold-card search",
+      priceLabel: "Sold-card comps",
+      note: "Sports and trading-card sold-price references from public marketplace data.",
+      groups: ["sports", "graded", "memorabilia"],
+      url: query => `https://130point.com/cards/?search=${encodeURIComponent(query)}`
     },
     {
       id: "comc",
       title: "COMC marketplace",
       priceLabel: "Card marketplace listings",
       note: "Fixed-price card listings, strongest for sports and singles.",
-      groups: ["sports", "graded", "collectibles"],
+      groups: ["sports", "graded"],
       url: query => `https://www.comc.com/Cards,sr,i100,=${encodeURIComponent(query)}`
     },
     {
@@ -95,8 +214,26 @@
       note: "Cardmarket search pages for supported trading-card games.",
       groups: ["tcg", "sealed"],
       url: query => `https://www.cardmarket.com/en/Products/Search?searchString=${encodeURIComponent(query)}`
+    },
+    {
+      id: "mercari",
+      title: "Mercari marketplace",
+      priceLabel: "Current resale listings",
+      note: "General collectibles and memorabilia listing pages.",
+      groups: ["memorabilia"],
+      url: query => `https://www.mercari.com/search/?keyword=${encodeURIComponent(query)}`
+    },
+    {
+      id: "goldin",
+      title: "Goldin search",
+      priceLabel: "Premium auction comps",
+      note: "Auction and premium collectible search results when available.",
+      groups: ["sports", "graded", "memorabilia"],
+      url: query => `https://goldin.co/search?q=${encodeURIComponent(query)}`
     }
   ];
+
+  const allSuggestions = [...new Set(seriesOptions.flatMap(option => option.suggestions || []))];
 
   const escapeHtml = value => String(value ?? "").replace(/[&<>'"]/g, character => ({
     "&": "&amp;",
@@ -128,15 +265,70 @@
   }
 
   const currentSeries = () => seriesMap.get(state.series) || seriesOptions[0];
+  const currentLanguageLabel = () => {
+    const selected = [...(languageSets[currentSeries().languageSet] || languageSets[state.mainCategory] || languageSets.tcg)]
+      .find(([id]) => id === state.language);
+    return selected?.[1] || "Any language";
+  };
 
-  function syncSeriesTabs() {
-    if (!seriesTabs) return;
-    seriesTabs.querySelectorAll("[data-card-series]").forEach(button => {
-      button.classList.toggle("is-active", String(button.dataset.cardSeries || "pokemon") === state.series);
-    });
+  function renderMainCategories() {
+    if (!mainCategoryTabs) return;
+    mainCategoryTabs.innerHTML = mainCategories.map(option => `
+      <button class="lookup-main-tab${option.id === state.mainCategory ? " is-active" : ""}" type="button" data-main-category="${escapeHtml(option.id)}">
+        <span>${escapeHtml(option.short)}</span>
+        <strong>${escapeHtml(option.label)}</strong>
+        <small>${escapeHtml(option.description)}</small>
+      </button>
+    `).join("");
   }
 
-  const marketQuery = (series, term) => [term, series.querySuffix].filter(Boolean).join(" ").trim();
+  function renderSeriesTabs() {
+    if (!seriesTabs) return;
+    const options = seriesOptions.filter(option => option.mainCategory === state.mainCategory);
+    if (!options.some(option => option.id === state.series)) state.series = options[0]?.id || "pokemon";
+    seriesTabs.innerHTML = options.map(option => `
+      <button class="card-series-tab${option.id === state.series ? " is-active" : ""}" type="button" data-card-series="${escapeHtml(option.id)}">
+        <span>${escapeHtml(option.short)}</span>${escapeHtml(option.label)}
+      </button>
+    `).join("");
+  }
+
+  function renderLanguageOptions() {
+    if (!language) return;
+    const selectedSeries = currentSeries();
+    const options = languageSets[selectedSeries.languageSet] || languageSets[state.mainCategory] || languageSets.tcg;
+    if (!options.some(([id]) => id === state.language)) state.language = "any";
+    language.innerHTML = options.map(([id, label]) => `<option value="${escapeHtml(id)}">${escapeHtml(label)}</option>`).join("");
+    language.value = state.language;
+  }
+
+  function syncControls() {
+    renderMainCategories();
+    renderSeriesTabs();
+    renderLanguageOptions();
+    updateSuggestions();
+  }
+
+  function sourceModeReason(series) {
+    if (series.apiBacked && series.id === "pokemon" && !["any", "en"].includes(state.language)) {
+      return `Reason: Pokemon result cards from the current API are English catalog records; selected ${currentLanguageLabel()} searches open live source pages instead.`;
+    }
+    if (!series.apiBacked) {
+      return `Reason: ${series.label} does not have a direct card database connected here yet, so Crack Packs opens live sold/listing source pages for current prices.`;
+    }
+    return "";
+  }
+
+  function usesApiForCurrentSearch(series = currentSeries()) {
+    if (!series.apiBacked) return false;
+    if (series.id === "pokemon" && !["any", "en"].includes(state.language)) return false;
+    return true;
+  }
+
+  function marketQuery(series, term) {
+    const languageLabel = state.language === "any" ? "" : currentLanguageLabel();
+    return [term, languageLabel, series.querySuffix].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+  }
 
   function marketSourceCards(series, term) {
     const query = marketQuery(series, term);
@@ -151,11 +343,13 @@
       url.searchParams.set("q", state.term);
       url.searchParams.set("field", state.field);
       url.searchParams.set("sort", state.orderBy);
+      url.searchParams.set("category", state.mainCategory);
       url.searchParams.set("series", state.series);
+      url.searchParams.set("language", state.language);
       url.searchParams.set("size", String(state.pageSize));
       url.searchParams.set("page", String(state.page));
     } else {
-      ["q", "field", "sort", "series", "size", "page"].forEach(key => url.searchParams.delete(key));
+      ["q", "field", "sort", "category", "series", "language", "size", "page"].forEach(key => url.searchParams.delete(key));
     }
     window.history.replaceState({}, "", url);
   }
@@ -170,7 +364,14 @@
     state.term = term;
     state.field = allowedFields.has(params.get("field")) ? params.get("field") : "all";
     state.orderBy = allowedSorts.has(params.get("sort")) ? params.get("sort") : "-set.releaseDate";
-    state.series = seriesIds.has(params.get("series")) ? params.get("series") : "pokemon";
+    state.mainCategory = mainCategoryIds.has(params.get("category")) ? params.get("category") : "tcg";
+    state.series = seriesIds.has(params.get("series")) ? params.get("series") : seriesOptions.find(option => option.mainCategory === state.mainCategory)?.id || "pokemon";
+    state.language = params.get("language") || "any";
+
+    const series = seriesMap.get(state.series);
+    if (!series || series.mainCategory !== state.mainCategory) {
+      state.series = seriesOptions.find(option => option.mainCategory === state.mainCategory)?.id || "pokemon";
+    }
 
     const parsedSize = Number.parseInt(params.get("size"), 10);
     state.pageSize = allowedSizes.has(parsedSize) ? parsedSize : 20;
@@ -182,7 +383,7 @@
     field.value = state.field;
     order.value = state.orderBy;
     pageSize.value = String(state.pageSize);
-    syncSeriesTabs();
+    syncControls();
   }
 
   function skeletonCards(amount = 8) {
@@ -266,7 +467,7 @@
     return `
       <div class="lookup-price-row lookup-price-unavailable">
         <strong>No current estimate returned</strong>
-        <span>Pricing may be unavailable for this printing.</span>
+        <span>Reason: the connected database returned the card, but did not return pricing for this printing.</span>
       </div>
     `;
   }
@@ -302,6 +503,7 @@
             <span>${escapeHtml(setName)}</span>
             <strong>${escapeHtml(numberLabel)}</strong>
             ${artist}
+            <span>${escapeHtml(currentLanguageLabel())}</span>
           </div>
 
           <div class="lookup-pricing" aria-label="Estimated pricing">
@@ -315,7 +517,7 @@
           <div class="lookup-card-actions">
             ${marketUrl
               ? `<a class="btn btn-small btn-primary" href="${escapeHtml(marketUrl)}" target="_blank" rel="noopener noreferrer">Verify market listing</a>`
-              : `<span class="lookup-no-link">No external market link returned</span>`
+              : `<span class="lookup-no-link">No external market link returned. Use the source-linked cards below if available.</span>`
             }
           </div>
         </div>
@@ -337,12 +539,12 @@
           <h2>${escapeHtml(state.term)}</h2>
           <div class="lookup-meta">
             <span>${escapeHtml(source.query)}</span>
-            <strong>Live market page</strong>
+            <strong>${escapeHtml(currentLanguageLabel())}</strong>
           </div>
 
           <div class="lookup-pricing" aria-label="Source-linked pricing">
             <div class="lookup-pricing-heading">
-              <strong>Source-linked price check</strong>
+              <strong>Live market price check</strong>
               <span>Open source</span>
             </div>
             ${priceRowMarkup({
@@ -381,6 +583,66 @@
     setHidden(empty, true);
     setHidden(errorBox, true);
     if (errorText) errorText.textContent = "";
+    renderCloseMatches([]);
+  }
+
+  function normalize(value) {
+    return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  }
+
+  function scoreSuggestion(term, candidate) {
+    const t = normalize(term);
+    const c = normalize(candidate);
+    if (!t || !c) return 0;
+    if (c === t) return 100;
+    if (c.startsWith(t)) return 90;
+    if (c.includes(t)) return 75;
+    const words = t.split(" ").filter(Boolean);
+    return words.reduce((score, word) => score + (c.includes(word) ? 12 : 0), 0);
+  }
+
+  function suggestionsForCurrentSeries(term = input.value) {
+    const selectedSeries = currentSeries();
+    const categorySuggestions = seriesOptions
+      .filter(option => option.mainCategory === state.mainCategory)
+      .flatMap(option => option.suggestions || []);
+    const pool = [...new Set([...(selectedSeries.suggestions || []), ...categorySuggestions, ...allSuggestions])];
+    return pool
+      .map(candidate => ({ candidate, score: scoreSuggestion(term, candidate) }))
+      .filter(item => item.score > 0 || !term)
+      .sort((left, right) => right.score - left.score || left.candidate.localeCompare(right.candidate))
+      .slice(0, 12)
+      .map(item => item.candidate);
+  }
+
+  function updateSuggestions() {
+    if (!suggestionList) return;
+    suggestionList.innerHTML = suggestionsForCurrentSeries().map(value => `<option value="${escapeHtml(value)}"></option>`).join("");
+  }
+
+  function renderCloseMatches(matches) {
+    if (!closeMatches) return;
+    if (!matches.length) {
+      closeMatches.hidden = true;
+      closeMatches.innerHTML = "";
+      return;
+    }
+    closeMatches.hidden = false;
+    closeMatches.innerHTML = `
+      <strong>Close match ideas</strong>
+      <div>${matches.map(match => `<button class="lookup-close-match" type="button" data-close-match="${escapeHtml(match)}">${escapeHtml(match)}</button>`).join("")}</div>
+    `;
+  }
+
+  function noResultReason(series, payload = {}) {
+    const parts = [
+      `Reason: the connected ${series.label} database returned zero exact matches for "${state.term}".`,
+      `Search was limited to ${field.options[field.selectedIndex]?.textContent || "all fields"}.`,
+      state.language !== "any" ? `Language filter: ${currentLanguageLabel()}.` : "Language filter: any language."
+    ];
+    if (payload?.meta?.source) parts.push(`Source: ${payload.meta.source}.`);
+    parts.push("Try a close match, shorten the name, remove grading terms, or open the live sold-listing sources.");
+    return parts.join(" ");
   }
 
   async function searchCards({ scroll = false } = {}) {
@@ -392,7 +654,7 @@
       state.totalCount = 0;
       setHidden(pager, true);
       setHidden(summary, true);
-      setStatus("Enter at least two characters to search.");
+      setStatus("Reason: enter at least two characters so the search can compare names, sets, and marketplace listings.");
       input.focus();
       updateUrl();
       return;
@@ -401,11 +663,12 @@
     state.term = term;
     state.field = field.value;
     state.orderBy = order.value;
-    state.series = document.querySelector("[data-card-series].is-active")?.dataset.cardSeries || state.series || "pokemon";
+    state.language = language?.value || "any";
     state.pageSize = Number.parseInt(pageSize.value, 10) || 20;
     const selectedSeries = currentSeries();
+    const sourceReason = sourceModeReason(selectedSeries);
 
-    if (!selectedSeries.apiBacked) {
+    if (!usesApiForCurrentSearch(selectedSeries)) {
       if (state.controller) state.controller.abort();
       state.page = 1;
       state.loading = false;
@@ -418,10 +681,11 @@
       results.innerHTML = cards.map(renderMarketSourceCard).join("");
       setHidden(pager, true);
       if (summary) {
-        summary.textContent = `${compactNumber(cards.length)} source-linked market page${cards.length === 1 ? "" : "s"} for "${state.term}"`;
+        summary.textContent = `${compactNumber(cards.length)} live source page${cards.length === 1 ? "" : "s"} for "${state.term}"`;
         summary.hidden = false;
       }
-      setStatus(`Showing source-linked ${selectedSeries.label} market pages for "${state.term}".`);
+      renderCloseMatches(suggestionsForCurrentSeries(state.term).filter(match => normalize(match) !== normalize(state.term)).slice(0, 6));
+      setStatus(`${sourceReason} Open these source pages to see current sold/listing prices.`);
       updateUrl();
       if (scroll) document.querySelector("#lookup-results")?.scrollIntoView({ behavior: "smooth", block: "start" });
       return;
@@ -436,7 +700,7 @@
     results.setAttribute("aria-busy", "true");
     results.innerHTML = skeletonCards(Math.min(state.pageSize, 8));
     submit.disabled = true;
-    setStatus(`Searching ${selectedSeries.label} for "${state.term}"...`);
+    setStatus(`Searching ${selectedSeries.label} for "${state.term}" in ${currentLanguageLabel()}...`);
     updatePager();
     updateUrl();
 
@@ -444,6 +708,7 @@
       term: state.term,
       field: state.field,
       series: state.series,
+      language: state.language,
       page: String(state.page),
       pageSize: String(state.pageSize),
       orderBy: state.orderBy
@@ -471,16 +736,30 @@
       state.count = Number(payload.count) || cards.length;
       state.totalCount = Number(payload.totalCount) || cards.length;
 
-      results.innerHTML = cards.map(renderCard).join("");
+      const sourceCards = marketSourceCards(selectedSeries, state.term);
+      results.innerHTML = [
+        ...cards.map(renderCard),
+        ...(cards.length ? sourceCards.slice(0, 3).map((source, index) => renderMarketSourceCard(source, index)) : [])
+      ].join("");
 
       if (!cards.length) {
+        const reason = noResultReason(selectedSeries, payload);
         setHidden(empty, false);
-        setStatus(`No cards matched "${state.term}".`);
-        setHidden(summary, true);
+        if (emptyText) emptyText.textContent = reason;
+        setStatus(reason);
+        renderCloseMatches(suggestionsForCurrentSeries(state.term).filter(match => normalize(match) !== normalize(state.term)).slice(0, 6));
+        results.innerHTML = sourceCards.map(renderMarketSourceCard).join("");
+        state.totalCount = sourceCards.length;
+        setHidden(pager, true);
+        if (summary) {
+          summary.textContent = `No exact ${selectedSeries.label} database card; ${sourceCards.length} live price source${sourceCards.length === 1 ? "" : "s"} shown`;
+          summary.hidden = false;
+        }
       } else {
         const first = ((state.page - 1) * state.pageSize) + 1;
         const last = first + cards.length - 1;
-        setStatus(`Showing ${compactNumber(first)}-${compactNumber(last)} of ${compactNumber(state.totalCount)} matches.`);
+        setStatus(`Showing ${compactNumber(first)}-${compactNumber(last)} of ${compactNumber(state.totalCount)} database matches, plus live source links for current price checks.`);
+        renderCloseMatches([]);
         if (summary) {
           summary.textContent = `${compactNumber(state.totalCount)} estimated match${state.totalCount === 1 ? "" : "es"} for "${state.term}"`;
           summary.hidden = false;
@@ -494,10 +773,12 @@
       }
     } catch (error) {
       if (error?.name === "AbortError") return;
-      results.innerHTML = "";
-      state.totalCount = 0;
+      const sourceCards = marketSourceCards(selectedSeries, state.term);
+      results.innerHTML = sourceCards.map(renderMarketSourceCard).join("");
+      state.totalCount = sourceCards.length;
       updatePager();
-      showError(error?.message || "The card search service could not be reached. Please try again.");
+      showError(`${error?.message || "The card search service could not be reached."} Reason: the live database call failed, so source-linked price pages are shown instead.`);
+      renderCloseMatches(suggestionsForCurrentSeries(state.term).filter(match => normalize(match) !== normalize(state.term)).slice(0, 6));
     } finally {
       state.loading = false;
       results.removeAttribute("aria-busy");
@@ -512,13 +793,17 @@
     searchCards({ scroll: true });
   });
 
+  input.addEventListener("input", updateSuggestions);
+
   reset?.addEventListener("click", () => {
     if (state.controller) state.controller.abort();
     form.reset();
     state.term = "";
     state.field = "all";
     state.orderBy = "-set.releaseDate";
+    state.mainCategory = "tcg";
     state.series = "pokemon";
+    state.language = "any";
     state.pageSize = 20;
     state.page = 1;
     state.totalCount = 0;
@@ -526,12 +811,12 @@
     field.value = state.field;
     order.value = state.orderBy;
     pageSize.value = String(state.pageSize);
-    syncSeriesTabs();
+    syncControls();
     results.innerHTML = "";
     clearMessages();
     setHidden(pager, true);
     setHidden(summary, true);
-    setStatus("Choose a category, then search by name, set, number, rarity, type, or keyword.");
+    setStatus("Choose TCG, Sports, or Memorabilia, then search by name, set, number, rarity, type, or keyword.");
     updateUrl();
     input.focus();
   });
@@ -551,28 +836,58 @@
 
   document.querySelectorAll("[data-price-check-example]").forEach(button => {
     button.addEventListener("click", () => {
+      const targetSeries = seriesMap.get(button.dataset.priceCheckSeries || "");
+      if (targetSeries) {
+        state.mainCategory = targetSeries.mainCategory;
+        state.series = targetSeries.id;
+        state.language = button.dataset.priceCheckLanguage || "any";
+        syncControls();
+      }
       input.value = button.dataset.priceCheckExample || "";
       field.value = button.dataset.priceCheckField || "all";
-      if (button.dataset.priceCheckSeries && seriesIds.has(button.dataset.priceCheckSeries)) {
-        state.series = button.dataset.priceCheckSeries;
-        syncSeriesTabs();
-      }
       state.page = 1;
       searchCards({ scroll: true });
     });
   });
 
-  seriesTabs?.querySelectorAll("[data-card-series]").forEach(button => {
-    button.addEventListener("click", () => {
-      seriesTabs.querySelectorAll("[data-card-series]").forEach(candidate => candidate.classList.toggle("is-active", candidate === button));
-      state.series = button.dataset.cardSeries || "pokemon";
-      if (state.term.length >= 2) {
-        state.page = 1;
-        searchCards({ scroll: true });
-      } else {
-        updateUrl();
-      }
-    });
+  mainCategoryTabs?.addEventListener("click", event => {
+    const button = event.target.closest("[data-main-category]");
+    if (!button) return;
+    state.mainCategory = button.dataset.mainCategory || "tcg";
+    state.series = seriesOptions.find(option => option.mainCategory === state.mainCategory)?.id || "pokemon";
+    state.language = "any";
+    state.page = 1;
+    syncControls();
+    if (state.term.length >= 2 || input.value.trim().length >= 2) searchCards({ scroll: false });
+    else updateUrl();
+  });
+
+  seriesTabs?.addEventListener("click", event => {
+    const button = event.target.closest("[data-card-series]");
+    if (!button) return;
+    state.series = button.dataset.cardSeries || "pokemon";
+    state.page = 1;
+    renderSeriesTabs();
+    renderLanguageOptions();
+    updateSuggestions();
+    if (state.term.length >= 2 || input.value.trim().length >= 2) searchCards({ scroll: false });
+    else updateUrl();
+  });
+
+  language?.addEventListener("change", event => {
+    state.language = event.currentTarget.value || "any";
+    state.page = 1;
+    updateSuggestions();
+    if (state.term.length >= 2 || input.value.trim().length >= 2) searchCards({ scroll: false });
+    else updateUrl();
+  });
+
+  closeMatches?.addEventListener("click", event => {
+    const button = event.target.closest("[data-close-match]");
+    if (!button) return;
+    input.value = button.dataset.closeMatch || "";
+    state.page = 1;
+    searchCards({ scroll: true });
   });
 
   window.addEventListener("popstate", () => {
@@ -587,6 +902,6 @@
   if (state.term.length >= 2) {
     searchCards();
   } else {
-    setStatus("Choose a category, then search by name, set, number, rarity, type, or keyword.");
+    setStatus("Choose TCG, Sports, or Memorabilia, then search by name, set, number, rarity, type, or keyword.");
   }
 })();

@@ -116,9 +116,9 @@ button { color: inherit; }
 }
 .site-nav > a[href$="card-lookup.html"],
 .site-nav > a[href*="card-lookup.html?"] {
-  min-width: 148px;
+  min-width: 174px;
   min-height: 44px;
-  padding: 0 18px;
+  padding: 0 22px;
   border: 1px solid rgba(56,232,255,.3);
   border-radius: 999px;
   background: linear-gradient(115deg, rgba(56,232,255,.1), rgba(255,78,219,.08));

@@ -5,7 +5,49 @@ const SCRYFALL_API_BASE = "https://api.scryfall.com";
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 48;
 const CACHE_SECONDS = 300;
-const WORKER_VERSION = "2.0.0";
+const WORKER_VERSION = "2.1.0";
+const SUPPORTED_LOOKUP_LANGUAGES = new Set([
+  "any",
+  "en",
+  "ja",
+  "zh-cn",
+  "zh-tw",
+  "ko",
+  "fr",
+  "de",
+  "it",
+  "es",
+  "pt",
+  "pt-br",
+  "pt-pt",
+  "nl",
+  "pl",
+  "ru",
+  "id",
+  "th",
+  "he",
+  "la",
+  "grc",
+  "ar"
+]);
+const MAGIC_LANGUAGE_MAP = new Map([
+  ["any", ""],
+  ["en", "en"],
+  ["ja", "ja"],
+  ["zh-cn", "zhs"],
+  ["zh-tw", "zht"],
+  ["ko", "ko"],
+  ["fr", "fr"],
+  ["de", "de"],
+  ["it", "it"],
+  ["es", "es"],
+  ["pt", "pt"],
+  ["ru", "ru"],
+  ["he", "he"],
+  ["la", "la"],
+  ["grc", "grc"],
+  ["ar", "ar"]
+]);
 
 function jsonResponse(body, status = 200, headers = {}) {
   return new Response(JSON.stringify(body), {
@@ -78,6 +120,15 @@ function validOrderBy(value) {
   return allowed.has(value) ? value : "-set.releaseDate";
 }
 
+function validLanguage(value) {
+  const language = String(value || "any").trim().toLowerCase();
+  return SUPPORTED_LOOKUP_LANGUAGES.has(language) ? language : "any";
+}
+
+function magicLanguageCode(language) {
+  return MAGIC_LANGUAGE_MAP.get(validLanguage(language)) || "";
+}
+
 function fieldValue(term, { wildcard = false } = {}) {
   const words = term.split(" ").filter(Boolean);
   if (words.length === 1) return `${words[0]}${wildcard ? "*" : ""}`;
@@ -116,7 +167,8 @@ function buildPokemonQuery(term, field) {
 async function handleCards(request, env, cors) {
   const incomingUrl = new URL(request.url);
   const series = incomingUrl.searchParams.get("series") === "magic" ? "magic" : "pokemon";
-  if (series === "magic") return handleMagicCards(incomingUrl, cors);
+  const language = validLanguage(incomingUrl.searchParams.get("language"));
+  if (series === "magic") return handleMagicCards(incomingUrl, cors, language);
   if (!env.POKEMON_TCG_API_KEY) {
     return jsonResponse(
       { error: "Card search is not configured on the server." },
@@ -209,7 +261,11 @@ async function handleCards(request, env, cors) {
     authMode: "cloudflare-secret",
     submittedField: field,
     submittedTerm: term,
-    submittedQuery
+    submittedQuery,
+    submittedLanguage: language,
+    languageNotice: ["any", "en"].includes(language)
+      ? "PokemonTCG.io catalog response."
+      : "The connected Pokemon catalog is English-only; use the frontend source links for non-English market checks."
   };
 
   return jsonResponse(
@@ -222,13 +278,17 @@ async function handleCards(request, env, cors) {
   );
 }
 
-function magicQuery(term, field) {
+function magicQuery(term, field, language = "any") {
   const quoted = `"${term.replace(/"/g, "")}"`;
-  if (field === "name") return `name:${quoted}`;
-  if (field === "number") return `cn:${quoted}`;
-  if (field === "rarity") return `rarity:${term.toLowerCase().replace(/\s+/g, "")}`;
-  if (field === "type") return `type:${quoted}`;
-  return term;
+  let query;
+  if (field === "name") query = `name:${quoted}`;
+  else if (field === "number") query = `cn:${quoted}`;
+  else if (field === "rarity") query = `rarity:${term.toLowerCase().replace(/\s+/g, "")}`;
+  else if (field === "type") query = `type:${quoted}`;
+  else query = term;
+
+  const languageCode = magicLanguageCode(language);
+  return languageCode ? `${query} lang:${languageCode}` : query;
 }
 
 function magicCard(card) {
@@ -247,7 +307,7 @@ function magicCard(card) {
   };
 }
 
-async function handleMagicCards(incomingUrl, cors) {
+async function handleMagicCards(incomingUrl, cors, language = "any") {
   const term = sanitizeSearchTerm(incomingUrl.searchParams.get("term"));
   const field = validField(incomingUrl.searchParams.get("field"));
   const page = boundedInteger(incomingUrl.searchParams.get("page"), 1, 1, 1000);
@@ -259,8 +319,9 @@ async function handleMagicCards(incomingUrl, cors) {
   const localOffset = offset % 175;
   const sort = orderBy.includes("releaseDate") ? "released" : "name";
   const direction = orderBy.startsWith("-") ? "desc" : "asc";
+  const submittedQuery = magicQuery(term, field, language);
   const upstreamUrl = new URL(`${SCRYFALL_API_BASE}/cards/search`);
-  upstreamUrl.searchParams.set("q", magicQuery(term, field));
+  upstreamUrl.searchParams.set("q", submittedQuery);
   upstreamUrl.searchParams.set("page", String(upstreamPage));
   upstreamUrl.searchParams.set("order", sort);
   upstreamUrl.searchParams.set("dir", direction);
@@ -268,18 +329,35 @@ async function handleMagicCards(incomingUrl, cors) {
   let upstreamResponse;
   try {
     upstreamResponse = await fetch(upstreamUrl.toString(), {
-      headers: { Accept: "application/json;q=0.9,*/*;q=0.8", "User-Agent": "CrackPacks.com card search/2.0 (support@crackpacks.com)" },
+      headers: { Accept: "application/json;q=0.9,*/*;q=0.8", "User-Agent": "CrackPacks.com card search/2.1 (support@crackpacks.com)" },
       cf: { cacheEverything: true, cacheTtl: CACHE_SECONDS }
     });
   } catch {
     return jsonResponse({ error: "The Magic card database could not be reached. Please try again shortly." }, 502, cors);
   }
   const payload = await upstreamResponse.json().catch(() => ({}));
-  if (upstreamResponse.status === 404) return jsonResponse({ data: [], page, pageSize, count: 0, totalCount: 0, meta: { workerVersion: WORKER_VERSION, source: "scryfall" } }, 200, cors);
+  if (upstreamResponse.status === 404) {
+    return jsonResponse({
+      data: [],
+      page,
+      pageSize,
+      count: 0,
+      totalCount: 0,
+      meta: {
+        workerVersion: WORKER_VERSION,
+        source: "scryfall",
+        submittedField: field,
+        submittedTerm: term,
+        submittedLanguage: language,
+        submittedQuery,
+        reason: "No Magic cards matched the term, field, and language filter."
+      }
+    }, 200, cors);
+  }
   if (!upstreamResponse.ok) return jsonResponse({ error: payload.details || "The Magic card database rejected the request." }, upstreamResponse.status >= 500 ? 502 : upstreamResponse.status, cors);
   const allCards = Array.isArray(payload.data) ? payload.data : [];
   const data = allCards.slice(localOffset, localOffset + pageSize).map(magicCard);
-  return jsonResponse({ data, page, pageSize, count: data.length, totalCount: Number(payload.total_cards || data.length), meta: { workerVersion: WORKER_VERSION, source: "scryfall", submittedField: field, submittedTerm: term } }, 200, { ...cors, "Cache-Control": `public, max-age=${CACHE_SECONDS}` });
+  return jsonResponse({ data, page, pageSize, count: data.length, totalCount: Number(payload.total_cards || data.length), meta: { workerVersion: WORKER_VERSION, source: "scryfall", submittedField: field, submittedTerm: term, submittedLanguage: language, submittedQuery } }, 200, { ...cors, "Cache-Control": `public, max-age=${CACHE_SECONDS}` });
 }
 
 export default {
@@ -308,7 +386,12 @@ export default {
           version: WORKER_VERSION,
           pokemonApiKeyConfigured: Boolean(env.POKEMON_TCG_API_KEY),
           magicConfigured: true,
-          supportedFields: ["all", "name", "set", "number", "rarity", "type"]
+          supportedFields: ["all", "name", "set", "number", "rarity", "type"],
+          supportedLanguages: {
+            pokemonCatalog: ["any", "en"],
+            magicCatalog: [...MAGIC_LANGUAGE_MAP.keys()],
+            sourceLinkedSearch: [...SUPPORTED_LOOKUP_LANGUAGES]
+          }
         },
         200,
         cors
