@@ -131,7 +131,10 @@ test("API TCG search forwards the requested page and page size", async t => {
           type: "card",
           number: "OP01-001",
           setName: "Romance Dawn"
-        }
+        },
+        { id: "op-2", name: "Luffy Two", type: "card" },
+        { id: "op-3", name: "Luffy Three", type: "card" },
+        { id: "op-4", name: "Luffy Four", type: "card" }
       ],
       total: 42
     });
@@ -154,5 +157,6 @@ test("API TCG search forwards the requested page and page size", async t => {
   assert.equal(parsedUpstreamUrl.searchParams.get("page"), "2");
   assert.equal(payload.page, 2);
   assert.equal(payload.pageSize, 3);
+  assert.equal(payload.data.length, 3);
   assert.equal(payload.totalCount, 42);
 });

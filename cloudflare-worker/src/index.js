@@ -551,7 +551,9 @@ async function handleApiTcgCards(incomingUrl, env, cors, series, language = "any
   }
 
   const products = apiTcgProductList(payload);
-  const data = products.map(product => apiTcgCard(product, series));
+  const data = products
+    .slice(0, pageSize)
+    .map(product => apiTcgCard(product, series));
   return jsonResponse(
     {
       data,
