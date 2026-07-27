@@ -2,10 +2,31 @@
 
 const POKEMON_API_BASE = "https://api.pokemontcg.io/v2";
 const SCRYFALL_API_BASE = "https://api.scryfall.com";
+const APITCG_API_BASE = "https://api.apitcg.com/api";
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 48;
 const CACHE_SECONDS = 300;
-const WORKER_VERSION = "2.1.0";
+const WORKER_VERSION = "2.2.0";
+const API_TCG_SERIES = new Map([
+  ["onepiece", "one-piece"],
+  ["yugioh", "yugioh"],
+  ["lorcana", "lorcana"],
+  ["dragonball", "dragon-ball-super-fusion-world"],
+  ["digimon", "digimon"],
+  ["fab", "flesh-and-blood"],
+  ["starwars", "star-wars-unlimited"],
+  ["unionarena", "union-arena"]
+]);
+const API_TCG_LABELS = new Map([
+  ["onepiece", "One Piece"],
+  ["yugioh", "Yu-Gi-Oh!"],
+  ["lorcana", "Disney Lorcana"],
+  ["dragonball", "Dragon Ball Super Fusion World"],
+  ["digimon", "Digimon"],
+  ["fab", "Flesh and Blood"],
+  ["starwars", "Star Wars Unlimited"],
+  ["unionarena", "Union Arena"]
+]);
 const SUPPORTED_LOOKUP_LANGUAGES = new Set([
   "any",
   "en",
@@ -120,6 +141,13 @@ function validOrderBy(value) {
   return allowed.has(value) ? value : "-set.releaseDate";
 }
 
+function validSeries(value) {
+  const series = String(value || "pokemon").trim().toLowerCase();
+  if (series === "magic") return "magic";
+  if (API_TCG_SERIES.has(series)) return series;
+  return "pokemon";
+}
+
 function validLanguage(value) {
   const language = String(value || "any").trim().toLowerCase();
   return SUPPORTED_LOOKUP_LANGUAGES.has(language) ? language : "any";
@@ -166,9 +194,10 @@ function buildPokemonQuery(term, field) {
 
 async function handleCards(request, env, cors) {
   const incomingUrl = new URL(request.url);
-  const series = incomingUrl.searchParams.get("series") === "magic" ? "magic" : "pokemon";
+  const series = validSeries(incomingUrl.searchParams.get("series"));
   const language = validLanguage(incomingUrl.searchParams.get("language"));
   if (series === "magic") return handleMagicCards(incomingUrl, cors, language);
+  if (API_TCG_SERIES.has(series)) return handleApiTcgCards(incomingUrl, env, cors, series, language);
   if (!env.POKEMON_TCG_API_KEY) {
     return jsonResponse(
       { error: "Card search is not configured on the server." },
@@ -270,6 +299,244 @@ async function handleCards(request, env, cors) {
 
   return jsonResponse(
     responsePayload,
+    200,
+    {
+      ...cors,
+      "Cache-Control": `public, max-age=${CACHE_SECONDS}`
+    }
+  );
+}
+
+function apiTcgProductList(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.products)) return payload.products;
+  if (Array.isArray(payload?.items)) return payload.items;
+  if (Array.isArray(payload?.results)) return payload.results;
+  if (Array.isArray(payload?.data?.data)) return payload.data.data;
+  return [];
+}
+
+function apiTcgTotal(payload, fallback) {
+  const values = [
+    payload?.total,
+    payload?.totalCount,
+    payload?.count,
+    payload?.meta?.total,
+    payload?.pagination?.total,
+    payload?.data?.total
+  ];
+  const total = values.map(value => Number(value)).find(Number.isFinite);
+  return total || fallback;
+}
+
+function apiTcgErrorMessage(payload, rawText = "") {
+  const message = stringValue(payload?.message, payload?.error?.message, payload?.error);
+  if (message) return message;
+  const details = payload?.details ?? payload?.errors;
+  if (details) {
+    try {
+      return `API TCG rejected the request: ${JSON.stringify(details).slice(0, 400)}`;
+    } catch {
+      return "API TCG rejected the request with validation details.";
+    }
+  }
+  if (rawText.trim()) return `API TCG rejected the request: ${rawText.trim().slice(0, 400)}`;
+  return "API TCG rejected the request.";
+}
+
+function stringValue(...values) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  }
+  return "";
+}
+
+function firstUrl(...values) {
+  const flattened = values.flatMap(value => Array.isArray(value) ? value : [value]);
+  return stringValue(...flattened.filter(value => /^https?:\/\//i.test(String(value || ""))));
+}
+
+function numericPrice(value) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  const parsed = Number.parseFloat(String(value || "").replace(/[$,]/g, ""));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function addPrice(prices, label, value) {
+  const amount = numericPrice(value);
+  if (amount === null) return;
+  const key = String(label || "market").replace(/[^a-z0-9]+/gi, "_").replace(/^_+|_+$/g, "").toLowerCase() || "market";
+  prices[key] = { market: amount };
+}
+
+function apiTcgPrices(product) {
+  const prices = {};
+  addPrice(prices, "market", product.price ?? product.marketPrice ?? product.market_price ?? product.currentPrice ?? product.current_price ?? product.priceUsd ?? product.price_usd);
+  addPrice(prices, "low", product.lowPrice ?? product.low_price);
+  addPrice(prices, "mid", product.midPrice ?? product.mid_price ?? product.averagePrice ?? product.average_price);
+  addPrice(prices, "high", product.highPrice ?? product.high_price);
+
+  if (product.prices && typeof product.prices === "object") {
+    for (const [key, value] of Object.entries(product.prices)) {
+      if (value && typeof value === "object") {
+        const group = {};
+        const market = numericPrice(value.market ?? value.current ?? value.price ?? value.average ?? value.avg);
+        const low = numericPrice(value.low);
+        const mid = numericPrice(value.mid);
+        const directLow = numericPrice(value.directLow ?? value.direct_low);
+        if (market !== null) group.market = market;
+        if (low !== null) group.low = low;
+        if (mid !== null) group.mid = mid;
+        if (directLow !== null) group.directLow = directLow;
+        if (Object.keys(group).length) prices[key] = group;
+      } else {
+        addPrice(prices, key, value);
+      }
+    }
+  }
+
+  const history = Array.isArray(product.priceHistory) ? product.priceHistory : Array.isArray(product.price_history) ? product.price_history : [];
+  const latest = history.at(-1);
+  if (latest && typeof latest === "object") addPrice(prices, "latest history", latest.price ?? latest.value ?? latest.market);
+
+  return prices;
+}
+
+function apiTcgCard(product, series) {
+  const set = product.set && typeof product.set === "object" ? product.set : {};
+  const expansion = product.expansion && typeof product.expansion === "object" ? product.expansion : {};
+  const images = product.images && typeof product.images === "object" ? product.images : {};
+  const links = product.links && typeof product.links === "object" ? product.links : {};
+  const label = API_TCG_LABELS.get(series) || "API TCG";
+  const image = firstUrl(
+    product.image,
+    product.imageUrl,
+    product.image_url,
+    product.thumbnail,
+    product.thumbnailUrl,
+    product.thumbnail_url,
+    images.small,
+    images.large,
+    images.full,
+    images.front,
+    images.url,
+    images[0]
+  );
+
+  return {
+    id: stringValue(product.id, product.uuid, product.productId, product.product_id, product.slug, crypto.randomUUID()),
+    name: stringValue(product.name, product.title, product.productName, product.product_name, product.cardName, product.card_name, "Unnamed product"),
+    supertype: label,
+    subtypes: [
+      stringValue(product.type, product.productType, product.product_type),
+      stringValue(product.category, product.cardType, product.card_type)
+    ].filter(Boolean),
+    types: Array.isArray(product.types) ? product.types.filter(Boolean) : [],
+    number: stringValue(product.number, product.cardNumber, product.card_number, product.collectorNumber, product.collector_number, product.code, product.productId, product.product_id),
+    artist: stringValue(product.artist, product.illustrator),
+    rarity: stringValue(product.rarity, product.rarityName, product.rarity_name, product.rarityCode, product.rarity_code, "API TCG"),
+    set: {
+      id: stringValue(set.id, expansion.id, product.setId, product.set_id, product.expansionId, product.expansion_id),
+      name: stringValue(set.name, expansion.name, product.setName, product.set_name, product.expansionName, product.expansion_name, "Unknown set"),
+      printedTotal: "",
+      total: "",
+      releaseDate: stringValue(set.releaseDate, set.release_date, expansion.releaseDate, expansion.release_date, product.releaseDate, product.release_date)
+    },
+    images: { small: image, large: firstUrl(images.large, images.full, images.url, image) },
+    tcgplayer: {
+      url: firstUrl(product.url, product.marketUrl, product.market_url, product.productUrl, product.product_url, links.market, links.tcgplayer, links.url, links.self),
+      prices: apiTcgPrices(product)
+    }
+  };
+}
+
+function apiTcgSearchParams(term, field) {
+  const params = new Map();
+  if (field === "set") params.set("set", term);
+  else if (field === "number") params.set("number", term);
+  else if (field === "rarity") params.set("rarity", term);
+  else params.set("name", term);
+  return params;
+}
+
+async function handleApiTcgCards(incomingUrl, env, cors, series, language = "any") {
+  if (!env.APITCG_API_KEY) {
+    return jsonResponse(
+      { error: "API TCG search is not configured on the server. Add APITCG_API_KEY as a Worker secret." },
+      503,
+      cors
+    );
+  }
+
+  const term = sanitizeSearchTerm(incomingUrl.searchParams.get("term"));
+  const field = validField(incomingUrl.searchParams.get("field"));
+  const page = boundedInteger(incomingUrl.searchParams.get("page"), 1, 1, 1000);
+  const pageSize = boundedInteger(incomingUrl.searchParams.get("pageSize"), DEFAULT_PAGE_SIZE, 1, 100);
+
+  if (term.length < 2) {
+    return jsonResponse({ error: "Enter at least two characters to search the card catalog." }, 400, cors);
+  }
+
+  const tcgSlug = API_TCG_SERIES.get(series);
+  const upstreamUrl = new URL(`${APITCG_API_BASE}/products`);
+  upstreamUrl.searchParams.set("tcg", tcgSlug);
+  for (const [key, value] of apiTcgSearchParams(term, field)) {
+    upstreamUrl.searchParams.set(key, value);
+  }
+
+  let upstreamResponse;
+  try {
+    upstreamResponse = await fetch(upstreamUrl.toString(), {
+      headers: {
+        Accept: "application/json",
+        "x-api-key": env.APITCG_API_KEY,
+        "User-Agent": "CrackPacks.com card search/2.2 (support@crackpacks.com)"
+      },
+      cf: {
+        cacheEverything: true,
+        cacheTtl: CACHE_SECONDS
+      }
+    });
+  } catch {
+    return jsonResponse({ error: "API TCG could not be reached. Please try again shortly." }, 502, cors);
+  }
+
+  const text = await upstreamResponse.text();
+  let payload;
+  try {
+    payload = JSON.parse(text);
+  } catch {
+    payload = {};
+  }
+  if (!upstreamResponse.ok) {
+    return jsonResponse(
+      { error: apiTcgErrorMessage(payload, text) },
+      upstreamResponse.status >= 500 ? 502 : upstreamResponse.status,
+      cors
+    );
+  }
+
+  const products = apiTcgProductList(payload);
+  const data = products.map(product => apiTcgCard(product, series));
+  return jsonResponse(
+    {
+      data,
+      page,
+      pageSize,
+      count: data.length,
+      totalCount: apiTcgTotal(payload, data.length),
+      meta: {
+        workerVersion: WORKER_VERSION,
+        source: "apitcg",
+        submittedField: field,
+        submittedTerm: term,
+        submittedLanguage: language,
+        submittedSeries: series,
+        submittedTcg: tcgSlug
+      }
+    },
     200,
     {
       ...cors,
@@ -385,8 +652,10 @@ export default {
           service: "crackpacks-card-search",
           version: WORKER_VERSION,
           pokemonApiKeyConfigured: Boolean(env.POKEMON_TCG_API_KEY),
+          apiTcgConfigured: Boolean(env.APITCG_API_KEY),
           magicConfigured: true,
           supportedFields: ["all", "name", "set", "number", "rarity", "type"],
+          supportedApiTcgSeries: Object.fromEntries(API_TCG_SERIES),
           supportedLanguages: {
             pokemonCatalog: ["any", "en"],
             magicCatalog: [...MAGIC_LANGUAGE_MAP.keys()],
