@@ -118,21 +118,58 @@ button { color: inherit; }
 }
 .site-nav > a[href$="card-lookup.html"],
 .site-nav > a[href*="card-lookup.html?"] {
-  min-width: 174px;
-  min-height: 44px;
-  padding: 0 22px;
-  border: 1px solid rgba(56,232,255,.3);
+  position: relative;
+  isolation: isolate;
+  min-width: 194px;
+  min-height: 48px;
+  padding: 0 24px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.62);
   border-radius: 999px;
-  background: linear-gradient(115deg, rgba(56,232,255,.1), rgba(255,78,219,.08));
+  color: #fff;
+  background:
+    radial-gradient(circle at 18% 24%, rgba(255,255,255,.96) 0 1px, transparent 2px),
+    radial-gradient(circle at 72% 68%, rgba(255,255,255,.74) 0 1px, transparent 2px),
+    linear-gradient(180deg, rgba(7,8,25,.08), rgba(7,8,25,.42)),
+    conic-gradient(from 218deg at 52% 48%, #ff4edb, #ffb347, #f8ff46, #5dffc5, #38e8ff, #7d67ff, #ff4edb);
+  background-size: 29px 29px, 43px 43px, 100% 100%, 220% 220%;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.72),
+    inset 0 -10px 18px rgba(5,6,21,.32),
+    0 8px 0 rgba(0,0,0,.22),
+    0 0 28px rgba(56,232,255,.2),
+    0 0 46px rgba(255,78,219,.14);
+  font-weight: 1000;
+  letter-spacing: 0;
+  text-shadow: 0 2px 1px rgba(4,5,18,.72), 0 0 13px rgba(4,5,18,.72);
+  animation: cardSearchFoilShift 5.8s linear infinite;
+  transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease;
 }
 .site-nav > a[href$="card-lookup.html"]::after,
 .site-nav > a[href*="card-lookup.html?"]::after {
-  display: none;
+  content: "";
+  position: absolute;
+  inset: -65% -95%;
+  display: block;
+  height: auto;
+  background: linear-gradient(105deg, transparent 38%, rgba(255,255,255,.82) 49%, rgba(255,255,255,.16) 54%, transparent 64%);
+  mix-blend-mode: screen;
+  pointer-events: none;
+  transform: translateX(-42%) rotate(8deg);
+  animation: cardSearchFoilSweep 3.9s ease-in-out infinite;
 }
 .site-nav > a[href$="card-lookup.html"]:hover,
 .site-nav > a[href*="card-lookup.html?"]:hover {
-  border-color: rgba(248,255,70,.54);
-  box-shadow: 0 0 28px rgba(56,232,255,.14);
+  border-color: rgba(255,255,255,.9);
+  color: #fff;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.82),
+    inset 0 -10px 18px rgba(5,6,21,.28),
+    0 5px 0 rgba(0,0,0,.24),
+    0 0 34px rgba(248,255,70,.26),
+    0 0 58px rgba(56,232,255,.28),
+    0 0 72px rgba(255,78,219,.18);
+  transform: translateY(-2px) scale(1.015);
 }
 .nav-live-star {
   position: relative;
@@ -239,7 +276,7 @@ button { color: inherit; }
     0 0 72px rgba(56,232,255,.24);
   animation-duration: 1.55s;
 }
-.site-nav a:not(.nav-live)::after {
+.site-nav a:not(.nav-live):not([href$="card-lookup.html"]):not([href*="card-lookup.html?"])::after {
   content: "";
   position: absolute;
   left: 0;
@@ -252,6 +289,8 @@ button { color: inherit; }
 .site-nav a:hover::after,
 .site-nav a[aria-current="page"]::after { right: 0; }
 .site-nav a[aria-current="page"] { color: var(--electric); }
+.site-nav > a[href$="card-lookup.html"][aria-current="page"],
+.site-nav > a[href*="card-lookup.html?"][aria-current="page"] { color: #fff; }
 .nav-live {
   display: inline-flex;
   align-items: center;
@@ -562,13 +601,19 @@ button { color: inherit; }
 @keyframes liveStarBreath { 0%, 100% { transform: scale(.96) rotate(-3deg); filter: drop-shadow(0 8px 0 rgba(0,0,0,.32)) drop-shadow(0 0 18px rgba(248,255,70,.26)); } 50% { transform: scale(1.06) rotate(3deg); filter: drop-shadow(0 9px 0 rgba(0,0,0,.36)) drop-shadow(0 0 34px rgba(248,255,70,.48)); } }
 @keyframes accountBubbleBreath { 0%, 100% { transform: translateY(0) scale(.985); filter: saturate(1.05); } 50% { transform: translateY(-2px) scale(1.025); filter: saturate(1.28); } }
 @keyframes accountHoloSweep { 0%, 16% { transform: translateX(-62%) rotate(4deg); opacity: .2; } 48% { opacity: .88; } 72%, 100% { transform: translateX(62%) rotate(4deg); opacity: .18; } }
+@keyframes cardSearchFoilShift { 0% { background-position: 0 0, 11px 7px, center, 0% 48%; } 50% { background-position: 29px 15px, -12px 29px, center, 100% 52%; } 100% { background-position: 58px 29px, -31px 50px, center, 0% 48%; } }
+@keyframes cardSearchFoilSweep { 0%, 18% { transform: translateX(-44%) rotate(8deg); opacity: .12; } 48% { opacity: .82; } 72%, 100% { transform: translateX(44%) rotate(8deg); opacity: .1; } }
 @keyframes holoSweep { 0%, 18% { transform: translateX(-65%) rotate(8deg); } 55%, 100% { transform: translateX(65%) rotate(8deg); } }
 @keyframes marqueeShine { 0%, 22% { transform: translateX(-100%); } 55%, 100% { transform: translateX(130%); } }
 
 @media (prefers-reduced-motion: reduce) {
   .nav-live-star,
   .nav-account-main-bubble,
-  .nav-account-main-bubble::before { animation: none; }
+  .nav-account-main-bubble::before,
+  .site-nav > a[href$="card-lookup.html"],
+  .site-nav > a[href*="card-lookup.html?"],
+  .site-nav > a[href$="card-lookup.html"]::after,
+  .site-nav > a[href*="card-lookup.html?"]::after { animation: none; }
 }
 
 
@@ -704,6 +749,45 @@ button { color: inherit; }
   .element-panel { grid-template-columns: 1fr; }
   .element-wheel { margin-top: 28px; }
   .newsletter-panel { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 1320px) {
+  .nav-shell.has-menu-toggle .site-nav {
+    position: absolute;
+    left: 18px;
+    right: 18px;
+    top: calc(100% + 10px);
+    display: none;
+    align-items: stretch;
+    padding: 16px;
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    background: rgba(7,9,29,.96);
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(22px);
+  }
+  .nav-shell.has-menu-toggle .site-nav.is-open { display: flex; flex-direction: column; }
+  .nav-shell.has-menu-toggle .site-nav a { padding: 10px 8px; }
+  .nav-shell.has-menu-toggle .site-nav > a[href$="card-lookup.html"],
+  .nav-shell.has-menu-toggle .site-nav > a[href*="card-lookup.html?"] {
+    width: 100%;
+    min-width: 0;
+    padding: 0 16px;
+  }
+  .nav-shell.has-menu-toggle .site-nav a::after { display: none; }
+  .nav-shell.has-menu-toggle .nav-live { justify-content: center; }
+  .nav-shell.has-menu-toggle .menu-toggle { display: block; margin-left: auto; }
+  .nav-shell.has-menu-toggle .nav-live-star { width: 74px; }
+  .nav-shell.has-menu-toggle.has-account-cta .brand { width: min(190px, 30vw); }
+  .nav-shell.has-menu-toggle .nav-account-main-bubble {
+    min-width: 142px;
+    min-height: 48px;
+    padding: 0 14px;
+  }
+  .nav-shell.has-menu-toggle .nav-account-main-bubble span {
+    font-size: .68rem;
+    letter-spacing: .04em;
+  }
 }
 
 @media (max-width: 820px) {

@@ -25,7 +25,7 @@
   document.querySelectorAll(".nav-youtube").forEach(link => { link.remove(); });
   document.querySelectorAll(".site-nav .nav-live[data-live-hub], .site-nav .nav-live[data-live]").forEach(link => { link.remove(); });
   document.querySelectorAll('.site-nav > a[href="streams.html"]').forEach(link => {
-    if (link.textContent.trim().toLowerCase() === "live") link.remove();
+    if (/^live(?: feed| hub)?$/i.test(link.textContent.trim())) link.remove();
   });
 
   function mountHeaderLiveStar() {
@@ -156,8 +156,23 @@
   }
   loadHomepagePromo();
 
-  const menuButton = document.querySelector(".menu-toggle");
   const navigation = document.querySelector(".site-nav");
+  let menuButton = document.querySelector(".menu-toggle");
+  if (navigation && !menuButton) {
+    const shell = navigation.closest(".nav-shell");
+    if (shell) {
+      if (!navigation.id) navigation.id = "site-nav";
+      menuButton = document.createElement("button");
+      menuButton.className = "menu-toggle";
+      menuButton.type = "button";
+      menuButton.setAttribute("aria-label", "Open navigation");
+      menuButton.setAttribute("aria-expanded", "false");
+      menuButton.setAttribute("aria-controls", navigation.id);
+      menuButton.innerHTML = "<span></span><span></span><span></span>";
+      navigation.insertAdjacentElement("beforebegin", menuButton);
+    }
+  }
+  menuButton?.closest(".nav-shell")?.classList.add("has-menu-toggle");
   menuButton?.addEventListener("click", () => {
     const open = navigation?.classList.toggle("is-open") ?? false;
     menuButton.setAttribute("aria-expanded", String(open));
