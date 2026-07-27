@@ -18,7 +18,7 @@
   const sellerAllowed = () => localStorage.getItem(SELLER_ALLOWED_KEY) === "true";
   const masterAllowed = () => localStorage.getItem(MASTER_ALLOWED_KEY) === "true";
   const sellerPortalDestination = () => "streams.html#go-live";
-  const buyerPortalDestination = () => "shop.html";
+  const buyerPortalDestination = button => button?.getAttribute?.("href") || "referral.html?view=account";
   const sellerSetupDestination = () => authToken() ? "referral.html?return=seller" : "referral.html?mode=signin&return=seller";
   const sellerToolHashes = new Set(["#go-live", "#seller-shows", "#create-show", "#seller-my-listings", "#seller-inventory", "#seller-shipping"]);
   const hasSellerToolIntent = () => page === "streams" && sellerToolHashes.has(location.hash);
@@ -97,10 +97,14 @@
   });
 
   document.querySelectorAll("[data-open-buyer-portal]").forEach(button => {
-    button.addEventListener("click", async () => {
+    button.addEventListener("click", async event => {
+      event.preventDefault();
+      event.stopPropagation();
+      const destination = buyerPortalDestination(button);
+      if ("disabled" in button) button.disabled = true;
       try { await portalRequest("/portal/mode", { method: "POST", body: JSON.stringify({ mode: "buyer" }) }); } catch {}
       setMode("buyer");
-      window.location.href = buyerPortalDestination();
+      window.location.href = destination;
     });
   });
 

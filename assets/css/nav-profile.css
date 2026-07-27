@@ -4,16 +4,21 @@
 .nav-profile-trigger:hover::before,.nav-profile.is-open .nav-profile-trigger::before{transform:translateX(120%)}
 .nav-profile-trigger:hover,.nav-profile.is-open .nav-profile-trigger,.nav-profile.is-current .nav-profile-trigger{border-color:var(--magenta);box-shadow:0 0 34px rgba(255,78,219,.25),0 0 54px rgba(56,232,255,.1)}
 .nav-profile-caret{font-size:.72rem;color:var(--electric);transition:transform .2s ease}.nav-profile.is-open .nav-profile-caret{transform:rotate(180deg)}
-.nav-profile-menu{position:absolute;z-index:180;right:0;top:calc(100% + 12px);width:290px;padding:9px;border:1px solid rgba(255,255,255,.16);border-radius:18px;background:linear-gradient(145deg,rgba(17,20,54,.98),rgba(7,8,26,.98));box-shadow:0 24px 65px rgba(0,0,0,.55),0 0 32px rgba(159,85,255,.12);backdrop-filter:blur(20px);opacity:0;visibility:hidden;transform:translateY(-8px) scale(.97);transform-origin:top right;transition:opacity .18s ease,visibility .18s,transform .18s ease}
+.nav-profile-menu{position:absolute;z-index:180;right:0;top:calc(100% + 12px);width:320px;max-height:min(720px,calc(100vh - 96px));padding:9px;overflow-y:auto;border:1px solid rgba(255,255,255,.16);border-radius:18px;background:linear-gradient(145deg,rgba(17,20,54,.98),rgba(7,8,26,.98));box-shadow:0 24px 65px rgba(0,0,0,.55),0 0 32px rgba(159,85,255,.12);backdrop-filter:blur(20px);opacity:0;visibility:hidden;transform:translateY(-8px) scale(.97);transform-origin:top right;transition:opacity .18s ease,visibility .18s,transform .18s ease}
 .nav-profile.is-open .nav-profile-menu{opacity:1;visibility:visible;transform:translateY(0) scale(1)}
 .site-nav .nav-profile-menu a{display:grid;gap:2px;padding:13px 14px;border-radius:12px;text-decoration:none;background:linear-gradient(110deg,rgba(248,255,70,.1),rgba(56,232,255,.06));border:1px solid rgba(248,255,70,.14)}
 .site-nav .nav-profile-menu a::after{display:none!important}.nav-profile-menu a strong{color:var(--electric);font-size:.9rem}.nav-profile-menu a small{color:var(--muted);font-size:.72rem;font-weight:650}.nav-profile-menu a:hover{border-color:rgba(248,255,70,.5);background:linear-gradient(110deg,rgba(248,255,70,.17),rgba(255,78,219,.09))}
 .nav-account-bubbles{display:grid;gap:8px;margin-bottom:8px}
+.nav-buyer-account-pages{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,.1)}
+.site-nav .nav-profile-menu .nav-buyer-account-pages a{display:inline-flex;align-items:center;justify-content:center;min-height:38px;padding:8px 10px;border-radius:999px;color:#fff;background:linear-gradient(115deg,rgba(56,232,255,.13),rgba(159,85,255,.12));border-color:rgba(56,232,255,.24);font-size:.75rem;font-weight:900;text-align:center}
+.site-nav .nav-profile-menu .nav-buyer-account-pages a:last-child:nth-child(odd){grid-column:1/-1}
+.site-nav .nav-profile-menu .nav-buyer-account-pages a:hover{border-color:rgba(248,255,70,.55);color:#070815;background:linear-gradient(115deg,rgba(248,255,70,.92),rgba(56,232,255,.84))}
 .nav-account-menu-section{display:grid;gap:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,.1)}
 .nav-account-menu-section a strong,.nav-account-menu-section a small{overflow-wrap:anywhere}
 .nav-account-bubble{display:inline-flex;justify-content:center;align-items:center;min-height:42px;padding:0 14px;border:1px solid rgba(255,255,255,.18);border-radius:999px;color:#fff;background:linear-gradient(115deg,rgba(56,232,255,.09),rgba(255,78,219,.08));font:inherit;font-size:.84rem;font-weight:900;cursor:pointer}
 .site-nav .nav-profile-menu a.nav-account-bubble{display:inline-flex;justify-content:center;align-items:center;min-height:42px;padding:0 14px;border-radius:999px;color:#fff;text-decoration:none}
 .nav-account-bubble.is-active{border-color:rgba(248,255,70,.55);color:#070815;background:linear-gradient(115deg,rgba(248,255,70,.95),rgba(56,232,255,.88))}
+.site-nav .nav-profile-menu a.nav-account-bubble.is-active{color:#070815}
 .site-nav .nav-account-action{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 15px;border:1px solid rgba(56,232,255,.28);border-radius:999px;color:#fff;text-decoration:none;background:linear-gradient(115deg,rgba(56,232,255,.1),rgba(255,78,219,.08));font-size:.86rem;font-weight:900}
 .site-nav .nav-account-action::after{display:none!important}
 .site-nav .nav-account-action:hover{border-color:rgba(248,255,70,.48);background:linear-gradient(115deg,rgba(248,255,70,.16),rgba(56,232,255,.12))}

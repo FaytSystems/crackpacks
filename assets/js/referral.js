@@ -4,7 +4,7 @@
   const config = window.CRACKPACKS_CONFIG || {};
   const api = String(config.rewardsApiUrl || "").replace(/\/$/, "");
   const qs = new URLSearchParams(location.search);
-  const requestedAccountView = ["account", "credits"].includes(qs.get("view")) ? qs.get("view") : "";
+  const requestedAccountView = ["discount", "invite", "orders", "account", "credits"].includes(qs.get("view")) ? qs.get("view") : "";
   const requestedPortal = qs.get("portal") === "master" ? "master" : "";
   const referralCode = (qs.get("ref") || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 16);
   const ownerReferralToken = String(qs.get("owner_ref") || "").slice(0, 80);
@@ -1753,11 +1753,12 @@
       button.classList.toggle("is-active", button.dataset.view === requested);
       button.setAttribute("aria-pressed", String(button.dataset.view === requested));
     });
-    if (["account", "credits"].includes(requested) && updateUrl) {
+    if (["discount", "invite", "orders", "account", "credits"].includes(requested) && updateUrl) {
       const nextUrl = new URL(location.href);
       nextUrl.searchParams.set("view", requested);
       history.replaceState({}, document.title, `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`);
     }
+    if (requested === "discount") $("[data-discount-panel]")?.scrollIntoView({ behavior, block: "start" });
     if (requested === "orders") {
       await loadMyOrders();
       $("[data-orders-panel]").scrollIntoView({ behavior, block: "start" });

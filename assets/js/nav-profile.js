@@ -7,7 +7,7 @@
   const token = () => localStorage.getItem("cp_rewards_token") || "";
   const body = document.body;
   const page = String(body?.dataset.page || "").toLowerCase();
-  const buyerProfileUrl = "referral.html";
+  const buyerProfileUrl = "referral.html?view=account";
   const sellerSetupUrl = () => (token() ? "referral.html?return=seller" : "referral.html?mode=signin&return=seller");
   const masterSetupUrl = () => (token() ? "admin.html" : "referral.html?mode=signin&portal=master");
   const sellerGoLiveUrl = "streams.html#go-live";
@@ -57,14 +57,21 @@
     const masterButton = portalState.masterAccess ? '<button class="nav-account-bubble" type="button" data-open-master-portal>Master Account</button>' : "";
     return `
       <div class="nav-account-bubbles" aria-label="Account portal switcher">
-        <button class="nav-account-bubble ${portalState.activePortal !== "seller" ? "is-active" : ""}" type="button" data-open-buyer-portal>Buyer Account</button>
+        <a class="nav-account-bubble ${portalState.activePortal !== "seller" ? "is-active" : ""}" href="${buyerProfileUrl}" data-open-buyer-portal>Buyer Account</a>
         <button class="nav-account-bubble ${portalState.activePortal === "seller" ? "is-active" : ""}" type="button" ${sellerAction}>${sellerLabel}</button>
         ${employeeButton}
         ${masterButton}
       </div>
+      <nav class="nav-buyer-account-pages" aria-label="Buyer Account pages">
+        <a href="referral.html?view=discount" data-open-buyer-portal>Rewards</a>
+        <a href="referral.html?view=invite" data-open-buyer-portal>Invites</a>
+        <a href="referral.html?view=orders" data-open-buyer-portal>Orders</a>
+        <a href="shop.html" data-open-buyer-portal>Buyer Store</a>
+        <a href="live-shows.html" data-open-buyer-portal>Live Shows</a>
+      </nav>
       <div class="nav-account-menu-section" aria-label="Profile settings">
-        <a href="referral.html?view=account"><strong>Account Details</strong><small>Name, email, address, password, and saved payments</small></a>
-        <a href="referral.html?view=credits"><strong>Subscribe / Credits</strong><small>Usage, balances, plan tiers, and a-la-carte credits</small></a>
+        <a href="referral.html?view=account" data-open-buyer-portal><strong>Account Details</strong><small>Name, email, address, password, and saved payments</small></a>
+        <a href="referral.html?view=credits" data-open-buyer-portal><strong>Subscribe / Credits</strong><small>Usage, balances, plan tiers, and a-la-carte credits</small></a>
       </div>
     `;
   };
@@ -162,6 +169,7 @@
     const buyer = event.target.closest("[data-open-buyer-portal]");
     const seller = event.target.closest("[data-start-seller-upgrade], [data-open-seller-portal]");
     const master = event.target.closest("[data-open-master-portal]");
+    const buyerDestination = buyer?.getAttribute("href") || buyerProfileUrl;
     if (!buyer && !seller && !master) return;
     event.preventDefault();
     event.stopPropagation();
@@ -169,7 +177,7 @@
     if (!token() || !rewardsApi) {
       if (seller) routeToSellerSetup();
       else if (master) window.location.href = masterSetupUrl();
-      else window.location.href = buyerProfileUrl;
+      else window.location.href = buyerDestination;
       return;
     }
     if (master) {
@@ -195,11 +203,14 @@
         localStorage.setItem("cp_can_seller_portal", "true");
         localStorage.setItem("cp_portal_mode", "seller");
         sessionStorage.setItem("cp_portal_mode", "seller");
+      } else {
+        localStorage.setItem("cp_portal_mode", "buyer");
+        sessionStorage.setItem("cp_portal_mode", "buyer");
       }
-      window.location.href = seller ? sellerGoLiveUrl : buyerProfileUrl;
+      window.location.href = seller ? sellerGoLiveUrl : buyerDestination;
     } catch {
       if (seller) routeToSellerSetup();
-      else window.location.href = buyerProfileUrl;
+      else window.location.href = buyerDestination;
     }
   });
 
