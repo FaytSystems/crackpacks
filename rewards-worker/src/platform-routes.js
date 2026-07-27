@@ -627,24 +627,35 @@ async function sendTransactionalEmail(env, to, subject, html, key, options = {})
   const fromAddress = clean(options.fromAddress || "rewards@crackpacks.com", 120);
   const fromName = clean(options.fromName || "Crack Packs Rewards", 80);
   const text = options.text || htmlToText(html);
-  if (env.RESEND_API_KEY) {
-    const result = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, "Content-Type": "application/json", "Idempotency-Key": key },
-      body: JSON.stringify({ from: `${fromName} <${fromAddress}>`, to: [to], subject, html, text })
-    });
-    if (!result.ok) console.error("Transactional email failed", { status: result.status, subject });
-    return result.ok;
+  if (env.REWARDS_EMAIL) {
+    try {
+      await env.REWARDS_EMAIL.send({
+        to,
+        from: { email: fromAddress, name: fromName },
+        replyTo: "support@crackpacks.com",
+        subject,
+        html,
+        text
+      });
+      return true;
+    } catch (error) {
+      console.error("Cloudflare transactional email failed; trying Resend fallback", { code: error?.code || "", subject, message: clean(error?.message || "", 200) });
+    }
   }
-  if (!env.REWARDS_EMAIL) return false;
-  await env.REWARDS_EMAIL.send({
-    to,
-    from: { email: fromAddress, name: fromName },
-    subject,
-    html,
-    text
-  });
-  return true;
+  if (env.RESEND_API_KEY) {
+    try {
+      const result = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, "Content-Type": "application/json", "Idempotency-Key": key },
+        body: JSON.stringify({ from: `${fromName} <${fromAddress}>`, to: [to], subject, html, text })
+      });
+      if (result.ok) return true;
+      console.error("Transactional email failed; trying Cloudflare Email fallback", { status: result.status, subject });
+    } catch (error) {
+      console.error("Resend transactional email request failed", { subject, message: clean(error?.message || "", 200) });
+    }
+  }
+  return false;
 }
 async function sendSellerGrantedEmail(env, member, liveUsername) {
   const referralUrl = `${siteUrl(env)}/referral.html?ref=${encodeURIComponent(member.invite_code || "")}`;
@@ -2960,7 +2971,14 @@ export async function handlePlatformRoute(request, env, cors) {
     const sessionMemberId = String(session.metadata?.member_id || auth.member.id);
     if (sessionMemberId !== auth.member.id) return json({ error: "Stripe Identity session belongs to another account." }, 403, cors);
     const status = await applyStripeIdentityStatus(env, auth.member.id, String(session.status || "requires_input"), { notifyFailure: data.notify === true });
-    return json({ status, stripeStatus: session.status || "", verified: status === "verified" }, 200, cors);
+    const resultEmail = await env.DB.prepare(`SELECT stripe_identity_result_email_status,stripe_identity_result_email_sent_at FROM members WHERE id=?`).bind(auth.member.id).first().catch(() => null);
+    return json({
+      status,
+      stripeStatus: session.status || "",
+      verified: status === "verified",
+      resultEmailStatus: resultEmail?.stripe_identity_result_email_status || "",
+      resultEmailSentAt: resultEmail?.stripe_identity_result_email_sent_at || null
+    }, 200, cors);
   }
   if (url.pathname === "/seller/activate" && request.method === "POST") {
     const auth = await requireMember(request, env, cors);

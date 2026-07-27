@@ -551,7 +551,13 @@
         return;
       }
       if (["requires_input", "failed", "cancelled", "canceled", "redacted"].includes(status)) {
-        showIdentityStatusPanel("ID verification was not accepted. A retry email has been sent if this is the first failed result.", "error");
+        const retryEmailConfirmed = String(result.resultEmailStatus || "").toLowerCase() === "failed";
+        showIdentityStatusPanel(
+          retryEmailConfirmed
+            ? "ID verification was not accepted. A retry email has been sent to your account email."
+            : "ID verification was not accepted. Use Retry Verify ID to start another secure check.",
+          "error"
+        );
         $("[data-retry-stripe-identity]").hidden = false;
         return;
       }

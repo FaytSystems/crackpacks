@@ -228,7 +228,7 @@ test("identity sync refreshes a verified Stripe session into member status", asy
     body: "{}"
   }), env, {});
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { status: "verified", stripeStatus: "verified", verified: true });
+  assert.deepEqual(await response.json(), { status: "verified", stripeStatus: "verified", verified: true, resultEmailStatus: "", resultEmailSentAt: null });
   assert.equal(updates.length, 1);
   assert.match(updates[0].sql, /stripe_identity_status='verified'/);
 });
@@ -297,7 +297,7 @@ test("identity sync does not send accepted email before seller portal access", a
     body: JSON.stringify({ notify: true })
   }), env, {});
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { status: "verified", stripeStatus: "verified", verified: true });
+  assert.deepEqual(await response.json(), { status: "verified", stripeStatus: "verified", verified: true, resultEmailStatus: "", resultEmailSentAt: null });
   assert.equal(emails.length, 0);
   assert.equal(updates.length, 1);
   assert.match(updates[0].sql, /stripe_identity_status='verified'/);
@@ -417,6 +417,10 @@ test("identity sync sends retry email when explicit status check fails", async t
               first: async () => {
                 if (sql.includes("JOIN members")) return member;
                 if (sql.includes("SELECT * FROM members WHERE id")) return member;
+                if (sql.includes("SELECT stripe_identity_result_email_status")) {
+                  const emailUpdate = updates.find(update => update.args?.[0] === "failed");
+                  return emailUpdate ? { stripe_identity_result_email_status: "failed", stripe_identity_result_email_sent_at: emailUpdate.args[1] } : null;
+                }
                 return null;
               },
               run: async () => {
@@ -435,12 +439,110 @@ test("identity sync sends retry email when explicit status check fails", async t
     body: JSON.stringify({ notify: true })
   }), env, {});
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { status: "requires_input", stripeStatus: "requires_input", verified: false });
+  const payload = await response.json();
+  assert.equal(payload.status, "requires_input");
+  assert.equal(payload.stripeStatus, "requires_input");
+  assert.equal(payload.verified, false);
+  assert.equal(payload.resultEmailStatus, "failed");
+  assert.ok(payload.resultEmailSentAt);
   assert.equal(emails.length, 1);
   assert.equal(emails[0].subject, "Crack Packs ID verification needs another try");
   assert.match(emails[0].html, /RETRY VERIFY ID/);
   assert.match(updates.at(-1).sql, /stripe_identity_result_email_status/);
   assert.equal(updates.at(-1).args[0], "failed");
+});
+
+test("identity retry email prefers Cloudflare Email when Resend is configured", async t => {
+  const originalFetch = globalThis.fetch;
+  const member = {
+    id: "db319ec3-aa9a-436a-a094-2fca08c85f8a",
+    email: "robertreese@faytsystems.com",
+    email_verified_at: "2026-07-24T00:00:00.000Z",
+    device_verified: 1,
+    first_name: "Robert",
+    last_name: "Reese",
+    birth_date: "1980-01-01",
+    identity_fingerprint: "fingerprint-1",
+    identity_status: "pending_identity",
+    stripe_identity_status: "processing",
+    stripe_identity_session_id: "vs_resend_down_123",
+    stripe_identity_result_email_status: ""
+  };
+  const stripeCalls = [];
+  const resendCalls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    const requestUrl = String(url);
+    if (requestUrl.includes("/v1/identity/verification_sessions/")) {
+      stripeCalls.push(requestUrl);
+      return new Response(JSON.stringify({ id: "vs_resend_down_123", status: "requires_input", metadata: { member_id: member.id } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+    if (requestUrl === "https://api.resend.com/emails") {
+      resendCalls.push({ url: requestUrl, body: String(options.body || "") });
+      return new Response(JSON.stringify({ name: "validation_error", message: "sender rejected" }), {
+        status: 422,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+    throw new Error(`Unexpected fetch ${requestUrl}`);
+  };
+  t.after(() => { globalThis.fetch = originalFetch; });
+
+  const emails = [];
+  const updates = [];
+  const env = {
+    AUTH_SECRET: "test-secret",
+    STRIPE_SECRET_KEY: "sk_test_identity",
+    RESEND_API_KEY: "resend-test-key",
+    SITE_URL: "https://crackpacks.com",
+    REWARDS_EMAIL: {
+      send: async payload => {
+        emails.push(payload);
+        return { messageId: "cloudflare-fallback" };
+      }
+    },
+    DB: {
+      prepare(sql) {
+        return {
+          bind(...args) {
+            return {
+              first: async () => {
+                if (sql.includes("JOIN members")) return member;
+                if (sql.includes("SELECT * FROM members WHERE id")) return member;
+                if (sql.includes("SELECT stripe_identity_result_email_status")) {
+                  const emailUpdate = updates.find(update => update.args?.[0] === "failed");
+                  return emailUpdate ? { stripe_identity_result_email_status: "failed", stripe_identity_result_email_sent_at: emailUpdate.args[1] } : null;
+                }
+                return null;
+              },
+              run: async () => {
+                updates.push({ sql, args });
+                return { success: true };
+              }
+            };
+          }
+        };
+      }
+    }
+  };
+  const response = await handlePlatformRoute(new Request("https://api.crackpacks.test/identity/sync", {
+    method: "POST",
+    headers: { Authorization: "Bearer session-token" },
+    body: JSON.stringify({ notify: true })
+  }), env, {});
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.status, "requires_input");
+  assert.equal(payload.resultEmailStatus, "failed");
+  assert.equal(stripeCalls.length, 1);
+  assert.equal(resendCalls.length, 0);
+  assert.equal(emails.length, 1);
+  assert.equal(emails[0].subject, "Crack Packs ID verification needs another try");
+  assert.equal(emails[0].from.email, "rewards@crackpacks.com");
+  assert.equal(emails[0].replyTo, "support@crackpacks.com");
+  assert.match(updates.at(-1).sql, /stripe_identity_result_email_status/);
 });
 
 test("portal status syncs completed Stripe verification for older seller records", async t => {

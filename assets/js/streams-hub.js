@@ -355,7 +355,14 @@
         return;
       }
       if (["requires_input", "failed", "cancelled", "canceled", "redacted"].includes(status)) {
-        showSellerIdentityPanel("ID verification was not accepted. A retry email has been sent if this is the first failed result.", "error", { retry: true });
+        const retryEmailConfirmed = String(result.resultEmailStatus || "").toLowerCase() === "failed";
+        showSellerIdentityPanel(
+          retryEmailConfirmed
+            ? "ID verification was not accepted. A retry email has been sent to your account email."
+            : "ID verification was not accepted. Use Retry Verify ID to start another secure check.",
+          "error",
+          { retry: true }
+        );
         return;
       }
       showSellerIdentityPanel("Stripe has not returned a final result yet. Check again in a moment.", "success");
