@@ -3525,9 +3525,11 @@ async function sellerShowLots(request, env, cors, showId) {
   const show = await env.DB.prepare(`SELECT * FROM breaker_stream_sessions WHERE id=? AND member_id=?`).bind(showId, auth.member.id).first();
   if (!show) return json({ error: "Show not found." }, 404, cors);
   const rows = await env.DB.prepare(`
-    SELECT lot.*,winner.live_username winning_display
+    SELECT lot.*,lot.rowid queue_position,winner.live_username winning_display
     FROM breaker_auction_lots lot LEFT JOIN members winner ON winner.id=lot.winning_member_id
-    WHERE lot.session_id=? AND lot.member_id=? ORDER BY lot.created_at DESC LIMIT 200
+    WHERE lot.session_id=? AND lot.member_id=?
+    ORDER BY CASE lot.status WHEN 'live' THEN 0 WHEN 'scheduled' THEN 1 ELSE 2 END,lot.created_at ASC,lot.rowid ASC
+    LIMIT 200
   `).bind(showId, auth.member.id).all();
   return json({ show, lots: rows.results || [] }, 200, cors);
 }
@@ -3652,6 +3654,74 @@ async function changeAuctionStatus(request, env, cors, lotId, action) {
   }
   const updated = await env.DB.prepare(`SELECT lot.*,session.viewer_count,session.cloudflare_live_input_uid,winner.live_username winning_display FROM breaker_auction_lots lot JOIN breaker_stream_sessions session ON session.id=lot.session_id LEFT JOIN members winner ON winner.id=lot.winning_member_id WHERE lot.id=?`).bind(lot.id).first();
   return json({ lot: auctionView(updated, auth.member.id, env) }, 200, cors);
+}
+
+async function auctionOffNext(request, env, cors, showId) {
+  const auth = await requireMember(request, env, cors, { seller: true });
+  if (auth.error) return auth.error;
+  if (String(env.LIVE_AUCTIONS_ENABLED || "false") !== "true") {
+    return json({ error: "Live auctions are locked until production payment and seller payout review is complete." }, 503, cors);
+  }
+  const show = await env.DB.prepare(`SELECT id,title,status FROM breaker_stream_sessions WHERE id=? AND member_id=? AND status IN ('open','live')`)
+    .bind(showId, auth.member.id).first();
+  if (!show) return json({ error: "Show not found or already ended." }, 404, cors);
+  const current = await env.DB.prepare(`
+    SELECT lot.*,winner.live_username winning_display
+    FROM breaker_auction_lots lot LEFT JOIN members winner ON winner.id=lot.winning_member_id
+    WHERE lot.member_id=? AND lot.status='live'
+    ORDER BY lot.opened_at DESC,lot.updated_at DESC LIMIT 1
+  `).bind(auth.member.id).first();
+  if (current && current.session_id !== showId) {
+    return json({ error: "Another show already has a live auction. Finish or end that show before advancing this queue." }, 409, cors);
+  }
+  const next = await env.DB.prepare(`
+    SELECT lot.*,lot.rowid queue_position
+    FROM breaker_auction_lots lot
+    WHERE lot.session_id=? AND lot.member_id=? AND lot.status='scheduled'
+    ORDER BY lot.created_at ASC,lot.rowid ASC LIMIT 1
+  `).bind(showId, auth.member.id).first();
+  if (!next) return json({ error: "No queued item is ready. Add another sale item before using AUCTION OFF." }, 409, cors);
+  const stamp = now();
+  const statements = [];
+  if (current) {
+    const bannerUntil = new Date(Date.now() + 5000).toISOString();
+    statements.push(
+      env.DB.prepare(`UPDATE breaker_auction_lots SET status=CASE WHEN winning_member_id IS NULL THEN 'cancelled' ELSE 'sold' END,sold_at=?,winner_banner_until=?,updated_at=? WHERE id=? AND member_id=? AND status='live'`)
+        .bind(stamp, bannerUntil, stamp, current.id, auth.member.id),
+      env.DB.prepare(`UPDATE breaker_auction_bids SET status='winning' WHERE lot_id=? AND bidder_member_id=(SELECT winning_member_id FROM breaker_auction_lots WHERE id=?) AND status='leading'`)
+        .bind(current.id, current.id)
+    );
+  }
+  const nextStatementIndex = statements.length;
+  statements.push(
+    env.DB.prepare(`UPDATE breaker_auction_lots SET status='live',opened_at=?,current_bid_cents=NULL,winning_member_id=NULL,updated_at=? WHERE id=? AND session_id=? AND member_id=? AND status='scheduled'`)
+      .bind(stamp, stamp, next.id, showId, auth.member.id),
+    env.DB.prepare(`UPDATE breaker_stream_sessions SET status='live',updated_at=? WHERE id=? AND member_id=? AND status IN ('open','live')`)
+      .bind(stamp, showId, auth.member.id)
+  );
+  const results = await env.DB.batch(statements);
+  if (Number(results?.[nextStatementIndex]?.meta?.changes || 0) !== 1) {
+    return json({ error: "The auction queue changed while AUCTION OFF was running. Refresh the queue and try again." }, 409, cors);
+  }
+  const updated = await env.DB.prepare(`
+    SELECT lot.*,session.viewer_count,session.cloudflare_live_input_uid,winner.live_username winning_display
+    FROM breaker_auction_lots lot
+    JOIN breaker_stream_sessions session ON session.id=lot.session_id
+    LEFT JOIN members winner ON winner.id=lot.winning_member_id
+    WHERE lot.id=? AND lot.member_id=?
+  `).bind(next.id, auth.member.id).first();
+  const remaining = await env.DB.prepare(`SELECT COUNT(*) queued FROM breaker_auction_lots WHERE session_id=? AND member_id=? AND status='scheduled'`)
+    .bind(showId, auth.member.id).first();
+  return json({
+    lot: auctionView(updated, auth.member.id, env),
+    closedLot: current ? {
+      id: current.id,
+      title: current.title,
+      status: current.winning_member_id ? "sold" : "cancelled",
+      winningDisplay: current.winning_display || ""
+    } : null,
+    remainingQueued: Number(remaining?.queued || 0)
+  }, 200, cors);
 }
 
 export async function handlePlatformRoute(request, env, cors) {
@@ -3964,6 +4034,8 @@ export async function handlePlatformRoute(request, env, cors) {
   if (sellerLotMatch && request.method === "POST") return createAuctionLot(request, env, cors, sellerLotMatch[1]);
   const sellerShowEndMatch = url.pathname.match(/^\/seller\/shows\/([0-9a-f-]{36})\/end$/i);
   if (sellerShowEndMatch && request.method === "POST") return endSellerShow(request, env, cors, sellerShowEndMatch[1]);
+  const sellerAuctionOffMatch = url.pathname.match(/^\/seller\/shows\/([0-9a-f-]{36})\/auction-off$/i);
+  if (sellerAuctionOffMatch && request.method === "POST") return auctionOffNext(request, env, cors, sellerAuctionOffMatch[1]);
   const sellerLotActionMatch = url.pathname.match(/^\/seller\/lots\/([0-9a-f-]{36})\/(open|close)$/i);
   if (sellerLotActionMatch && request.method === "POST") return changeAuctionStatus(request, env, cors, sellerLotActionMatch[1], sellerLotActionMatch[2]);
   const bidMatch = url.pathname.match(/^\/live\/auction\/lots\/([0-9a-f-]{36})\/bid$/i);

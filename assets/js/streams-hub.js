@@ -23,6 +23,7 @@
   let showHashFocused = false;
   let pendingCloseShowId = "";
   let closeShowTrigger = null;
+  let auctionAdvancePending = false;
   const requestedHubTab = new URLSearchParams(location.search).get("tab") || "";
   let activeTab = ["all", "live", "upcoming", "followed", "watchlist"].includes(requestedHubTab)
     ? requestedHubTab
@@ -114,7 +115,7 @@
   }
   const showShareUrl = show => new URL(`live.html?show=${encodeURIComponent(show?.id || "")}`, location.href).href;
   const selectedSellerShow = () => {
-    const showId = $("[data-seller-show-select]")?.value || "";
+    const showId = $("[data-broadcast-show-select]")?.value || $("[data-seller-show-select]")?.value || "";
     return sellerShows.find(show => show.id === showId) || null;
   };
   const selectedShowStoreListing = () => {
@@ -477,16 +478,22 @@
   }
 
   function renderSellerShows() {
-    const select = $("[data-seller-show-select]");
-    if (!select) return;
-    const current = select.value;
+    const selectors = [$("[data-seller-show-select]"), $("[data-broadcast-show-select]")].filter(Boolean);
+    if (!selectors.length) return;
+    const current = selectors.map(select => select.value).find(Boolean) || "";
     const active = sellerShows.filter(show => ["open", "live"].includes(show.status));
-    select.innerHTML = `<option value="">${active.length ? "Choose a show" : "Create a show first"}</option>${active.map(show => `<option value="${show.id}">${escapeHtml(show.title)} · ${escapeHtml(show.status)}</option>`).join("")}`;
-    if (active.some(show => show.id === current)) select.value = current;
-    else if (active.length) select.value = active[0].id;
+    const options = `<option value="">${active.length ? "Choose a show" : "Create a show first"}</option>${active.map(show => `<option value="${show.id}">${escapeHtml(show.title)} &middot; ${escapeHtml(show.status)}</option>`).join("")}`;
+    const selectedId = active.some(show => show.id === current) ? current : (active[0]?.id || "");
+    selectors.forEach(select => {
+      select.innerHTML = options;
+      select.value = selectedId;
+    });
     updateSellerSocialComposer();
     renderShowStoreInventoryOptions();
-    loadSellerLots(select.value).catch(error => setStatus("[data-seller-lot-status]", error.message, "error"));
+    loadSellerLots(selectedId).catch(error => {
+      setStatus("[data-seller-lot-status]", error.message, "error");
+      setStatus("[data-broadcast-auction-status]", error.message, "error");
+    });
   }
 
   function updateSellerSocialComposer() {
@@ -501,16 +508,86 @@
     }
   }
 
+  function selectSellerShow(showId) {
+    [$("[data-seller-show-select]"), $("[data-broadcast-show-select]")].filter(Boolean).forEach(select => {
+      if ([...select.options].some(option => option.value === showId)) select.value = showId;
+    });
+    updateSellerSocialComposer();
+    renderShowStoreInventoryPreview();
+    return loadSellerLots(showId);
+  }
+
   function renderSellerLots(lots = [], show) {
     const list = $("[data-seller-lot-list]");
-    if (!list) return;
     sellerShowLots = Array.isArray(lots) ? lots : [];
+    renderBroadcastAuctionConsole(sellerShowLots, show);
+    if (!list) return;
     const end = show && ["open", "live"].includes(show.status) ? `<button class="btn btn-danger btn-small" type="button" data-end-show="${show.id}">End show</button>` : "";
     list.innerHTML = `${end}${lots.length ? lots.map(lot => {
       const current = Number(lot.current_bid_cents ?? lot.starting_bid_cents) / 100;
       const action = lot.status === "scheduled" ? `<button class="btn btn-primary btn-small" type="button" data-lot-action="open" data-lot-id="${lot.id}">Open auction</button>` : lot.status === "live" ? `<button class="btn btn-danger btn-small" type="button" data-lot-action="close" data-lot-id="${lot.id}">Close auction</button>` : "";
       return `<article class="seller-lot-item"><div><strong>${escapeHtml(lot.title)}</strong><p>${escapeHtml(lot.status)} · $${current.toFixed(2)}${lot.winning_display ? ` · leading @${escapeHtml(lot.winning_display)}` : ""}</p></div>${action}</article>`;
     }).join("") : `<div class="stream-empty">No auction lots are saved for this show.</div>`}`;
+  }
+
+  function auctionQueueOrder(left, right) {
+    const positionDifference = Number(left.queue_position || 0) - Number(right.queue_position || 0);
+    if (positionDifference) return positionDifference;
+    const timeDifference = Date.parse(left.created_at || 0) - Date.parse(right.created_at || 0);
+    if (timeDifference) return timeDifference;
+    return String(left.id || "").localeCompare(String(right.id || ""));
+  }
+
+  function renderBroadcastAuctionConsole(lots = [], show = null) {
+    const currentHost = $("[data-broadcast-current-item]");
+    const list = $("[data-broadcast-sale-list]");
+    const liveState = $("[data-broadcast-live-state]");
+    const queueCount = $("[data-broadcast-queue-count]");
+    const auctionButton = $("[data-auction-off]");
+    const endButton = $("[data-broadcast-end-show]");
+    if (!currentHost || !list || !liveState || !queueCount || !auctionButton || !endButton) return;
+    const activeShow = show && ["open", "live"].includes(String(show.status || ""));
+    const current = lots.find(lot => lot.status === "live") || null;
+    const queued = lots.filter(lot => lot.status === "scheduled").sort(auctionQueueOrder);
+    const itemsForSale = [...(current ? [current] : []), ...queued];
+    const next = queued[0] || null;
+    liveState.textContent = current ? "LIVE" : (activeShow ? "Ready" : "Waiting");
+    queueCount.textContent = `${queued.length} queued`;
+    if (current) {
+      const price = dollars(current.current_bid_cents ?? current.starting_bid_cents);
+      const image = current.image_url ? `<img src="${escapeHtml(current.image_url)}" alt="" loading="lazy">` : "";
+      currentHost.classList.toggle("has-image", Boolean(image));
+      currentHost.innerHTML = `${image}<strong>${escapeHtml(current.title)}</strong><span>${price}${current.winning_display ? ` &middot; leading @${escapeHtml(current.winning_display)}` : " &middot; awaiting bids"}</span><small>${escapeHtml(current.item_condition || current.sale_type || "Sale item")}</small>`;
+    } else {
+      currentHost.classList.remove("has-image");
+      currentHost.innerHTML = activeShow
+        ? `<strong>No live auction yet.</strong><span>${next ? `${escapeHtml(next.title)} is first in the queue.` : "Add items from your store or the Shows manager."}</span>`
+        : `<strong>Choose an active show.</strong><span>The sale queue will load here.</span>`;
+    }
+    list.innerHTML = itemsForSale.length ? itemsForSale.map((lot, index) => {
+      const live = lot.status === "live";
+      const price = dollars(lot.current_bid_cents ?? lot.starting_bid_cents);
+      const image = lot.image_url
+        ? `<img src="${escapeHtml(lot.image_url)}" alt="" loading="lazy">`
+        : `<span class="seller-auction-queue-image-placeholder" aria-hidden="true">No image</span>`;
+      return `
+        <article class="seller-auction-queue-item ${live ? "is-live" : ""}">
+          <span class="seller-auction-queue-number">${live ? "&#9679;" : index + 1}</span>
+          ${image}
+          <div class="seller-auction-queue-copy">
+            <strong>${escapeHtml(lot.title)}</strong>
+            <span>${live ? "Current bid" : "Starting bid"} ${price} &middot; ${escapeHtml(lot.item_condition || lot.sale_type || "Sale item")}</span>
+          </div>
+          <span class="seller-auction-queue-status">${live ? "Live" : "Queued"}</span>
+        </article>
+      `;
+    }).join("") : `<div class="stream-empty">${activeShow ? "No items are queued for this show." : "Choose an active show to load its sale items."}</div>`;
+    auctionButton.disabled = auctionAdvancePending || !activeShow || !next;
+    auctionButton.setAttribute("aria-label", next
+      ? `${current ? "Finish the current auction and send" : "Send"} ${next.title} to the live auction`
+      : "No queued item is available for the live auction");
+    endButton.disabled = !activeShow;
+    endButton.dataset.broadcastEndShow = activeShow ? show.id : "";
   }
 
   function numberedLotSettings(item) {
@@ -1192,12 +1269,56 @@
     finally { button.disabled = false; }
   });
 
-  $("[data-seller-show-select]")?.addEventListener("change", event => {
-    updateSellerSocialComposer();
-    renderShowStoreInventoryPreview();
-    loadSellerLots(event.currentTarget.value).catch(error => setStatus("[data-seller-lot-status]", error.message, "error"));
+  [$("[data-seller-show-select]"), $("[data-broadcast-show-select]")].filter(Boolean).forEach(select => {
+    select.addEventListener("change", event => {
+      selectSellerShow(event.currentTarget.value).catch(error => {
+        setStatus("[data-seller-lot-status]", error.message, "error");
+        setStatus("[data-broadcast-auction-status]", error.message, "error");
+      });
+    });
   });
   $("[data-seller-shows-refresh]")?.addEventListener("click", () => loadSellerShows().catch(error => setStatus("[data-seller-show-status]", error.message, "error")));
+  $("[data-broadcast-queue-refresh]")?.addEventListener("click", async event => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      const show = selectedSellerShow();
+      if (!show) throw new Error("Choose an active show first.");
+      await loadSellerLots(show.id);
+      setStatus("[data-broadcast-auction-status]", "Auction queue refreshed.", "success");
+    } catch (error) {
+      setStatus("[data-broadcast-auction-status]", error.message, "error");
+    } finally {
+      button.disabled = false;
+    }
+  });
+  $("[data-auction-off]")?.addEventListener("click", async event => {
+    if (auctionAdvancePending) return;
+    const button = event.currentTarget;
+    const show = selectedSellerShow();
+    if (!show) {
+      setStatus("[data-broadcast-auction-status]", "Choose an active show first.", "error");
+      return;
+    }
+    auctionAdvancePending = true;
+    button.disabled = true;
+    setStatus("[data-broadcast-auction-status]", "Advancing the auction queue...");
+    try {
+      const result = await api(`/seller/shows/${encodeURIComponent(show.id)}/auction-off`, { method: "POST", body: "{}" });
+      await Promise.all([loadSellerLots(show.id), loadShows()]);
+      const closed = result.closedLot?.title ? `${result.closedLot.title} finished. ` : "";
+      setStatus("[data-broadcast-auction-status]", `${closed}${result.lot?.title || "The next item"} is live. ${Number(result.remainingQueued || 0)} item(s) remain queued.`, "success");
+    } catch (error) {
+      setStatus("[data-broadcast-auction-status]", error.message, "error");
+    } finally {
+      auctionAdvancePending = false;
+      renderBroadcastAuctionConsole(sellerShowLots, selectedSellerShow());
+    }
+  });
+  $("[data-broadcast-end-show]")?.addEventListener("click", event => {
+    const showId = event.currentTarget.dataset.broadcastEndShow || selectedSellerShow()?.id || "";
+    if (showId) openCloseShowModal(showId, event.currentTarget);
+  });
   $("[data-seller-social-refresh]")?.addEventListener("click", () => { updateSellerSocialComposer(); setStatus("[data-seller-social-status]", "Selected show link loaded.", "success"); });
   $("[data-listing-destination]")?.addEventListener("change", syncListingDestinationUi);
   $("[data-show-store-listing]")?.addEventListener("change", renderShowStoreInventoryPreview);

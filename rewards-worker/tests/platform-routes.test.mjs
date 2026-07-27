@@ -1217,3 +1217,157 @@ test("seller cannot schedule store inventory already assigned to an active lot",
   assert.match((await response.json()).error, /already assigned/);
   assert.equal(batchCalled, false);
 });
+
+test("AUCTION OFF settles the current lot and promotes the next queued item", async () => {
+  const memberId = "11111111-1111-4111-8111-111111111111";
+  const showId = "22222222-2222-4222-8222-222222222222";
+  const currentLotId = "33333333-3333-4333-8333-333333333333";
+  const nextLotId = "44444444-4444-4444-8444-444444444444";
+  const batches = [];
+  const member = {
+    id: memberId,
+    email_verified_at: "2026-07-24T00:00:00.000Z",
+    device_verified: 1,
+    identity_status: "verified",
+    stripe_identity_status: "verified",
+    live_username: "ShowBuilder"
+  };
+  const env = {
+    AUTH_SECRET: "test-secret",
+    LIVE_AUCTIONS_ENABLED: "true",
+    CLOUDFLARE_STREAM_CUSTOMER_CODE: "customer.example.test",
+    DB: {
+      prepare(sql) {
+        return {
+          bind(...args) {
+            return {
+              sql,
+              args,
+              first: async () => {
+                if (sql.includes("JOIN members m")) return member;
+                if (sql.includes("FROM breaker_profiles")) return { status: "active" };
+                if (sql.includes("SELECT id,title,status FROM breaker_stream_sessions")) {
+                  return { id: showId, title: "Queue Test", status: "live" };
+                }
+                if (sql.includes("lot.member_id=? AND lot.status='live'")) {
+                  return {
+                    id: currentLotId,
+                    session_id: showId,
+                    member_id: memberId,
+                    title: "Abyss Eye #1",
+                    status: "live",
+                    winning_member_id: "55555555-5555-4555-8555-555555555555",
+                    winning_display: "TopBidder"
+                  };
+                }
+                if (sql.includes("lot.status='scheduled'")) {
+                  return {
+                    id: nextLotId,
+                    session_id: showId,
+                    member_id: memberId,
+                    title: "Abyss Eye #2",
+                    status: "scheduled",
+                    starting_bid_cents: 500,
+                    bid_increment_cents: 100
+                  };
+                }
+                if (sql.includes("WHERE lot.id=? AND lot.member_id=?")) {
+                  return {
+                    id: nextLotId,
+                    session_id: showId,
+                    member_id: memberId,
+                    title: "Abyss Eye #2",
+                    status: "live",
+                    starting_bid_cents: 500,
+                    bid_increment_cents: 100,
+                    viewer_count: 12,
+                    cloudflare_live_input_uid: "stream-input-123"
+                  };
+                }
+                if (sql.includes("SELECT COUNT(*) queued")) return { queued: 2 };
+                return null;
+              },
+              run: async () => ({ success: true, meta: { changes: 1 } })
+            };
+          }
+        };
+      },
+      batch: async statements => {
+        batches.push(statements);
+        return statements.map(() => ({ success: true, meta: { changes: 1 } }));
+      }
+    }
+  };
+
+  const response = await handlePlatformRoute(new Request(`https://api.crackpacks.test/seller/shows/${showId}/auction-off`, {
+    method: "POST",
+    headers: { Authorization: "Bearer session-token" },
+    body: "{}"
+  }), env, {});
+
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.closedLot.id, currentLotId);
+  assert.equal(payload.closedLot.status, "sold");
+  assert.equal(payload.lot.id, nextLotId);
+  assert.equal(payload.lot.status, "live");
+  assert.equal(payload.remainingQueued, 2);
+  assert.equal(batches.length, 1);
+  assert.equal(batches[0].length, 4);
+  assert.match(batches[0][0].sql, /status=CASE WHEN winning_member_id IS NULL THEN 'cancelled' ELSE 'sold' END/);
+  assert.match(batches[0][1].sql, /UPDATE breaker_auction_bids SET status='winning'/);
+  assert.match(batches[0][2].sql, /SET status='live'/);
+  assert.equal(batches[0][2].args[2], nextLotId);
+  assert.match(batches[0][3].sql, /UPDATE breaker_stream_sessions SET status='live'/);
+});
+
+test("AUCTION OFF refuses to finish a live lot when the queue is empty", async () => {
+  const memberId = "11111111-1111-4111-8111-111111111111";
+  const showId = "22222222-2222-4222-8222-222222222222";
+  let batchCalled = false;
+  const env = {
+    AUTH_SECRET: "test-secret",
+    LIVE_AUCTIONS_ENABLED: "true",
+    DB: {
+      prepare(sql) {
+        return {
+          bind() {
+            return {
+              first: async () => {
+                if (sql.includes("JOIN members m")) {
+                  return {
+                    id: memberId,
+                    email_verified_at: "2026-07-24T00:00:00.000Z",
+                    device_verified: 1,
+                    identity_status: "verified",
+                    stripe_identity_status: "verified",
+                    live_username: "ShowBuilder"
+                  };
+                }
+                if (sql.includes("FROM breaker_profiles")) return { status: "active" };
+                if (sql.includes("SELECT id,title,status FROM breaker_stream_sessions")) return { id: showId, title: "Queue Test", status: "live" };
+                if (sql.includes("lot.member_id=? AND lot.status='live'")) return { id: "33333333-3333-4333-8333-333333333333", session_id: showId, status: "live" };
+                if (sql.includes("lot.status='scheduled'")) return null;
+                return null;
+              }
+            };
+          }
+        };
+      },
+      batch: async () => {
+        batchCalled = true;
+        return [];
+      }
+    }
+  };
+
+  const response = await handlePlatformRoute(new Request(`https://api.crackpacks.test/seller/shows/${showId}/auction-off`, {
+    method: "POST",
+    headers: { Authorization: "Bearer session-token" },
+    body: "{}"
+  }), env, {});
+
+  assert.equal(response.status, 409);
+  assert.match((await response.json()).error, /No queued item is ready/);
+  assert.equal(batchCalled, false);
+});

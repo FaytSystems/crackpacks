@@ -9,7 +9,7 @@
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/css/styles.css?v=1.9.8">
   <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.6.5">
-  <link rel="stylesheet" href="assets/css/streams-hub.css?v=1.9.0">
+  <link rel="stylesheet" href="assets/css/streams-hub.css?v=2.0.0">
 </head>
 <body data-page="streams">
   <a class="skip-link" href="#main">Skip to content</a>
@@ -120,6 +120,53 @@
             <iframe data-seller-broadcast-player title="Seller live broadcast monitor" allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture" allowfullscreen hidden></iframe>
           </div>
           <p class="fine-print">This monitor follows your permanent Cloudflare Live Input. When OBS is disconnected, Cloudflare displays that the stream has not started.</p>
+        </article>
+        <article class="holo-panel seller-auction-console">
+          <header class="seller-auction-console-head">
+            <div>
+              <p class="eyebrow">Show control</p>
+              <h3>Live auction queue</h3>
+            </div>
+            <label class="seller-broadcast-show-picker">Broadcast show
+              <select data-broadcast-show-select>
+                <option value="">Create a show first</option>
+              </select>
+            </label>
+          </header>
+          <div class="seller-auction-console-grid">
+            <section class="seller-auction-current" aria-labelledby="seller-current-auction-title">
+              <div class="seller-auction-section-head">
+                <span id="seller-current-auction-title">Now selling</span>
+                <strong data-broadcast-live-state>Waiting</strong>
+              </div>
+              <div class="seller-auction-current-item" data-broadcast-current-item>
+                <strong>No live auction yet.</strong>
+                <span>Queue sale items, then use AUCTION OFF to send the first item live.</span>
+              </div>
+            </section>
+            <section class="seller-auction-sale-list" aria-labelledby="seller-sale-list-title">
+              <div class="seller-auction-section-head">
+                <span id="seller-sale-list-title">Items for sale</span>
+                <strong data-broadcast-queue-count>0 queued</strong>
+              </div>
+              <div class="seller-auction-queue" data-broadcast-sale-list>
+                <div class="stream-empty">Choose an active show to load its sale items.</div>
+              </div>
+            </section>
+          </div>
+          <div class="seller-auction-controls" aria-label="Live auction controls">
+            <button class="seller-control-bubble seller-control-bubble-primary" type="button" data-auction-off disabled>
+              <span>AUCTION OFF</span>
+              <small>Send next queued item live</small>
+            </button>
+            <button class="seller-control-bubble" type="button" data-broadcast-queue-refresh>
+              <span>Refresh queue</span>
+            </button>
+            <button class="seller-control-bubble seller-control-bubble-danger" type="button" data-broadcast-end-show disabled>
+              <span>End show</span>
+            </button>
+          </div>
+          <div class="campaign-form-status seller-auction-control-status" data-broadcast-auction-status aria-live="polite"></div>
         </article>
         <article class="holo-panel seller-stream-input">
           <h3>Private OBS connection</h3>
@@ -478,6 +525,6 @@
   <script src="assets/js/config.js?v=4.1.0"></script>
   <script src="assets/js/app.js?v=1.9.7"></script>
   <script src="assets/js/portal-mode.js?v=1.2.1"></script>
-  <script src="assets/js/streams-hub.js?v=1.9.0"></script>
+  <script src="assets/js/streams-hub.js?v=2.0.0"></script>
 </body>
 </html>
