@@ -13,7 +13,7 @@
   const sellerGoLiveUrl = "streams.html#go-live";
   const sellerCreateShowUrl = "streams.html#create-show";
   let ownerSignupUrl = "referral.html?mode=signup";
-  let portalState = { signedIn: false, sellerAccess: false, masterAccess: false, activePortal: "buyer" };
+  let portalState = { signedIn: false, sellerAccess: false, employeeAccess: false, masterAccess: false, activePortal: "buyer" };
 
   const requestJson = async path => {
     if (!rewardsApi) throw new Error("Rewards service is not configured.");
@@ -53,11 +53,13 @@
     }
     const sellerAction = portalState.sellerAccess ? "data-open-seller-portal" : "data-start-seller-upgrade";
     const sellerLabel = portalState.sellerAccess ? "Seller Account" : "Seller Verification";
+    const employeeButton = portalState.employeeAccess ? '<a class="nav-account-bubble" href="employee.html">Employee Account</a>' : "";
     const masterButton = portalState.masterAccess ? '<button class="nav-account-bubble" type="button" data-open-master-portal>Master Account</button>' : "";
     return `
       <div class="nav-account-bubbles" aria-label="Account portal switcher">
         <button class="nav-account-bubble ${portalState.activePortal !== "seller" ? "is-active" : ""}" type="button" data-open-buyer-portal>Buyer Account</button>
         <button class="nav-account-bubble ${portalState.activePortal === "seller" ? "is-active" : ""}" type="button" ${sellerAction}>${sellerLabel}</button>
+        ${employeeButton}
         ${masterButton}
       </div>
       <div class="nav-account-menu-section" aria-label="Profile settings">
@@ -129,7 +131,7 @@
       ownerSignupUrl = String(publicReferral?.sellerSignupUrl || publicReferral?.signupUrl || ownerSignupUrl);
     } catch {}
     if (!token() || !rewardsApi) {
-      portalState = { signedIn: false, sellerAccess: false, masterAccess: false, activePortal: "buyer" };
+      portalState = { signedIn: false, sellerAccess: false, employeeAccess: false, masterAccess: false, activePortal: "buyer" };
       renderAccountMenus();
       return;
     }
@@ -138,11 +140,12 @@
       portalState = {
         signedIn: true,
         sellerAccess: Boolean(status.sellerAccess),
+        employeeAccess: Boolean(status.employeeAccess),
         masterAccess: Boolean(status.isMaster || status.isAdmin || status.isOwnerEmail || status.isMasterCandidate),
         activePortal: status.sellerAccess && status.activePortal === "seller" ? "seller" : "buyer"
       };
     } catch {
-      portalState = { signedIn: false, sellerAccess: false, masterAccess: false, activePortal: "buyer" };
+      portalState = { signedIn: false, sellerAccess: false, employeeAccess: false, masterAccess: false, activePortal: "buyer" };
     }
     renderAccountMenus();
   }

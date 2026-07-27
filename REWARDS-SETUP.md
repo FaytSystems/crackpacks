@@ -25,7 +25,9 @@ Subscribe the Stripe webhook to `checkout.session.completed`,
 `identity.verification_session.verified`,
 `identity.verification_session.requires_input`,
 `identity.verification_session.canceled`, and
-`identity.verification_session.redacted`.
+`identity.verification_session.redacted`. Also subscribe to `account.updated`
+so employee Stripe Connect payout readiness is refreshed without waiting for
+the employee to reopen the dashboard.
 
 The same signed Stripe endpoint handles store orders, paid gifted giveaways,
 buyer payment-method setup, seller subscription and credit payments, refunds,
@@ -117,8 +119,43 @@ Order, shipping, delivery, and refund mail is sent from
 `orders@crackpacks.com`. Code Generator rewards default to
 `rewards@crackpacks.com`. The owner dashboard email composer can send from
 `rewards@crackpacks.com`, `alerts@crackpacks.com`, `orders@crackpacks.com`,
-`support@crackpacks.com`, or `hello@crackpacks.com`. New paid-order notices go
-to `robertreese@faytsystems.com`.
+`support@crackpacks.com`, `hello@crackpacks.com`, or
+`gig@crackpacks.com`. Employment invitations and employee activation notices
+are sent from `gig@crackpacks.com`. New paid-order notices go to
+`robertreese@faytsystems.com`.
+
+## Employee accounts and Stripe Connect
+
+Apply migration `0044_add_employee_accounts_and_internal_email.sql` before
+deploying this feature. A Master account with a fresh passkey session can open
+**Employees**, generate a seven-day one-time invitation, optionally send the
+employment email, review hours, and change employee access. The invited person
+must use the exact invited email and complete password, User ID, passkey, legal
+profile, and Stripe Identity before employee access is created.
+
+Employee direct-deposit details use Stripe-hosted Connect onboarding. Crack
+Packs stores only the Stripe connected-account ID and readiness flags; it does
+not store routing numbers, account numbers, tax IDs, or identity documents.
+
+1. In the Stripe Dashboard, open **Connect** and finish the platform setup,
+   business profile, branding, support details, and required terms.
+2. Keep the existing production `STRIPE_SECRET_KEY` Worker secret. Employee
+   accounts are created as Stripe Express connected accounts through the
+   server-side API.
+3. Add `account.updated` to the existing signed webhook at
+   `https://rewards-api.crackpacks.com/webhooks/stripe`.
+4. In live mode, complete Stripe's Connect platform review before inviting a
+   production employee.
+5. In Cloudflare, onboard `crackpacks.com` for Email Sending and keep
+   `gig@crackpacks.com` in the Worker's `REWARDS_EMAIL` allowed sender list.
+6. Test with a real employee email you control. Generate the invitation,
+   complete Stripe Identity, activate Employee Account, submit one test shift,
+   approve it, and complete Stripe-hosted direct-deposit setup.
+
+The Expected Pay screen is a gross base-rate estimate. It is not a payroll
+engine and does not calculate overtime, tax withholding, benefits, deductions,
+worker classification, pay-stub requirements, or initiate a bank transfer.
+Use a compliant payroll provider and employment counsel for actual payroll.
 
 Label purchase remains manual. Payment creates the order and preserves the
 EasyPost shipment/rate choice; the owner buys the label separately and attaches
@@ -151,7 +188,8 @@ The included internal checker accepts any valid verified email address and enfor
 5. Run `npm run db:remote`.
 6. Configure Cloudflare Email Routing so `rewards@crackpacks.com`,
    `orders@crackpacks.com`, `alerts@crackpacks.com`,
-   `support@crackpacks.com`, and `hello@crackpacks.com` route to the inboxes
+   `support@crackpacks.com`, `hello@crackpacks.com`, and
+   `gig@crackpacks.com` route to the inboxes
    you want to monitor. Also verify the `crackpacks.com` sender domain in
    Resend so those addresses can send from the owner email composer.
 7. Run `npm run deploy`.

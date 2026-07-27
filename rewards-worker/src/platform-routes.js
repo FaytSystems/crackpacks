@@ -11,6 +11,7 @@ import {
   normalizePlans,
   round2
 } from "./stream-credits.js";
+import { calculateTimeEntry, hourlyRateCents, workforceSummary } from "./employee-workforce.js";
 
 const encoder = new TextEncoder();
 const now = () => new Date().toISOString();
@@ -52,6 +53,9 @@ async function memberFromRequest(request, env) {
 async function sellerProfile(env, memberId) {
   return env.DB.prepare(`SELECT * FROM breaker_profiles WHERE member_id=?`).bind(memberId).first();
 }
+async function employeeProfile(env, memberId) {
+  return env.DB.prepare(`SELECT * FROM employee_profiles WHERE member_id=?`).bind(memberId).first();
+}
 export const hasVerifiedSellerIdentity = member => Boolean(
   member?.email_verified_at &&
   member?.device_verified &&
@@ -61,6 +65,10 @@ export const hasVerifiedSellerIdentity = member => Boolean(
 export const hasSellerPortalAccess = (member, profile) => Boolean(
   hasVerifiedSellerIdentity(member) &&
   member?.live_username &&
+  profile?.status === "active"
+);
+export const hasEmployeePortalAccess = (member, profile) => Boolean(
+  hasVerifiedSellerIdentity(member) &&
   profile?.status === "active"
 );
 const masterEmails = env => new Set([
@@ -92,8 +100,18 @@ async function requireOwner(request, env, cors) {
     .bind(await digest(adminToken, env.AUTH_SECRET), auth.member.id, now()).first();
   return fresh ? auth : { error: json({ error: "Fresh owner passkey verification required." }, 403, cors) };
 }
+async function requireEmployee(request, env, cors) {
+  const auth = await requireMember(request, env, cors);
+  if (auth.error) return auth;
+  const profile = await employeeProfile(env, auth.member.id);
+  if (!hasEmployeePortalAccess(auth.member, profile)) {
+    return { error: json({ error: "Complete the employee invitation, passkey, legal profile, and Stripe ID verification first." }, 403, cors) };
+  }
+  return { ...auth, employee: profile };
+}
 const validUuid = value => /^[0-9a-f-]{36}$/i.test(String(value || ""));
 const randomToken = (length = 40) => Array.from(crypto.getRandomValues(new Uint8Array(length)), byte => "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"[byte % 57]).join("");
+const employeeId = () => `EMP-${crypto.randomUUID().replace(/-/g, "").slice(0, 10).toUpperCase()}`;
 const orderNumber = () => `CP-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
 const siteUrl = env => String(env.SITE_URL || "https://crackpacks.com").replace(/\/$/, "");
 const monthKeyAt = (iso = now()) => String(iso).slice(0, 7);
@@ -1299,6 +1317,8 @@ async function stripeWebhook(request, env, cors) {
     }
   } else if (event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {
     await syncStreamSubscriptionStatus(env, event.data?.object || {});
+  } else if (event.type === "account.updated") {
+    await syncEmployeeConnectAccount(env, event.data?.object || {});
   } else if (event.type === "charge.refunded") {
     await handleRefund(env, event.data?.object || {});
   } else if (event.type.startsWith("identity.verification_session.")) {
@@ -1365,6 +1385,466 @@ async function startBillingPortal(request, env, cors) {
       : stripeSafeError("Stripe Billing Portal could not open", error);
     return json({ error: message }, 503, cors);
   }
+}
+
+function employeeTimeEntryView(row) {
+  return {
+    id: row.id,
+    memberId: row.member_id,
+    employeeId: row.employee_id || "",
+    employeeName: clean(`${row.first_name || ""} ${row.last_name || ""}`, 130),
+    employeeEmail: row.email || "",
+    workDate: row.work_date,
+    startTime: row.start_time,
+    endTime: row.end_time,
+    breakMinutes: Number(row.break_minutes || 0),
+    minutesWorked: Number(row.minutes_worked || 0),
+    hoursWorked: Number((Number(row.minutes_worked || 0) / 60).toFixed(2)),
+    hourlyRateCents: Number(row.hourly_rate_cents || 0),
+    expectedPayCents: Number(row.expected_pay_cents || 0),
+    note: row.note || "",
+    status: row.status,
+    reviewedAt: row.reviewed_at || null,
+    paidAt: row.paid_at || null,
+    createdAt: row.created_at
+  };
+}
+
+function employeeProfileView(profile, member = {}) {
+  return {
+    memberId: profile.member_id,
+    employeeId: profile.employee_id,
+    status: profile.status,
+    jobTitle: profile.job_title,
+    hourlyRateCents: Number(profile.hourly_rate_cents || 0),
+    name: clean(`${member.first_name || ""} ${member.last_name || ""}`, 130),
+    email: member.email || "",
+    userId: member.buyer_username || "",
+    sellerId: member.live_username || "",
+    payout: {
+      connected: Boolean(profile.stripe_connect_account_id),
+      detailsSubmitted: Boolean(profile.stripe_connect_details_submitted),
+      payoutsEnabled: Boolean(profile.stripe_connect_payouts_enabled),
+      requirementsDue: Number(profile.stripe_connect_requirements_due || 0)
+    },
+    activatedAt: profile.activated_at,
+    updatedAt: profile.updated_at
+  };
+}
+
+async function recordInternalEmail(env, {
+  id: messageId = uid(),
+  senderMemberId,
+  recipientMemberId = null,
+  fromAddress,
+  toAddress,
+  category = "direct",
+  subject,
+  message,
+  status = "sent"
+}) {
+  const stamp = now();
+  await env.DB.prepare(`
+    INSERT INTO internal_email_messages(
+      id,sender_member_id,recipient_member_id,from_address,to_address,category,subject,message,status,sent_at,created_at
+    ) VALUES(?,?,?,?,?,?,?,?,?,?,?)
+  `).bind(
+    messageId, senderMemberId, recipientMemberId, fromAddress, toAddress, category,
+    subject, message, status, status === "sent" ? stamp : null, stamp
+  ).run();
+  return messageId;
+}
+
+async function sendEmploymentInvitation(env, invitation, activationUrl, senderMemberId) {
+  const note = clean(invitation.note, 1000);
+  const noteHtml = note ? `<p><strong>Message from Crack Packs:</strong><br>${escapeHtml(note)}</p>` : "";
+  const subject = `Crack Packs employment account invitation - ${invitation.employee_id}`;
+  const html = `<div style="font-family:Arial,sans-serif;color:#111827;line-height:1.55"><h1 style="color:#151936">Your Crack Packs employee account</h1><p>You have been invited to set up employee account <strong>${escapeHtml(invitation.employee_id)}</strong> for <strong>${escapeHtml(invitation.job_title)}</strong>.</p>${noteHtml}<p>Use the secure button below to verify your email, create or sign in to your Crack Packs account, register a passkey, confirm your legal profile, and complete Stripe Identity verification.</p><p><a href="${escapeHtml(activationUrl)}" style="display:inline-block;padding:15px 24px;background:#f8ff46;color:#070815;text-decoration:none;font-weight:900;border-radius:999px">SET UP EMPLOYEE ACCOUNT</a></p><p>This one-time invitation expires in seven days. Bank information is entered only on Stripe after employee activation.</p></div>`;
+  const text = `Your Crack Packs employee account\n\nEmployee ID: ${invitation.employee_id}\nRole: ${invitation.job_title}\n${note ? `Message: ${note}\n` : ""}\nSet up your account: ${activationUrl}\n\nThis one-time invitation expires in seven days.`;
+  const sent = await sendTransactionalEmail(
+    env,
+    invitation.target_email,
+    subject,
+    html,
+    `employment-invitation-${invitation.id}`,
+    { fromAddress: "gig@crackpacks.com", fromName: "Crack Packs Employment", text }
+  );
+  if (!sent) return false;
+  await recordInternalEmail(env, {
+    senderMemberId,
+    recipientMemberId: invitation.target_member_id || null,
+    fromAddress: "gig@crackpacks.com",
+    toAddress: invitation.target_email,
+    category: "employment",
+    subject,
+    message: text,
+    status: "sent"
+  });
+  return true;
+}
+
+async function createEmployeeInvitation(request, env, cors) {
+  const auth = await requireOwner(request, env, cors);
+  if (auth.error) return auth.error;
+  let data;
+  try { data = await boundedJson(request, 5000); }
+  catch (error) { return json({ error: error.message === "REQUEST_TOO_LARGE" ? "Employee invitation is too large." : "Enter valid employee invitation details." }, 400, cors); }
+  const email = normalizeEmail(data.email);
+  const jobTitle = clean(data.jobTitle, 100);
+  const rateCents = hourlyRateCents(data.hourlyRate);
+  const note = clean(data.note, 1000);
+  const sendEmailNow = data.sendEmail === true;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json({ error: "Enter the employee email address." }, 400, cors);
+  if (jobTitle.length < 2) return json({ error: "Enter the employee job title." }, 400, cors);
+  if (rateCents === null) return json({ error: "Enter an hourly rate from $0.01 to $10,000.00 with no more than two decimals." }, 400, cors);
+  const target = await env.DB.prepare(`SELECT id FROM members WHERE email=?`).bind(email).first();
+  if (target) {
+    const active = await employeeProfile(env, target.id);
+    if (active?.status === "active") return json({ error: "That member already has an active employee account." }, 409, cors);
+  }
+  const token = randomToken(48);
+  const invitation = {
+    id: uid(),
+    target_email: email,
+    target_member_id: target?.id || null,
+    employee_id: employeeId(),
+    job_title: jobTitle,
+    hourly_rate_cents: rateCents,
+    note
+  };
+  const expiresAt = new Date(Date.now() + 7 * 86400e3).toISOString();
+  await env.DB.prepare(`
+    INSERT INTO employee_invitations(
+      id,target_email,target_member_id,employee_id,code_hash,job_title,hourly_rate_cents,note,created_by_member_id,expires_at,created_at
+    ) VALUES(?,?,?,?,?,?,?,?,?,?,?)
+  `).bind(
+    invitation.id, email, target?.id || null, invitation.employee_id, await digest(token, env.AUTH_SECRET),
+    jobTitle, rateCents, note, auth.member.id, expiresAt, now()
+  ).run();
+  const activationUrl = `${siteUrl(env)}/referral.html?employee_activation=${encodeURIComponent(token)}&return=employee&mode=signup`;
+  let emailSent = false;
+  if (sendEmailNow) {
+    emailSent = await sendEmploymentInvitation(env, invitation, activationUrl, auth.member.id).catch(error => {
+      console.error("Employment invitation email failed", { invitationId: invitation.id, message: clean(error?.message || "", 200) });
+      return false;
+    });
+    if (emailSent) await env.DB.prepare(`UPDATE employee_invitations SET sent_at=? WHERE id=?`).bind(now(), invitation.id).run();
+  }
+  return json({
+    invitationId: invitation.id,
+    employeeId: invitation.employee_id,
+    activationUrl,
+    expiresAt,
+    emailSent,
+    emailAddress: email,
+    jobTitle,
+    hourlyRateCents: rateCents
+  }, 201, cors);
+}
+
+async function activateEmployee(request, env, cors) {
+  const auth = await requireMember(request, env, cors);
+  if (auth.error) return auth.error;
+  if (!hasVerifiedSellerIdentity(auth.member)) {
+    return json({ error: "Complete email, password, passkey, legal profile, and Stripe Identity verification before activating the employee account." }, 403, cors);
+  }
+  let data;
+  try { data = await boundedJson(request, 2000); }
+  catch { return json({ error: "Enter a valid employee activation credential." }, 400, cors); }
+  const token = String(data.token || "").slice(0, 120);
+  const invitation = token.length >= 24
+    ? await env.DB.prepare(`SELECT * FROM employee_invitations WHERE code_hash=? AND used_at IS NULL AND expires_at>?`)
+      .bind(await digest(token, env.AUTH_SECRET), now()).first()
+    : null;
+  if (!invitation || normalizeEmail(invitation.target_email) !== normalizeEmail(auth.member.email) || (invitation.target_member_id && invitation.target_member_id !== auth.member.id)) {
+    return json({ error: "That employee invitation is invalid, expired, or belongs to another account." }, 403, cors);
+  }
+  const existing = await employeeProfile(env, auth.member.id);
+  if (existing && existing.status !== "active") return json({ error: "This employee account is inactive. Ask the Master account to restore access." }, 409, cors);
+  const stamp = now();
+  await env.DB.batch([
+    env.DB.prepare(`
+      INSERT INTO employee_profiles(
+        member_id,employee_id,status,job_title,hourly_rate_cents,activated_at,created_by_member_id,created_at,updated_at
+      ) VALUES(?,?,'active',?,?,?,?,?,?)
+      ON CONFLICT(member_id) DO UPDATE SET updated_at=excluded.updated_at
+    `).bind(
+      auth.member.id, invitation.employee_id, invitation.job_title, Number(invitation.hourly_rate_cents),
+      stamp, invitation.created_by_member_id, stamp, stamp
+    ),
+    env.DB.prepare(`
+      UPDATE employee_invitations
+      SET used_at=?,used_by_member_id=?,target_member_id=?
+      WHERE id=? AND used_at IS NULL
+    `).bind(stamp, auth.member.id, auth.member.id, invitation.id)
+  ]);
+  const profile = await employeeProfile(env, auth.member.id);
+  const employeeUrl = `${siteUrl(env)}/employee.html`;
+  const html = `<div style="font-family:Arial,sans-serif;color:#111827;line-height:1.55"><h1 style="color:#151936">Employee account activated</h1><p>Your Crack Packs employee account <strong>${escapeHtml(profile.employee_id)}</strong> is active.</p><p><a href="${escapeHtml(employeeUrl)}" style="display:inline-block;padding:15px 24px;background:#f8ff46;color:#070815;text-decoration:none;font-weight:900;border-radius:999px">OPEN EMPLOYEE DASHBOARD</a></p></div>`;
+  await sendTransactionalEmail(env, auth.member.email, "Your Crack Packs employee account is active", html, `employee-activated-${auth.member.id}`, {
+    fromAddress: "gig@crackpacks.com",
+    fromName: "Crack Packs Employment",
+    text: `Your Crack Packs employee account ${profile.employee_id} is active.\n\nOpen employee dashboard: ${employeeUrl}`
+  }).catch(error => console.error("Employee activation email failed", { memberId: auth.member.id, message: clean(error?.message || "", 200) }));
+  return json({ active: true, employee: employeeProfileView(profile, auth.member), dashboardUrl: employeeUrl }, 200, cors);
+}
+
+async function refreshEmployeeConnectStatus(env, profile) {
+  if (!profile?.stripe_connect_account_id || !env.STRIPE_SECRET_KEY) return profile;
+  try {
+    const account = await stripeGet(env.STRIPE_SECRET_KEY, `/accounts/${encodeURIComponent(profile.stripe_connect_account_id)}`);
+    const requirementsDue = Array.isArray(account.requirements?.currently_due) ? account.requirements.currently_due.length : 0;
+    await env.DB.prepare(`
+      UPDATE employee_profiles
+      SET stripe_connect_details_submitted=?,stripe_connect_payouts_enabled=?,stripe_connect_requirements_due=?,updated_at=?
+      WHERE member_id=?
+    `).bind(account.details_submitted ? 1 : 0, account.payouts_enabled ? 1 : 0, requirementsDue, now(), profile.member_id).run();
+    return {
+      ...profile,
+      stripe_connect_details_submitted: account.details_submitted ? 1 : 0,
+      stripe_connect_payouts_enabled: account.payouts_enabled ? 1 : 0,
+      stripe_connect_requirements_due: requirementsDue
+    };
+  } catch (error) {
+    console.warn("Employee Stripe Connect status refresh failed", { memberId: profile.member_id, message: clean(error?.stripeMessage || error?.message || "", 200) });
+    return profile;
+  }
+}
+
+async function syncEmployeeConnectAccount(env, account) {
+  const accountId = String(account?.id || "");
+  if (!accountId) return;
+  const requirementsDue = Array.isArray(account.requirements?.currently_due) ? account.requirements.currently_due.length : 0;
+  await env.DB.prepare(`
+    UPDATE employee_profiles
+    SET stripe_connect_details_submitted=?,stripe_connect_payouts_enabled=?,stripe_connect_requirements_due=?,updated_at=?
+    WHERE stripe_connect_account_id=?
+  `).bind(account.details_submitted ? 1 : 0, account.payouts_enabled ? 1 : 0, requirementsDue, now(), accountId).run();
+}
+
+async function employeeDashboard(request, env, cors) {
+  const auth = await requireEmployee(request, env, cors);
+  if (auth.error) return auth.error;
+  const profile = await refreshEmployeeConnectStatus(env, auth.employee);
+  const rows = await env.DB.prepare(`
+    SELECT * FROM employee_time_entries WHERE member_id=? ORDER BY work_date DESC,created_at DESC LIMIT 180
+  `).bind(auth.member.id).all();
+  const entries = (rows.results || []).map(employeeTimeEntryView);
+  return json({
+    employee: employeeProfileView(profile, auth.member),
+    entries,
+    summary: workforceSummary(rows.results || []),
+    payDisclaimer: "Expected pay is a gross estimate from submitted hours and the stored base hourly rate. Payroll approval, overtime, taxes, deductions, and actual payment are separate."
+  }, 200, cors);
+}
+
+async function submitEmployeeTimeEntry(request, env, cors) {
+  const auth = await requireEmployee(request, env, cors);
+  if (auth.error) return auth.error;
+  let data;
+  try { data = await boundedJson(request, 3000); }
+  catch { return json({ error: "Enter valid hours-worked details." }, 400, cors); }
+  const calculated = calculateTimeEntry({
+    workDate: data.workDate,
+    startTime: data.startTime,
+    endTime: data.endTime,
+    breakMinutes: data.breakMinutes,
+    rateCents: Number(auth.employee.hourly_rate_cents)
+  });
+  if (!calculated) return json({ error: "Enter a valid work date, start time, end time, and break shorter than the shift." }, 400, cors);
+  const workAt = Date.parse(`${calculated.workDate}T12:00:00.000Z`);
+  if (workAt > Date.now() + 12 * 60 * 60e3 || workAt < Date.now() - 90 * 86400e3) {
+    return json({ error: "Hours can be submitted for today or the previous 90 days." }, 400, cors);
+  }
+  const duplicate = await env.DB.prepare(`
+    SELECT id FROM employee_time_entries
+    WHERE member_id=? AND work_date=? AND start_time=? AND end_time=? AND status<>'rejected'
+  `).bind(auth.member.id, calculated.workDate, calculated.startTime, calculated.endTime).first();
+  if (duplicate) return json({ error: "That shift is already in your hours history." }, 409, cors);
+  const entryId = uid();
+  const stamp = now();
+  await env.DB.prepare(`
+    INSERT INTO employee_time_entries(
+      id,member_id,work_date,start_time,end_time,break_minutes,minutes_worked,hourly_rate_cents,expected_pay_cents,note,status,created_at,updated_at
+    ) VALUES(?,?,?,?,?,?,?,?,?,?,'submitted',?,?)
+  `).bind(
+    entryId, auth.member.id, calculated.workDate, calculated.startTime, calculated.endTime,
+    calculated.breakMinutes, calculated.minutesWorked, calculated.hourlyRateCents,
+    calculated.expectedPayCents, clean(data.note, 1000), stamp, stamp
+  ).run();
+  const saved = await env.DB.prepare(`SELECT * FROM employee_time_entries WHERE id=?`).bind(entryId).first();
+  return json({ entry: employeeTimeEntryView(saved) }, 201, cors);
+}
+
+async function startEmployeePayoutOnboarding(request, env, cors) {
+  const auth = await requireEmployee(request, env, cors);
+  if (auth.error) return auth.error;
+  if (!env.STRIPE_SECRET_KEY) return json({ error: "Stripe Connect is not configured." }, 503, cors);
+  let profile = await refreshEmployeeConnectStatus(env, auth.employee);
+  try {
+    let accountId = String(profile.stripe_connect_account_id || "");
+    if (!accountId) {
+      let country = "US";
+      try {
+        const shipping = JSON.parse(auth.member.shipping_address_json || "{}");
+        if (/^[A-Z]{2}$/.test(String(shipping.country || "").toUpperCase())) country = String(shipping.country).toUpperCase();
+      } catch {}
+      const account = await stripeRequest(env.STRIPE_SECRET_KEY, "/accounts", [
+        ["type", "express"],
+        ["country", country],
+        ["email", auth.member.email],
+        ["business_type", "individual"],
+        ["business_profile[product_description]", "Crack Packs workforce payouts"],
+        ["individual[first_name]", auth.member.first_name],
+        ["individual[last_name]", auth.member.last_name],
+        ["capabilities[transfers][requested]", "true"],
+        ["metadata[member_id]", auth.member.id],
+        ["metadata[employee_id]", profile.employee_id]
+      ], `employee-connect-${auth.member.id}`);
+      accountId = account.id;
+      await env.DB.prepare(`UPDATE employee_profiles SET stripe_connect_account_id=?,updated_at=? WHERE member_id=?`)
+        .bind(accountId, now(), auth.member.id).run();
+      profile = { ...profile, stripe_connect_account_id: accountId };
+    }
+    if (profile.stripe_connect_details_submitted && profile.stripe_connect_payouts_enabled) {
+      const login = await stripeRequest(env.STRIPE_SECRET_KEY, `/accounts/${encodeURIComponent(accountId)}/login_links`, [], `employee-connect-login-${auth.member.id}-${Date.now()}`);
+      return json({ url: login.url, mode: "dashboard" }, 201, cors);
+    }
+    const link = await stripeRequest(env.STRIPE_SECRET_KEY, "/account_links", [
+      ["account", accountId],
+      ["refresh_url", `${siteUrl(env)}/employee.html?view=deposit&connect=refresh`],
+      ["return_url", `${siteUrl(env)}/employee.html?view=deposit&connect=return`],
+      ["type", "account_onboarding"],
+      ["collection_options[fields]", "eventually_due"]
+    ], `employee-connect-link-${auth.member.id}-${Date.now()}`);
+    return json({ url: link.url, mode: "onboarding" }, 201, cors);
+  } catch (error) {
+    const message = error.message === "STRIPE_NOT_CONFIGURED"
+      ? "Stripe Connect is not configured."
+      : stripeSafeError("Stripe could not open direct-deposit setup", error);
+    return json({ error: message }, 503, cors);
+  }
+}
+
+async function adminEmployeeDashboard(request, env, cors) {
+  const auth = await requireOwner(request, env, cors);
+  if (auth.error) return auth.error;
+  const [profiles, invitations, timeEntries] = await Promise.all([
+    env.DB.prepare(`
+      SELECT profile.*,member.email,member.first_name,member.last_name,member.buyer_username,member.live_username,
+             COALESCE(SUM(CASE WHEN entry.status='submitted' THEN entry.minutes_worked ELSE 0 END),0) submitted_minutes,
+             COALESCE(SUM(CASE WHEN entry.status='approved' THEN entry.minutes_worked ELSE 0 END),0) approved_minutes,
+             COALESCE(SUM(CASE WHEN entry.status IN ('submitted','approved') THEN entry.expected_pay_cents ELSE 0 END),0) expected_outstanding_pay_cents
+      FROM employee_profiles profile
+      JOIN members member ON member.id=profile.member_id
+      LEFT JOIN employee_time_entries entry ON entry.member_id=profile.member_id
+      GROUP BY profile.member_id
+      ORDER BY profile.updated_at DESC
+      LIMIT 200
+    `).all(),
+    env.DB.prepare(`
+      SELECT invitation.*,member.email member_email
+      FROM employee_invitations invitation
+      LEFT JOIN members member ON member.id=invitation.target_member_id
+      ORDER BY invitation.created_at DESC LIMIT 100
+    `).all(),
+    env.DB.prepare(`
+      SELECT entry.*,profile.employee_id,member.email,member.first_name,member.last_name
+      FROM employee_time_entries entry
+      JOIN employee_profiles profile ON profile.member_id=entry.member_id
+      JOIN members member ON member.id=entry.member_id
+      ORDER BY entry.work_date DESC,entry.created_at DESC LIMIT 250
+    `).all()
+  ]);
+  return json({
+    employees: (profiles.results || []).map(row => ({
+      ...employeeProfileView(row, row),
+      submittedHours: Number((Number(row.submitted_minutes || 0) / 60).toFixed(2)),
+      approvedHours: Number((Number(row.approved_minutes || 0) / 60).toFixed(2)),
+      expectedOutstandingPayCents: Number(row.expected_outstanding_pay_cents || 0)
+    })),
+    invitations: (invitations.results || []).map(row => ({
+      id: row.id,
+      employeeId: row.employee_id,
+      email: row.target_email,
+      jobTitle: row.job_title,
+      hourlyRateCents: Number(row.hourly_rate_cents || 0),
+      expiresAt: row.expires_at,
+      sentAt: row.sent_at || null,
+      usedAt: row.used_at || null,
+      createdAt: row.created_at
+    })),
+    timeEntries: (timeEntries.results || []).map(employeeTimeEntryView)
+  }, 200, cors);
+}
+
+async function reviewEmployeeTimeEntry(request, env, cors, entryId) {
+  const auth = await requireOwner(request, env, cors);
+  if (auth.error) return auth.error;
+  let data;
+  try { data = await boundedJson(request, 1000); }
+  catch { return json({ error: "Choose a valid hours decision." }, 400, cors); }
+  const decision = ["approved", "rejected", "paid"].includes(data.status) ? data.status : "";
+  if (!decision) return json({ error: "Choose Approve, Reject, or Mark Paid." }, 400, cors);
+  const stamp = now();
+  const allowedCurrent = decision === "paid" ? "approved" : "submitted";
+  const changed = await env.DB.prepare(`
+    UPDATE employee_time_entries
+    SET status=?,reviewed_by_member_id=?,reviewed_at=?,paid_at=?,updated_at=?
+    WHERE id=? AND status=?
+  `).bind(decision, auth.member.id, stamp, decision === "paid" ? stamp : null, stamp, entryId, allowedCurrent).run();
+  if (Number(changed.meta?.changes || 0) !== 1) return json({ error: "That hours entry changed already. Refresh the employee dashboard." }, 409, cors);
+  const saved = await env.DB.prepare(`
+    SELECT entry.*,profile.employee_id,member.email,member.first_name,member.last_name
+    FROM employee_time_entries entry
+    JOIN employee_profiles profile ON profile.member_id=entry.member_id
+    JOIN members member ON member.id=entry.member_id
+    WHERE entry.id=?
+  `).bind(entryId).first();
+  return json({ entry: employeeTimeEntryView(saved) }, 200, cors);
+}
+
+async function setEmployeeStatus(request, env, cors, memberId) {
+  const auth = await requireOwner(request, env, cors);
+  if (auth.error) return auth.error;
+  let data;
+  try { data = await boundedJson(request, 1000); }
+  catch { return json({ error: "Choose a valid employee status." }, 400, cors); }
+  const status = ["active", "suspended", "terminated"].includes(data.status) ? data.status : "";
+  if (!status) return json({ error: "Choose Active, Suspended, or Terminated." }, 400, cors);
+  const changed = await env.DB.prepare(`UPDATE employee_profiles SET status=?,updated_at=? WHERE member_id=?`)
+    .bind(status, now(), memberId).run();
+  if (Number(changed.meta?.changes || 0) !== 1) return json({ error: "Employee account not found." }, 404, cors);
+  return json({ ok: true, status }, 200, cors);
+}
+
+async function adminEmailHistory(request, env, cors) {
+  const auth = await requireOwner(request, env, cors);
+  if (auth.error) return auth.error;
+  const rows = await env.DB.prepare(`
+    SELECT message.*,member.first_name,member.last_name,member.buyer_username,member.live_username
+    FROM internal_email_messages message
+    LEFT JOIN members member ON member.id=message.recipient_member_id
+    WHERE message.sender_member_id=?
+    ORDER BY message.created_at DESC LIMIT 200
+  `).bind(auth.member.id).all();
+  return json({
+    messages: (rows.results || []).map(row => ({
+      id: row.id,
+      recipientMemberId: row.recipient_member_id || null,
+      recipientName: clean(`${row.first_name || ""} ${row.last_name || ""}`, 130),
+      userId: row.buyer_username || "",
+      sellerId: row.live_username || "",
+      fromAddress: row.from_address,
+      toAddress: row.to_address,
+      category: row.category,
+      subject: row.subject,
+      message: row.message,
+      status: row.status,
+      sentAt: row.sent_at || null,
+      createdAt: row.created_at
+    }))
+  }, 200, cors);
 }
 
 function playbackUrl(env, liveInputUid) {
@@ -2979,6 +3459,17 @@ async function changeAuctionStatus(request, env, cors, lotId, action) {
 export async function handlePlatformRoute(request, env, cors) {
   const url = new URL(request.url);
   if (url.pathname === "/webhooks/stripe" && request.method === "POST") return stripeWebhook(request, env, cors);
+  if (url.pathname === "/employee/activate" && request.method === "POST") return activateEmployee(request, env, cors);
+  if (url.pathname === "/employee/dashboard" && request.method === "GET") return employeeDashboard(request, env, cors);
+  if (url.pathname === "/employee/time-entries" && request.method === "POST") return submitEmployeeTimeEntry(request, env, cors);
+  if (url.pathname === "/employee/payout/onboarding" && request.method === "POST") return startEmployeePayoutOnboarding(request, env, cors);
+  if (url.pathname === "/admin/employees/invitations" && request.method === "POST") return createEmployeeInvitation(request, env, cors);
+  if (url.pathname === "/admin/employees" && request.method === "GET") return adminEmployeeDashboard(request, env, cors);
+  if (url.pathname === "/admin/email/history" && request.method === "GET") return adminEmailHistory(request, env, cors);
+  const employeeTimeMatch = url.pathname.match(/^\/admin\/employees\/time-entries\/([0-9a-f-]{36})$/i);
+  if (employeeTimeMatch && request.method === "POST") return reviewEmployeeTimeEntry(request, env, cors, employeeTimeMatch[1]);
+  const employeeStatusMatch = url.pathname.match(/^\/admin\/employees\/([0-9a-f-]{36})\/status$/i);
+  if (employeeStatusMatch && request.method === "POST") return setEmployeeStatus(request, env, cors, employeeStatusMatch[1]);
   if (url.pathname === "/seller/stream-credits/calculate" && request.method === "POST") return streamCreditCalculator(request, env, cors);
   if (url.pathname === "/seller/stream-credits/dashboard" && request.method === "GET") return streamCreditDashboard(request, env, cors);
   if (url.pathname === "/seller/stream-credits/subscription" && request.method === "POST") return saveStreamCreditSubscription(request, env, cors);
@@ -2997,19 +3488,26 @@ export async function handlePlatformRoute(request, env, cors) {
     const auth = await requireMember(request, env, cors, { verified: false });
     if (auth.error) return auth.error;
     auth.member = await refreshStripeIdentityForMember(env, auth.member);
-    const profile = await sellerProfile(env, auth.member.id);
+    const [profile, employee] = await Promise.all([
+      sellerProfile(env, auth.member.id),
+      employeeProfile(env, auth.member.id)
+    ]);
     const ownerEmail = isMasterEmail(auth.member.email, env);
     const owner = hasMasterPortalAccess(auth.member, env);
     const sellerAllowed = hasSellerPortalAccess(auth.member, profile);
+    const employeeAllowed = hasEmployeePortalAccess(auth.member, employee);
     const requestedPortal = String(auth.member.active_portal || "buyer");
     const activePortal = owner && requestedPortal === "master"
       ? "master"
       : (sellerAllowed && requestedPortal === "seller" ? "seller" : "buyer");
-    const roles = ["buyer", ...(sellerAllowed ? ["seller"] : []), ...(owner ? ["master"] : [])];
+    const roles = ["buyer", ...(sellerAllowed ? ["seller"] : []), ...(employeeAllowed ? ["employee"] : []), ...(owner ? ["master"] : [])];
     return json({
       activePortal,
       sellerAccess: sellerAllowed,
       sellerStatus: profile?.status || "not_applied",
+      employeeAccess: employeeAllowed,
+      employeeStatus: employee?.status || "not_invited",
+      employeeId: employee?.employee_id || "",
       identityStatus: auth.member.identity_status || "pending",
       stripeIdentityStatus: auth.member.stripe_identity_status || "not_started",
       sellerUsername: auth.member.live_username || "",
@@ -3099,12 +3597,14 @@ export async function handlePlatformRoute(request, env, cors) {
     if (auth.error) return auth.error;
     const data = await boundedJson(request, 1000);
     const forceFreshSession = data.force === true || url.searchParams.get("force") === "1";
+    const identityReturn = data.returnTo === "employee" ? "employee" : "seller";
     if (!auth.member.device_verified || !auth.member.first_name || !auth.member.last_name || !auth.member.birth_date) return json({ error: "Complete your legal profile and passkey before Stripe Identity verification." }, 403, cors);
     if (auth.member.stripe_identity_status === "verified" && !forceFreshSession) return json({ verified: true }, 200, cors);
     const sessionEntries = [
       ["type", "document"],
-      ["return_url", `${siteUrl(env)}/referral.html?identity=return&return=seller`],
-      ["metadata[member_id]", auth.member.id]
+      ["return_url", `${siteUrl(env)}/referral.html?identity=return&return=${identityReturn}`],
+      ["metadata[member_id]", auth.member.id],
+      ["metadata[return_to]", identityReturn]
     ];
     let session;
     try {

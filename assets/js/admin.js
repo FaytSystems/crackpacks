@@ -71,6 +71,8 @@
     if (section === "tracking") Promise.all([searchTrackingMembers(), refreshAdminOrders()]).catch(error => setTrackingStatus(error.message, "error"));
     if (section === "identity") refreshIdentityReviews().catch(error => setIdentityReviewStatus(error.message, "error"));
     if (section === "sellers") refreshAdminReorders().catch(error => setAdminReordersStatus(error.message, "error"));
+    if (section === "email") refreshEmailHistory().catch(error => setMasterEmailStatus(error.message, "error"));
+    if (section === "employees") refreshEmployees().catch(error => setEmployeeAccountStatus(error.message, "error"));
     if (section === "streaming") refreshStreamConfig().catch(error => setStreamConfigStatus(error.message, "error"));
   }
   function requestedMasterSection() {
@@ -1554,7 +1556,8 @@
     summary.textContent = emailAudience === "all" ? "Audience: every verified Crack Packs member (up to 100 per send)." : emailAudience === "tier" ? `Audience: ${$("[data-email-tier]").selectedOptions[0].textContent}.` : emailAudience === "selected" ? `Audience: ${count} selected member${count === 1 ? "" : "s"}.` : "No audience selected.";
     const chips = $("[data-email-selected-chips]"); chips.replaceChildren();
     if (emailAudience === "selected") selectedEmailMembers.forEach(member => {
-      const chip = document.createElement("button"); chip.type = "button"; chip.className = "email-recipient-chip"; chip.textContent = `${member.liveUsername ? `@${member.liveUsername}` : member.email} ×`;
+      const identifier = member.userId || member.sellerId || member.employeeId || "Verified account";
+      const chip = document.createElement("button"); chip.type = "button"; chip.className = "email-recipient-chip"; chip.textContent = `${identifier} | ${member.email} | Remove`;
       chip.title = `Remove ${member.email}`;
       chip.addEventListener("click", () => { selectedEmailMembers.delete(member.id); syncEmailComposer(); });
       chips.append(chip);
@@ -1571,7 +1574,14 @@
     members.forEach(member => {
       const row = document.createElement("article"); row.className = "email-member-row";
       const identity = document.createElement("div"); const name = document.createElement("strong"); name.textContent = `${member.firstName || ""} ${member.lastName || ""}`.trim() || member.email;
-      const detail = document.createElement("span"); detail.textContent = [member.liveUsername ? `@${member.liveUsername}` : "", member.email].filter(Boolean).join(" · "); identity.append(name, detail);
+      const detail = document.createElement("span");
+      detail.textContent = [
+        member.userId ? `User ID: ${member.userId}` : "",
+        member.sellerId ? `Seller ID: ${member.sellerId}` : "",
+        member.employeeId ? `Employee ID: ${member.employeeId}` : "",
+        member.email
+      ].filter(Boolean).join(" | ");
+      identity.append(name, detail);
       const button = document.createElement("button"); button.type = "button"; button.className = `btn ${selectedEmailMembers.has(member.id) ? "btn-danger" : "btn-outline"} btn-small`; button.textContent = selectedEmailMembers.has(member.id) ? "Remove" : "Add";
       button.addEventListener("click", () => {
         if (selectedEmailMembers.has(member.id)) selectedEmailMembers.delete(member.id); else selectedEmailMembers.set(member.id, member);
@@ -1590,6 +1600,156 @@
   function closeEmailMemberSelection() { $("[data-email-select-modal]").hidden = true; }
   function resetMasterEmail() {
     emailAudience = ""; selectedEmailMembers.clear(); $("[data-master-email-form]").reset(); setMasterEmailStatus(""); syncEmailComposer();
+  }
+  const employeeMoney = cents => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(cents || 0) / 100);
+  const employeeDate = value => value ? new Date(value).toLocaleString() : "Not recorded";
+  function setEmployeeAccountStatus(message = "", kind = "") {
+    const node = $("[data-employee-account-status]");
+    if (!node) return;
+    node.textContent = message;
+    node.dataset.kind = kind;
+  }
+  function appendEmpty(container, message) {
+    const empty = document.createElement("div");
+    empty.className = "campaign-empty";
+    empty.textContent = message;
+    container.append(empty);
+  }
+  async function refreshEmailHistory() {
+    if (!memberToken || !adminToken) return;
+    const container = $("[data-email-history-list]");
+    container.replaceChildren();
+    appendEmpty(container, "Loading sent email...");
+    const data = await request("/admin/email/history");
+    container.replaceChildren();
+    const messages = Array.isArray(data.messages) ? data.messages : [];
+    if (!messages.length) {
+      appendEmpty(container, "No Master account email has been recorded yet.");
+      return;
+    }
+    messages.forEach(message => {
+      const row = document.createElement("article");
+      row.className = "internal-email-row";
+      const details = document.createElement("div");
+      const title = document.createElement("h4");
+      title.textContent = message.subject || "No subject";
+      const recipient = document.createElement("p");
+      const identity = message.recipientName || message.userId || message.sellerId || message.toAddress;
+      recipient.textContent = `${message.fromAddress} to ${identity} <${message.toAddress}> | ${message.category} | ${message.status}`;
+      const preview = document.createElement("p");
+      preview.textContent = String(message.message || "").replace(/\s+/g, " ").slice(0, 220);
+      details.append(title, recipient, preview);
+      const sent = document.createElement("time");
+      sent.dateTime = message.sentAt || message.createdAt || "";
+      sent.textContent = employeeDate(message.sentAt || message.createdAt);
+      row.append(details, sent);
+      container.append(row);
+    });
+  }
+  function employeeStateChip(status) {
+    const chip = document.createElement("span");
+    chip.className = `employee-state-chip ${status || ""}`;
+    chip.textContent = status || "unknown";
+    return chip;
+  }
+  function employeeActionButton(label, className, dataset) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `btn ${className} btn-small`;
+    button.textContent = label;
+    Object.entries(dataset).forEach(([key, value]) => { button.dataset[key] = value; });
+    return button;
+  }
+  function renderEmployees(data) {
+    const employeeContainer = $("[data-employee-admin-list]");
+    const timeContainer = $("[data-employee-time-review-list]");
+    employeeContainer.replaceChildren();
+    timeContainer.replaceChildren();
+    const employees = Array.isArray(data.employees) ? data.employees : [];
+    const invitations = Array.isArray(data.invitations) ? data.invitations : [];
+    const entries = Array.isArray(data.timeEntries) ? data.timeEntries : [];
+    employees.forEach(employee => {
+      const card = document.createElement("article");
+      card.className = "employee-admin-card";
+      const details = document.createElement("div");
+      const heading = document.createElement("h4");
+      heading.textContent = `${employee.name || employee.email} | ${employee.employeeId}`;
+      const contact = document.createElement("p");
+      contact.textContent = [employee.email, employee.userId ? `User ID: ${employee.userId}` : "", employee.sellerId ? `Seller ID: ${employee.sellerId}` : ""].filter(Boolean).join(" | ");
+      const role = document.createElement("p");
+      role.textContent = `${employee.jobTitle} at ${employeeMoney(employee.hourlyRateCents)}/hour`;
+      const metrics = document.createElement("div");
+      metrics.className = "employee-admin-metrics";
+      [
+        `Submitted: ${Number(employee.submittedHours || 0).toFixed(2)} hr`,
+        `Approved: ${Number(employee.approvedHours || 0).toFixed(2)} hr`,
+        `Expected outstanding: ${employeeMoney(employee.expectedOutstandingPayCents)}`,
+        employee.payout?.payoutsEnabled ? "Direct deposit ready" : employee.payout?.detailsSubmitted ? "Stripe review in progress" : "Direct deposit incomplete"
+      ].forEach(value => {
+        const metric = document.createElement("span");
+        metric.textContent = value;
+        metrics.append(metric);
+      });
+      details.append(heading, contact, role, metrics);
+      const actions = document.createElement("div");
+      actions.className = "employee-admin-actions";
+      actions.append(employeeStateChip(employee.status));
+      if (employee.status !== "active") actions.append(employeeActionButton("Activate", "btn-outline", { employeeStatusMember: employee.memberId, employeeStatus: "active" }));
+      if (employee.status === "active") actions.append(employeeActionButton("Suspend", "btn-outline", { employeeStatusMember: employee.memberId, employeeStatus: "suspended" }));
+      if (employee.status !== "terminated") actions.append(employeeActionButton("Terminate", "btn-danger", { employeeStatusMember: employee.memberId, employeeStatus: "terminated" }));
+      card.append(details, actions);
+      employeeContainer.append(card);
+    });
+    invitations.filter(invitation => !invitation.usedAt).forEach(invitation => {
+      const card = document.createElement("article");
+      card.className = "employee-admin-card";
+      const details = document.createElement("div");
+      const heading = document.createElement("h4");
+      heading.textContent = `${invitation.employeeId} | invitation pending`;
+      const contact = document.createElement("p");
+      contact.textContent = `${invitation.email} | ${invitation.jobTitle} | ${employeeMoney(invitation.hourlyRateCents)}/hour`;
+      const expiry = document.createElement("p");
+      expiry.textContent = `${invitation.sentAt ? "Employment email sent" : "Activation link generated only"} | Expires ${employeeDate(invitation.expiresAt)}`;
+      details.append(heading, contact, expiry);
+      card.append(details, employeeStateChip(Date.parse(invitation.expiresAt) <= Date.now() ? "expired" : "pending"));
+      employeeContainer.append(card);
+    });
+    if (!employeeContainer.children.length) appendEmpty(employeeContainer, "No employee accounts or pending invitations yet.");
+    entries.forEach(entry => {
+      const row = document.createElement("article");
+      row.className = "employee-time-review-row";
+      const details = document.createElement("div");
+      const heading = document.createElement("h4");
+      heading.textContent = `${entry.employeeName || entry.employeeEmail} | ${entry.employeeId}`;
+      const shift = document.createElement("p");
+      shift.textContent = `${entry.workDate} | ${entry.startTime}-${entry.endTime} | ${Number(entry.hoursWorked || 0).toFixed(2)} hours | ${employeeMoney(entry.expectedPayCents)} expected`;
+      const note = document.createElement("p");
+      note.textContent = entry.note || "No shift note.";
+      details.append(heading, shift, note);
+      const actions = document.createElement("div");
+      actions.className = "employee-time-actions";
+      actions.append(employeeStateChip(entry.status));
+      if (entry.status === "submitted") {
+        actions.append(employeeActionButton("Approve", "btn-primary", { employeeTimeEntry: entry.id, employeeTimeStatus: "approved" }));
+        actions.append(employeeActionButton("Reject", "btn-danger", { employeeTimeEntry: entry.id, employeeTimeStatus: "rejected" }));
+      } else if (entry.status === "approved") {
+        actions.append(employeeActionButton("Mark Paid", "btn-primary", { employeeTimeEntry: entry.id, employeeTimeStatus: "paid" }));
+      }
+      row.append(details, actions);
+      timeContainer.append(row);
+    });
+    if (!entries.length) appendEmpty(timeContainer, "No employee hours have been submitted.");
+  }
+  async function refreshEmployees() {
+    if (!memberToken || !adminToken) return;
+    const employeeContainer = $("[data-employee-admin-list]");
+    const timeContainer = $("[data-employee-time-review-list]");
+    employeeContainer.replaceChildren();
+    timeContainer.replaceChildren();
+    appendEmpty(employeeContainer, "Loading employee accounts...");
+    appendEmpty(timeContainer, "Loading hours...");
+    const data = await request("/admin/employees");
+    renderEmployees(data);
   }
 
   function setTrackingStatus(message = "", kind = "") {
@@ -1778,6 +1938,97 @@
     try { await request(`/admin/reorders/${encodeURIComponent(button.dataset.reorderId)}`, { method: "POST", body: JSON.stringify({ status: button.dataset.reorderStatus }) }); await refreshAdminReorders(); }
     catch (error) { button.disabled = false; setAdminReordersStatus(error.message, "error"); }
   });
+  $("[data-employee-admin-refresh]")?.addEventListener("click", () => refreshEmployees().catch(error => setEmployeeAccountStatus(error.message, "error")));
+  $("[data-employee-account-form]")?.addEventListener("submit", async event => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const values = new FormData(form);
+    const sendEmail = Boolean(event.submitter?.hasAttribute("data-employee-send-email"));
+    const submitter = event.submitter || $("[data-employee-generate]");
+    const payload = {
+      email: String(values.get("email") || "").trim(),
+      jobTitle: String(values.get("jobTitle") || "").trim(),
+      hourlyRate: String(values.get("hourlyRate") || "").trim(),
+      note: String(values.get("note") || "").trim(),
+      sendEmail
+    };
+    submitter.disabled = true;
+    setEmployeeAccountStatus(sendEmail ? "Creating account invitation and sending from gig@crackpacks.com..." : "Generating protected employee account invitation...");
+    try {
+      const data = await request("/admin/employees/invitations", { method: "POST", body: JSON.stringify(payload) });
+      $("[data-employee-result-id]").textContent = `${data.employeeId} | ${data.jobTitle}`;
+      $("[data-employee-result-copy]").textContent = data.emailSent
+        ? `Employment email sent from gig@crackpacks.com to ${data.emailAddress}.`
+        : `Activation link generated for ${data.emailAddress}. No email was sent.`;
+      $("[data-employee-result-url]").value = data.activationUrl || "";
+      $("[data-employee-result-expires]").dateTime = data.expiresAt || "";
+      $("[data-employee-result-expires]").textContent = `Expires ${employeeDate(data.expiresAt)}`;
+      $("[data-employee-invitation-result]").hidden = false;
+      setEmployeeAccountStatus(
+        data.emailSent
+          ? "Employee account invitation created and employment email sent."
+          : sendEmail
+            ? "Invitation created, but email delivery was not confirmed. Copy the activation link and check the sending-domain setup."
+            : "Employee account invitation generated.",
+        sendEmail && !data.emailSent ? "error" : "success"
+      );
+      if (!sendEmail) {
+        const generateButton = $("[data-employee-generate]");
+        generateButton.classList.remove("is-celebrating");
+        void generateButton.offsetWidth;
+        generateButton.classList.add("is-celebrating");
+        setTimeout(() => generateButton.classList.remove("is-celebrating"), 900);
+      }
+      form.reset();
+      await refreshEmployees();
+    } catch (error) {
+      setEmployeeAccountStatus(error.message, "error");
+    } finally {
+      submitter.disabled = false;
+    }
+  });
+  $("[data-employee-result-copy]")?.addEventListener("click", async () => {
+    const input = $("[data-employee-result-url]");
+    if (!input?.value) return;
+    try {
+      await navigator.clipboard.writeText(input.value);
+      setEmployeeAccountStatus("Employee activation link copied.", "success");
+    } catch {
+      input.select();
+      document.execCommand("copy");
+      setEmployeeAccountStatus("Employee activation link copied.", "success");
+    }
+  });
+  $("[data-employee-admin-list]")?.addEventListener("click", async event => {
+    const button = event.target.closest("[data-employee-status-member]");
+    if (!button) return;
+    const status = button.dataset.employeeStatus;
+    if ((status === "suspended" || status === "terminated") && !confirm(`${status === "terminated" ? "Terminate" : "Suspend"} this employee account?`)) return;
+    button.disabled = true;
+    try {
+      await request(`/admin/employees/${encodeURIComponent(button.dataset.employeeStatusMember)}/status`, { method: "POST", body: JSON.stringify({ status }) });
+      setEmployeeAccountStatus(`Employee account set to ${status}.`, "success");
+      await refreshEmployees();
+    } catch (error) {
+      button.disabled = false;
+      setEmployeeAccountStatus(error.message, "error");
+    }
+  });
+  $("[data-employee-time-review-list]")?.addEventListener("click", async event => {
+    const button = event.target.closest("[data-employee-time-entry]");
+    if (!button) return;
+    const status = button.dataset.employeeTimeStatus;
+    if (status === "paid" && !confirm("Mark this expected-pay entry paid? This records status only and does not initiate a bank transfer.")) return;
+    button.disabled = true;
+    try {
+      await request(`/admin/employees/time-entries/${encodeURIComponent(button.dataset.employeeTimeEntry)}`, { method: "POST", body: JSON.stringify({ status }) });
+      setEmployeeAccountStatus(`Hours entry set to ${status}.`, "success");
+      await refreshEmployees();
+    } catch (error) {
+      button.disabled = false;
+      setEmployeeAccountStatus(error.message, "error");
+    }
+  });
   $("[data-identity-review-refresh]").addEventListener("click", () => refreshIdentityReviews().catch(error => setIdentityReviewStatus(error.message, "error")));
   $("[data-identity-review-list]").addEventListener("click", async event => {
     const button = event.target.closest("[data-identity-decision]");
@@ -1867,6 +2118,7 @@
   document.querySelectorAll("[data-email-select-close]").forEach(button => button.addEventListener("click", closeEmailMemberSelection));
   $("[data-email-select-finished]").addEventListener("click", () => { closeEmailMemberSelection(); syncEmailComposer(); $("[data-master-email-form] input[name='subject']").focus(); });
   $("[data-email-member-search]").addEventListener("input", () => { clearTimeout(emailMemberSearchTimer); emailMemberSearchTimer = setTimeout(() => searchEmailMembers().catch(error => showStatus(error.message, "error")), 220); });
+  $("[data-email-history-refresh]").addEventListener("click", () => refreshEmailHistory().catch(error => setMasterEmailStatus(error.message, "error")));
   $("[data-email-cancel]").addEventListener("click", resetMasterEmail);
   $("[data-master-email-form]").addEventListener("submit", async event => {
     event.preventDefault();
@@ -1881,6 +2133,7 @@
       const data = await request("/admin/email", { method: "POST", body: JSON.stringify(payload) });
       setMasterEmailStatus(`Email queued for ${Number(data.recipientCount || 0)} member${Number(data.recipientCount || 0) === 1 ? "" : "s"}.`, "success");
       event.currentTarget.reset(); emailAudience = ""; selectedEmailMembers.clear(); syncEmailComposer();
+      await refreshEmailHistory();
     } catch (error) { setMasterEmailStatus(error.message, "error"); }
     finally { button.textContent = "Send"; syncEmailComposer(); }
   });
@@ -1992,7 +2245,7 @@
     else if (!$("[data-campaign-share-modal]").hidden) closeCampaignShare();
     else if (!$("[data-campaign-modal]").hidden) closeCampaignModal();
   });
-  $("[data-admin-refresh]").addEventListener("click", () => Promise.all([refreshDashboard(), refreshCampaigns(), refreshInventory(), refreshAdminOrders()]).catch(error => showStatus(error.message, "error")));
+  $("[data-admin-refresh]").addEventListener("click", () => Promise.all([refreshDashboard(), refreshCampaigns(), refreshInventory(), refreshAdminOrders(), refreshEmployees(), refreshEmailHistory()]).catch(error => showStatus(error.message, "error")));
   $("[data-admin-filter]").addEventListener("change", () => refreshDashboard().catch(error => showStatus(error.message, "error")));
   $("[data-admin-search]").addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => refreshDashboard().catch(error => showStatus(error.message, "error")), 250); });
   ["[data-admin-date-from]", "[data-admin-date-to]"].forEach(selector => $(selector).addEventListener("change", () => renderClaims(legacyClaimsState)));

@@ -15,6 +15,10 @@
   const querySellerActivationToken = String(qs.get("seller_activation") || "").slice(0, 120);
   if (querySellerActivationToken) localStorage.setItem(SELLER_ACTIVATION_KEY, querySellerActivationToken);
   const sellerActivationToken = querySellerActivationToken || String(localStorage.getItem(SELLER_ACTIVATION_KEY) || "").slice(0, 120);
+  const EMPLOYEE_ACTIVATION_KEY = "cp_pending_employee_activation";
+  const queryEmployeeActivationToken = String(qs.get("employee_activation") || "").slice(0, 120);
+  if (queryEmployeeActivationToken) localStorage.setItem(EMPLOYEE_ACTIVATION_KEY, queryEmployeeActivationToken);
+  const employeeActivationToken = queryEmployeeActivationToken || String(localStorage.getItem(EMPLOYEE_ACTIVATION_KEY) || "").slice(0, 120);
   const normalizeOfferToken = value => {
     const candidate = String(value || "").trim().toUpperCase().slice(0, 64);
     return /^OFR[A-HJ-NP-Z2-9]{32}$/.test(candidate) ? candidate : "";
@@ -42,12 +46,14 @@
   let turnstileWidgetId = null;
   let authRequestSent = false;
   let authRequestPending = false;
-  let authMode = hasAttachedReferral || qs.get("mode") === "signup" ? "signup" : "signin";
+  let authMode = hasAttachedReferral || employeeActivationToken || qs.get("mode") === "signup" ? "signup" : "signin";
   const returnTarget = String(qs.get("return") || "").trim().toLowerCase();
   const SELLER_UPGRADE_KEY = "cp_seller_upgrade_requested";
   const sellerIntentRequested = returnTarget === "seller";
+  const employeeIntentRequested = returnTarget === "employee" || Boolean(employeeActivationToken);
   if (sellerIntentRequested) sessionStorage.setItem(SELLER_UPGRADE_KEY, "true");
   const isSellerSetupIntent = () => sellerIntentRequested || sessionStorage.getItem(SELLER_UPGRADE_KEY) === "true";
+  const isEmployeeSetupIntent = () => employeeIntentRequested && Boolean(employeeActivationToken);
   let accountState = null;
   let welcomeDiscountLoaded = false;
   let attachedReferralValid = !hasAttachedReferral;
@@ -71,6 +77,7 @@
   let pendingSellerIdentityStart = false;
   let portalLauncherShown = false;
   let sellerActivationFinalizePending = false;
+  let employeeActivationFinalizePending = false;
   const STREAM_CREDITS_REFRESH_FOCUS_GRACE_MS = 2 * 60 * 1000;
   const authModeCopy = {
     signin: {
@@ -116,7 +123,31 @@
       sentStatus: "Seller verification email sent. Check your inbox to continue setup."
     }
   };
-  const authCopyForMode = mode => (isSellerSetupIntent() ? sellerAuthModeCopy : authModeCopy)[mode === "signup" ? "signup" : "signin"];
+  const employeeAuthModeCopy = {
+    signin: {
+      kicker: "Employee setup - Step 1 of 5",
+      title: "Sign in to activate your employee account",
+      description: "Use the invited email or User ID and password. Crack Packs will continue with passkey, legal profile, Stripe ID verification, and employee activation.",
+      emailLabel: "Invited employee email or User ID",
+      sendLabel: "Sign in to employee setup",
+      modalTitle: "Check inbox for your employee sign-in link",
+      modalCopy: "Open the secure email link, then finish User ID, passkey, legal profile, Stripe ID verification, and employee activation.",
+      sentStatus: "If that email matches the invitation, a secure employee setup link is on the way."
+    },
+    signup: {
+      kicker: "Employee setup - Step 1 of 5",
+      title: "Verify your employment email",
+      description: "Create the account for the email named in the employment invitation. Crack Packs will keep the employee setup attached through identity verification.",
+      emailLabel: "Invited employee email",
+      sendLabel: "Email employee verification link",
+      modalTitle: "Check inbox to create your employee account",
+      modalCopy: "Open the secure signup link, then complete User ID, passkey, legal profile, Stripe ID verification, and protected employee activation.",
+      sentStatus: "Employee verification email sent. Check your inbox to continue setup."
+    }
+  };
+  const authCopyForMode = mode => (
+    isEmployeeSetupIntent() ? employeeAuthModeCopy : (isSellerSetupIntent() ? sellerAuthModeCopy : authModeCopy)
+  )[mode === "signup" ? "signup" : "signin"];
   function resetTurnstile() {
     turnstileTokenValue = "";
     if (turnstileWidgetId !== null && window.turnstile?.reset) {
@@ -133,7 +164,8 @@
       resetTurnstile();
     }
     const copy = authCopyForMode(authMode);
-    document.querySelectorAll("[data-seller-setup-roadmap]").forEach(node => { node.hidden = !isSellerSetupIntent(); });
+    document.querySelectorAll("[data-seller-setup-roadmap]").forEach(node => { node.hidden = !isSellerSetupIntent() || isEmployeeSetupIntent(); });
+    document.querySelectorAll("[data-employee-setup-roadmap]").forEach(node => { node.hidden = !isEmployeeSetupIntent(); });
     document.querySelectorAll("[data-auth-mode]").forEach(button => {
       const active = button.dataset.authMode === authMode;
       button.classList.toggle("is-active", active);
@@ -471,7 +503,7 @@
   async function loadAccount() {
     if (!token) return;
     try {
-      const data = await request(isSellerSetupIntent() || identityReturnRequested ? "/me?syncIdentity=1" : "/me");
+      const data = await request(isSellerSetupIntent() || isEmployeeSetupIntent() || identityReturnRequested ? "/me?syncIdentity=1" : "/me");
       renderAccount(data);
       return data;
     } catch {
@@ -488,6 +520,13 @@
     await request("/portal/mode", { method: "POST", body: JSON.stringify({ mode: "seller" }) });
     setSellerPortalState();
     window.location.replace("streams.html");
+  }
+  async function activateEmployeeInvitation() {
+    if (!employeeActivationToken) throw new Error("The employee invitation is no longer attached. Open the newest employment email.");
+    const result = await request("/employee/activate", { method: "POST", body: JSON.stringify({ token: employeeActivationToken }) });
+    localStorage.removeItem(EMPLOYEE_ACTIVATION_KEY);
+    window.location.replace(result.dashboardUrl || "employee.html");
+    return result;
   }
   const setIdentityStatusResult = (message = "", kind = "") => {
     const node = $("[data-identity-status-result]");
@@ -515,9 +554,16 @@
     const stripeStatus = String(account?.stripeIdentityStatus || "").toLowerCase();
     const identityStatus = String(account?.identityStatus || "").toLowerCase();
     if (account?.identityStatus === "verified" && account?.stripeIdentityStatus === "verified") {
-      showIdentityStatusPanel("PASS: Stripe ID verification is complete. Complete account setup to activate Seller Portal access.", "success");
-      $("[data-open-verified-seller-portal]").hidden = false;
-      setIdentityStatusResult("PASS accepted. Complete account setup when you are ready. The final email sends after Seller Portal access is granted.", "success");
+      const employeeSetup = isEmployeeSetupIntent();
+      showIdentityStatusPanel(employeeSetup
+        ? "PASS: Stripe ID verification is complete. Activate the protected employee account."
+        : "PASS: Stripe ID verification is complete. Complete account setup to activate Seller Portal access.", "success");
+      const completeButton = $("[data-open-verified-seller-portal]");
+      completeButton.hidden = false;
+      completeButton.textContent = employeeSetup ? "ACTIVATE EMPLOYEE ACCOUNT" : "COMPLETE ACCOUNT SET-UP";
+      setIdentityStatusResult(employeeSetup
+        ? "PASS accepted. Activate the employee account to open Hours Worked, Expected Pay, and Direct Deposit Setup."
+        : "PASS accepted. Complete account setup when you are ready. The final email sends after Seller Portal access is granted.", "success");
       return true;
     }
     if (["processing", "manual_review", "pending_review"].includes(stripeStatus) || ["pending_review", "manual_review"].includes(identityStatus)) {
@@ -532,6 +578,10 @@
     return false;
   }
   async function openVerifiedSellerPortalFromStatus() {
+    if (isEmployeeSetupIntent()) {
+      await activateEmployeeInvitation();
+      return;
+    }
     let account = await request("/me?syncIdentity=1");
     accountState = account;
     if (account.sellerUsername && account.identityStatus === "verified" && account.stripeIdentityStatus === "verified" && !account.sellerAccess) {
@@ -548,9 +598,16 @@
       const result = await request("/identity/sync", { method: "POST", body: JSON.stringify({ notify: true }) });
       const status = String(result.status || result.stripeStatus || "").toLowerCase();
       if (result.verified || status === "verified") {
-        showIdentityStatusPanel("PASS: Stripe ID verification is complete. Complete account setup to activate Seller Portal access.", "success");
-        $("[data-open-verified-seller-portal]").hidden = false;
-        setIdentityStatusResult("PASS accepted. Complete account setup when you are ready. The final email sends after Seller Portal access is granted.", "success");
+        const employeeSetup = isEmployeeSetupIntent();
+        showIdentityStatusPanel(employeeSetup
+          ? "PASS: Stripe ID verification is complete. Activate the protected employee account."
+          : "PASS: Stripe ID verification is complete. Complete account setup to activate Seller Portal access.", "success");
+        const completeButton = $("[data-open-verified-seller-portal]");
+        completeButton.hidden = false;
+        completeButton.textContent = employeeSetup ? "ACTIVATE EMPLOYEE ACCOUNT" : "COMPLETE ACCOUNT SET-UP";
+        setIdentityStatusResult(employeeSetup
+          ? "PASS accepted. Activate the employee account to continue."
+          : "PASS accepted. Complete account setup when you are ready. The final email sends after Seller Portal access is granted.", "success");
         return;
       }
       if (["processing", "manual_review", "pending_review"].includes(status)) {
@@ -577,11 +634,13 @@
   }
   async function finalizeSellerIdentityReturn() {
     if (!token) {
-      showStatus("Stripe ID verification returned. Sign in again so Crack Packs can finish Seller Portal activation.", "success");
+      showStatus(isEmployeeSetupIntent()
+        ? "Stripe ID verification returned. Sign in again with the invited email so Crack Packs can finish employee activation."
+        : "Stripe ID verification returned. Sign in again so Crack Packs can finish Seller Portal activation.", "success");
       show("[data-auth-panel]", true);
       return false;
     }
-    setSellerUpgradeRequested(true);
+    if (!isEmployeeSetupIntent()) setSellerUpgradeRequested(true);
     showStatus("Stripe ID verification returned. Check the live Stripe status below.", "success");
     showIdentityStatusPanel();
     const account = await loadAccount().catch(() => null);
@@ -960,13 +1019,17 @@
     if (!identityReturnRequested) show("[data-identity-status-panel]", false);
     const sellerAllowed = Boolean(data.sellerAccess && data.identityStatus === "verified" && data.stripeIdentityStatus === "verified");
     const stripeSellerVerified = data.identityStatus === "verified" && data.stripeIdentityStatus === "verified";
+    const employeeAllowed = Boolean(data.employeeAccess && stripeSellerVerified);
     const masterCandidate = Boolean(data.isMaster || data.isMasterCandidate || data.isOwnerEmail);
     const needsSellerUpgradeFlow = Boolean(sellerUpgradeRequested());
+    const needsEmployeeUpgradeFlow = Boolean(isEmployeeSetupIntent() && !employeeAllowed);
+    const needsProtectedIdentityFlow = needsSellerUpgradeFlow || needsEmployeeUpgradeFlow;
+    const protectedAccessAllowed = needsEmployeeUpgradeFlow ? employeeAllowed : sellerAllowed;
     const hasSellerLegalProfile = Boolean(data.hasSellerLegalProfile || (data.firstName && data.lastName && data.birthDate));
     const needsBuyerId = !data.buyerUsername;
     const needsSellerId = Boolean(needsSellerUpgradeFlow && !data.sellerUsername);
     const reportedRoles = Array.isArray(data.roles) && data.roles.length ? data.roles : (data.isAdmin ? ["buyer", "seller", "master"] : (sellerAllowed ? ["buyer", "seller"] : ["buyer"]));
-    const roles = reportedRoles.filter(role => (role !== "seller" || sellerAllowed) && (role !== "master" || data.isMaster));
+    const roles = reportedRoles.filter(role => (role !== "seller" || sellerAllowed) && (role !== "employee" || employeeAllowed) && (role !== "master" || data.isMaster));
     if (!roles.includes("buyer")) roles.unshift("buyer");
     localStorage.setItem("cp_can_seller_portal", sellerAllowed ? "true" : "false");
     if (!sellerAllowed && (sessionStorage.getItem("cp_portal_mode") || localStorage.getItem("cp_portal_mode")) === "seller") {
@@ -974,7 +1037,7 @@
       localStorage.setItem("cp_portal_mode", "buyer");
     }
     show("[data-auth-panel]", false);
-    show("[data-seller-upgrade-panel]", !sellerAllowed && !needsSellerUpgradeFlow);
+    show("[data-seller-upgrade-panel]", !sellerAllowed && !needsSellerUpgradeFlow && !needsEmployeeUpgradeFlow);
     if (!data.passwordConfigured) {
       show("[data-password-panel]", true);
       show("[data-buyer-username-panel]", false);
@@ -985,7 +1048,18 @@
       return;
     }
     show("[data-password-panel]", false);
-    if (needsSellerUpgradeFlow && !needsSellerId && !data.deviceVerified) {
+    if (needsEmployeeUpgradeFlow && needsBuyerId) {
+      show("[data-buyer-username-panel]", true);
+      show("[data-device-panel]", false);
+      show("[data-profile-panel]", false);
+      show("[data-seller-username-panel]", false);
+      show("[data-dashboard]", false);
+      $("[data-buyer-username]").value = data.buyerUsername || "";
+      $("[data-save-buyer-username]").disabled = true;
+      showBuyerUsernameStatus("Check and reserve the employee User ID before passkey and Stripe Identity verification.");
+      return;
+    }
+    if (needsProtectedIdentityFlow && !needsSellerId && !data.deviceVerified) {
       show("[data-buyer-username-panel]", false);
       show("[data-device-panel]", true);
       show("[data-profile-panel]", false);
@@ -1006,7 +1080,7 @@
       return;
     }
     show("[data-seller-username-panel]", false);
-    if (needsSellerUpgradeFlow && !sellerAllowed && !stripeSellerVerified) {
+    if (needsProtectedIdentityFlow && !protectedAccessAllowed && !stripeSellerVerified) {
       show("[data-buyer-username-panel]", false);
       const stripeStatus = String(data.stripeIdentityStatus || "").toLowerCase();
       const identityStatus = String(data.identityStatus || "").toLowerCase();
@@ -1027,7 +1101,9 @@
       }
       if (awaitingIdentity) {
         const inReview = ["pending_review", "manual_review"].includes(data.identityStatus) || data.stripeIdentityStatus === "manual_review";
-        showStatus(inReview ? "Seller identity is in manual review. We will unlock Seller Portal as soon as it clears." : "Seller legal profile saved. Complete Stripe Identity or wait for Stripe to finish processing.", "success");
+        showStatus(inReview
+          ? `${needsEmployeeUpgradeFlow ? "Employee" : "Seller"} identity is in manual review. Access unlocks after it clears.`
+          : `${needsEmployeeUpgradeFlow ? "Employee" : "Seller"} legal profile saved. Complete Stripe Identity or wait for Stripe to finish processing.`, "success");
       }
       return;
     }
@@ -1058,7 +1134,18 @@
           sellerActivationFinalizePending = false;
           showStatus(error.message, "error");
           show("[data-dashboard]", true);
-        });
+      });
+      return;
+    }
+    if (needsEmployeeUpgradeFlow && stripeSellerVerified && !employeeAllowed && !employeeActivationFinalizePending) {
+      employeeActivationFinalizePending = true;
+      show("[data-dashboard]", false);
+      showStatus("Finalizing employee access now that Stripe ID verification is complete...", "success");
+      activateEmployeeInvitation().catch(error => {
+        employeeActivationFinalizePending = false;
+        showStatus(error.message, "error");
+        show("[data-dashboard]", true);
+      });
       return;
     }
     show("[data-seller-username-panel]", false);
@@ -1075,6 +1162,7 @@
     show("[data-buyer-username-panel]", false);
     show("[data-password-panel]", false);
     sellerActivationFinalizePending = false;
+    employeeActivationFinalizePending = false;
     show("[data-dashboard]", true);
     if (sellerAllowed) setSellerUpgradeRequested(false);
     $("[data-member-name]").textContent = data.buyerUsername || data.firstName || "Collector";
@@ -1083,7 +1171,7 @@
     $("[data-account-email]").textContent = data.email || "Not provided";
     $("[data-account-buyer-id]").textContent = data.buyerUsername || "Not provided";
     const rolesNode = $("[data-account-role-badges]");
-    if (rolesNode) rolesNode.innerHTML = roles.map(role => `<span class="account-role-badge" data-role="${escapeHtml(role)}">${escapeHtml(role === "master" ? "Master Account" : role === "seller" ? "Seller Account" : "Buyer Account")}</span>`).join("");
+    if (rolesNode) rolesNode.innerHTML = roles.map(role => `<span class="account-role-badge" data-role="${escapeHtml(role)}">${escapeHtml(role === "master" ? "Master Account" : role === "employee" ? "Employee Account" : role === "seller" ? "Seller Account" : "Buyer Account")}</span>`).join("");
     $("[data-admin-link]").hidden = !data.isAdmin;
     document.querySelectorAll("[data-account-seller-tab]").forEach(button => {
       button.hidden = false;
@@ -1103,6 +1191,7 @@
       button.classList.toggle("is-active", Boolean(data.isMaster || data.isAdmin));
     });
     document.querySelectorAll("[data-master-account-subnav]").forEach(node => { node.hidden = !masterCandidate; });
+    document.querySelectorAll("[data-account-employee-tab]").forEach(link => { link.hidden = !employeeAllowed; });
     show("[data-portal-choice-panel]", true);
     const sellerChoice = $("[data-portal-seller-choice]");
     if (sellerChoice) {
@@ -1353,11 +1442,28 @@
         token = data.token; localStorage.setItem("cp_rewards_token", token);
         authRequestSent = false;
         resetTurnstile();
-        showStatus(isSellerSetupIntent() ? "Signed in. Continue Seller verification." : "Signed in to your Profile.", "success");
+        showStatus(isEmployeeSetupIntent()
+          ? "Signed in. Continue employee identity verification."
+          : isSellerSetupIntent()
+            ? "Signed in. Continue Seller verification."
+            : "Signed in to your Profile.", "success");
         renderAccount(data.account);
         return;
       }
-      const authResult = await request("/auth/request", { method: "POST", body: JSON.stringify({ email, referralCode: submittedReferral, ownerReferralToken: submittedOwnerReferral, sellerActivationToken, offerToken, authMode: submittedMode, returnTo: requestedPortal === "master" ? "admin" : "rewards", turnstileToken }) });
+      const authResult = await request("/auth/request", {
+        method: "POST",
+        body: JSON.stringify({
+          email,
+          referralCode: submittedReferral,
+          ownerReferralToken: submittedOwnerReferral,
+          sellerActivationToken,
+          employeeActivationToken,
+          offerToken,
+          authMode: submittedMode,
+          returnTo: requestedPortal === "master" ? "admin" : "rewards",
+          turnstileToken
+        })
+      });
       authRequestSent = true;
       resetTurnstile();
       sendButton.textContent = "Check Inbox 10 min code";
@@ -1368,9 +1474,11 @@
       $("[data-email-modal-copy]").textContent = copy.modalCopy;
       const modalSteps = $("[data-email-modal-steps]");
       if (modalSteps) {
-        modalSteps.innerHTML = isSellerSetupIntent()
-          ? "<li>Open the email from Crack Packs.</li><li>Tap the secure seller account link.</li><li>Finish Seller ID check, passkey, legal profile, Stripe ID verification, and activation.</li>"
-          : "<li>Open the email from Crack Packs.</li><li>Tap the secure account link in the message.</li><li>Create your password, claim a Buyer ID, then optionally start Seller ID verification.</li>";
+        modalSteps.innerHTML = isEmployeeSetupIntent()
+          ? "<li>Open the employment verification email.</li><li>Tap the secure employee account link.</li><li>Finish User ID, passkey, legal profile, Stripe ID verification, and activation.</li>"
+          : isSellerSetupIntent()
+            ? "<li>Open the email from Crack Packs.</li><li>Tap the secure seller account link.</li><li>Finish Seller ID check, passkey, legal profile, Stripe ID verification, and activation.</li>"
+            : "<li>Open the email from Crack Packs.</li><li>Tap the secure account link in the message.</li><li>Create your password, claim a Buyer ID, then optionally start Seller ID verification.</li>";
       }
       const help = $("[data-email-modal-help]");
       const helpUrl = safeHttpUrl(config.youtubeChannelUrl);
@@ -1409,7 +1517,10 @@
     if (button) button.disabled = true;
     try {
       showStatus("Opening secure Stripe Identity verification...", "success");
-      const identity = await request("/identity/session", { method: "POST", body: JSON.stringify({ force }) });
+      const identity = await request("/identity/session", {
+        method: "POST",
+        body: JSON.stringify({ force, returnTo: isEmployeeSetupIntent() ? "employee" : "seller" })
+      });
       $("[data-seller-identity-modal]").hidden = true;
       pendingSellerIdentityStart = false;
       if (identity.url) {
@@ -1912,7 +2023,9 @@
         return;
       }
       await loadAccount();
-      if (sellerActivationToken && token) {
+      if (employeeActivationToken && !token) {
+        showStatus("Employee activation is attached. Sign in with the invited email, or choose Create Account if that email does not have a Crack Packs account yet.", "success");
+      } else if (sellerActivationToken && token) {
         try {
           const result = await request("/seller/activate", { method: "POST", body: JSON.stringify({ token: sellerActivationToken }) });
           localStorage.removeItem(SELLER_ACTIVATION_KEY);
@@ -1938,6 +2051,11 @@
       const signedIn = data.authFlow === "signin" || data.authFlow === "admin" || data.authFlow === "legacy";
       showStatus(signedIn ? "Signed in to your Profile." : "Email verified. Your buyer account is ready.", "success");
       renderAccount(data.account);
+      if (employeeActivationToken && signedIn && data.account.employeeAccess) {
+        localStorage.removeItem(EMPLOYEE_ACTIVATION_KEY);
+        window.location.replace("employee.html");
+        return;
+      }
       if (sellerActivationToken && signedIn) {
         try {
           const activation = await request("/seller/activate", { method: "POST", body: JSON.stringify({ token: sellerActivationToken }) });

@@ -852,12 +852,17 @@ button { color: inherit; }
   .container { width: min(100% - 24px, var(--max-width)); }
   .section { padding: 72px 0; }
   .nav-shell { min-height: 70px; }
+  .nav-shell.has-menu-toggle.has-live-star.has-account-cta { gap: 6px; }
   .brand { width: min(250px, 68vw); }
   .nav-shell.has-live-star .brand { width: min(210px, 44vw); }
   .nav-shell.has-account-cta .brand { width: min(128px, 31vw); }
-  .nav-live-star { width: 56px; }
-  .nav-account-main-bubble {
-    min-width: 104px;
+  .nav-shell.has-menu-toggle.has-live-star.has-account-cta .brand { width: min(100px, 27vw); }
+  .nav-live-star,
+  .nav-shell.has-menu-toggle .nav-live-star { width: 52px; }
+  .nav-shell.has-menu-toggle .menu-toggle { flex: 0 0 42px; width: 42px; padding: 9px; }
+  .nav-account-main-bubble,
+  .nav-shell.has-menu-toggle .nav-account-main-bubble {
+    min-width: 96px;
     min-height: 44px;
     padding: 0 10px;
   }

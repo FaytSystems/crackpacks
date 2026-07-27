@@ -7,10 +7,10 @@
   <meta name="description" content="Sign in to claim Crack Packs discounts, create a personal invite QR code, and earn referral rewards.">
   <meta name="theme-color" content="#07091b">
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="assets/css/styles.css?v=1.9.7">
+  <link rel="stylesheet" href="assets/css/styles.css?v=1.9.8">
   <link rel="stylesheet" href="assets/css/referral.css?v=3.5.0">
   <link rel="stylesheet" href="assets/css/rewards-modal.css?v=2.2.0">
-  <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.6.3">
+  <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.6.4">
 </head>
 <body data-page="rewards">
   <a class="skip-link" href="#main">Skip to content</a>
@@ -88,6 +88,16 @@
               <li>Step 5 of 5: complete Stripe ID verification and account activation.</li>
             </ol>
           </div>
+          <div class="email-modal-steps seller-setup-roadmap" data-employee-setup-roadmap hidden>
+            <strong>Employee verification path</strong>
+            <ol>
+              <li>Step 1 of 5: verify the invited employment email.</li>
+              <li>Step 2 of 5: check and reserve the employee User ID.</li>
+              <li>Step 3 of 5: create the secure device passkey.</li>
+              <li>Step 4 of 5: enter legal details for account verification.</li>
+              <li>Step 5 of 5: complete Stripe ID verification and activate the employee account.</li>
+            </ol>
+          </div>
           <form data-request-form>
             <label><span data-auth-email-label>Account email or User ID</span><input name="email" type="text" autocomplete="username" required maxlength="254" placeholder="email@example.com or SellerID"></label>
             <label data-password-login-row hidden>Password<input name="password" type="password" autocomplete="current-password" maxlength="128" placeholder="Your Crack Packs password"></label>
@@ -100,7 +110,7 @@
       <section class="reward-card" data-password-panel hidden>
         <p class="eyebrow">Account security</p>
         <h2>Create your account password</h2>
-        <p>Use this password for normal Sign In. After this, Crack Packs will also ask for a secure device passkey before protected seller and master tools.</p>
+        <p>Use this password for normal Sign In. After this, Crack Packs will also ask for a secure device passkey before protected seller, employee, and master tools.</p>
         <form data-password-form>
           <label>Password<input name="password" type="password" autocomplete="new-password" required minlength="10" maxlength="128" placeholder="At least 10 characters"></label>
           <label>Confirm password<input name="confirmPassword" type="password" autocomplete="new-password" required minlength="10" maxlength="128"></label>
@@ -146,7 +156,7 @@
       </section>
 
       <section class="reward-card identity-status-card" data-identity-status-panel hidden>
-        <p class="eyebrow">Seller verification - Step 5 of 5</p>
+        <p class="eyebrow">Protected account verification - Step 5 of 5</p>
         <h2>Stripe ID Verify Status</h2>
         <p data-identity-status-copy>Stripe has accepted your ID verification for processing. Check the live status when you are ready.</p>
         <button class="identity-status-bubble" type="button" data-check-stripe-identity-status>CHECK STATUS OF STRIPE ID VERIFY</button>
@@ -191,6 +201,7 @@
         <nav class="account-dashboard-subnav account-dashboard-roles" aria-label="Account portals">
           <button class="account-subnav-pill is-active" type="button" data-open-buyer-portal>Buyer Account</button>
           <button class="account-subnav-pill" type="button" data-start-seller-upgrade data-account-seller-tab>Seller Verification</button>
+          <a class="account-subnav-pill" href="employee.html" data-account-employee-tab hidden>Employee Account</a>
           <button class="account-subnav-pill" type="button" data-open-master-portal data-account-master-tab hidden>Master Account</button>
         </nav>
         <nav class="account-dashboard-subnav account-dashboard-settings" aria-label="Profile settings pages">
@@ -551,8 +562,8 @@
   </div>
   <script src="assets/js/config.js?v=3.0.0"></script>
   <script src="assets/js/app.js?v=1.9.6"></script>
-  <script src="assets/js/nav-profile.js?v=4.2.0"></script>
+  <script src="assets/js/nav-profile.js?v=4.3.0"></script>
   <script src="assets/js/portal-mode.js?v=1.1.5"></script>
-  <script src="assets/js/referral.js?v=3.5.0"></script>
+  <script src="assets/js/referral.js?v=3.6.0"></script>
 </body>
 </html>

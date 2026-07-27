@@ -161,6 +161,15 @@ function corsFor(request, env) {
 }
 async function body(request) { try { return await request.json(); } catch { throw new Error("INVALID_JSON"); } }
 async function sendEmail(env, to, subject, html, idempotencyKey = id(), fromAddress = "rewards@crackpacks.com") {
+  const senderNames = {
+    "rewards@crackpacks.com": "Crack Packs Rewards",
+    "orders@crackpacks.com": "Crack Packs Orders",
+    "alerts@crackpacks.com": "Crack Packs Alerts",
+    "support@crackpacks.com": "Crack Packs Support",
+    "hello@crackpacks.com": "Crack Packs",
+    "gig@crackpacks.com": "Crack Packs Employment"
+  };
+  const senderName = senderNames[fromAddress] || "Crack Packs";
   const text = String(html || "")
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/p>|<\/h[1-6]>/gi, "\n")
@@ -182,7 +191,7 @@ async function sendEmail(env, to, subject, html, idempotencyKey = id(), fromAddr
         "Idempotency-Key": idempotencyKey
       },
       body: JSON.stringify({
-        from: `${fromAddress === "orders@crackpacks.com" ? "Crack Packs Orders" : "Crack Packs Rewards"} <${fromAddress}>`,
+        from: `${senderName} <${fromAddress}>`,
         to: [to],
         subject,
         html,
@@ -199,11 +208,10 @@ async function sendEmail(env, to, subject, html, idempotencyKey = id(), fromAddr
     if (env.ENVIRONMENT === "development") return;
     throw new Error(env.RESEND_API_KEY ? "EMAIL_DELIVERY_FAILED" : "EMAIL_NOT_CONFIGURED");
   }
-  if (fromAddress !== "rewards@crackpacks.com") throw new Error("EMAIL_NOT_CONFIGURED");
   try {
     await env.REWARDS_EMAIL.send({
       to,
-      from: { email: "rewards@crackpacks.com", name: "Crack Packs Rewards" },
+      from: { email: fromAddress, name: senderName },
       replyTo: "support@crackpacks.com",
       subject,
       html,
@@ -216,7 +224,6 @@ async function sendEmail(env, to, subject, html, idempotencyKey = id(), fromAddr
   }
 }
 async function sendMemberEmailBatch(env, recipients, subject, message, idempotencyKey, senderAddress = "rewards@crackpacks.com") {
-  if (!env.RESEND_API_KEY) throw new Error("MEMBER_EMAIL_NOT_CONFIGURED");
   const messageHtml = escapeHtml(message).replace(/\r?\n/g, "<br>");
   const payload = recipients.map(recipient => ({
     from: `Crack Packs <${senderAddress}>`,
@@ -225,17 +232,24 @@ async function sendMemberEmailBatch(env, recipients, subject, message, idempoten
     html: `<div style="font-family:Arial,sans-serif;color:#111827"><h1 style="color:#151936">Crack Packs</h1><p>Hi ${escapeHtml(recipient.first_name || recipient.live_username || "collector")},</p><p>${messageHtml}</p><p style="margin-top:28px;color:#5d6475;font-size:12px">This member-account message was sent by Crack Packs. Reply to this email if you no longer want member announcements.</p></div>`,
     headers: { "List-Unsubscribe": `<mailto:${senderAddress}?subject=Unsubscribe>` }
   }));
-  const result = await fetch("https://api.resend.com/emails/batch", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
-    body: JSON.stringify(payload)
-  });
-  if (!result.ok) {
+  if (env.RESEND_API_KEY) {
+    const result = await fetch("https://api.resend.com/emails/batch", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
+      body: JSON.stringify(payload)
+    });
+    if (result.ok) return result.json().catch(() => ({}));
     const details = await result.json().catch(() => ({}));
-    console.error("Member email batch failed", { status: result.status, name: details.name || "", message: details.message || "" });
-    throw new Error("MEMBER_EMAIL_DELIVERY_FAILED");
+    console.error("Member email batch failed; trying Cloudflare Email", { status: result.status, name: details.name || "", message: details.message || "" });
   }
-  return result.json().catch(() => ({}));
+  if (!env.REWARDS_EMAIL) throw new Error("MEMBER_EMAIL_NOT_CONFIGURED");
+  const delivered = [];
+  for (const recipient of recipients) {
+    const html = `<div style="font-family:Arial,sans-serif;color:#111827"><h1 style="color:#151936">Crack Packs</h1><p>Hi ${escapeHtml(recipient.first_name || recipient.live_username || recipient.buyer_username || "collector")},</p><p>${messageHtml}</p></div>`;
+    await sendEmail(env, recipient.email, subject, html, `${idempotencyKey}-${recipient.id}`, senderAddress);
+    delivered.push(recipient.id);
+  }
+  return { delivered };
 }
 async function memberFromRequest(request, env) {
   const token = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
@@ -266,6 +280,15 @@ function hasSellerPortalAccess(member, seller) {
     member?.stripe_identity_status === "verified" &&
     member?.live_username &&
     seller?.status === "active"
+  );
+}
+function hasEmployeePortalAccess(member, employee) {
+  return Boolean(
+    member?.email_verified_at &&
+    member?.device_verified &&
+    member?.identity_status === "verified" &&
+    member?.stripe_identity_status === "verified" &&
+    employee?.status === "active"
   );
 }
 const isOwnerEmail = (member, env) => Boolean(member && isMasterEmail(member.email, env));
@@ -752,15 +775,16 @@ async function weeklyReservation(env, memberId, week, sourceType, sourceId, crea
 async function releaseWeeklyReservation(env, memberId, weekKey, sourceType, sourceId) {
   await env.DB.prepare(`DELETE FROM weekly_reward_claims WHERE member_id=? AND week_key=? AND source_type=? AND source_id=?`).bind(memberId, weekKey, sourceType, sourceId).run();
 }
-async function account(member, count, env, seller = null) {
+async function account(member, count, env, seller = null, employee = null) {
   const tier = [...TIERS].reverse().find(t => count >= t.threshold);
   const next = TIERS.find(t => t.threshold > count);
   const invite = await inviteDetailsFor(member, env);
   const admin = isAdmin(member, env);
   const ownerEmail = isOwnerEmail(member, env);
   const sellerAccess = hasSellerPortalAccess(member, seller);
+  const employeeAccess = hasEmployeePortalAccess(member, employee);
   const sellerStatus = seller?.status || "not_applied";
-  const roles = ["buyer", ...(sellerAccess ? ["seller"] : []), ...(admin ? ["master"] : [])];
+  const roles = ["buyer", ...(sellerAccess ? ["seller"] : []), ...(employeeAccess ? ["employee"] : []), ...(admin ? ["master"] : [])];
   return {
     deviceVerified: Boolean(member.device_verified), profileComplete: member.identity_status === "verified", identityStatus: member.identity_status,
     passwordConfigured: Boolean(member.password_hash && member.password_salt), email: member.email,
@@ -768,7 +792,8 @@ async function account(member, count, env, seller = null) {
     hasSellerLegalProfile: Boolean(member.first_name && member.last_name && member.birth_date),
     buyerUsername: member.buyer_username || "", sellerUsername: member.live_username || "", liveUsername: member.live_username || member.buyer_username || "",
     referredSignup: Boolean(member.referred_by_member_id), isAdmin: admin, isMaster: admin, isOwnerEmail: ownerEmail, isMasterCandidate: ownerEmail,
-    sellerAccess, sellerStatus, roles, activePortal: member.active_portal || "buyer",
+    sellerAccess, sellerStatus, employeeAccess, employeeStatus: employee?.status || "not_invited", employeeId: employee?.employee_id || "",
+    roles, activePortal: member.active_portal || "buyer",
     phone: member.phone || "", shippingAddress: (() => { try { return JSON.parse(member.shipping_address_json || "{}"); } catch { return {}; } })(),
     paymentMethod: member.stripe_payment_method_id ? { brand: member.stripe_payment_method_brand || "card", last4: member.stripe_payment_method_last4 || "" } : null,
     referralCodeUsed: member.referral_code_used || "", referralSource: member.referral_source || "",
@@ -782,11 +807,12 @@ async function account(member, count, env, seller = null) {
   };
 }
 async function accountFor(member, env) {
-  const [row, seller] = await Promise.all([
+  const [row, seller, employee] = await Promise.all([
     env.DB.prepare(`SELECT COUNT(*) count FROM members WHERE referred_by_member_id=? AND referral_qualified_at IS NOT NULL`).bind(member.id).first(),
-    env.DB.prepare(`SELECT status FROM breaker_profiles WHERE member_id=?`).bind(member.id).first()
+    env.DB.prepare(`SELECT status FROM breaker_profiles WHERE member_id=?`).bind(member.id).first(),
+    env.DB.prepare(`SELECT employee_id,status FROM employee_profiles WHERE member_id=?`).bind(member.id).first()
   ]);
-  return account(member, Number(row?.count || 0), env, seller);
+  return account(member, Number(row?.count || 0), env, seller, employee);
 }
 async function qualifyReferralForMember(env, memberId) {
   const member = await env.DB.prepare(`SELECT id,email,email_verified_at,referred_by_member_id,referral_qualified_at,referral_awarded_at FROM members WHERE id=?`).bind(memberId).first();
@@ -1167,6 +1193,15 @@ async function route(request, env, cors, ctx) {
       const activationMatches = Boolean(activation && normalizeEmail(activation.target_email) === email && (!activation.target_member_id || activation.target_member_id === existingMember?.id));
       if (!activationMatches) return response({ error: "That seller activation link is invalid, expired, or belongs to another account." }, 403, cors);
       verifyParams.set("seller_activation", sellerActivationToken);
+    }
+    const employeeActivationToken = boundedString(data.employeeActivationToken, 120);
+    if (employeeActivationToken === null) return response({ error: "Invalid employee activation credential." }, 400, cors);
+    if (employeeActivationToken) {
+      const invitation = await env.DB.prepare(`SELECT target_email,target_member_id FROM employee_invitations WHERE code_hash=? AND used_at IS NULL AND expires_at>?`).bind(await hash(employeeActivationToken, env.AUTH_SECRET), now()).first();
+      const invitationMatches = Boolean(invitation && normalizeEmail(invitation.target_email) === email && (!invitation.target_member_id || invitation.target_member_id === existingMember?.id));
+      if (!invitationMatches) return response({ error: "That employee invitation is invalid, expired, or belongs to another account." }, 403, cors);
+      verifyParams.set("employee_activation", employeeActivationToken);
+      verifyParams.set("return", "employee");
     }
     if (authFlow !== "admin" && !isMasterEmail(email, env)) {
       const offerToken = offerTokenValue(data.offerToken);
@@ -2167,14 +2202,32 @@ async function route(request, env, cors, ctx) {
     const to = /^\d{4}-\d{2}-\d{2}$/.test(url.searchParams.get("to") || "") ? `${url.searchParams.get("to")}T23:59:59.999Z` : "";
     const search = `%${query}%`;
     const rows = await env.DB.prepare(`
-      SELECT id,email,first_name,last_name,live_username,created_at,referral_qualified_at
-      FROM members
-      WHERE email_verified_at IS NOT NULL AND identity_status='verified' AND (?=1 OR email<>?)
-        AND (?='' OR created_at>=?) AND (?='' OR created_at<=?)
-        AND (?='' OR lower(email) LIKE ? OR lower(COALESCE(first_name,'') || ' ' || COALESCE(last_name,'')) LIKE ? OR lower(COALESCE(live_username,'')) LIKE ?)
-      ORDER BY created_at DESC LIMIT 250
-    `).bind(includeOwner ? 1 : 0, primaryMasterEmail(env), from, from, to, to, query, search, search, search).all();
-    return response({ members: (rows.results || []).map(row => ({ id: row.id, email: row.email, firstName: row.first_name || "", lastName: row.last_name || "", liveUsername: row.live_username || "", createdAt: row.created_at, qualifiedAt: row.referral_qualified_at || null, isOwner: isMasterEmail(row.email, env) })) }, 200, cors);
+      SELECT member.id,member.email,member.first_name,member.last_name,member.buyer_username,member.live_username,
+             member.created_at,member.referral_qualified_at,employee.employee_id
+      FROM members member
+      LEFT JOIN employee_profiles employee ON employee.member_id=member.id
+      WHERE member.email_verified_at IS NOT NULL AND member.identity_status='verified' AND (?=1 OR member.email<>?)
+        AND (?='' OR member.created_at>=?) AND (?='' OR member.created_at<=?)
+        AND (?='' OR lower(member.id) LIKE ? OR lower(member.email) LIKE ?
+          OR lower(COALESCE(member.first_name,'') || ' ' || COALESCE(member.last_name,'')) LIKE ?
+          OR lower(COALESCE(member.buyer_username,'')) LIKE ?
+          OR lower(COALESCE(member.live_username,'')) LIKE ?
+          OR lower(COALESCE(employee.employee_id,'')) LIKE ?)
+      ORDER BY member.created_at DESC LIMIT 250
+    `).bind(includeOwner ? 1 : 0, primaryMasterEmail(env), from, from, to, to, query, search, search, search, search, search, search).all();
+    return response({ members: (rows.results || []).map(row => ({
+      id: row.id,
+      email: row.email,
+      firstName: row.first_name || "",
+      lastName: row.last_name || "",
+      userId: row.buyer_username || "",
+      sellerId: row.live_username || "",
+      employeeId: row.employee_id || "",
+      liveUsername: row.live_username || row.buyer_username || "",
+      createdAt: row.created_at,
+      qualifiedAt: row.referral_qualified_at || null,
+      isOwner: isMasterEmail(row.email, env)
+    })) }, 200, cors);
   }
   if (url.pathname === "/admin/orders" && request.method === "GET") {
     if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
@@ -2246,7 +2299,7 @@ async function route(request, env, cors, ctx) {
     const contentLength = Number(request.headers.get("Content-Length") || 0);
     if (Number.isFinite(contentLength) && contentLength > 20000) return response({ error: "Email request is too large." }, 413, cors);
     const data = await body(request);
-    const allowedSenders = new Set(["rewards@crackpacks.com", "alerts@crackpacks.com", "orders@crackpacks.com", "support@crackpacks.com", "hello@crackpacks.com"]);
+    const allowedSenders = new Set(["rewards@crackpacks.com", "alerts@crackpacks.com", "orders@crackpacks.com", "support@crackpacks.com", "hello@crackpacks.com", "gig@crackpacks.com"]);
     const senderAddress = normalizeEmail(data?.fromAddress || "rewards@crackpacks.com");
     if (!allowedSenders.has(senderAddress)) return response({ error: "Choose an approved Crack Packs sender address." }, 400, cors);
     const audience = ["all", "selected", "tier"].includes(data?.audience) ? data.audience : "";
@@ -2259,13 +2312,13 @@ async function route(request, env, cors, ctx) {
     if (!message || message.length < 3) return response({ error: "Enter an email message from 3 to 5,000 characters." }, 400, cors);
     let rows;
     if (audience === "all") {
-      rows = await env.DB.prepare(`SELECT id,email,first_name,live_username FROM members WHERE email_verified_at IS NOT NULL AND identity_status='verified' AND email<>? ORDER BY created_at LIMIT 101`).bind(primaryMasterEmail(env)).all();
+      rows = await env.DB.prepare(`SELECT id,email,first_name,buyer_username,live_username FROM members WHERE email_verified_at IS NOT NULL AND identity_status='verified' AND email<>? ORDER BY created_at LIMIT 101`).bind(primaryMasterEmail(env)).all();
     } else if (audience === "tier") {
       const ranges = { crew: [3, 10], breaker: [10, 25], headliner: [25, 50], legend: [50, 1000000] };
       const range = ranges[String(data?.tierName || "").toLowerCase()];
       if (!range) return response({ error: "Choose Crew, Breaker, Headliner, or Legend." }, 400, cors);
       rows = await env.DB.prepare(`
-        SELECT member.id,member.email,member.first_name,member.live_username,COUNT(referral.id) referral_count
+        SELECT member.id,member.email,member.first_name,member.buyer_username,member.live_username,COUNT(referral.id) referral_count
         FROM members member LEFT JOIN members referral ON referral.referred_by_member_id=member.id AND referral.referral_qualified_at IS NOT NULL AND referral.identity_status='verified'
         WHERE member.email_verified_at IS NOT NULL AND member.identity_status='verified' AND member.email<>?
         GROUP BY member.id HAVING referral_count>=? AND referral_count<? ORDER BY member.created_at LIMIT 101
@@ -2274,7 +2327,7 @@ async function route(request, env, cors, ctx) {
       const memberIds = Array.isArray(data?.memberIds) ? [...new Set(data.memberIds.filter(value => typeof value === "string" && /^[0-9a-f-]{36}$/i.test(value)))].slice(0, 101) : [];
       if (!memberIds.length) return response({ error: "Add at least one member before sending." }, 400, cors);
       const placeholders = memberIds.map(() => "?").join(",");
-      rows = await env.DB.prepare(`SELECT id,email,first_name,live_username FROM members WHERE id IN (${placeholders}) AND email_verified_at IS NOT NULL AND identity_status='verified' AND email<>?`).bind(...memberIds, primaryMasterEmail(env)).all();
+      rows = await env.DB.prepare(`SELECT id,email,first_name,buyer_username,live_username FROM members WHERE id IN (${placeholders}) AND email_verified_at IS NOT NULL AND identity_status='verified' AND email<>?`).bind(...memberIds, primaryMasterEmail(env)).all();
     }
     const recipients = rows.results || [];
     if (!recipients.length) return response({ error: "No verified member recipients matched this message." }, 400, cors);
@@ -2286,6 +2339,14 @@ async function route(request, env, cors, ctx) {
       if (error.message === "MEMBER_EMAIL_NOT_CONFIGURED") return response({ error: "Member email is not configured. Add the existing RESEND_API_KEY Worker secret." }, 503, cors);
       return response({ error: "The member email batch could not be queued. No send was confirmed; try again." }, 502, cors);
     }
+    const sentAt = now();
+    await env.DB.batch(recipients.map(recipient => env.DB.prepare(`
+      INSERT INTO internal_email_messages(
+        id,sender_member_id,recipient_member_id,from_address,to_address,category,subject,message,status,sent_at,created_at
+      ) VALUES(?,?,?,?,?,'direct',?,?,'sent',?,?)
+    `).bind(id(), member.id, recipient.id, senderAddress, recipient.email, subject, message, sentAt, sentAt))).catch(error => {
+      console.error("Internal sent-email history could not be recorded", { sendId, message: clean(error?.message || "", 180) });
+    });
     await audit(env, request, "member_email_sent", member.id, `${sendId}|from:${senderAddress}|audience:${audience}|count:${recipients.length}|subject:${subject.slice(0, 80)}`);
     return response({ ok: true, sendId, senderAddress, recipientCount: recipients.length }, 202, cors);
   }

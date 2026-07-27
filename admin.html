@@ -6,11 +6,11 @@
   <meta name="robots" content="noindex,nofollow">
   <title>Crack Packs Owner Dashboard</title>
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="assets/css/styles.css?v=1.9.7">
-  <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.6.3">
+  <link rel="stylesheet" href="assets/css/styles.css?v=1.9.8">
+  <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.6.4">
   <link rel="stylesheet" href="assets/css/referral.css?v=3.5.0">
   <link rel="stylesheet" href="assets/css/rewards-modal.css?v=2.1.0">
-  <link rel="stylesheet" href="assets/css/admin.css?v=3.3.1">
+  <link rel="stylesheet" href="assets/css/admin.css?v=3.4.0">
 </head>
 <body>
   <header class="site-header">
@@ -73,6 +73,7 @@
         <nav class="account-dashboard-subnav account-dashboard-roles master-account-access-nav" aria-label="Logged-in account pages">
           <a class="account-subnav-pill" href="referral.html">Buyer Account</a>
           <a class="account-subnav-pill" href="streams.html#go-live">Seller Account</a>
+          <a class="account-subnav-pill" href="employee.html">Employee Account</a>
           <a class="account-subnav-pill is-active" href="admin.html">Master Account</a>
           <a class="account-subnav-pill" href="index.html">Card Search</a>
           <a class="account-subnav-pill" href="shop.html">Store</a>
@@ -88,7 +89,8 @@
           <button type="button" data-master-section-button="tracking"><span>07</span><strong>Orders</strong><small>Member tracking</small></button>
           <button type="button" data-master-section-button="identity"><span>08</span><strong>Identity Review</strong><small>Resolve account collisions</small></button>
           <button type="button" data-master-section-button="sellers"><span>09</span><strong>Sellers</strong><small>Issue one-time access</small></button>
-          <button type="button" data-master-section-button="streaming"><span>10</span><strong>Streaming</strong><small>Plans &amp; credit pricing</small></button>
+          <button type="button" data-master-section-button="employees"><span>10</span><strong>Employees</strong><small>Accounts, hours &amp; pay</small></button>
+          <button type="button" data-master-section-button="streaming"><span>11</span><strong>Streaming</strong><small>Plans &amp; credit pricing</small></button>
         </nav>
         <section class="reward-card owner-referral-card" data-owner-referral data-master-section="create_link">
           <div class="owner-referral-grid">
@@ -195,17 +197,17 @@
         <section class="reward-card master-email-card" data-master-section="email" hidden>
           <p class="eyebrow">Member communications</p>
           <h2>Email Crack Packs members</h2>
-          <p>Choose every verified member or build a group by searching names, stream usernames, or email addresses.</p>
+          <p>Choose every verified member or search directly by User ID, Seller ID, employee ID, legal name, account UUID, or email address.</p>
           <div class="email-audience-actions">
             <button class="btn btn-primary" type="button" data-email-all>Message All</button>
-            <button class="btn btn-outline" type="button" data-email-select-open>Select Few</button>
+            <button class="btn btn-outline" type="button" data-email-select-open>Search Recipients</button>
             <label>Referral tier<select data-email-tier><option value="crew">Crew (3–9)</option><option value="breaker">Breaker (10–24)</option><option value="headliner">Headliner (25–49)</option><option value="legend">Legend (50+)</option></select></label>
             <button class="btn btn-outline" type="button" data-email-tier-select>Message Tier</button>
           </div>
           <div class="email-recipient-summary" data-email-recipient-summary>No audience selected.</div>
           <div class="email-selected-chips" data-email-selected-chips></div>
           <form class="master-email-form" data-master-email-form>
-            <label>Send from<select name="fromAddress"><option value="rewards@crackpacks.com">rewards@crackpacks.com</option><option value="alerts@crackpacks.com">alerts@crackpacks.com</option><option value="orders@crackpacks.com">orders@crackpacks.com</option><option value="support@crackpacks.com">support@crackpacks.com</option><option value="hello@crackpacks.com">hello@crackpacks.com</option></select></label>
+            <label>Send from<select name="fromAddress"><option value="rewards@crackpacks.com">rewards@crackpacks.com</option><option value="alerts@crackpacks.com">alerts@crackpacks.com</option><option value="orders@crackpacks.com">orders@crackpacks.com</option><option value="support@crackpacks.com">support@crackpacks.com</option><option value="hello@crackpacks.com">hello@crackpacks.com</option><option value="gig@crackpacks.com">gig@crackpacks.com</option></select></label>
             <label>Subject<input name="subject" maxlength="120" required placeholder="Crack Packs live-show update"></label>
             <label>Message<textarea name="message" maxlength="5000" required rows="8" placeholder="Write the member message here..."></textarea></label>
             <div class="campaign-form-status" data-master-email-status aria-live="polite"></div>
@@ -214,6 +216,11 @@
               <button class="btn btn-primary" type="submit" data-email-send disabled>Send</button>
             </div>
           </form>
+          <div class="master-email-history-head">
+            <div><p class="eyebrow">Sent mail</p><h3>Master account email history</h3></div>
+            <button class="btn btn-outline btn-small" type="button" data-email-history-refresh>Refresh</button>
+          </div>
+          <div class="internal-email-history" data-email-history-list aria-live="polite"></div>
         </section>
         <section class="inventory-workspace" data-master-section="inventory" hidden>
           <div class="dashboard-head inventory-workspace-head">
@@ -302,6 +309,49 @@
           <div class="dashboard-head"><div><p class="eyebrow">Seller supply queue</p><h3>PAR-triggered reorders</h3></div><button class="btn btn-outline btn-small" type="button" data-admin-reorders-refresh>Refresh</button></div>
           <div class="campaign-form-status" data-admin-reorders-status aria-live="polite"></div>
           <div class="admin-results" data-admin-reorders-list></div>
+        </section>
+        <section class="employee-admin-workspace" data-master-section="employees" hidden>
+          <div class="dashboard-head employee-admin-head">
+            <div>
+              <p class="eyebrow">Protected workforce tools</p>
+              <h2>Employee accounts</h2>
+              <p>Create a one-time employment invitation, require Stripe Identity, review submitted hours, and manage employee access.</p>
+            </div>
+            <button class="btn btn-outline btn-small" type="button" data-employee-admin-refresh>Refresh</button>
+          </div>
+          <div class="employee-admin-grid">
+            <form class="reward-card employee-account-form" data-employee-account-form>
+              <p class="eyebrow">Employee Account Maker</p>
+              <h3>Prepare protected employee access</h3>
+              <label>Employee email<input name="email" type="email" required maxlength="254" autocomplete="off" placeholder="employee@example.com"></label>
+              <div class="field-grid">
+                <label>Job title<input name="jobTitle" required maxlength="100" placeholder="Live Show Producer"></label>
+                <label>Hourly rate<input name="hourlyRate" type="number" required min="0.01" max="10000" step="0.01" inputmode="decimal" placeholder="22.50"></label>
+              </div>
+              <label>Employment message<textarea name="note" rows="5" maxlength="1000" placeholder="Welcome, start date, manager contact, or first-shift details"></textarea></label>
+              <div class="campaign-form-status" data-employee-account-status aria-live="polite"></div>
+              <div class="employee-account-actions">
+                <button class="employee-generate-button" type="submit" value="generate" data-employee-generate>
+                  <span>Generate Employee Account</span>
+                </button>
+                <button class="btn btn-primary" type="submit" value="send" data-employee-send-email>Send Employment Email</button>
+              </div>
+            </form>
+            <section class="employee-invitation-result" data-employee-invitation-result hidden aria-live="polite">
+              <p class="eyebrow">Employee account ready</p>
+              <h3 data-employee-result-id></h3>
+              <p data-employee-result-copy></p>
+              <div class="share-row">
+                <input data-employee-result-url readonly aria-label="Employee activation URL">
+                <button class="btn btn-outline btn-small" type="button" data-employee-result-copy>Copy Link</button>
+              </div>
+              <time data-employee-result-expires></time>
+            </section>
+          </div>
+          <div class="employee-admin-section-head"><div><p class="eyebrow">Workforce access</p><h3>Employees and invitations</h3></div></div>
+          <div class="employee-admin-list" data-employee-admin-list aria-live="polite"></div>
+          <div class="employee-admin-section-head"><div><p class="eyebrow">Time review</p><h3>Submitted hours and expected pay</h3></div></div>
+          <div class="employee-time-review-list" data-employee-time-review-list aria-live="polite"></div>
         </section>
         <section class="reward-card" data-master-section="streaming" hidden>
           <div class="dashboard-head">
@@ -573,10 +623,10 @@
     <button class="rewards-modal-backdrop" type="button" data-email-select-close aria-label="Close member selection"></button>
     <section class="rewards-modal-card campaign-modal-card" role="dialog" aria-modal="true" aria-labelledby="email-select-title">
       <button class="rewards-modal-close" type="button" data-email-select-close aria-label="Close">&times;</button>
-      <p class="eyebrow">Select Few</p>
+      <p class="eyebrow">Member search</p>
       <h2 id="email-select-title">Add message recipients</h2>
-      <p>Keep searching and adding members. Your selection stays open until you click Finished.</p>
-      <label class="campaign-claim-search">Guess a name, username, or email<input type="search" data-email-member-search placeholder="Start typing a member..." autocomplete="off"></label>
+      <p>Selecting a search result auto-populates its verified account email in the recipient list.</p>
+      <label class="campaign-claim-search">User ID, Seller ID, employee ID, name, UUID, or email<input type="search" data-email-member-search placeholder="Start typing an identifier..." autocomplete="off"></label>
       <div class="email-member-results" data-email-member-results aria-live="polite"></div>
       <div class="email-selection-footer"><strong data-email-selection-count>0 selected</strong><button class="btn btn-primary" type="button" data-email-select-finished>Finished</button></div>
     </section>
@@ -596,7 +646,7 @@
 
   <script src="assets/js/config.js?v=3.0.0"></script>
   <script src="assets/js/app.js?v=1.9.6"></script>
-  <script src="assets/js/nav-profile.js?v=4.2.0"></script>
-  <script src="assets/js/admin.js?v=3.4.0"></script>
+  <script src="assets/js/nav-profile.js?v=4.3.0"></script>
+  <script src="assets/js/admin.js?v=3.5.0"></script>
 </body>
 </html>

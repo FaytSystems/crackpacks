@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { chooseBestRecordingForSession, handlePlatformRoute, hasMasterPortalAccess, hasSellerPortalAccess, hasVerifiedSellerIdentity, isMasterEmail, usernameKey } from "../src/platform-routes.js";
+import { chooseBestRecordingForSession, handlePlatformRoute, hasEmployeePortalAccess, hasMasterPortalAccess, hasSellerPortalAccess, hasVerifiedSellerIdentity, isMasterEmail, usernameKey } from "../src/platform-routes.js";
 
 test("Crack Packs User ID key blocks case, separator, and common leetspeak clones", () => {
   assert.equal(usernameKey("CRACKPACKS"), "crackpacks");
@@ -41,6 +41,20 @@ test("seller access requires email, passkey, internal state, and Stripe Identity
   assert.equal(hasSellerPortalAccess(complete, { status: "active" }), true);
   assert.equal(hasSellerPortalAccess({ ...complete, live_username: "" }, { status: "active" }), false);
   assert.equal(hasSellerPortalAccess(complete, { status: "pending" }), false);
+});
+
+test("employee access requires the full identity gate and an active employee profile", () => {
+  const complete = {
+    email_verified_at: "2026-07-24T00:00:00.000Z",
+    device_verified: 1,
+    identity_status: "verified",
+    stripe_identity_status: "verified"
+  };
+  assert.equal(hasEmployeePortalAccess(complete, { status: "active" }), true);
+  assert.equal(hasEmployeePortalAccess({ ...complete, stripe_identity_status: "processing" }, { status: "active" }), false);
+  assert.equal(hasEmployeePortalAccess(complete, { status: "suspended" }), false);
+  assert.equal(hasEmployeePortalAccess(complete, { status: "terminated" }), false);
+  assert.equal(hasEmployeePortalAccess(complete, null), false);
 });
 
 test("master account recognizes configured emails but still requires ID verification", () => {
@@ -122,6 +136,12 @@ test("identity session force starts a fresh Stripe check for already verified ac
   assert.match(stripeCalls[0].body, /metadata%5Bmember_id%5D=member-1/);
   assert.match(stripeCalls[0].body, /return_url=https%3A%2F%2Fcrackpacks\.com%2Freferral\.html%3Fidentity%3Dreturn%26return%3Dseller/);
   assert.equal(updates.length, 1);
+
+  const employee = await handlePlatformRoute(request({ force: true, returnTo: "employee" }), env, {});
+  assert.equal(employee.status, 201);
+  assert.match(stripeCalls[1].body, /metadata%5Breturn_to%5D=employee/);
+  assert.match(stripeCalls[1].body, /return_url=https%3A%2F%2Fcrackpacks\.com%2Freferral\.html%3Fidentity%3Dreturn%26return%3Demployee/);
+  assert.equal(updates.length, 2);
 });
 
 test("identity session returns the Stripe provider reason when Stripe cannot start", async t => {

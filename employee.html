@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="theme-color" content="#07091b">
+  <title>Crack Packs Employee Dashboard</title>
+  <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/css/styles.css?v=1.9.8">
+  <link rel="stylesheet" href="assets/css/referral.css?v=3.5.0">
+  <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.6.4">
+  <link rel="stylesheet" href="assets/css/employee.css?v=1.0.0">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="container nav-shell">
+      <a class="brand" href="index.html" aria-label="Crack Packs home"><img src="assets/images/logo.svg" alt="Crack Packs"></a>
+      <button class="menu-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="employee-site-nav"><span></span><span></span><span></span></button>
+      <nav class="site-nav" id="employee-site-nav" aria-label="Primary navigation">
+        <a href="index.html">Card Search</a>
+        <a href="shop.html">Store</a>
+        <div class="nav-profile is-current" data-nav-profile>
+          <button class="nav-profile-trigger" type="button" data-profile-trigger aria-expanded="false">Profile <span class="nav-profile-caret" aria-hidden="true">▼</span></button>
+          <div class="nav-profile-menu"><a href="referral.html"><strong>Account</strong><small>Sign in and account details</small></a></div>
+        </div>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main" class="employee-main" data-employee-app>
+    <section class="container employee-dashboard-head">
+      <div>
+        <p class="eyebrow">Protected workforce account</p>
+        <h1>Employee Dashboard</h1>
+        <p data-employee-heading-copy>Loading your employee account...</p>
+      </div>
+      <button class="btn btn-outline btn-small" type="button" data-employee-logout hidden>Log Out</button>
+    </section>
+
+    <section class="container">
+      <div class="rewards-notice" data-employee-status aria-live="polite"></div>
+
+      <section class="reward-card employee-access-panel" data-employee-access hidden>
+        <p class="eyebrow">Employee access required</p>
+        <h2>Finish your protected employee account</h2>
+        <p>Open the one-time employment email from <strong>gig@crackpacks.com</strong>, then complete email verification, User ID, personal details, passkey, and Stripe Identity.</p>
+        <a class="btn btn-primary" href="referral.html?return=employee">Sign In or Finish Setup</a>
+      </section>
+
+      <section data-employee-dashboard hidden>
+        <nav class="account-dashboard-subnav account-dashboard-roles" aria-label="Logged-in account pages">
+          <a class="account-subnav-pill" href="referral.html">Buyer Account</a>
+          <a class="account-subnav-pill" href="streams.html#go-live" data-employee-seller-link hidden>Seller Account</a>
+          <a class="account-subnav-pill is-active" href="employee.html">Employee Account</a>
+          <a class="account-subnav-pill" href="admin.html" data-employee-master-link hidden>Master Account</a>
+        </nav>
+
+        <section class="employee-identity-band">
+          <div><span>Employee ID</span><strong data-employee-id></strong></div>
+          <div><span>Job Title</span><strong data-employee-job-title></strong></div>
+          <div><span>Base Rate</span><strong data-employee-rate></strong></div>
+          <div><span>Account</span><strong data-employee-account-state></strong></div>
+        </section>
+
+        <nav class="employee-view-nav" aria-label="Employee dashboard sections">
+          <button class="is-active" type="button" data-employee-view-button="hours">Hours Worked</button>
+          <button type="button" data-employee-view-button="pay">Expected Pay</button>
+          <button type="button" data-employee-view-button="deposit">Direct Deposit Setup</button>
+        </nav>
+
+        <section class="employee-view" data-employee-view="hours">
+          <div class="employee-section-heading">
+            <div><p class="eyebrow">Time entry</p><h2>Hours Worked</h2></div>
+            <button class="btn btn-outline btn-small" type="button" data-employee-refresh>Refresh</button>
+          </div>
+          <div class="employee-hours-layout">
+            <form class="reward-card employee-time-form" data-employee-time-form>
+              <h3>Submit a shift</h3>
+              <label>Work date<input name="workDate" type="date" required></label>
+              <div class="employee-time-grid">
+                <label>Start time<input name="startTime" type="time" required></label>
+                <label>End time<input name="endTime" type="time" required></label>
+              </div>
+              <label>Unpaid break minutes<input name="breakMinutes" type="number" min="0" max="720" step="1" value="0" required inputmode="numeric"></label>
+              <label>Shift note<textarea name="note" rows="4" maxlength="1000" placeholder="Show, inventory, shipping, or other work completed"></textarea></label>
+              <div class="campaign-form-status" data-employee-time-status aria-live="polite"></div>
+              <button class="btn btn-primary" type="submit" data-employee-time-submit>Submit Hours</button>
+            </form>
+            <div>
+              <h3 class="employee-list-title">Hours history</h3>
+              <div class="employee-time-list" data-employee-time-list aria-live="polite"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="employee-view" data-employee-view="pay" hidden>
+          <div class="employee-section-heading">
+            <div><p class="eyebrow">Gross estimate</p><h2>Expected Pay</h2></div>
+          </div>
+          <div class="employee-pay-summary">
+            <article><span>Submitted</span><strong data-pay-submitted-hours>0.00 hr</strong><small data-pay-submitted-money>$0.00</small></article>
+            <article><span>Approved</span><strong data-pay-approved-hours>0.00 hr</strong><small data-pay-approved-money>$0.00</small></article>
+            <article><span>Recorded Paid</span><strong data-pay-paid-hours>0.00 hr</strong><small data-pay-paid-money>$0.00</small></article>
+          </div>
+          <p class="employee-pay-disclaimer" data-employee-pay-disclaimer></p>
+        </section>
+
+        <section class="employee-view" data-employee-view="deposit" hidden>
+          <div class="employee-section-heading">
+            <div><p class="eyebrow">Stripe Connect</p><h2>Direct Deposit Setup</h2></div>
+          </div>
+          <section class="employee-deposit-panel">
+            <div>
+              <span class="employee-deposit-state" data-employee-deposit-state>Checking status</span>
+              <h3 data-employee-deposit-title>Loading Stripe payout status...</h3>
+              <p data-employee-deposit-copy>Bank and tax details are collected and stored by Stripe, not Crack Packs.</p>
+            </div>
+            <button class="btn btn-primary" type="button" data-employee-deposit-button>Open Stripe Setup</button>
+          </section>
+          <p class="employee-pay-disclaimer">Direct deposit setup does not calculate payroll, taxes, overtime, benefits, or withholding. Marking an entry paid in the Master dashboard records status only; it does not initiate a transfer.</p>
+        </section>
+      </section>
+    </section>
+  </main>
+
+  <script src="assets/js/config.js?v=3.0.0"></script>
+  <script src="assets/js/app.js?v=1.9.6"></script>
+  <script src="assets/js/nav-profile.js?v=4.3.0"></script>
+  <script src="assets/js/employee.js?v=1.0.0"></script>
+</body>
+</html>
