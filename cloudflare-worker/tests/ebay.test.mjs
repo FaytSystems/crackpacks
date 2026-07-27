@@ -33,6 +33,39 @@ test("eBay route explains missing credentials", async () => {
   assert.match(payload.error, /EBAY_CLIENT_SECRET/);
 });
 
+test("eBay route returns safe upstream OAuth diagnostics", async t => {
+  const originalFetch = globalThis.fetch;
+
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  globalThis.fetch = async input => {
+    assert.match(String(input), /\/identity\/v1\/oauth2\/token$/);
+    return Response.json(
+      {
+        error: "invalid_client",
+        error_description: "client authentication failed"
+      },
+      { status: 401 }
+    );
+  };
+
+  const response = await worker.fetch(
+    new Request("https://api.crackpacks.com/ebay?term=charizard"),
+    {
+      ...configuredEnv,
+      EBAY_CLIENT_ID: "diagnostic-client"
+    }
+  );
+  const payload = await response.json();
+
+  assert.equal(response.status, 503);
+  assert.match(payload.error, /invalid_client/);
+  assert.match(payload.error, /client authentication failed/);
+  assert.doesNotMatch(payload.error, /test-secret/);
+});
+
 test("eBay route mints one token and normalizes active listings", async t => {
   const originalFetch = globalThis.fetch;
   const requests = [];

@@ -10,7 +10,7 @@ const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 48;
 const CACHE_SECONDS = 300;
 const EBAY_CACHE_SECONDS = 180;
-const WORKER_VERSION = "2.3.0";
+const WORKER_VERSION = "2.3.1";
 let ebayTokenCache = null;
 let ebayTokenRequest = null;
 const API_TCG_SERIES = new Map([
@@ -181,6 +181,15 @@ function ebayConfigured(env) {
     String(env.EBAY_CLIENT_ID || "").trim() &&
     String(env.EBAY_CLIENT_SECRET || "").trim()
   );
+}
+
+function ebayOauthErrorDetail(payload) {
+  const code = String(payload?.error || "").trim().slice(0, 80);
+  const description = String(payload?.error_description || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 240);
+  return [code, description].filter(Boolean).join(": ");
 }
 
 function magicLanguageCode(language) {
@@ -622,9 +631,11 @@ async function ebayApplicationToken(env) {
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || !payload.access_token) {
       if (response.status === 400 || response.status === 401) {
+        const upstreamDetail = ebayOauthErrorDetail(payload);
+        const detailMessage = upstreamDetail ? ` eBay response: ${upstreamDetail}.` : "";
         throw new Error(
-          "eBay Production OAuth rejected EBAY_CLIENT_ID or EBAY_CLIENT_SECRET. " +
-          "Store the Production App ID and Production Cert ID, not Sandbox credentials or the Dev ID."
+          `eBay ${environment} OAuth rejected the configured credentials.${detailMessage} ` +
+          "Use the App ID and Cert ID from the same active keyset and environment."
         );
       }
       if (response.status === 429) {
