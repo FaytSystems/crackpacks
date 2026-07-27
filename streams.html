@@ -9,7 +9,7 @@
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/css/styles.css?v=1.9.8">
   <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.6.4">
-  <link rel="stylesheet" href="assets/css/streams-hub.css?v=1.7.0">
+  <link rel="stylesheet" href="assets/css/streams-hub.css?v=1.8.0">
 </head>
 <body data-page="streams">
   <a class="skip-link" href="#main">Skip to content</a>
@@ -174,7 +174,14 @@
           <form class="seller-giveaway-form" data-seller-show-form>
             <label>Show title<input name="title" required maxlength="160" placeholder="Friday Night Crack Packs"></label>
             <label>Scheduled time<input name="scheduledAt" type="datetime-local"></label>
-            <label>Thumbnail URL<input name="thumbnailUrl" type="url" maxlength="500" placeholder="https://..."></label>
+            <label>Show thumbnail
+              <input name="thumbnailFile" type="file" accept=".png,.jpg,.jpeg,image/png,image/jpeg" data-seller-show-thumbnail>
+              <span class="show-thumbnail-help">PNG, JPG, or JPEG. Maximum 5 MB.</span>
+            </label>
+            <figure class="show-thumbnail-preview" data-seller-show-thumbnail-preview hidden>
+              <img data-seller-show-thumbnail-image src="" alt="Selected show thumbnail preview">
+              <figcaption data-seller-show-thumbnail-name></figcaption>
+            </figure>
             <button class="btn btn-primary" type="submit">Save show</button>
           </form>
           <div class="campaign-form-status" data-seller-show-status aria-live="polite"></div>
@@ -422,6 +429,6 @@
   <script src="assets/js/config.js?v=4.1.0"></script>
   <script src="assets/js/app.js?v=1.9.7"></script>
   <script src="assets/js/portal-mode.js?v=1.1.6"></script>
-  <script src="assets/js/streams-hub.js?v=1.7.1"></script>
+  <script src="assets/js/streams-hub.js?v=1.8.0"></script>
 </body>
 </html>

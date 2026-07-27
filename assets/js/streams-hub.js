@@ -35,9 +35,10 @@
   const dollars = cents => `$${(Number(cents || 0) / 100).toFixed(2)}`;
   const api = async (path, options = {}) => {
     if (!base) throw new Error("The live service is not configured.");
+    const multipart = options.body instanceof FormData;
     const response = await fetch(`${base}${path}`, {
       ...options,
-      headers: { "Content-Type": "application/json", Accept: "application/json", ...(token() ? { Authorization: `Bearer ${token()}` } : {}), ...(options.headers || {}) }
+      headers: { ...(multipart ? {} : { "Content-Type": "application/json" }), Accept: "application/json", ...(token() ? { Authorization: `Bearer ${token()}` } : {}), ...(options.headers || {}) }
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || "The live service could not complete that request.");
@@ -154,6 +155,32 @@
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
   const streamKeyCreatorState = { mode: "create", generated: false };
+  const showThumbnailTypes = new Set(["image/png", "image/jpeg", "image/jpg", "image/pjpeg"]);
+  const showThumbnailMaxBytes = 5 * 1024 * 1024;
+  let showThumbnailPreviewUrl = "";
+  function clearShowThumbnailPreview() {
+    if (showThumbnailPreviewUrl) URL.revokeObjectURL(showThumbnailPreviewUrl);
+    showThumbnailPreviewUrl = "";
+    const preview = $("[data-seller-show-thumbnail-preview]");
+    const image = $("[data-seller-show-thumbnail-image]");
+    const name = $("[data-seller-show-thumbnail-name]");
+    if (preview) preview.hidden = true;
+    if (image) image.removeAttribute("src");
+    if (name) name.textContent = "";
+  }
+  function previewShowThumbnail(file) {
+    clearShowThumbnailPreview();
+    if (!file || !file.size) return;
+    if (!showThumbnailTypes.has(String(file.type || "").toLowerCase())) throw new Error("Choose a PNG, JPG, or JPEG show thumbnail.");
+    if (file.size > showThumbnailMaxBytes) throw new Error("Show thumbnail must be 5 MB or smaller.");
+    const preview = $("[data-seller-show-thumbnail-preview]");
+    const image = $("[data-seller-show-thumbnail-image]");
+    const name = $("[data-seller-show-thumbnail-name]");
+    showThumbnailPreviewUrl = URL.createObjectURL(file);
+    if (image) image.src = showThumbnailPreviewUrl;
+    if (name) name.textContent = `${file.name} - ${(file.size / 1024 / 1024).toFixed(2)} MB`;
+    if (preview) preview.hidden = false;
+  }
   const hasCompletedObsGuide = () => Boolean(obsGuideCompletedAt) || localStorage.getItem(OBS_GUIDE_COMPLETED_KEY) === "true";
   const markObsGuideCompleted = stamp => {
     obsGuideCompletedAt = stamp || new Date().toISOString();
@@ -1069,12 +1096,32 @@
     catch { field.select(); document.execCommand("copy"); setStatus("[data-stream-input-status]", "OBS value copied.", "success"); }
   }));
 
+  $("[data-seller-show-thumbnail]")?.addEventListener("change", event => {
+    const file = event.currentTarget.files?.[0] || null;
+    try {
+      previewShowThumbnail(file);
+      setStatus("[data-seller-show-status]", file ? "Thumbnail ready to upload with this show." : "", file ? "success" : "");
+    } catch (error) {
+      event.currentTarget.value = "";
+      clearShowThumbnailPreview();
+      setStatus("[data-seller-show-status]", error.message, "error");
+    }
+  });
+
   $("[data-seller-show-form]")?.addEventListener("submit", async event => {
     event.preventDefault(); const form = event.currentTarget; const data = new FormData(form); const button = event.submitter; button.disabled = true;
     try {
       const scheduledValue = String(data.get("scheduledAt") || "");
-      const created = await api("/seller/shows", { method: "POST", body: JSON.stringify({ title: data.get("title"), scheduledAt: scheduledValue ? new Date(scheduledValue).toISOString() : null, thumbnailUrl: data.get("thumbnailUrl") }) });
+      const thumbnailFile = data.get("thumbnailFile");
+      if (thumbnailFile?.size) {
+        if (!showThumbnailTypes.has(String(thumbnailFile.type || "").toLowerCase())) throw new Error("Choose a PNG, JPG, or JPEG show thumbnail.");
+        if (thumbnailFile.size > showThumbnailMaxBytes) throw new Error("Show thumbnail must be 5 MB or smaller.");
+      }
+      data.set("scheduledAt", scheduledValue ? new Date(scheduledValue).toISOString() : "");
+      setStatus("[data-seller-show-status]", thumbnailFile?.size ? "Uploading thumbnail and publishing show..." : "Publishing show...", "success");
+      const created = await api("/seller/shows", { method: "POST", body: data });
       form.reset();
+      clearShowThumbnailPreview();
       await Promise.all([loadSellerShows(), loadShows()]);
       const publicLink = $("[data-seller-show-public-link]");
       if (publicLink) {

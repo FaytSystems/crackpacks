@@ -976,6 +976,104 @@ test("dedicated live show endpoint returns its thumbnail and first queued item",
   assert.equal(payload.lot.bidIncrementCents, 100);
 });
 
+test("seller can upload a JPEG thumbnail while creating a show", async () => {
+  const memberId = "11111111-1111-4111-8111-111111111111";
+  const uploads = [];
+  const writes = [];
+  const member = {
+    id: memberId,
+    email_verified_at: "2026-07-24T00:00:00.000Z",
+    device_verified: 1,
+    identity_status: "verified",
+    stripe_identity_status: "verified",
+    live_username: "ShowBuilder"
+  };
+  const env = {
+    AUTH_SECRET: "test-secret",
+    SITE_URL: "https://crackpacks.com",
+    SHOW_MEDIA: {
+      put: async (key, value, options) => {
+        uploads.push({ key, value: new Uint8Array(value), options });
+        return { key };
+      },
+      delete: async () => {}
+    },
+    DB: {
+      prepare(sql) {
+        return {
+          bind(...args) {
+            return {
+              first: async () => {
+                if (sql.includes("JOIN members m")) return member;
+                if (sql.includes("FROM breaker_profiles")) return { status: "active" };
+                if (sql.includes("FROM breaker_stream_inputs")) return { cloudflare_live_input_uid: "stream-input-123" };
+                return null;
+              },
+              run: async () => {
+                writes.push({ sql, args });
+                return { success: true, meta: { changes: 1 } };
+              }
+            };
+          }
+        };
+      }
+    }
+  };
+  const form = new FormData();
+  form.set("title", "Uploaded Art Show");
+  form.set("scheduledAt", "2026-07-28T20:00:00.000Z");
+  form.set("thumbnailFile", new File([
+    Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46])
+  ], "show.jpeg", { type: "image/jpeg" }));
+
+  const response = await handlePlatformRoute(new Request("https://rewards-api.crackpacks.test/seller/shows", {
+    method: "POST",
+    headers: { Authorization: "Bearer session-token" },
+    body: form
+  }), env, {});
+
+  assert.equal(response.status, 201);
+  const payload = await response.json();
+  assert.match(payload.thumbnailUrl, /^https:\/\/rewards-api\.crackpacks\.test\/media\/show-thumbnails\/11111111-1111-4111-8111-111111111111\/[0-9a-f-]{36}\.jpg$/);
+  assert.equal(uploads.length, 1);
+  assert.match(uploads[0].key, /^show-thumbnails\/11111111-1111-4111-8111-111111111111\/[0-9a-f-]{36}\.jpg$/);
+  assert.equal(uploads[0].options.httpMetadata.contentType, "image/jpeg");
+  assert.equal(uploads[0].options.customMetadata.memberId, memberId);
+  const insert = writes.find(entry => entry.sql.includes("INSERT INTO breaker_stream_sessions"));
+  assert.ok(insert);
+  assert.equal(insert.args[10], payload.thumbnailUrl);
+});
+
+test("uploaded show thumbnail is served with immutable image headers", async () => {
+  const memberId = "11111111-1111-4111-8111-111111111111";
+  const showId = "22222222-2222-4222-8222-222222222222";
+  const imageBytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const env = {
+    SHOW_MEDIA: {
+      get: async key => {
+        assert.equal(key, `show-thumbnails/${memberId}/${showId}.png`);
+        return {
+          body: new Blob([imageBytes]).stream(),
+          httpEtag: "\"show-etag\"",
+          writeHttpMetadata(headers) {
+            headers.set("Content-Type", "image/png");
+          }
+        };
+      }
+    }
+  };
+
+  const response = await handlePlatformRoute(new Request(`https://rewards-api.crackpacks.test/media/show-thumbnails/${memberId}/${showId}.png`), env, {
+    "Access-Control-Allow-Origin": "*"
+  });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("Content-Type"), "image/png");
+  assert.equal(response.headers.get("Cache-Control"), "public, max-age=31536000, immutable");
+  assert.equal(response.headers.get("X-Content-Type-Options"), "nosniff");
+  assert.equal(response.headers.get("ETag"), "\"show-etag\"");
+  assert.deepEqual(new Uint8Array(await response.arrayBuffer()), imageBytes);
+});
+
 test("seller can schedule owned personal-store inventory into a show", async () => {
   const memberId = "11111111-1111-4111-8111-111111111111";
   const showId = "22222222-2222-4222-8222-222222222222";

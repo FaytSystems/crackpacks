@@ -14,6 +14,7 @@ import {
 import { calculateTimeEntry, hourlyRateCents, workforceSummary } from "./employee-workforce.js";
 
 const encoder = new TextEncoder();
+const SHOW_THUMBNAIL_MAX_BYTES = 5 * 1024 * 1024;
 const now = () => new Date().toISOString();
 const uid = () => crypto.randomUUID();
 const normalizeEmail = value => String(value || "").trim().toLowerCase().slice(0, 254);
@@ -3405,10 +3406,34 @@ async function sellerShows(request, env, cors) {
     const rows = await env.DB.prepare(`SELECT * FROM breaker_stream_sessions WHERE member_id=? ORDER BY started_at DESC LIMIT 100`).bind(auth.member.id).all();
     return json({ shows: rows.results || [] }, 200, cors);
   }
-  const data = await boundedJson(request, 5000);
+  let data = {};
+  let thumbnailFile = null;
+  if (/^multipart\/form-data\b/i.test(request.headers.get("Content-Type") || "")) {
+    const contentLength = Number(request.headers.get("Content-Length") || 0);
+    if (Number.isFinite(contentLength) && contentLength > SHOW_THUMBNAIL_MAX_BYTES + 100_000) {
+      return json({ error: "Show thumbnail must be 5 MB or smaller." }, 413, cors);
+    }
+    let form;
+    try {
+      form = await request.formData();
+    } catch {
+      return json({ error: "The show image upload could not be read." }, 400, cors);
+    }
+    const candidate = form.get("thumbnailFile");
+    thumbnailFile = candidate && typeof candidate === "object" && typeof candidate.arrayBuffer === "function" && Number(candidate.size || 0) > 0
+      ? candidate
+      : null;
+    data = {
+      title: form.get("title"),
+      scheduledAt: form.get("scheduledAt"),
+      thumbnailUrl: form.get("thumbnailUrl")
+    };
+  } else {
+    data = await boundedJson(request, 5000);
+  }
   const title = clean(data.title, 160);
   if (!title) return json({ error: "Enter a show title." }, 400, cors);
-  const thumbnailUrl = clean(data.thumbnailUrl, 500);
+  let thumbnailUrl = clean(data.thumbnailUrl, 500);
   if (thumbnailUrl && !/^https:\/\//i.test(thumbnailUrl) && !/^assets\/images\/[a-z0-9._/-]+$/i.test(thumbnailUrl)) {
     return json({ error: "Show thumbnail must use HTTPS or a local assets/images path." }, 400, cors);
   }
@@ -3417,18 +3442,72 @@ async function sellerShows(request, env, cors) {
   const scheduledAt = data.scheduledAt && Number.isFinite(Date.parse(data.scheduledAt)) ? new Date(data.scheduledAt).toISOString() : null;
   const showId = uid(); const stamp = now();
   const slug = `${clean(auth.member.live_username || "seller", 32).toLowerCase()}-${showId.slice(0, 8)}`;
+  let thumbnailKey = "";
+  if (thumbnailFile) {
+    if (!env.SHOW_MEDIA) return json({ error: "Show image storage is not configured yet." }, 503, cors);
+    if (Number(thumbnailFile.size || 0) > SHOW_THUMBNAIL_MAX_BYTES) return json({ error: "Show thumbnail must be 5 MB or smaller." }, 413, cors);
+    const bytes = new Uint8Array(await thumbnailFile.arrayBuffer());
+    const isPng = bytes.length >= 8 &&
+      bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47 &&
+      bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a;
+    const isJpeg = bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+    const declaredType = String(thumbnailFile.type || "").toLowerCase();
+    const declaredMatches = !declaredType ||
+      (isPng && declaredType === "image/png") ||
+      (isJpeg && ["image/jpeg", "image/jpg", "image/pjpeg"].includes(declaredType));
+    if ((!isPng && !isJpeg) || !declaredMatches) {
+      return json({ error: "Choose a valid PNG, JPG, or JPEG show thumbnail." }, 415, cors);
+    }
+    const extension = isPng ? "png" : "jpg";
+    const contentType = isPng ? "image/png" : "image/jpeg";
+    thumbnailKey = `show-thumbnails/${auth.member.id}/${showId}.${extension}`;
+    try {
+      await env.SHOW_MEDIA.put(thumbnailKey, bytes, {
+        httpMetadata: { contentType, cacheControl: "public, max-age=31536000, immutable" },
+        customMetadata: { memberId: auth.member.id, showId }
+      });
+    } catch (error) {
+      console.error("Show thumbnail upload failed", { memberId: auth.member.id, showId, message: clean(error?.message || "", 180) });
+      return json({ error: "The show thumbnail could not be uploaded. Try again." }, 503, cors);
+    }
+    thumbnailUrl = `${new URL(request.url).origin}/media/${thumbnailKey}`;
+  }
   await setLiveInputEnabled(env, input.cloudflare_live_input_uid, true).catch(() => null);
-  await env.DB.prepare(`INSERT INTO breaker_stream_sessions(id,member_id,cloudflare_live_input_uid,title,status,started_at,created_at,updated_at,public_slug,scheduled_at,thumbnail_url) VALUES(?,?,?,?,?,?,?,?,?,?,?)`)
-    .bind(showId, auth.member.id, input.cloudflare_live_input_uid, title, "open", scheduledAt || stamp, stamp, stamp, slug, scheduledAt, thumbnailUrl).run();
+  try {
+    await env.DB.prepare(`INSERT INTO breaker_stream_sessions(id,member_id,cloudflare_live_input_uid,title,status,started_at,created_at,updated_at,public_slug,scheduled_at,thumbnail_url) VALUES(?,?,?,?,?,?,?,?,?,?,?)`)
+      .bind(showId, auth.member.id, input.cloudflare_live_input_uid, title, "open", scheduledAt || stamp, stamp, stamp, slug, scheduledAt, thumbnailUrl).run();
+  } catch (error) {
+    if (thumbnailKey) await env.SHOW_MEDIA.delete(thumbnailKey).catch(() => null);
+    throw error;
+  }
   await env.DB.prepare(`UPDATE breaker_stream_inputs SET status='enabled',updated_at=? WHERE member_id=?`).bind(stamp, auth.member.id).run();
   const base = siteUrl(env);
   return json({
     id: showId,
     slug,
     status: "open",
+    thumbnailUrl,
     livePageUrl: `${base}/live.html?show=${encodeURIComponent(showId)}`,
     liveShowsUrl: `${base}/live-shows.html?tab=upcoming#show-${encodeURIComponent(showId)}`
   }, 201, cors);
+}
+
+async function showThumbnailMedia(env, cors, url, request) {
+  const match = url.pathname.match(/^\/media\/show-thumbnails\/([0-9a-f-]{36})\/([0-9a-f-]{36})\.(png|jpg)$/i);
+  if (!match) return json({ error: "Show thumbnail not found." }, 404, cors);
+  if (!env.SHOW_MEDIA) return json({ error: "Show image storage is not configured." }, 503, cors);
+  const key = `show-thumbnails/${match[1].toLowerCase()}/${match[2].toLowerCase()}.${match[3].toLowerCase()}`;
+  const object = await env.SHOW_MEDIA.get(key);
+  if (!object?.body) return json({ error: "Show thumbnail not found." }, 404, cors);
+  const headers = new Headers(cors);
+  if (typeof object.writeHttpMetadata === "function") object.writeHttpMetadata(headers);
+  if (!headers.has("Content-Type")) headers.set("Content-Type", match[3].toLowerCase() === "png" ? "image/png" : "image/jpeg");
+  headers.set("Cache-Control", "public, max-age=31536000, immutable");
+  headers.set("X-Content-Type-Options", "nosniff");
+  headers.set("Content-Security-Policy", "default-src 'none'");
+  if (object.httpEtag) headers.set("ETag", object.httpEtag);
+  if (request.headers.get("If-None-Match") === object.httpEtag) return new Response(null, { status: 304, headers });
+  return new Response(object.body, { status: 200, headers });
 }
 
 async function sellerShowLots(request, env, cors, showId) {
@@ -3555,6 +3634,7 @@ async function changeAuctionStatus(request, env, cors, lotId, action) {
 
 export async function handlePlatformRoute(request, env, cors) {
   const url = new URL(request.url);
+  if (url.pathname.startsWith("/media/show-thumbnails/") && request.method === "GET") return showThumbnailMedia(env, cors, url, request);
   if (url.pathname === "/webhooks/stripe" && request.method === "POST") return stripeWebhook(request, env, cors);
   if (url.pathname === "/employee/activate" && request.method === "POST") return activateEmployee(request, env, cors);
   if (url.pathname === "/employee/dashboard" && request.method === "GET") return employeeDashboard(request, env, cors);
