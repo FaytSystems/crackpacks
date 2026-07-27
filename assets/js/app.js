@@ -22,6 +22,31 @@
 
   const isExternal = url => /^https?:\/\//i.test(url || "");
 
+  document.querySelectorAll(".nav-youtube").forEach(link => { link.remove(); });
+  document.querySelectorAll(".site-nav .nav-live[data-live-hub], .site-nav .nav-live[data-live]").forEach(link => { link.remove(); });
+  document.querySelectorAll('.site-nav > a[href="streams.html"]').forEach(link => {
+    if (link.textContent.trim().toLowerCase() === "live") link.remove();
+  });
+
+  function mountHeaderLiveStar() {
+    const shell = document.querySelector(".nav-shell");
+    const brand = shell?.querySelector(".brand");
+    if (!shell || !brand || shell.querySelector(".nav-live-star")) return;
+    shell.classList.add("has-live-star");
+    const url = config.liveHubUrl || "streams.html";
+    const link = document.createElement("a");
+    link.className = "nav-live-star";
+    link.href = url;
+    link.setAttribute("aria-label", "Open Crack Packs live hub");
+    if (isExternal(url)) {
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+    }
+    link.innerHTML = '<span>LIVE</span>';
+    brand.insertAdjacentElement("afterend", link);
+  }
+  mountHeaderLiveStar();
+
   document.querySelectorAll("[data-live-hub]").forEach(link => {
     const url = config.liveHubUrl || "#";
     link.href = url;

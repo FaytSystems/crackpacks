@@ -96,17 +96,66 @@ button { color: inherit; }
   background: rgba(5, 6, 21, .78);
   backdrop-filter: blur(22px) saturate(145%);
 }
-.nav-shell { min-height: 78px; display: flex; align-items: center; justify-content: space-between; gap: 28px; }
+.nav-shell { min-height: 78px; display: flex; align-items: center; justify-content: flex-start; gap: 18px; }
+.nav-shell.has-live-star { gap: clamp(10px, 1.5vw, 18px); }
 .brand { width: min(300px, 53vw); flex: 0 0 auto; }
+.nav-shell.has-live-star .brand { width: min(270px, 42vw); }
 .brand img { width: 100%; }
-.site-nav { display: flex; align-items: center; gap: 25px; }
+.site-nav { display: flex; align-items: center; gap: 16px; margin-left: auto; }
 .site-nav a {
   position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: #e8eaff;
   text-decoration: none;
   font-size: .92rem;
   font-weight: 850;
   letter-spacing: -.01em;
+  white-space: nowrap;
+}
+.site-nav > a[href$="card-lookup.html"],
+.site-nav > a[href*="card-lookup.html?"] {
+  min-width: 148px;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 1px solid rgba(56,232,255,.3);
+  border-radius: 999px;
+  background: linear-gradient(115deg, rgba(56,232,255,.1), rgba(255,78,219,.08));
+}
+.site-nav > a[href$="card-lookup.html"]::after,
+.site-nav > a[href*="card-lookup.html?"]::after {
+  display: none;
+}
+.site-nav > a[href$="card-lookup.html"]:hover,
+.site-nav > a[href*="card-lookup.html?"]:hover {
+  border-color: rgba(248,255,70,.54);
+  box-shadow: 0 0 28px rgba(56,232,255,.14);
+}
+.nav-live-star {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 92px;
+  aspect-ratio: 1;
+  color: #070815;
+  text-decoration: none;
+  clip-path: polygon(50% 0%, 60% 27%, 86% 14%, 73% 40%, 100% 50%, 73% 60%, 86% 86%, 60% 73%, 50% 100%, 40% 73%, 14% 86%, 27% 60%, 0% 50%, 27% 40%, 14% 14%, 40% 27%);
+  background: radial-gradient(circle at 34% 28%, #fff 0 10%, transparent 11%), linear-gradient(135deg, var(--electric), #5dffc5 44%, var(--cyan));
+  filter: drop-shadow(0 8px 0 rgba(0,0,0,.32)) drop-shadow(0 0 22px rgba(248,255,70,.34));
+  animation: liveStarBreath 2.15s ease-in-out infinite;
+}
+.nav-live-star span {
+  transform: rotate(-7deg);
+  font-size: clamp(.9rem, 1.5vw, 1.1rem);
+  font-weight: 1000;
+  letter-spacing: 0;
+  text-shadow: 0 1px 0 rgba(255,255,255,.5);
+}
+.nav-live-star:hover {
+  color: #070815;
+  animation-duration: 1.15s;
 }
 .site-nav a:not(.nav-live)::after {
   content: "";
@@ -428,8 +477,13 @@ button { color: inherit; }
 @keyframes drift { to { transform: translate3d(50px, -35px, 0) scale(1.08); } }
 @keyframes float { 50% { transform: translateY(-10px) rotate(4deg); } }
 @keyframes pulse { 70% { box-shadow: 0 0 0 10px rgba(255,85,118,0); } 100% { box-shadow: 0 0 0 0 rgba(255,85,118,0); } }
+@keyframes liveStarBreath { 0%, 100% { transform: scale(.96) rotate(-3deg); filter: drop-shadow(0 8px 0 rgba(0,0,0,.32)) drop-shadow(0 0 18px rgba(248,255,70,.26)); } 50% { transform: scale(1.06) rotate(3deg); filter: drop-shadow(0 9px 0 rgba(0,0,0,.36)) drop-shadow(0 0 34px rgba(248,255,70,.48)); } }
 @keyframes holoSweep { 0%, 18% { transform: translateX(-65%) rotate(8deg); } 55%, 100% { transform: translateX(65%) rotate(8deg); } }
 @keyframes marqueeShine { 0%, 22% { transform: translateX(-100%); } 55%, 100% { transform: translateX(130%); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-live-star { animation: none; }
+}
 
 
 .catalog-section {
@@ -583,9 +637,16 @@ button { color: inherit; }
   }
   .site-nav.is-open { display: flex; flex-direction: column; }
   .site-nav a { padding: 10px 8px; }
+  .site-nav > a[href$="card-lookup.html"],
+  .site-nav > a[href*="card-lookup.html?"] {
+    width: 100%;
+    min-width: 0;
+    padding: 0 16px;
+  }
   .site-nav a::after { display: none; }
   .nav-live { justify-content: center; }
-  .menu-toggle { display: block; }
+  .menu-toggle { display: block; margin-left: auto; }
+  .nav-live-star { width: 74px; }
   .marquee-slide { grid-template-columns: 1fr; padding-inline: 22px; }
   .marquee-slide em { display: none; }
   .marquee-slide strong { font-size: clamp(1.65rem, 7vw, 2.6rem); }
@@ -612,6 +673,8 @@ button { color: inherit; }
   .section { padding: 72px 0; }
   .nav-shell { min-height: 70px; }
   .brand { width: min(250px, 68vw); }
+  .nav-shell.has-live-star .brand { width: min(210px, 44vw); }
+  .nav-live-star { width: 62px; }
   .visual-marquee { display: none; }
   .hero { padding-top: 64px; }
   .hero h1,

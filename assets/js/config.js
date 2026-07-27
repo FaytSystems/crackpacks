@@ -16,8 +16,19 @@ window.CRACKPACKS_CONFIG = {
   youtubeRequestTimeoutMs: 8000,
   storeUrl: "shop.html",
   cardSeriesTabs: [
-    { id: "pokemon", label: "Pokémon" },
-    { id: "magic", label: "Magic the Gathering" }
+    { id: "pokemon", label: "Pokemon" },
+    { id: "magic", label: "Magic" },
+    { id: "yugioh", label: "Yu-Gi-Oh!" },
+    { id: "sports", label: "Sports cards" },
+    { id: "lorcana", label: "Lorcana" },
+    { id: "onepiece", label: "One Piece" },
+    { id: "dragonball", label: "Dragon Ball" },
+    { id: "digimon", label: "Digimon" },
+    { id: "fab", label: "Flesh and Blood" },
+    { id: "weiss", label: "Weiss Schwarz" },
+    { id: "graded", label: "Graded slabs" },
+    { id: "sealed", label: "Sealed boxes" },
+    { id: "collectibles", label: "Collectibles" }
   ],
   email: "support@crackpacks.com",
   domain: "https://crackpacks.com",
