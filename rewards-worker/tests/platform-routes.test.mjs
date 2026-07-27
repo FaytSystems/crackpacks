@@ -630,7 +630,7 @@ test("seller stream input creates Cloudflare live input with current API body", 
   const originalFetch = globalThis.fetch;
   const cloudflareCalls = [];
   globalThis.fetch = async (url, options) => {
-    cloudflareCalls.push({ url: String(url), method: options?.method || "GET", body: String(options?.body || "") });
+    cloudflareCalls.push({ url: String(url), method: options?.method || "GET", headers: options?.headers || {}, body: String(options?.body || "") });
     if (String(url).endsWith("/stream/live_inputs") && options?.method === "POST") {
       return new Response(JSON.stringify({
         success: true,
@@ -660,7 +660,7 @@ test("seller stream input creates Cloudflare live input with current API body", 
   const env = {
     AUTH_SECRET: "test-secret",
     CLOUDFLARE_ACCOUNT_ID: "198a4ebd4ac3a23957f8d0431c273228",
-    CLOUDFLARE_STREAM_API_TOKEN: "stream-token",
+    CLOUDFLARE_STREAM_API_TOKEN: "Bearer stream-token",
     DB: {
       prepare(sql) {
         return {
@@ -705,6 +705,9 @@ test("seller stream input creates Cloudflare live input with current API body", 
   assert.equal(payload.input.streamKey, "secret-stream-key");
   assert.equal(cloudflareCalls.length, 2);
   const createBody = JSON.parse(cloudflareCalls[0].body);
+  assert.equal(cloudflareCalls[0].headers.Authorization, "Bearer stream-token");
+  assert.equal(cloudflareCalls[1].headers.Authorization, "Bearer stream-token");
+  assert.equal(createBody.deleteRecordingAfterDays, 45);
   assert.equal(createBody.enabled, true);
   assert.equal(createBody.preferLowLatency, true);
   assert.equal(createBody.meta.name, "GARAGESALEdotcom Crack Packs input");
@@ -714,4 +717,64 @@ test("seller stream input creates Cloudflare live input with current API body", 
     requireSignedURLs: false,
     timeoutSeconds: 0
   });
+});
+
+test("seller stream input explains verified Cloudflare token with blocked Stream account request", async t => {
+  const originalFetch = globalThis.fetch;
+  const cloudflareCalls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    cloudflareCalls.push({ url: String(url), method: options.method || "GET", headers: options.headers || {}, body: String(options.body || "") });
+    if (String(url).endsWith("/user/tokens/verify")) {
+      return new Response(JSON.stringify({ success: true, result: { status: "active" } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+    return new Response("", { status: 400, statusText: "Bad Request" });
+  };
+  t.after(() => { globalThis.fetch = originalFetch; });
+
+  const member = {
+    id: "db319ec3-aa9a-436a-a094-2fca08c85f8a",
+    email_verified_at: "2026-07-24T00:00:00.000Z",
+    device_verified: 1,
+    identity_status: "verified",
+    stripe_identity_status: "verified",
+    live_username: "GARAGESALEdotcom"
+  };
+  const env = {
+    AUTH_SECRET: "test-secret",
+    CLOUDFLARE_ACCOUNT_ID: "accounts/198a4ebd4ac3a23957f8d0431c273228",
+    CLOUDFLARE_STREAM_API_TOKEN: "Bearer stream-token",
+    DB: {
+      prepare(sql) {
+        return {
+          bind() {
+            return {
+              first: async () => {
+                if (sql.includes("JOIN members")) return member;
+                if (sql.includes("breaker_profiles")) return { status: "active" };
+                if (sql.includes("breaker_stream_inputs")) return null;
+                return null;
+              },
+              run: async () => ({ success: true, meta: { changes: 1 } })
+            };
+          }
+        };
+      }
+    }
+  };
+  const response = await handlePlatformRoute(new Request("https://api.crackpacks.test/seller/stream/input", {
+    method: "POST",
+    headers: { Authorization: "Bearer session-token" },
+    body: "{}"
+  }), env, {});
+  assert.equal(response.status, 503);
+  const payload = await response.json();
+  assert.match(payload.error, /Cloudflare rejected both supported live-input request formats/);
+  assert.match(payload.error, /Cloudflare token verifies/);
+  assert.match(payload.error, /CLOUDFLARE_ACCOUNT_ID/);
+  assert.match(payload.error, /Stream is enabled\/subscribed/);
+  assert.ok(cloudflareCalls.some(call => call.url.endsWith("/user/tokens/verify")));
+  assert.equal(cloudflareCalls[0].headers.Authorization, "Bearer stream-token");
 });
