@@ -20,6 +20,7 @@
   let sellerOrderTab = "all";
   let sellerOrderSearch = "";
   let sellerContextAuthorized = false;
+  let showHashFocused = false;
   const requestedHubTab = new URLSearchParams(location.search).get("tab") || "";
   let activeTab = ["all", "live", "upcoming", "followed", "watchlist"].includes(requestedHubTab)
     ? requestedHubTab
@@ -264,6 +265,13 @@
     });
     $("[data-streams-list]").innerHTML = filtered.map(showCard).join("");
     $("[data-streams-empty]").hidden = filtered.length > 0;
+    if (!showHashFocused && location.hash.startsWith("#show-")) {
+      const target = document.getElementById(decodeURIComponent(location.hash.slice(1)));
+      if (target) {
+        showHashFocused = true;
+        requestAnimationFrame(() => target.scrollIntoView({ behavior: "smooth", block: "center" }));
+      }
+    }
   }
 
   async function loadShows() {
