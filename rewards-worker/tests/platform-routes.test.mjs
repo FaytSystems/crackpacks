@@ -513,6 +513,11 @@ test("portal status syncs completed Stripe verification for older seller records
   const payload = await response.json();
   assert.equal(payload.sellerAccess, true);
   assert.equal(payload.activePortal, "seller");
+  assert.equal(payload.sellerStatus, "active");
+  assert.equal(payload.identityStatus, "verified");
+  assert.equal(payload.stripeIdentityStatus, "verified");
+  assert.equal(payload.sellerUsername, "GARAGESALEdotcom");
+  assert.equal(payload.hasSellerLegalProfile, true);
   assert.equal(payload.isMaster, true);
   assert.equal(updates.length, 1);
   assert.match(updates[0].sql, /identity_fingerprint=\?/);

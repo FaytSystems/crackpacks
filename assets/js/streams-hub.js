@@ -250,6 +250,121 @@
   const setStatus = (selector, message = "", kind = "") => {
     const node = $(selector); if (!node) return; node.textContent = message; node.dataset.kind = kind;
   };
+  const setSellerIdentityResult = (message = "", kind = "") => setStatus("[data-seller-identity-status-result]", message, kind);
+  function showSellerIdentityPanel(message = "Stripe has accepted your ID verification for processing. Check the live status when you are ready.", kind = "success", { complete = false, retry = false } = {}) {
+    const panel = $("[data-seller-identity-status-panel]");
+    if (!panel) return;
+    panel.hidden = false;
+    const copy = $("[data-seller-identity-status-copy]");
+    if (copy) copy.textContent = message;
+    const completeButton = $("[data-seller-identity-complete]");
+    const retryButton = $("[data-seller-identity-retry]");
+    if (completeButton) completeButton.hidden = !complete;
+    if (retryButton) retryButton.hidden = !retry;
+    setSellerIdentityResult(message, kind);
+  }
+  function hideSellerIdentityPanel() {
+    const panel = $("[data-seller-identity-status-panel]");
+    if (panel) panel.hidden = true;
+    setSellerIdentityResult("");
+  }
+  function showSellerIdentityPanelForStatus(status) {
+    if (!status) return false;
+    if (status.sellerAccess && status.activePortal !== "seller") {
+      showSellerIdentityPanel("PASS: Seller Portal access is ready. Complete account setup to enter the Seller Portal.", "success", { complete: true });
+      return true;
+    }
+    if (status.sellerAccess) {
+      hideSellerIdentityPanel();
+      return false;
+    }
+    const stripeStatus = String(status.stripeIdentityStatus || "").toLowerCase();
+    const identityStatus = String(status.identityStatus || "").toLowerCase();
+    const hasSellerAttempt = Boolean(status.sellerUsername || status.sellerStatus !== "not_applied" || status.hasSellerLegalProfile || stripeStatus !== "not_started");
+    if (!hasSellerAttempt) {
+      hideSellerIdentityPanel();
+      return false;
+    }
+    if (identityStatus === "verified" && stripeStatus === "verified") {
+      showSellerIdentityPanel("PASS: Stripe ID verification is complete. Complete account setup to activate Seller Portal access.", "success", { complete: true });
+      return true;
+    }
+    if (["processing", "manual_review", "pending_review"].includes(stripeStatus) || ["pending_review", "manual_review"].includes(identityStatus)) {
+      showSellerIdentityPanel("VERIFY IN PROGRESS: Stripe is still processing your ID verification. Check again in a moment.", "success");
+      return true;
+    }
+    if (["requires_input", "failed", "cancelled", "canceled", "redacted"].includes(stripeStatus)) {
+      showSellerIdentityPanel("ID verification needs another try. Check the live status, or retry secure ID verification.", "error", { retry: true });
+      return true;
+    }
+    showSellerIdentityPanel("Seller ID verification is not complete yet. Continue the secure Seller verification steps.", "success", { retry: true });
+    return true;
+  }
+  async function refreshSellerIdentityPanel() {
+    const status = await api("/portal/status");
+    showSellerIdentityPanelForStatus(status);
+    return status;
+  }
+  async function completeSellerAccountSetup(button) {
+    if (button) button.disabled = true;
+    try {
+      const result = await api("/portal/mode", { method: "POST", body: JSON.stringify({ mode: "seller" }) });
+      if (result.activePortal !== "seller") throw new Error("Seller setup is not complete yet.");
+      localStorage.setItem("cp_can_seller_portal", "true");
+      localStorage.setItem("cp_portal_mode", "seller");
+      sessionStorage.setItem("cp_portal_mode", "seller");
+      window.location.href = "streams.html#go-live";
+    } catch (error) {
+      setSellerIdentityResult(error.message || "Seller Portal could not open yet.", "error");
+      if (button) button.disabled = false;
+    }
+  }
+  async function retrySellerIdentity(button) {
+    if (button) button.disabled = true;
+    try {
+      setSellerIdentityResult("Opening secure Stripe ID verification...", "success");
+      const result = await api("/identity/session", { method: "POST", body: JSON.stringify({ force: true }) });
+      if (result.verified) {
+        await completeSellerAccountSetup(button);
+        return;
+      }
+      if (!result.url) throw new Error("Stripe Identity did not return a verification link.");
+      window.location.href = result.url;
+    } catch (error) {
+      setSellerIdentityResult(error.message || "Stripe ID verification could not open.", "error");
+      if (button) button.disabled = false;
+    }
+  }
+  async function checkSellerIdentityStatus(button) {
+    if (button) button.disabled = true;
+    try {
+      setSellerIdentityResult("Checking Stripe ID verification status...", "success");
+      const result = await api("/identity/sync", { method: "POST", body: JSON.stringify({ notify: true }) });
+      const status = String(result.status || result.stripeStatus || "").toLowerCase();
+      if (result.verified || status === "verified") {
+        const portalStatus = await refreshSellerIdentityPanel();
+        if (portalStatus.sellerAccess) {
+          showSellerIdentityPanel("PASS: Seller Portal access is ready. Complete account setup to enter the Seller Portal.", "success", { complete: true });
+        } else {
+          showSellerIdentityPanel("PASS: Stripe ID verification is complete. Complete account setup to activate Seller Portal access.", "success", { complete: true });
+        }
+        return;
+      }
+      if (["processing", "manual_review", "pending_review"].includes(status)) {
+        showSellerIdentityPanel("VERIFY IN PROGRESS: Stripe is still processing your ID verification. Check again in a moment.", "success");
+        return;
+      }
+      if (["requires_input", "failed", "cancelled", "canceled", "redacted"].includes(status)) {
+        showSellerIdentityPanel("ID verification was not accepted. A retry email has been sent if this is the first failed result.", "error", { retry: true });
+        return;
+      }
+      showSellerIdentityPanel("Stripe has not returned a final result yet. Check again in a moment.", "success");
+    } catch (error) {
+      showSellerIdentityPanel(error.message || "Stripe ID verification status could not be checked.", "error", { retry: true });
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
 
   function renderSellerShows() {
     const select = $("[data-seller-show-select]");
@@ -594,11 +709,13 @@
       sellerContextAuthorized = Boolean(status.sellerAccess && status.activePortal === "seller");
       localStorage.setItem("cp_can_seller_portal", status.sellerAccess ? "true" : "false");
       if (!sellerContextAuthorized) {
+        showSellerIdentityPanelForStatus(status);
         $$('[data-seller-only]').forEach(node => { node.hidden = true; });
         $$('[data-seller-gate]').forEach(node => { node.hidden = false; });
         $$('[data-seller-page-content]').forEach(node => { node.hidden = true; });
         return;
       }
+      hideSellerIdentityPanel();
       $$('[data-seller-only]').forEach(node => { node.hidden = false; });
       try {
         const streamInput = await api("/seller/stream/input");
@@ -651,6 +768,16 @@
     activeTab = button.dataset.hubTab || "watchlist";
     $$('[data-hub-tab]').forEach(node => node.classList.toggle("is-active", node === button)); renderShows();
   }));
+
+  $("[data-seller-identity-check]")?.addEventListener("click", async event => {
+    await checkSellerIdentityStatus(event.currentTarget);
+  });
+  $("[data-seller-identity-complete]")?.addEventListener("click", async event => {
+    await completeSellerAccountSetup(event.currentTarget);
+  });
+  $("[data-seller-identity-retry]")?.addEventListener("click", async event => {
+    await retrySellerIdentity(event.currentTarget);
+  });
 
   $("[data-youtube-output-form]")?.addEventListener("submit", async event => {
     event.preventDefault();

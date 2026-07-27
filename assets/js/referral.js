@@ -504,6 +504,26 @@
     $("[data-retry-stripe-identity]").hidden = true;
     setIdentityStatusResult(message, kind);
   }
+  function showIdentityStatusPanelForAccount(account) {
+    const stripeStatus = String(account?.stripeIdentityStatus || "").toLowerCase();
+    const identityStatus = String(account?.identityStatus || "").toLowerCase();
+    if (account?.identityStatus === "verified" && account?.stripeIdentityStatus === "verified") {
+      showIdentityStatusPanel("PASS: Stripe ID verification is complete. Complete account setup to activate Seller Portal access.", "success");
+      $("[data-open-verified-seller-portal]").hidden = false;
+      setIdentityStatusResult("PASS accepted. Complete account setup when you are ready. The final email sends after Seller Portal access is granted.", "success");
+      return true;
+    }
+    if (["processing", "manual_review", "pending_review"].includes(stripeStatus) || ["pending_review", "manual_review"].includes(identityStatus)) {
+      showIdentityStatusPanel("VERIFY IN PROGRESS: Stripe has accepted your ID verification for processing. Check again in a moment.", "success");
+      return true;
+    }
+    if (["requires_input", "failed", "cancelled", "canceled", "redacted"].includes(stripeStatus)) {
+      showIdentityStatusPanel("ID verification needs another try. Check the live status, or retry secure ID verification.", "error");
+      $("[data-retry-stripe-identity]").hidden = false;
+      return true;
+    }
+    return false;
+  }
   async function openVerifiedSellerPortalFromStatus() {
     let account = await request("/me?syncIdentity=1");
     accountState = account;
@@ -552,12 +572,7 @@
     showStatus("Stripe ID verification returned. Check the live Stripe status below.", "success");
     showIdentityStatusPanel();
     const account = await loadAccount().catch(() => null);
-    if (account?.identityStatus === "verified" && account?.stripeIdentityStatus === "verified") {
-      showIdentityStatusPanel("PASS: Stripe ID verification is complete. Complete account setup to activate Seller Portal access.", "success");
-      $("[data-open-verified-seller-portal]").hidden = false;
-    } else if (["processing", "manual_review"].includes(String(account?.stripeIdentityStatus || "").toLowerCase()) || account?.identityStatus === "pending_review") {
-      showIdentityStatusPanel("VERIFY IN PROGRESS: Stripe has accepted your ID verification for processing. Check again in a moment.", "success");
-    } else {
+    if (!showIdentityStatusPanelForAccount(account)) {
       showIdentityStatusPanel("Stripe has accepted your ID verification for processing. Click the status button to refresh the live result.", "success");
     }
     $("[data-check-stripe-identity-status]")?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -900,6 +915,10 @@
     show("[data-seller-username-panel]", false);
     if (needsSellerUpgradeFlow && !sellerAllowed && !stripeSellerVerified) {
       show("[data-buyer-username-panel]", false);
+      const stripeStatus = String(data.stripeIdentityStatus || "").toLowerCase();
+      const identityStatus = String(data.identityStatus || "").toLowerCase();
+      const hasStripeStatusToCheck = ["processing", "manual_review", "pending_review", "requires_input", "failed", "cancelled", "canceled", "redacted"].includes(stripeStatus) || ["pending_review", "manual_review"].includes(identityStatus);
+      if (hasSellerLegalProfile && hasStripeStatusToCheck && showIdentityStatusPanelForAccount(data)) return;
       show("[data-profile-panel]", true);
       show("[data-seller-username-panel]", false);
       show("[data-dashboard]", false);

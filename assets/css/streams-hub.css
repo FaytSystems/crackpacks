@@ -69,6 +69,55 @@
   color: rgba(255,255,255,0.8);
 }
 
+.seller-identity-status-panel {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.seller-identity-status-panel[hidden] {
+  display: none;
+}
+
+.seller-identity-status-panel h2 {
+  margin: 0;
+}
+
+.seller-identity-status-panel p {
+  max-width: 760px;
+}
+
+.seller-identity-status-bubble {
+  width: min(100%, 760px);
+  min-height: 128px;
+  border: 1px solid rgba(255,255,255,0.26);
+  border-radius: 999px;
+  color: #08111f;
+  background: linear-gradient(135deg, #5dffc5, #38e8ff 48%, #f8ff46);
+  box-shadow: 0 22px 60px rgba(56,232,255,0.26), 0 0 34px rgba(93,255,197,0.18);
+  font-size: clamp(1.05rem, 3vw, 1.9rem);
+  font-weight: 950;
+  letter-spacing: 0;
+  text-align: center;
+  cursor: pointer;
+}
+
+.seller-identity-status-bubble:hover {
+  transform: translateY(-2px);
+}
+
+.seller-identity-status-bubble:disabled {
+  cursor: wait;
+  opacity: 0.68;
+}
+
+.seller-identity-status-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
 .hub-tabs {
   display: flex;
   gap: 0.75rem;

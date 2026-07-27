@@ -9,7 +9,7 @@
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/css/styles.css?v=1.9.2">
   <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.6.1">
-  <link rel="stylesheet" href="assets/css/streams-hub.css?v=1.4.0">
+  <link rel="stylesheet" href="assets/css/streams-hub.css?v=1.4.1">
 </head>
 <body data-page="streams">
   <a class="skip-link" href="#main">Skip to content</a>
@@ -43,6 +43,17 @@
     </section>
 
     <section class="container">
+      <section class="holo-panel seller-identity-status-panel" data-seller-identity-status-panel hidden>
+        <p class="eyebrow">Seller verification - Step 5 of 5</p>
+        <h2>Stripe ID Verify Status</h2>
+        <p data-seller-identity-status-copy>Stripe has accepted your ID verification for processing. Check the live status when you are ready.</p>
+        <button class="seller-identity-status-bubble" type="button" data-seller-identity-check>CHECK STATUS OF STRIPE ID VERIFY</button>
+        <div class="seller-identity-status-actions">
+          <button class="btn btn-primary" type="button" data-seller-identity-complete hidden>Complete Account Set-Up</button>
+          <button class="btn btn-outline" type="button" data-seller-identity-retry hidden>Retry Verify ID</button>
+        </div>
+        <div class="campaign-form-status" data-seller-identity-status-result aria-live="polite"></div>
+      </section>
       <div class="hub-tabs">
         <button class="hub-tab is-active" type="button" data-hub-tab="watchlist">Saved Watchlist</button>
         <button class="hub-tab" type="button" data-hub-tab="live">Live Now</button>
@@ -371,6 +382,6 @@
   <script src="assets/js/config.js?v=3.0.0"></script>
   <script src="assets/js/app.js?v=1.9.2"></script>
   <script src="assets/js/portal-mode.js?v=1.1.5"></script>
-  <script src="assets/js/streams-hub.js?v=1.4.0"></script>
+  <script src="assets/js/streams-hub.js?v=1.4.1"></script>
 </body>
 </html>
