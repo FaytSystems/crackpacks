@@ -512,6 +512,8 @@ async function handleApiTcgCards(incomingUrl, env, cors, series, language = "any
   const tcgSlug = API_TCG_SERIES.get(series);
   const upstreamUrl = new URL(`${APITCG_API_BASE}/products`);
   upstreamUrl.searchParams.set("tcg", tcgSlug);
+  upstreamUrl.searchParams.set("limit", String(pageSize));
+  upstreamUrl.searchParams.set("page", String(page));
   for (const [key, value] of apiTcgSearchParams(term, field)) {
     upstreamUrl.searchParams.set(key, value);
   }

@@ -112,3 +112,47 @@ test("eBay route mints one token and normalizes active listings", async t => {
   assert.equal(searchRequest.init.headers["X-EBAY-C-MARKETPLACE-ID"], "EBAY_US");
   assert.match(searchRequest.url, /q=Charizard\+Pokemon\+TCG/);
 });
+
+test("API TCG search forwards the requested page and page size", async t => {
+  const originalFetch = globalThis.fetch;
+  let upstreamUrl = "";
+
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  globalThis.fetch = async input => {
+    upstreamUrl = String(input);
+    return Response.json({
+      data: [
+        {
+          id: "op-1",
+          name: "Monkey D. Luffy",
+          type: "card",
+          number: "OP01-001",
+          setName: "Romance Dawn"
+        }
+      ],
+      total: 42
+    });
+  };
+
+  const response = await worker.fetch(
+    new Request(
+      "https://api.crackpacks.com/cards?term=Luffy&field=name&series=onepiece&page=2&pageSize=3"
+    ),
+    {
+      APITCG_API_KEY: "test-api-tcg-key"
+    }
+  );
+  const payload = await response.json();
+  const parsedUpstreamUrl = new URL(upstreamUrl);
+
+  assert.equal(response.status, 200);
+  assert.equal(parsedUpstreamUrl.searchParams.get("tcg"), "one-piece");
+  assert.equal(parsedUpstreamUrl.searchParams.get("limit"), "3");
+  assert.equal(parsedUpstreamUrl.searchParams.get("page"), "2");
+  assert.equal(payload.page, 2);
+  assert.equal(payload.pageSize, 3);
+  assert.equal(payload.totalCount, 42);
+});
