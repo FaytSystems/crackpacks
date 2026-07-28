@@ -167,7 +167,7 @@
   color: #08111f;
   background: linear-gradient(135deg, #5dffc5, #38e8ff 48%, #f8ff46);
   box-shadow: 0 22px 60px rgba(56,232,255,0.26), 0 0 34px rgba(93,255,197,0.18);
-  font-size: clamp(1.05rem, 3vw, 1.9rem);
+  font-size: 1.55rem;
   font-weight: 950;
   letter-spacing: 0;
   text-align: center;
@@ -254,6 +254,325 @@
 .seller-show-tools,
 .seller-release-panel {
   margin-top: 1.5rem;
+}
+
+.seller-hub-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 22px 0 18px;
+  border-bottom: 1px solid rgba(255,255,255,0.12);
+}
+
+.seller-hub-heading h1 {
+  margin: 3px 0 6px;
+  font-size: 2rem;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.seller-hub-heading p {
+  max-width: 720px;
+  margin: 0;
+  color: rgba(255,255,255,0.68);
+}
+
+.seller-hub-heading-actions,
+.seller-inventory-primary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.seller-tool-menu {
+  position: sticky;
+  top: 76px;
+  z-index: 18;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 7px;
+  margin: 0 auto 20px;
+  padding: 10px;
+  border: 1px solid rgba(255,255,255,0.13);
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, rgba(56,232,255,0.055), transparent 28%, transparent 72%, rgba(255,78,219,0.055)),
+    rgba(7,9,27,0.97);
+  box-shadow: 0 12px 32px rgba(0,0,0,0.32), inset 0 1px rgba(255,255,255,0.04);
+}
+
+.seller-tool-menu-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 8px 13px;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 7px;
+  color: rgba(255,255,255,0.78);
+  background: rgba(255,255,255,0.045);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  line-height: 1.1;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.seller-tool-menu-button:hover,
+.seller-tool-menu-button:focus-visible {
+  border-color: rgba(56,232,255,0.58);
+  color: #fff;
+  outline: none;
+}
+
+.seller-tool-menu-button.is-active {
+  border-color: rgba(248,255,70,0.58);
+  color: #090a18;
+  background: #f8ff46;
+  box-shadow: 0 0 22px rgba(248,255,70,0.18);
+}
+
+.seller-tool-menu-link {
+  color: #fff;
+  background: rgba(255,78,219,0.12);
+}
+
+.seller-dashboard-home {
+  display: grid;
+  gap: 18px;
+  padding: 4px 0 12px;
+}
+
+.seller-dashboard-welcome {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(250px, 360px);
+  gap: 22px;
+  align-items: center;
+  padding: 24px;
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 8px;
+  background:
+    linear-gradient(118deg, rgba(56,232,255,0.12), transparent 34%),
+    linear-gradient(300deg, rgba(255,78,219,0.13), transparent 42%),
+    rgba(11,14,39,0.96);
+}
+
+.seller-dashboard-welcome h2 {
+  margin: 4px 0 8px;
+  font-size: 1.65rem;
+  letter-spacing: 0;
+}
+
+.seller-dashboard-welcome p {
+  margin: 0;
+  color: rgba(255,255,255,0.7);
+}
+
+.seller-dashboard-live-button {
+  display: grid;
+  gap: 4px;
+  min-height: 92px;
+  align-content: center;
+  padding: 16px 20px;
+  border: 1px solid rgba(114,255,164,0.62);
+  border-radius: 8px;
+  color: #07131c;
+  background: #72ffa4;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 0 16px 30px rgba(114,255,164,0.12);
+}
+
+.seller-dashboard-live-button span {
+  font-size: 1rem;
+  font-weight: 950;
+}
+
+.seller-dashboard-live-button small {
+  color: rgba(7,19,28,0.72);
+  font-weight: 800;
+}
+
+.seller-dashboard-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.seller-dashboard-metrics button {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  gap: 6px;
+  min-height: 88px;
+  padding: 15px;
+  border: 1px solid rgba(255,255,255,0.13);
+  border-radius: 8px;
+  color: #fff;
+  background: rgba(255,255,255,0.045);
+  text-align: left;
+  cursor: pointer;
+}
+
+.seller-dashboard-metrics button::before,
+.seller-dashboard-launcher > *::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  content: "";
+  background: #38e8ff;
+  opacity: 0.82;
+}
+
+.seller-dashboard-metrics button:nth-child(2)::before,
+.seller-dashboard-launcher > :nth-child(2)::before { background: #ff4edb; }
+.seller-dashboard-metrics button:nth-child(3)::before,
+.seller-dashboard-launcher > :nth-child(3)::before { background: #f8ff46; }
+.seller-dashboard-metrics button:nth-child(4)::before,
+.seller-dashboard-launcher > :nth-child(4)::before { background: #72ffa4; }
+.seller-dashboard-launcher > :nth-child(5)::before { background: #8d7aff; }
+.seller-dashboard-launcher > :nth-child(6)::before { background: #ffb13b; }
+
+.seller-dashboard-metrics button:hover,
+.seller-dashboard-metrics button:focus-visible,
+.seller-dashboard-launcher > :hover,
+.seller-dashboard-launcher > :focus-visible {
+  border-color: rgba(56,232,255,0.54);
+  outline: none;
+  background: rgba(56,232,255,0.09);
+}
+
+.seller-dashboard-metrics small {
+  color: rgba(255,255,255,0.62);
+  font-weight: 800;
+}
+
+.seller-dashboard-metrics strong {
+  font-size: 1.55rem;
+}
+
+.seller-dashboard-launcher {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.seller-dashboard-launcher > * {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  gap: 5px;
+  min-height: 106px;
+  align-content: center;
+  padding: 16px;
+  border: 1px solid rgba(255,255,255,0.13);
+  border-radius: 8px;
+  color: #fff;
+  background: rgba(12,15,42,0.88);
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.seller-dashboard-launcher strong {
+  font-size: 0.92rem;
+}
+
+.seller-dashboard-launcher span {
+  color: rgba(255,255,255,0.62);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.seller-workspace-heading {
+  margin-bottom: 14px;
+}
+
+.seller-workspace-heading h2 {
+  font-size: 1.45rem;
+  letter-spacing: 0;
+}
+
+.seller-inventory-primary-actions {
+  margin-bottom: 14px;
+}
+
+.seller-storefront-published-link {
+  margin: 8px 0 14px;
+}
+
+.is-seller-tool-hidden,
+.seller-tool-region.is-seller-tool-region-hidden {
+  display: none !important;
+}
+
+@media (max-width: 900px) {
+  .seller-hub-heading,
+  .seller-dashboard-welcome {
+    grid-template-columns: 1fr;
+  }
+
+  .seller-hub-heading {
+    align-items: start;
+  }
+
+  .seller-dashboard-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .seller-dashboard-launcher {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .seller-tool-menu {
+    display: flex;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .seller-tool-menu::-webkit-scrollbar {
+    display: none;
+  }
+
+  .seller-tool-menu-button {
+    flex: 0 0 auto;
+  }
+}
+
+@media (max-width: 620px) {
+  .seller-tool-menu {
+    top: 66px;
+    margin-inline: 12px;
+    width: calc(100% - 24px);
+  }
+
+  .seller-hub-heading {
+    padding-inline: 16px;
+  }
+
+  .seller-hub-heading-actions .btn {
+    flex: 1 1 140px;
+  }
+
+  .seller-dashboard-welcome {
+    padding: 18px;
+  }
+
+  .seller-dashboard-metrics,
+  .seller-dashboard-launcher {
+    grid-template-columns: 1fr;
+  }
+
+  .seller-dashboard-metrics button,
+  .seller-dashboard-launcher > * {
+    min-height: 78px;
+  }
 }
 
 .seller-giveaway-form,
@@ -706,7 +1025,7 @@
 }
 
 .seller-close-show-dialog h2 {
-  font-size: clamp(1.65rem, 4vw, 2.25rem);
+  font-size: 2rem;
 }
 
 .seller-close-show-actions {

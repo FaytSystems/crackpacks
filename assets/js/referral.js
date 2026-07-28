@@ -524,7 +524,7 @@
   async function enterSellerPortal() {
     await request("/portal/mode", { method: "POST", body: JSON.stringify({ mode: "seller" }) });
     setSellerPortalState();
-    window.location.replace("streams.html");
+    window.location.replace("streams.html#seller-home");
   }
   async function enterMasterPortal() {
     const result = await request("/portal/mode", { method: "POST", body: JSON.stringify({ mode: "master" }) });
@@ -2089,7 +2089,7 @@
         if (data.account.isAdmin || data.account.sellerAccess) {
           localStorage.setItem("cp_portal_mode", "seller");
           sessionStorage.setItem("cp_portal_mode", "seller");
-          window.location.replace("streams.html");
+          window.location.replace("streams.html#seller-home");
           return;
         }
         localStorage.setItem("cp_portal_mode", "buyer");

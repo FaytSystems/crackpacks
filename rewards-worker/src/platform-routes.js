@@ -735,7 +735,7 @@ async function sendSellerSubscriptionOnboardingEmail(env, member, subscription) 
   if (Number(claimed.meta?.changes || 0) !== 1) return false;
   const base = siteUrl(env);
   const creditsUrl = `${base}/referral.html?view=credits`;
-  const createKeyUrl = `${base}/streams.html#go-live`;
+  const createKeyUrl = `${base}/streams.html#seller-obs`;
   const createShowUrl = `${base}/streams.html#create-show`;
   const inventoryUrl = `${base}/streams.html#seller-inventory`;
   const shippingUrl = `${base}/streams.html#seller-shipping`;

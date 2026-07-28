@@ -10,7 +10,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="stylesheet" href="assets/css/styles.css?v=1.9.8">
   <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.6.5">
-  <link rel="stylesheet" href="assets/css/store.css?v=3.0.0">
+  <link rel="stylesheet" href="assets/css/store.css?v=3.1.0">
   
   <!-- CRACK PACKS CONTACT ASSETS:START -->
   <link rel="stylesheet" href="assets/css/contact-form.css?v=1.7.1">
@@ -67,19 +67,27 @@
     </section>
     <section class="page-hero shop-hero">
       <div class="container page-hero-grid">
-        <div class="reveal"><p class="eyebrow">Buyer marketplace</p><h1>Search cards and products across <span>every seller store.</span></h1><p>Buyers can search all seller listings in one place, compare seller IDs, prices, and condition, then jump straight to the listing they want.</p><div class="actions"><a class="btn btn-primary" href="#inventory">Search the marketplace</a><a class="btn btn-glass" href="card-lookup.html">Card Search ($)</a><a class="btn btn-glass" href="releases.html">Open release calendar</a></div></div>
+        <div class="reveal"><p class="eyebrow" data-store-hero-eyebrow>Buyer marketplace</p><h1 data-store-hero-title>Search cards and products across <span>every seller store.</span></h1><p data-store-hero-copy>Buyers can search all seller listings in one place, compare seller IDs, prices, and condition, then jump straight to the listing they want.</p><div class="actions"><a class="btn btn-primary" href="#inventory" data-store-hero-action>Search the marketplace</a><a class="btn btn-glass" href="card-lookup.html">Card Search ($)</a><a class="btn btn-glass" href="releases.html">Open release calendar</a></div></div>
         <div class="shop-orb holo-panel reveal" aria-hidden="true"><span class="shop-orb-ring ring-one"></span><span class="shop-orb-ring ring-two"></span><span class="shop-orb-ring ring-three"></span><strong>SHOP<br>THE<br>CHASE</strong></div>
       </div>
     </section>
 
     <section class="section-tight" id="inventory">
       <div class="container">
-        <div class="store-prelaunch-note holo-panel">
+        <div class="seller-storefront-context holo-panel" data-seller-storefront-context hidden>
+          <div>
+            <p class="eyebrow">Seller storefront</p>
+            <h2 data-seller-storefront-title>Seller Store</h2>
+            <p data-seller-storefront-copy>Shop active listings published by this verified Crack Packs seller.</p>
+          </div>
+          <a class="btn btn-outline" href="shop.html">Search all sellers</a>
+        </div>
+        <div class="store-prelaunch-note holo-panel" data-marketplace-only>
           <span class="store-lock-icon" aria-hidden="true">&#128269;</span>
           <div><strong>All seller stores in one search</strong><p>Search by card, box, pack, or product name. Results show seller ID, price, condition, and live listed quantity.</p></div>
           <nav class="store-market-switch" aria-label="Choose storefront"><a href="shop.html" aria-current="page">Buyer marketplace</a><a href="international-shop.html">International</a></nav>
         </div>
-        <section class="top-ten-marketplace holo-panel" aria-labelledby="top-ten-title">
+        <section class="top-ten-marketplace holo-panel" aria-labelledby="top-ten-title" data-marketplace-only>
           <div class="top-ten-head">
             <div>
               <p class="eyebrow">Store spotlight</p>
@@ -237,8 +245,8 @@
   <script src="assets/js/data.js?v=1.5.0"></script>
   <script src="assets/js/app.js?v=1.9.7"></script>
   <script src="assets/js/store-top-items.js?v=1.0.0"></script>
-  <script src="assets/js/portal-mode.js?v=1.2.3"></script>
-  <script src="assets/js/store.js?v=3.2.0"></script>
+  <script src="assets/js/portal-mode.js?v=1.2.4"></script>
+  <script src="assets/js/store.js?v=3.3.0"></script>
   <script src="assets/js/store-enhancements.js?v=1.0.1"></script>
 
 
@@ -281,7 +289,7 @@
 </div>
 <!-- CRACK PACKS CONTACT MODAL:END -->
 <!-- CRACK PACKS CONTACT SCRIPT:START -->
-<script src="assets/js/nav-profile.js?v=4.5.2"></script>
+<script src="assets/js/nav-profile.js?v=4.5.3"></script>
 <script src="assets/js/contact-form.js?v=1.7.1"></script>
 <!-- CRACK PACKS CONTACT SCRIPT:END -->
 </body>

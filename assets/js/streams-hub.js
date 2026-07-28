@@ -33,6 +33,24 @@
   let obsGuideCompletedAt = "";
   let obsGuideTriggeredByCreate = false;
   const OBS_GUIDE_COMPLETED_KEY = "cp_obs_guide_completed";
+  const sellerToolMeta = {
+    home: { hash: "#seller-home", title: "Seller home", copy: "Shows, store inventory, orders, and live tools at a glance." },
+    "show-control": { hash: "#seller-show-control", title: "Show control", copy: "Monitor the live feed and move queued inventory into the active auction." },
+    obs: { hash: "#seller-obs", title: "Private OBS connection", copy: "Create, reveal, and reuse the protected RTMPS server and stream key." },
+    simulcast: { hash: "#seller-simulcast", title: "Simulcast", copy: "Relay the Crack Packs broadcast securely to the connected YouTube channel." },
+    shows: { hash: "#create-show", title: "Shows", copy: "Schedule a show, upload its thumbnail, and prepare it for buyers." },
+    "show-inventory": { hash: "#seller-shows", title: "Show inventory and store listings", copy: "Publish products to your store and queue account-owned inventory into a show." },
+    social: { hash: "#seller-social", title: "Show social launcher", copy: "Prepare a show link and share message for each social channel." },
+    inventory: { hash: "#seller-inventory", title: "Seller inventory", copy: "Track stock, PAR levels, reviewed reorders, and available quantities." },
+    categories: { hash: "#seller-categories", title: "Types of products selling", copy: "Choose which product categories appear in this seller store." },
+    cogs: { hash: "#seller-cogs", title: "Order COGS", copy: "Review landed costs and calculate a safer minimum auction bid." },
+    shipping: { hash: "#seller-shipping", title: "Seller shipping", copy: "Manage orders, labels, clips, package weights, and tracking." },
+    giveaways: { hash: "#seller-giveaways", title: "Giveaway presets", copy: "Prepare reusable giveaway rules and inventory labels before going live." }
+  };
+  const sellerToolAliases = {
+    "#go-live": "show-control",
+    "#seller-my-listings": "show-inventory"
+  };
 
   const escapeHtml = value => String(value ?? "").replace(/[&<>'"]/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character]);
   const dollars = cents => `$${(Number(cents || 0) / 100).toFixed(2)}`;
@@ -48,6 +66,50 @@
     return payload;
   };
   const dateLabel = value => value ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "Schedule pending";
+  function sellerToolFromHash() {
+    const hash = String(location.hash || "").toLowerCase();
+    if (sellerToolAliases[hash]) return sellerToolAliases[hash];
+    return Object.entries(sellerToolMeta).find(([, meta]) => meta.hash === hash)?.[0] || "home";
+  }
+  function setSellerTool(tool, { updateHash = true } = {}) {
+    const next = sellerToolMeta[tool] ? tool : "home";
+    $$("[data-seller-tool-panel]").forEach(panel => {
+      panel.classList.toggle("is-seller-tool-hidden", panel.dataset.sellerToolPanel !== next);
+    });
+    $$(".seller-tool-region").forEach(region => {
+      const active = [...region.querySelectorAll("[data-seller-tool-panel]")].some(panel => panel.dataset.sellerToolPanel === next);
+      region.classList.toggle("is-seller-tool-region-hidden", !active);
+    });
+    $$("[data-seller-tool-button]").forEach(button => {
+      const active = button.dataset.sellerToolButton === next;
+      button.classList.toggle("is-active", active);
+      if (button.closest(".seller-tool-menu")) button.setAttribute("aria-current", active ? "page" : "false");
+    });
+    const meta = sellerToolMeta[next];
+    $$("[data-seller-tool-title], [data-seller-inventory-tool-title]").forEach(node => { node.textContent = meta.title; });
+    $$("[data-seller-tool-copy], [data-seller-inventory-tool-copy]").forEach(node => { node.textContent = meta.copy; });
+    document.body.dataset.sellerTool = next;
+    if (updateHash && location.hash !== meta.hash) history.replaceState({}, document.title, `${location.pathname}${location.search}${meta.hash}`);
+  }
+  function syncSellerStorefront(username = "") {
+    const sellerUsername = String(username || "").trim();
+    const href = sellerUsername ? `shop.html?seller=${encodeURIComponent(sellerUsername)}` : "shop.html";
+    $$("[data-seller-storefront-link]").forEach(link => { link.href = href; });
+  }
+  function updateSellerDashboardMetrics() {
+    const activeShows = sellerShows.filter(show => ["open", "live"].includes(String(show.status || ""))).length;
+    const activeListings = sellerStoreListings.filter(item => item.status === "active" && Number(item.quantity || 0) > 0).length;
+    const ordersToFulfill = sellerOrders.filter(order => ["needs_label", "needs_label_setup", "ship_now"].includes(String(order.fulfillmentStatus || ""))).length;
+    const setText = (selector, value) => { const node = $(selector); if (node) node.textContent = String(value); };
+    setText("[data-dashboard-show-count]", activeShows);
+    setText("[data-dashboard-listing-count]", activeListings);
+    setText("[data-dashboard-inventory-count]", sellerInventoryItems.length);
+    setText("[data-dashboard-order-count]", ordersToFulfill);
+    const streamStatus = $("[data-dashboard-stream-status]");
+    if (streamStatus) streamStatus.textContent = hasSavedObsConnection
+      ? (activeShows ? "OBS ready - active show available" : "OBS ready - create or select a show")
+      : "OBS connection needs setup";
+  }
   function renderStreamInput(input) {
     const summary = $("[data-stream-connection-status]");
     const result = $("[data-stream-input-result]");
@@ -66,6 +128,7 @@
       if (placeholder) placeholder.hidden = false;
       if (broadcastState) broadcastState.textContent = "OBS connection needed";
       syncStreamKeyButtons();
+      updateSellerDashboardMetrics();
       return;
     }
     hasSavedObsConnection = true;
@@ -87,6 +150,7 @@
       if (broadcastState) broadcastState.textContent = "Video preview unavailable";
     }
     syncStreamKeyButtons();
+    updateSellerDashboardMetrics();
   }
   function renderYouTubeOutput(output) {
     const connected = Boolean(output?.connected);
@@ -122,13 +186,7 @@
     const listingId = $("[data-show-store-listing]")?.value || "";
     return sellerStoreListings.find(item => item.id === listingId) || null;
   };
-  const syncSellerSectionNav = () => {
-    const requested = location.hash || "#go-live";
-    const activeHash = requested === "#create-show" ? "#seller-shows" : requested;
-    $$(".seller-portal-subnav-link[href^='#'], .seller-quick-tabs a[href^='#']").forEach(link => {
-      link.classList.toggle("is-active", link.getAttribute("href") === activeHash);
-    });
-  };
+  const syncSellerSectionNav = () => setSellerTool(sellerToolFromHash(), { updateHash: false });
   const sellerSocialCaption = show => {
     if (!show) throw new Error("Choose a show first.");
     const message = String($("[data-seller-social-message]")?.value || "").trim() || `I'm live on Crack Packs: ${show.title}`;
@@ -417,7 +475,7 @@
       localStorage.setItem("cp_can_seller_portal", "true");
       localStorage.setItem("cp_portal_mode", "seller");
       sessionStorage.setItem("cp_portal_mode", "seller");
-      window.location.href = "streams.html#go-live";
+      window.location.href = "streams.html#seller-home";
     } catch (error) {
       setSellerIdentityResult(error.message || "Seller Portal could not open yet.", "error");
       if (button) button.disabled = false;
@@ -494,6 +552,7 @@
       setStatus("[data-seller-lot-status]", error.message, "error");
       setStatus("[data-broadcast-auction-status]", error.message, "error");
     });
+    updateSellerDashboardMetrics();
   }
 
   function updateSellerSocialComposer() {
@@ -675,6 +734,7 @@
       </article>
     `).join("") : `<div class="stream-empty">No store listings yet. Use “Add to store” to publish products into the buyer marketplace.</div>`;
     renderShowStoreInventoryOptions();
+    updateSellerDashboardMetrics();
   }
 
   async function loadSellerLots(showId) {
@@ -696,6 +756,7 @@
     const reorderList = $("[data-seller-reorder-list]");
     if (list) list.innerHTML = sellerInventoryItems.length ? sellerInventoryItems.map(item => `<article class="seller-giveaway-item"><header><div><strong>${escapeHtml(item.product_name)}</strong><p>${escapeHtml(item.sku || item.unit_type)} · ${Number(item.quantity)} available · ${Number(item.inbound_quantity)} inbound</p><small>PAR ${Number(item.par_quantity)} · reorder ${Number(item.reorder_quantity)} · auto ${Number(item.auto_reorder_enabled) ? "on" : "off"}</small></div><div class="stream-card-actions"><input data-inventory-adjust-quantity="${item.id}" type="number" min="1" max="100000" value="1" aria-label="Adjustment quantity"><button class="btn btn-outline btn-small" type="button" data-inventory-adjust="received" data-inventory-id="${item.id}">Receive +</button><button class="btn btn-danger btn-small" type="button" data-inventory-adjust="sale" data-inventory-id="${item.id}">Sale −</button></div></header></article>`).join("") : `<div class="stream-empty">No seller inventory yet. Paid Seller Store purchases will appear as inbound automatically.</div>`;
     if (reorderList) reorderList.innerHTML = reorders.length ? reorders.map(item => `<article class="seller-giveaway-item"><strong>${escapeHtml(item.product_name)}</strong><p>${Number(item.requested_quantity)} requested · ${escapeHtml(item.status)}</p></article>`).join("") : `<div class="stream-empty">No reorders are waiting for owner review.</div>`;
+    updateSellerDashboardMetrics();
   }
 
   const categoryLabel = key => sellerProductCategories.find(item => item.key === key)?.label || "TCG / Playing Cards";
@@ -893,6 +954,7 @@
     if (!list) return;
     const orders = filteredSellerOrders();
     list.innerHTML = orders.length ? orders.map(sellerOrderCard).join("") : `<div class="stream-empty">No seller orders match this filter yet.</div>`;
+    updateSellerDashboardMetrics();
   }
 
   async function loadSellerInventory() {
@@ -974,7 +1036,9 @@
         return;
       }
       hideSellerIdentityPanel();
+      syncSellerStorefront(status.sellerUsername);
       $$('[data-seller-only]').forEach(node => { node.hidden = false; });
+      syncSellerSectionNav();
       try {
         const streamInput = await api("/seller/stream/input");
         obsGuideCompletedAt = String(streamInput.obsSetupCompletedAt || "");
@@ -986,6 +1050,7 @@
       syncStreamGuideVisibility({ firstOpen: !hasSavedObsConnection && !hasCompletedObsGuide() });
       await loadSellerProductCategories();
       await Promise.all([loadSellerGiveaways(), loadSellerShows(), loadSellerInventory(), loadSellerStoreListings(), loadSellerCogsOrders(), loadSellerOrders(), loadSellerWeightProfiles()]);
+      updateSellerDashboardMetrics();
     } catch {}
   }
 
@@ -1643,6 +1708,27 @@
       await api(`/seller/inventory/${encodeURIComponent(button.dataset.inventoryId)}/adjust`, { method: "POST", body: JSON.stringify({ action: button.dataset.inventoryAdjust, quantity }) });
       await loadSellerInventory(); setStatus("[data-seller-inventory-status]", "Inventory updated.", "success");
     } catch (error) { button.disabled = false; setStatus("[data-seller-inventory-status]", error.message, "error"); }
+  });
+
+  document.addEventListener("click", event => {
+    const toolButton = event.target.closest("[data-seller-tool-button]");
+    if (toolButton) {
+      event.preventDefault();
+      setSellerTool(toolButton.dataset.sellerToolButton || "home");
+    }
+
+    const addToStore = event.target.closest("[data-seller-open-store-listing]");
+    if (!addToStore) return;
+    event.preventDefault();
+    setSellerTool("show-inventory");
+    const destination = $("[data-listing-destination]");
+    if (destination) destination.value = "store";
+    syncListingDestinationUi();
+    window.setTimeout(() => {
+      const title = $("[data-seller-lot-form] [name='title']");
+      title?.scrollIntoView({ behavior: "smooth", block: "center" });
+      title?.focus({ preventScroll: true });
+    }, 80);
   });
 
   loadShows();

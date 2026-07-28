@@ -10,7 +10,8 @@
   const buyerProfileUrl = "referral.html?view=account";
   const sellerSetupUrl = () => (token() ? "referral.html?return=seller" : "referral.html?mode=signin&return=seller");
   const masterSetupUrl = () => (token() ? "admin.html" : "referral.html?mode=signin&portal=master");
-  const sellerGoLiveUrl = "streams.html#go-live";
+  const sellerAccountUrl = "streams.html#seller-home";
+  const sellerGoLiveUrl = "streams.html#seller-show-control";
   const sellerCreateShowUrl = "streams.html#create-show";
   let ownerSignupUrl = "referral.html?mode=signup";
   let portalState = { signedIn: false, sellerAccess: false, employeeAccess: false, masterAccess: false, activePortal: "buyer" };
@@ -215,7 +216,7 @@
         localStorage.setItem("cp_portal_mode", "buyer");
         sessionStorage.setItem("cp_portal_mode", "buyer");
       }
-      window.location.href = master ? masterSetupUrl() : (seller ? sellerGoLiveUrl : buyerDestination);
+      window.location.href = master ? masterSetupUrl() : (seller ? sellerAccountUrl : buyerDestination);
     } catch (error) {
       if (seller) routeToSellerSetup();
       else if (master && (!token() || error.status === 401)) window.location.href = "referral.html?mode=signin&portal=master";

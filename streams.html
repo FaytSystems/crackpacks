@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Seller Broadcast Hub | Crack Packs</title>
-  <meta name="description" content="Run Crack Packs live shows with private OBS controls, show inventory, auction lots, simulcast tools, and shipping workflows.">
+  <title>Seller Hub | Crack Packs</title>
+  <meta name="description" content="Run a Crack Packs seller store, live shows, inventory, auctions, simulcast, orders, and shipping from one private Seller Hub.">
   <meta name="theme-color" content="#07091b">
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/css/styles.css?v=1.9.8">
   <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.6.5">
-  <link rel="stylesheet" href="assets/css/streams-hub.css?v=2.0.0">
+  <link rel="stylesheet" href="assets/css/streams-hub.css?v=2.1.1">
 </head>
 <body data-page="streams">
   <a class="skip-link" href="#main">Skip to content</a>
@@ -41,30 +41,65 @@
       </div>
     </section>
 
-    <section class="container page-hero seller-broadcast-hero" data-seller-only hidden>
-      <div class="reveal">
+    <section class="container seller-hub-heading" data-seller-only hidden>
+      <div>
         <p class="eyebrow">Seller Account</p>
-        <h1>Seller <span>Broadcast Hub</span></h1>
-        <p>Run the full show from one private workspace: connect OBS, create and schedule shows, load inventory, control auction lots, simulcast, and prepare sold orders for shipping.</p>
+        <h1>Seller Hub</h1>
+        <p>Shows, store inventory, live auctions, orders, and shipping in one private workspace.</p>
       </div>
-      <div class="actions">
-        <a class="btn btn-primary" href="#go-live">OBS &amp; Auction Cockpit</a>
-        <a class="btn btn-glass" href="#create-show">Create Show</a>
-        <a class="btn btn-outline" href="#seller-inventory">Manage Inventory</a>
-        <a class="btn btn-outline" href="live-shows.html">Open Public Live Feed</a>
+      <div class="seller-hub-heading-actions">
+        <a class="btn btn-primary" href="#create-show" data-seller-tool-button="shows">Create Show</a>
+        <a class="btn btn-outline" href="live-shows.html">Public Live Feed</a>
+        <a class="btn btn-outline" data-seller-storefront-link href="shop.html">View My Store</a>
       </div>
     </section>
 
-    <nav class="container seller-portal-subnav" data-seller-only hidden aria-label="Seller Portal pages">
-      <a class="seller-portal-subnav-link" href="live-shows.html">Live Feed</a>
-      <a class="seller-portal-subnav-link is-active" href="#go-live">Broadcast Hub</a>
-      <a class="seller-portal-subnav-link" href="#seller-shows">Shows</a>
-      <a class="seller-portal-subnav-link" href="#seller-my-listings">Listings</a>
-      <a class="seller-portal-subnav-link" href="#seller-inventory">Inventory</a>
-      <a class="seller-portal-subnav-link" href="#seller-shipping">Shipping</a>
-      <a class="seller-portal-subnav-link" href="shop.html?stock=1">Stock Store</a>
-      <a class="seller-portal-subnav-link" href="referral.html">Account Hub</a>
+    <nav class="container seller-tool-menu" data-seller-only hidden aria-label="Seller Hub tools">
+      <button class="seller-tool-menu-button is-active" type="button" data-seller-tool-button="home">Home</button>
+      <button class="seller-tool-menu-button" type="button" data-seller-tool-button="show-control">Show Control</button>
+      <button class="seller-tool-menu-button" type="button" data-seller-tool-button="obs">OBS Connection</button>
+      <button class="seller-tool-menu-button" type="button" data-seller-tool-button="simulcast">Simulcast</button>
+      <button class="seller-tool-menu-button" type="button" data-seller-tool-button="shows">Shows</button>
+      <button class="seller-tool-menu-button" type="button" data-seller-tool-button="show-inventory">Show Inventory</button>
+      <button class="seller-tool-menu-button" type="button" data-seller-tool-button="social">Social Launcher</button>
+      <button class="seller-tool-menu-button" type="button" data-seller-tool-button="inventory">Seller Inventory</button>
+      <button class="seller-tool-menu-button" type="button" data-seller-tool-button="categories">Product Types</button>
+      <button class="seller-tool-menu-button" type="button" data-seller-tool-button="cogs">Order COGS</button>
+      <button class="seller-tool-menu-button" type="button" data-seller-tool-button="shipping">Shipping</button>
+      <button class="seller-tool-menu-button" type="button" data-seller-tool-button="giveaways">Giveaways</button>
+      <a class="seller-tool-menu-button seller-tool-menu-link" data-seller-storefront-link href="shop.html">My Store</a>
+      <a class="seller-tool-menu-button seller-tool-menu-link" href="referral.html">Account</a>
     </nav>
+
+    <section class="container seller-tool-region" data-seller-only hidden>
+      <div class="seller-dashboard-home" data-seller-tool-panel="home">
+        <header class="seller-dashboard-welcome">
+          <div>
+            <p class="eyebrow">Seller home</p>
+            <h2>Ready for the next sale.</h2>
+            <p>Prepare a show, publish products, check fulfillment, or open the live cockpit.</p>
+          </div>
+          <button class="seller-dashboard-live-button" type="button" data-seller-tool-button="show-control">
+            <span>Open Broadcast Hub</span>
+            <small data-dashboard-stream-status>Checking OBS connection</small>
+          </button>
+        </header>
+        <div class="seller-dashboard-metrics" aria-label="Seller account summary">
+          <button type="button" data-seller-tool-button="shows"><small>Active shows</small><strong data-dashboard-show-count>0</strong></button>
+          <button type="button" data-seller-tool-button="show-inventory"><small>Store listings</small><strong data-dashboard-listing-count>0</strong></button>
+          <button type="button" data-seller-tool-button="inventory"><small>Inventory products</small><strong data-dashboard-inventory-count>0</strong></button>
+          <button type="button" data-seller-tool-button="shipping"><small>Orders to fulfill</small><strong data-dashboard-order-count>0</strong></button>
+        </div>
+        <div class="seller-dashboard-launcher" aria-label="Seller quick actions">
+          <button type="button" data-seller-tool-button="shows"><strong>Create a show</strong><span>Schedule, title, and upload a thumbnail.</span></button>
+          <button type="button" data-seller-tool-button="show-inventory" data-seller-open-store-listing><strong>Add to store</strong><span>Publish account inventory to your public storefront.</span></button>
+          <button type="button" data-seller-tool-button="inventory"><strong>Manage inventory</strong><span>Stock, PAR, reorders, and product quantities.</span></button>
+          <button type="button" data-seller-tool-button="shipping"><strong>Ship orders</strong><span>Labels, tracking, clips, and package weights.</span></button>
+          <button type="button" data-seller-tool-button="social"><strong>Promote a show</strong><span>Prepare social messages and launch links.</span></button>
+          <a data-seller-storefront-link href="shop.html"><strong>View my store</strong><span>See the public storefront buyers can shop.</span></a>
+        </div>
+      </div>
+    </section>
 
     <section class="container" data-buyer-only hidden>
       <section class="holo-panel seller-identity-status-panel" data-seller-identity-status-panel hidden>
@@ -88,23 +123,16 @@
       <div class="stream-empty" data-streams-empty hidden>No shows match this tab yet. Follow sellers or save upcoming streams to fill this page.</div>
     </section>
 
-    <section class="container section seller-show-tools" data-seller-only hidden id="go-live">
-      <div class="section-heading reveal">
+    <section class="container section seller-show-tools seller-tool-region" data-seller-only hidden id="go-live">
+      <div class="section-heading seller-workspace-heading reveal">
         <div>
-          <p class="eyebrow">Seller Portal</p>
-          <h2>OBS stream and <span>auction cockpit.</span></h2>
-          <p>Your stream key is private. Create it once, add the RTMPS server and key to OBS, then schedule shows and control auction lots here.</p>
+          <p class="eyebrow">Seller workspace</p>
+          <h2 data-seller-tool-title>Show control</h2>
+          <p data-seller-tool-copy>Monitor the live feed and move queued inventory into the active auction.</p>
         </div>
       </div>
-      <div class="hub-tabs seller-quick-tabs" data-seller-only hidden>
-        <a class="hub-tab is-active" href="#go-live">Broadcast Hub</a>
-        <a class="hub-tab" href="#seller-shows">Shows</a>
-        <a class="hub-tab" href="#seller-my-listings">My Listings</a>
-        <a class="hub-tab" href="#seller-inventory">Inventory</a>
-        <a class="hub-tab seller-print-label-tab" href="#seller-shipping">Shipping</a>
-      </div>
       <div class="seller-cockpit-grid seller-cockpit-grid-premium">
-        <article class="holo-panel seller-broadcast-monitor">
+        <article class="holo-panel seller-broadcast-monitor" data-seller-tool-panel="show-control">
           <div class="seller-broadcast-monitor-head">
             <div>
               <p class="eyebrow"><span class="live-pulse"></span> Seller Video Feed</p>
@@ -121,7 +149,7 @@
           </div>
           <p class="fine-print">This monitor follows your permanent Cloudflare Live Input. When OBS is disconnected, Cloudflare displays that the stream has not started.</p>
         </article>
-        <article class="holo-panel seller-auction-console">
+        <article class="holo-panel seller-auction-console" data-seller-tool-panel="show-control">
           <header class="seller-auction-console-head">
             <div>
               <p class="eyebrow">Show control</p>
@@ -168,7 +196,7 @@
           </div>
           <div class="campaign-form-status seller-auction-control-status" data-broadcast-auction-status aria-live="polite"></div>
         </article>
-        <article class="holo-panel seller-stream-input">
+        <article class="holo-panel seller-stream-input" data-seller-tool-panel="obs">
           <h3>Private OBS connection</h3>
           <p class="fine-print">One-time OBS setup. Your Crack Packs RTMPS server and stream key stay saved to your seller profile until you regenerate them, but the live input is locked except during your active show window.</p>
           <div class="obs-connection-summary" data-stream-input-summary>
@@ -211,7 +239,7 @@
           </div>
           <div class="campaign-form-status" data-stream-input-status aria-live="polite"></div>
         </article>
-        <article class="holo-panel youtube-simulcast-card">
+        <article class="holo-panel youtube-simulcast-card" data-seller-tool-panel="simulcast">
           <p class="eyebrow">Simulcast</p>
           <h3>Stream on Crack Packs + YouTube</h3>
           <p>OBS sends one stream to Crack Packs. Cloudflare securely relays the same live show to your YouTube channel after you connect its private stream key.</p>
@@ -231,7 +259,7 @@
           </form>
           <div class="campaign-form-status" data-youtube-output-message aria-live="polite"></div>
         </article>
-        <article class="holo-panel obs-setup-guide obs-setup-guide-premium" data-stream-setup-guide hidden data-stream-guide-premium>
+        <article class="holo-panel obs-setup-guide obs-setup-guide-premium" data-stream-setup-guide hidden data-stream-guide-premium data-seller-tool-panel="obs">
           <div class="obs-setup-guide-badge">First-time seller setup</div>
           <strong>Create your key, then connect OBS</strong>
           <p class="obs-setup-guide-intro">Create your private connection on Crack Packs first. Sellers do not need a Cloudflare login or Cloudflare API token.</p>
@@ -248,7 +276,7 @@
           <p class="fine-print">After your first successful key creation, this guide stays tucked away unless you open it with the OBS setup guide button.</p>
           <p class="fine-print">If the RTMPS server and key do not appear, stop before changing OBS and contact Crack Packs support. A site administrator must repair the Cloudflare Stream service or platform token; sellers should never create or submit that token.</p>
         </article>
-        <article class="holo-panel seller-shows-create" id="create-show">
+        <article class="holo-panel seller-shows-create" id="create-show" data-seller-tool-panel="shows">
           <p class="eyebrow">Shows</p>
           <h3>Create a show</h3>
           <form class="seller-giveaway-form" data-seller-show-form>
@@ -268,7 +296,7 @@
           <a class="btn btn-outline" data-seller-show-public-link href="live-shows.html" hidden>View on Live Shows</a>
         </article>
       </div>
-      <div class="holo-panel seller-show-manager" id="seller-shows">
+      <div class="holo-panel seller-show-manager" id="seller-shows" data-seller-tool-panel="show-inventory">
         <div class="seller-show-manager-head">
           <div>
             <p class="eyebrow">Show inventory</p>
@@ -331,9 +359,10 @@
         <div class="campaign-form-status" data-seller-lot-status aria-live="polite"></div>
         <div class="seller-lot-list" data-seller-lot-list></div>
         <div class="campaign-form-status" data-seller-store-status aria-live="polite"></div>
+        <a class="btn btn-outline seller-storefront-published-link" data-seller-storefront-link data-seller-storefront-published-link href="shop.html">Open public seller store</a>
         <div class="seller-lot-list" data-seller-store-list></div>
       </div>
-      <div class="holo-panel seller-social-launcher">
+      <div class="holo-panel seller-social-launcher" data-seller-tool-panel="social">
         <div class="seller-show-manager-head"><h3>Show social launcher</h3><button class="btn btn-outline btn-small" type="button" data-seller-social-refresh>Use selected show</button></div>
         <label>Show link<input data-seller-social-link readonly placeholder="Choose a show above"></label>
         <label>Post message<textarea data-seller-social-message rows="4" maxlength="500" placeholder="I'm live on Crack Packs. Come watch, bid, and hang out."></textarea></label>
@@ -352,9 +381,13 @@
       </div>
     </section>
 
-    <section class="container section seller-show-tools" id="seller-inventory" data-seller-only hidden>
-      <div class="section-heading reveal"><div><p class="eyebrow">Seller inventory</p><h2>Stock, PAR levels, and <span>reviewed reorders.</span></h2><p>Paid Seller Store orders appear as inbound stock. Mark units received when they arrive; sales and gifted giveaways keep available quantities current.</p></div></div>
-      <div class="giveaway-grid">
+    <section class="container section seller-show-tools seller-tool-region" id="seller-inventory" data-seller-only hidden>
+      <div class="section-heading seller-workspace-heading reveal"><div><p class="eyebrow">Seller workspace</p><h2 data-seller-inventory-tool-title>Seller inventory</h2><p data-seller-inventory-tool-copy>Stock, PAR levels, reviewed reorders, and quantities.</p></div></div>
+      <div class="seller-inventory-primary-actions" data-seller-tool-panel="inventory">
+        <button class="btn btn-primary" type="button" data-seller-open-store-listing>ADD TO STORE</button>
+        <a class="btn btn-outline" data-seller-storefront-link href="shop.html">View My Store</a>
+      </div>
+      <div class="giveaway-grid" data-seller-tool-panel="inventory">
         <article class="holo-panel">
           <form class="seller-giveaway-form" data-seller-inventory-form>
             <div class="field-grid">
@@ -374,7 +407,7 @@
         </article>
         <article class="holo-panel"><h3>Pending reorders</h3><div class="seller-giveaway-list" data-seller-reorder-list></div></article>
       </div>
-      <div class="holo-panel seller-category-panel">
+      <div class="holo-panel seller-category-panel" data-seller-tool-panel="categories">
         <div class="seller-show-manager-head">
           <div>
             <p class="eyebrow">Types of products selling</p>
@@ -386,7 +419,7 @@
         <div class="seller-category-grid" data-seller-category-options></div>
         <div class="campaign-form-status" data-seller-categories-status aria-live="polite"></div>
       </div>
-      <div class="holo-panel seller-cogs-panel">
+      <div class="holo-panel seller-cogs-panel" data-seller-tool-panel="cogs">
         <div class="seller-show-manager-head">
           <div>
             <p class="eyebrow">Order COGS</p>
@@ -397,7 +430,7 @@
         <div class="campaign-form-status" data-seller-cogs-status aria-live="polite"></div>
         <div class="seller-cogs-list" data-seller-cogs-list></div>
       </div>
-      <div class="holo-panel seller-orders-panel" id="seller-shipping">
+      <div class="holo-panel seller-orders-panel" id="seller-shipping" data-seller-tool-panel="shipping">
         <div class="seller-show-manager-head">
           <div>
             <p class="eyebrow">Seller Shipping</p>
@@ -452,18 +485,18 @@
           </aside>
         </div>
       </div>
-      <div class="seller-giveaway-list" data-seller-inventory-list></div>
+      <div class="seller-giveaway-list" data-seller-inventory-list data-seller-tool-panel="inventory"></div>
     </section>
 
-    <section class="container section seller-show-tools" data-seller-only hidden>
-      <div class="section-heading reveal">
+    <section class="container section seller-show-tools seller-tool-region" data-seller-only hidden>
+      <div class="section-heading reveal" data-seller-tool-panel="giveaways">
         <div>
           <p class="eyebrow">Seller tools</p>
           <h2>Saved giveaway presets for your <span>live shows.</span></h2>
           <p>Build giveaway presets before stream, then queue the one you want during your show.</p>
         </div>
       </div>
-      <div class="holo-panel">
+      <div class="holo-panel" data-seller-tool-panel="giveaways">
         <form class="seller-giveaway-form" data-seller-giveaway-form>
           <div class="field-grid">
             <label>Giveaway title<input name="title" required maxlength="80" placeholder="Friday night holo rush"></label>
@@ -524,7 +557,7 @@
 
   <script src="assets/js/config.js?v=4.1.0"></script>
   <script src="assets/js/app.js?v=1.9.7"></script>
-  <script src="assets/js/portal-mode.js?v=1.2.3"></script>
-  <script src="assets/js/streams-hub.js?v=2.0.0"></script>
+  <script src="assets/js/portal-mode.js?v=1.2.4"></script>
+  <script src="assets/js/streams-hub.js?v=2.1.1"></script>
 </body>
 </html>

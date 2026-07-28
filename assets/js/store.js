@@ -4,6 +4,11 @@
   const config = window.CRACKPACKS_CONFIG || {};
   const page = document.body?.dataset.storeMarket || "us";
   const market = page === "international" ? "international" : "us";
+  const requestedSellerLabel = String(new URLSearchParams(window.location.search).get("seller") || "")
+    .trim()
+    .replace(/^@/, "")
+    .slice(0, 80);
+  const requestedSeller = requestedSellerLabel.toLowerCase();
   const catalog = document.querySelector("[data-store-catalog]");
   const catalogStatus = document.querySelector("[data-store-catalog-status]");
   const emptyState = document.querySelector("[data-product-empty]");
@@ -39,7 +44,7 @@
   let activeSort = "rank";
   let activePrimary = "all";
   let activeSubcategory = "all";
-  let activeSellerSearch = "";
+  let activeSellerSearch = requestedSeller;
   let activeMinPrice = 0;
   let activeMaxPrice = 1000;
   let marketplaceCategories = [];
@@ -84,6 +89,30 @@
     "'": "&#39;",
     '"': "&quot;"
   }[character]));
+
+  function applyStorefrontContext() {
+    if (!requestedSeller) return;
+    const sellerLabel = `@${requestedSellerLabel}`;
+    document.title = `${sellerLabel} Store | Crack Packs`;
+    const context = document.querySelector("[data-seller-storefront-context]");
+    if (context) context.hidden = false;
+    document.querySelectorAll("[data-marketplace-only]").forEach(node => { node.hidden = true; });
+    const contextTitle = document.querySelector("[data-seller-storefront-title]");
+    const heroEyebrow = document.querySelector("[data-store-hero-eyebrow]");
+    const heroTitle = document.querySelector("[data-store-hero-title]");
+    const heroCopy = document.querySelector("[data-store-hero-copy]");
+    const heroAction = document.querySelector("[data-store-hero-action]");
+    if (contextTitle) contextTitle.textContent = `${sellerLabel}'s Store`;
+    if (heroEyebrow) heroEyebrow.textContent = "Verified seller storefront";
+    if (heroTitle) heroTitle.textContent = `Shop ${sellerLabel} on Crack Packs.`;
+    if (heroCopy) heroCopy.textContent = "Browse this seller's active listings, prices, condition details, and scheduled live-show inventory.";
+    if (heroAction) heroAction.textContent = "Shop this seller";
+    if (sellerSearchInput) {
+      sellerSearchInput.value = requestedSellerLabel;
+      sellerSearchInput.readOnly = true;
+      sellerSearchInput.setAttribute("aria-label", `Storefront locked to seller ${requestedSellerLabel}`);
+    }
+  }
 
   const rewardsUrl = path => {
     const base = String(config.rewardsApiUrl || "").trim().replace(/\/+$/, "");
@@ -434,7 +463,12 @@
       const seriesMatch = activeSeries === "all" || String(card.dataset.series || "pokemon") === activeSeries;
       const primaryMatch = activePrimary === "all" || String(card.dataset.primaryCategory || "all") === activePrimary;
       const subcategoryMatch = activeSubcategory === "all" || String(card.dataset.subcategory || "other") === activeSubcategory;
-      const sellerMatch = !activeSellerSearch || String(card.dataset.seller || "").includes(activeSellerSearch);
+      const cardSeller = String(card.dataset.seller || "");
+      const sellerMatch = !activeSellerSearch || (
+        requestedSeller && activeSellerSearch === requestedSeller
+          ? cardSeller === requestedSeller
+          : cardSeller.includes(activeSellerSearch)
+      );
       const priceCents = Number(card.dataset.priceCents || 0);
       const priceMatch = !priceCents || (priceCents >= activeMinPrice * 100 && priceCents <= activeMaxPrice * 100);
       const searchMatch = !activeSearch || String(card.dataset.search || "").includes(activeSearch);
@@ -538,7 +572,10 @@
     if (!endpoint) {
       renderPrimaryTabs();
       renderCatalog(fallbackInventory());
-      setCatalogStatus("Live inventory is not connected. Showing the launch catalog preview.", "fallback");
+      setCatalogStatus(
+        requestedSeller ? `${requestedSellerLabel}'s live inventory is not connected right now.` : "Live inventory is not connected. Showing the launch catalog preview.",
+        "fallback"
+      );
       return;
     }
 
@@ -560,7 +597,10 @@
       if (!rows.length) {
         renderPrimaryTabs(payload?.categories || []);
         renderCatalog(fallbackInventory());
-        setCatalogStatus("The live catalog is empty while inventory is being prepared. Showing the store preview.", "fallback");
+        setCatalogStatus(
+          requestedSeller ? `@${requestedSellerLabel} does not have any active store listings yet.` : "The live catalog is empty while inventory is being prepared. Showing the store preview.",
+          requestedSeller ? "success" : "fallback"
+        );
         return;
       }
 
@@ -569,12 +609,21 @@
       renderPrimaryTabs(payload?.categories || []);
       const normalized = rows.map(item => normalizeApiItem(item, payload));
       renderCatalog(normalized);
-      setCatalogStatus(`${normalized.length.toLocaleString()} seller marketplace listing${normalized.length === 1 ? "" : "s"} loaded. Search across every seller store below.`, "success");
+      const sellerListingCount = normalized.filter(item => String(item.sellerUsername || "").toLowerCase() === requestedSeller).length;
+      setCatalogStatus(
+        requestedSeller
+          ? `${sellerListingCount.toLocaleString()} active listing${sellerListingCount === 1 ? "" : "s"} from @${requestedSellerLabel}.`
+          : `${normalized.length.toLocaleString()} seller marketplace listing${normalized.length === 1 ? "" : "s"} loaded. Search across every seller store below.`,
+        "success"
+      );
     } catch (error) {
       if (error?.name === "AbortError") return;
       renderPrimaryTabs();
       renderCatalog(fallbackInventory());
-      setCatalogStatus("Seller marketplace could not be reached. Showing the preview catalog instead.", "fallback");
+      setCatalogStatus(
+        requestedSeller ? `@${requestedSellerLabel}'s storefront could not be reached. Try again shortly.` : "Seller marketplace could not be reached. Showing the preview catalog instead.",
+        "fallback"
+      );
     }
   }
 
@@ -772,8 +821,9 @@
     }
   });
 
-    bindFilters();
-    bindSeriesTabs();
+  applyStorefrontContext();
+  bindFilters();
+  bindSeriesTabs();
   mountShippingTurnstile();
   loadCatalog();
 })();

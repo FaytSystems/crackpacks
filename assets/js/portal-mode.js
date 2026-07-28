@@ -17,11 +17,26 @@
 
   const sellerAllowed = () => localStorage.getItem(SELLER_ALLOWED_KEY) === "true";
   const masterAllowed = () => localStorage.getItem(MASTER_ALLOWED_KEY) === "true";
-  const sellerPortalDestination = () => "streams.html#go-live";
+  const sellerPortalDestination = () => "streams.html#seller-home";
   const masterPortalDestination = () => "admin.html";
   const buyerPortalDestination = button => button?.getAttribute?.("href") || "referral.html?view=account";
   const sellerSetupDestination = () => authToken() ? "referral.html?return=seller" : "referral.html?mode=signin&return=seller";
-  const sellerToolHashes = new Set(["#go-live", "#seller-shows", "#create-show", "#seller-my-listings", "#seller-inventory", "#seller-shipping"]);
+  const sellerToolHashes = new Set([
+    "#seller-home",
+    "#seller-show-control",
+    "#go-live",
+    "#seller-obs",
+    "#seller-simulcast",
+    "#create-show",
+    "#seller-shows",
+    "#seller-my-listings",
+    "#seller-social",
+    "#seller-inventory",
+    "#seller-categories",
+    "#seller-cogs",
+    "#seller-shipping",
+    "#seller-giveaways"
+  ]);
   const hasSellerToolIntent = () => page === "streams" && sellerToolHashes.has(location.hash);
   const clearSellerPortalState = () => {
     localStorage.setItem(SELLER_ALLOWED_KEY, "false");
