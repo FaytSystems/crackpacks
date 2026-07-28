@@ -260,6 +260,32 @@ body.store-auth-required main > section:not(.store-auth-gate) {
   min-height: 68px;
 }
 
+.shop-tools .type-grid .type-pill {
+  border: 1px solid rgba(255,255,255,.16);
+  color: #f7f9ff;
+  background: #0b0e28;
+  cursor: pointer;
+}
+
+.shop-tools .type-grid .type-pill:hover,
+.shop-tools .type-grid .type-pill:focus-visible {
+  border-color: rgba(56,232,255,.62);
+  color: #fff;
+  background: #161b45;
+  outline: none;
+}
+
+.shop-tools .type-grid .type-pill.is-active {
+  border-color: var(--electric);
+  color: #071019;
+  background: var(--electric);
+  box-shadow: 0 0 20px rgba(248,255,70,.18);
+}
+
+.shop-tools .type-grid .type-pill.is-active small {
+  color: rgba(7,16,25,.76);
+}
+
 .type-grid[data-store-primary-tabs] .type-pill strong {
   font-size: .95rem;
 }
