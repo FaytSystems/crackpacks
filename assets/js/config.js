@@ -33,14 +33,14 @@ window.CRACKPACKS_CONFIG = {
   ],
   email: "support@crackpacks.com",
   domain: "https://crackpacks.com",
-  updated: "July 18, 2026",
+  updated: "July 28, 2026",
   storeNotice: "The Crack Packs storefront is a Coming Soon preview. Checkout is locked until inventory, shipping, and payment settings are verified.",
   newsletterMessage: "Create your verified Profile to join Crack Packs drop alerts."
 };
 
 if (!document.querySelector('script[data-crackpacks-social-loader]')) {
   const socialScript = document.createElement('script');
-  socialScript.src = 'assets/js/social-footer.js?v=1.0.0';
+  socialScript.src = 'assets/js/social-footer.js?v=1.1.0';
   socialScript.dataset.crackpacksSocialLoader = '';
   document.head.append(socialScript);
 }

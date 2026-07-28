@@ -224,7 +224,15 @@
   loadNavAccountState();
 
   const mountSocialFooter = () => {
-    if (!document.body || document.querySelector("[data-crack-packs-social-footer]")) return;
+    if (!document.body) return;
+    if (document.querySelector("[data-crack-packs-social-footer], [data-crackpacks-social-footer]")) {
+      window.CRACKPACKS_MOUNT_LEGAL_FOOTER?.();
+      return;
+    }
+    if (!document.querySelector('link[href*="assets/css/nav-profile.css"]')) {
+      window.CRACKPACKS_MOUNT_LEGAL_FOOTER?.();
+      return;
+    }
 
     const footer = document.createElement("footer");
     footer.className = "crack-social-footer";
@@ -303,6 +311,7 @@
     `;
 
     document.body.append(footer);
+    window.CRACKPACKS_MOUNT_LEGAL_FOOTER?.();
   };
 
   if (document.readyState === "loading") {
