@@ -18,6 +18,7 @@
   const sellerAllowed = () => localStorage.getItem(SELLER_ALLOWED_KEY) === "true";
   const masterAllowed = () => localStorage.getItem(MASTER_ALLOWED_KEY) === "true";
   const sellerPortalDestination = () => "streams.html#go-live";
+  const masterPortalDestination = () => "admin.html";
   const buyerPortalDestination = button => button?.getAttribute?.("href") || "referral.html?view=account";
   const sellerSetupDestination = () => authToken() ? "referral.html?return=seller" : "referral.html?mode=signin&return=seller";
   const sellerToolHashes = new Set(["#go-live", "#seller-shows", "#create-show", "#seller-my-listings", "#seller-inventory", "#seller-shipping"]);
@@ -45,7 +46,11 @@
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken()}`, ...(options.headers || {}) }
     });
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || "Portal access could not be verified.");
+    if (!response.ok) {
+      const error = new Error(payload.error || "Portal access could not be verified.");
+      error.status = response.status;
+      throw error;
+    }
     return payload;
   };
 
@@ -109,24 +114,23 @@
   });
 
   document.querySelectorAll("[data-open-master-portal]").forEach(button => {
-    button.addEventListener("click", async () => {
+    button.addEventListener("click", async event => {
+      event.preventDefault();
+      event.stopPropagation();
       button.disabled = true;
       try {
-        if (apiBase && authToken()) {
-          await fetch(`${apiBase}/auth/logout`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken()}` },
-            body: "{}"
-          }).catch(() => {});
+        const result = await portalRequest("/portal/mode", { method: "POST", body: JSON.stringify({ mode: "master" }) });
+        if (result.activePortal !== "master") throw new Error("Master Portal access could not be confirmed.");
+        localStorage.setItem(MASTER_ALLOWED_KEY, "true");
+        setMode("master");
+        window.location.href = masterPortalDestination();
+      } catch (error) {
+        button.disabled = false;
+        if (!authToken() || error.status === 401) {
+          window.location.href = "referral.html?mode=signin&portal=master";
+          return;
         }
-      } finally {
-        sessionStorage.removeItem("cp_admin_token");
-        localStorage.removeItem("cp_rewards_token");
-        localStorage.setItem(SELLER_ALLOWED_KEY, "false");
-        localStorage.setItem(MASTER_ALLOWED_KEY, "false");
-        sessionStorage.setItem(STORAGE_KEY, "buyer");
-        localStorage.setItem(STORAGE_KEY, "buyer");
-        window.location.href = "referral.html?mode=signin&portal=master";
+        window.alert(error.message || "Master Portal access could not be verified.");
       }
     });
   });

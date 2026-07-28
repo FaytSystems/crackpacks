@@ -54,10 +54,10 @@
     const sellerAction = portalState.sellerAccess ? "data-open-seller-portal" : "data-start-seller-upgrade";
     const sellerLabel = portalState.sellerAccess ? "Seller Account" : "Seller Verification";
     const employeeButton = portalState.employeeAccess ? '<a class="nav-account-bubble" href="employee.html">Employee Account</a>' : "";
-    const masterButton = portalState.masterAccess ? '<button class="nav-account-bubble" type="button" data-open-master-portal>Master Account</button>' : "";
+    const masterButton = portalState.masterAccess ? `<button class="nav-account-bubble ${portalState.activePortal === "master" ? "is-active" : ""}" type="button" data-open-master-portal>Master Account</button>` : "";
     return `
       <div class="nav-account-bubbles" aria-label="Account portal switcher">
-        <a class="nav-account-bubble ${portalState.activePortal !== "seller" ? "is-active" : ""}" href="${buyerProfileUrl}" data-open-buyer-portal>Buyer Account</a>
+        <a class="nav-account-bubble ${portalState.activePortal === "buyer" ? "is-active" : ""}" href="${buyerProfileUrl}" data-open-buyer-portal>Buyer Account</a>
         <button class="nav-account-bubble ${portalState.activePortal === "seller" ? "is-active" : ""}" type="button" ${sellerAction}>${sellerLabel}</button>
         ${employeeButton}
         ${masterButton}
@@ -149,7 +149,9 @@
         sellerAccess: Boolean(status.sellerAccess),
         employeeAccess: Boolean(status.employeeAccess),
         masterAccess: Boolean(status.isMaster || status.isAdmin || status.isOwnerEmail || status.isMasterCandidate),
-        activePortal: status.sellerAccess && status.activePortal === "seller" ? "seller" : "buyer"
+        activePortal: status.isMaster && status.activePortal === "master"
+          ? "master"
+          : (status.sellerAccess && status.activePortal === "seller" ? "seller" : "buyer")
       };
     } catch {
       portalState = { signedIn: false, sellerAccess: false, employeeAccess: false, masterAccess: false, activePortal: "buyer" };
@@ -180,10 +182,6 @@
       else window.location.href = buyerDestination;
       return;
     }
-    if (master) {
-      window.location.href = masterSetupUrl();
-      return;
-    }
     if (seller) {
       if (!portalState.sellerAccess) {
         routeToSellerSetup();
@@ -194,11 +192,20 @@
       const response = await fetch(`${rewardsApi}/portal/mode`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
-        body: JSON.stringify({ mode: seller ? "seller" : "buyer" })
+        body: JSON.stringify({ mode: master ? "master" : (seller ? "seller" : "buyer") })
       });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || "Portal access could not be verified.");
-      if (seller) {
+      if (!response.ok) {
+        const error = new Error(payload.error || "Portal access could not be verified.");
+        error.status = response.status;
+        throw error;
+      }
+      if (master) {
+        if (payload.activePortal !== "master") throw new Error("Master Portal access could not be confirmed.");
+        localStorage.setItem("cp_can_master_portal", "true");
+        localStorage.setItem("cp_portal_mode", "master");
+        sessionStorage.setItem("cp_portal_mode", "master");
+      } else if (seller) {
         if (payload.activePortal !== "seller") throw new Error("Seller setup is not complete yet.");
         localStorage.setItem("cp_can_seller_portal", "true");
         localStorage.setItem("cp_portal_mode", "seller");
@@ -207,9 +214,11 @@
         localStorage.setItem("cp_portal_mode", "buyer");
         sessionStorage.setItem("cp_portal_mode", "buyer");
       }
-      window.location.href = seller ? sellerGoLiveUrl : buyerDestination;
-    } catch {
+      window.location.href = master ? masterSetupUrl() : (seller ? sellerGoLiveUrl : buyerDestination);
+    } catch (error) {
       if (seller) routeToSellerSetup();
+      else if (master && (!token() || error.status === 401)) window.location.href = "referral.html?mode=signin&portal=master";
+      else if (master) window.alert(error.message || "Master Portal access could not be verified.");
       else window.location.href = buyerDestination;
     }
   });

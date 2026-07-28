@@ -516,10 +516,21 @@
     localStorage.setItem("cp_portal_mode", "seller");
     sessionStorage.setItem("cp_portal_mode", "seller");
   };
+  const setMasterPortalState = () => {
+    localStorage.setItem("cp_can_master_portal", "true");
+    localStorage.setItem("cp_portal_mode", "master");
+    sessionStorage.setItem("cp_portal_mode", "master");
+  };
   async function enterSellerPortal() {
     await request("/portal/mode", { method: "POST", body: JSON.stringify({ mode: "seller" }) });
     setSellerPortalState();
     window.location.replace("streams.html");
+  }
+  async function enterMasterPortal() {
+    const result = await request("/portal/mode", { method: "POST", body: JSON.stringify({ mode: "master" }) });
+    if (result.activePortal !== "master") throw new Error("Master Portal access could not be confirmed.");
+    setMasterPortalState();
+    window.location.replace("admin.html");
   }
   async function activateEmployeeInvitation() {
     if (!employeeActivationToken) throw new Error("The employee invitation is no longer attached. Open the newest employment email.");
@@ -1635,7 +1646,11 @@
       return;
     }
     if (masterButton) {
-      window.location.href = "admin.html";
+      masterButton.disabled = true;
+      enterMasterPortal().catch(error => {
+        masterButton.disabled = false;
+        showStatus(error.message || "Master Portal could not open.", "error");
+      });
       return;
     }
     localStorage.setItem("cp_portal_mode", "buyer");
