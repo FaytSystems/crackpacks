@@ -98,10 +98,8 @@ button { color: inherit; }
 }
 .nav-shell { min-height: 78px; display: flex; align-items: center; justify-content: flex-start; gap: 18px; }
 .nav-shell.has-live-star { gap: clamp(10px, 1.5vw, 18px); }
-.nav-shell.has-account-cta { gap: clamp(8px, 1.25vw, 15px); }
 .brand { width: min(300px, 53vw); flex: 0 0 auto; }
 .nav-shell.has-live-star .brand { width: min(270px, 42vw); }
-.nav-shell.has-account-cta .brand { width: min(230px, 32vw); }
 .brand img { width: 100%; }
 .site-nav { display: flex; align-items: center; gap: 16px; margin-left: auto; }
 .site-nav a {
@@ -196,15 +194,18 @@ button { color: inherit; }
   color: #070815;
   animation-duration: 1.15s;
 }
-.nav-account-main-bubble {
+.nav-profile-trigger.nav-profile-holo,
+.site-nav > a.nav-profile-holo {
   position: relative;
   isolation: isolate;
-  display: inline-grid;
-  place-items: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
   flex: 0 0 auto;
-  min-width: 178px;
-  min-height: 54px;
-  padding: 0 22px;
+  min-width: 148px;
+  min-height: 50px;
+  padding: 0 21px;
   overflow: hidden;
   border: 1px solid rgba(255,255,255,.38);
   border-radius: 999px;
@@ -222,9 +223,10 @@ button { color: inherit; }
   text-align: center;
   text-decoration: none;
   text-transform: uppercase;
-  animation: accountBubbleBreath 2.6s ease-in-out infinite;
+  animation: profileBubbleBreath 3.4s ease-in-out infinite;
+  transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease;
 }
-.nav-account-main-bubble[data-account-state="signed-in"] {
+.nav-profile-holo[data-account-state="signed-in"] {
   background:
     radial-gradient(circle at 23% 18%, rgba(255,255,255,.92) 0 8%, transparent 9%),
     radial-gradient(circle at 76% 28%, rgba(248,255,70,.42), transparent 34%),
@@ -236,7 +238,8 @@ button { color: inherit; }
     0 0 38px rgba(56,232,255,.28),
     0 0 62px rgba(93,255,197,.2);
 }
-.nav-account-main-bubble::before {
+.nav-profile-trigger.nav-profile-holo::before,
+.site-nav > a.nav-profile-holo::before {
   content: "";
   position: absolute;
   inset: -35% -22%;
@@ -245,9 +248,10 @@ button { color: inherit; }
     linear-gradient(110deg, transparent 30%, rgba(255,255,255,.74) 45%, transparent 58%),
     repeating-linear-gradient(132deg, rgba(255,255,255,.18) 0 2px, transparent 2px 12px);
   transform: translateX(-46%) rotate(4deg);
-  animation: accountHoloSweep 3.1s ease-in-out infinite;
+  transition: transform .72s ease, opacity .72s ease;
 }
-.nav-account-main-bubble::after {
+.nav-profile-trigger.nav-profile-holo::after,
+.site-nav > a.nav-profile-holo::after {
   content: "";
   position: absolute;
   inset: 3px;
@@ -255,7 +259,8 @@ button { color: inherit; }
   background: linear-gradient(180deg, rgba(255,255,255,.22), transparent 44%, rgba(5,6,21,.18));
   pointer-events: none;
 }
-.nav-account-main-bubble span {
+.nav-profile-holo .nav-profile-label,
+.nav-profile-holo .nav-profile-caret {
   position: relative;
   z-index: 1;
   color: #fff;
@@ -265,7 +270,12 @@ button { color: inherit; }
   line-height: 1.05;
   text-shadow: 0 1px 0 rgba(0,0,0,.32), 0 0 18px rgba(255,255,255,.38);
 }
-.nav-account-main-bubble:hover {
+.nav-profile-holo .nav-profile-caret { color: var(--electric); font-size: .68rem; }
+.nav-profile-trigger.nav-profile-holo:hover,
+.nav-profile.is-open .nav-profile-trigger.nav-profile-holo,
+.nav-profile.is-current .nav-profile-trigger.nav-profile-holo,
+.site-nav > a.nav-profile-holo:hover,
+.site-nav > a.nav-profile-holo[aria-current="page"] {
   color: #fff;
   border-color: rgba(248,255,70,.7);
   box-shadow:
@@ -274,9 +284,12 @@ button { color: inherit; }
     0 12px 0 rgba(0,0,0,.24),
     0 0 42px rgba(248,255,70,.28),
     0 0 72px rgba(56,232,255,.24);
-  animation-duration: 1.55s;
+  transform: translateY(-2px) scale(1.015);
 }
-.site-nav a:not(.nav-live):not([href$="card-lookup.html"]):not([href*="card-lookup.html?"])::after {
+.nav-profile-trigger.nav-profile-holo:hover::before,
+.nav-profile.is-open .nav-profile-trigger.nav-profile-holo::before,
+.site-nav > a.nav-profile-holo:hover::before { opacity: .9; transform: translateX(46%) rotate(4deg); }
+.site-nav a:not(.nav-live):not(.nav-profile-holo):not([href$="card-lookup.html"]):not([href*="card-lookup.html?"])::after {
   content: "";
   position: absolute;
   left: 0;
@@ -286,8 +299,8 @@ button { color: inherit; }
   background: linear-gradient(90deg, var(--electric), var(--cyan));
   transition: right .2s ease;
 }
-.site-nav a:hover::after,
-.site-nav a[aria-current="page"]::after { right: 0; }
+.site-nav a:not(.nav-profile-holo):hover::after,
+.site-nav a:not(.nav-profile-holo)[aria-current="page"]::after { right: 0; }
 .site-nav a[aria-current="page"] { color: var(--electric); }
 .site-nav > a[href$="card-lookup.html"][aria-current="page"],
 .site-nav > a[href*="card-lookup.html?"][aria-current="page"] { color: #fff; }
@@ -607,8 +620,7 @@ button { color: inherit; }
 @keyframes float { 50% { transform: translateY(-10px) rotate(4deg); } }
 @keyframes pulse { 70% { box-shadow: 0 0 0 10px rgba(255,85,118,0); } 100% { box-shadow: 0 0 0 0 rgba(255,85,118,0); } }
 @keyframes liveStarBreath { 0%, 100% { transform: scale(.96) rotate(-3deg); filter: drop-shadow(0 8px 0 rgba(0,0,0,.32)) drop-shadow(0 0 18px rgba(248,255,70,.26)); } 50% { transform: scale(1.06) rotate(3deg); filter: drop-shadow(0 9px 0 rgba(0,0,0,.36)) drop-shadow(0 0 34px rgba(248,255,70,.48)); } }
-@keyframes accountBubbleBreath { 0%, 100% { transform: translateY(0) scale(.985); filter: saturate(1.05); } 50% { transform: translateY(-2px) scale(1.025); filter: saturate(1.28); } }
-@keyframes accountHoloSweep { 0%, 16% { transform: translateX(-62%) rotate(4deg); opacity: .2; } 48% { opacity: .88; } 72%, 100% { transform: translateX(62%) rotate(4deg); opacity: .18; } }
+@keyframes profileBubbleBreath { 0%, 100% { filter: saturate(1.04); } 50% { filter: saturate(1.24); } }
 @keyframes cardSearchFoilShift { 0% { background-position: 0 0, 11px 7px, center, 0% 48%; } 50% { background-position: 29px 15px, -12px 29px, center, 100% 52%; } 100% { background-position: 58px 29px, -31px 50px, center, 0% 48%; } }
 @keyframes cardSearchFoilSweep { 0%, 18% { transform: translateX(-44%) rotate(8deg); opacity: .12; } 48% { opacity: .82; } 72%, 100% { transform: translateX(44%) rotate(8deg); opacity: .1; } }
 @keyframes holoSweep { 0%, 18% { transform: translateX(-65%) rotate(8deg); } 55%, 100% { transform: translateX(65%) rotate(8deg); } }
@@ -616,8 +628,7 @@ button { color: inherit; }
 
 @media (prefers-reduced-motion: reduce) {
   .nav-live-star,
-  .nav-account-main-bubble,
-  .nav-account-main-bubble::before,
+  .nav-profile-holo,
   .site-nav > a[href$="card-lookup.html"],
   .site-nav > a[href*="card-lookup.html?"],
   .site-nav > a[href$="card-lookup.html"]::after,
@@ -786,16 +797,7 @@ button { color: inherit; }
   .nav-shell.has-menu-toggle .nav-live { justify-content: center; }
   .nav-shell.has-menu-toggle .menu-toggle { display: block; margin-left: auto; }
   .nav-shell.has-menu-toggle .nav-live-star { width: 74px; }
-  .nav-shell.has-menu-toggle.has-account-cta .brand { width: min(190px, 30vw); }
-  .nav-shell.has-menu-toggle .nav-account-main-bubble {
-    min-width: 142px;
-    min-height: 48px;
-    padding: 0 14px;
-  }
-  .nav-shell.has-menu-toggle .nav-account-main-bubble span {
-    font-size: .68rem;
-    letter-spacing: .04em;
-  }
+  .nav-shell.has-menu-toggle .site-nav > a.nav-profile-holo { width: 100%; min-width: 0; }
 }
 
 @media (max-width: 820px) {
@@ -825,16 +827,7 @@ button { color: inherit; }
   .nav-live { justify-content: center; }
   .menu-toggle { display: block; margin-left: auto; }
   .nav-live-star { width: 74px; }
-  .nav-shell.has-account-cta .brand { width: min(190px, 30vw); }
-  .nav-account-main-bubble {
-    min-width: 142px;
-    min-height: 48px;
-    padding: 0 14px;
-  }
-  .nav-account-main-bubble span {
-    font-size: .68rem;
-    letter-spacing: .04em;
-  }
+  .site-nav > a.nav-profile-holo { width: 100%; min-width: 0; }
   .marquee-slide { grid-template-columns: 1fr; padding-inline: 22px; }
   .marquee-slide em { display: none; }
   .marquee-slide strong { font-size: clamp(1.65rem, 7vw, 2.6rem); }
@@ -860,25 +853,11 @@ button { color: inherit; }
   .container { width: min(100% - 24px, var(--max-width)); }
   .section { padding: 72px 0; }
   .nav-shell { min-height: 70px; }
-  .nav-shell.has-menu-toggle.has-live-star.has-account-cta { gap: 6px; }
   .brand { width: min(250px, 68vw); }
   .nav-shell.has-live-star .brand { width: min(210px, 44vw); }
-  .nav-shell.has-account-cta .brand { width: min(128px, 31vw); }
-  .nav-shell.has-menu-toggle.has-live-star.has-account-cta .brand { width: min(100px, 27vw); }
   .nav-live-star,
   .nav-shell.has-menu-toggle .nav-live-star { width: 52px; }
   .nav-shell.has-menu-toggle .menu-toggle { flex: 0 0 42px; width: 42px; padding: 9px; }
-  .nav-account-main-bubble,
-  .nav-shell.has-menu-toggle .nav-account-main-bubble {
-    min-width: 96px;
-    min-height: 44px;
-    padding: 0 10px;
-  }
-  .nav-account-main-bubble span {
-    font-size: .56rem;
-    line-height: .95;
-    white-space: normal;
-  }
   .visual-marquee { display: none; }
   .hero { padding-top: 64px; }
   .hero h1,

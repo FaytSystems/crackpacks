@@ -35,16 +35,6 @@
     sessionStorage.setItem("cp_seller_upgrade_requested", "true");
     window.location.href = sellerSetupUrl();
   };
-  const syncHeaderAccountBubble = () => {
-    document.querySelectorAll("[data-header-account-bubble]").forEach(link => {
-      const signedIn = Boolean(token() && portalState.signedIn);
-      link.href = signedIn ? buyerProfileUrl : "referral.html?mode=signin";
-      link.dataset.accountState = signedIn ? "signed-in" : "signed-out";
-      link.setAttribute("aria-label", signedIn ? "Open your Crack Packs account dashboard" : "Sign in to Crack Packs");
-      const label = link.querySelector("span") || link;
-      label.textContent = signedIn ? "Account" : "Sign-In";
-    });
-  };
   const accountMenuMarkup = () => {
     if (!portalState.signedIn) {
       return `
@@ -107,10 +97,15 @@
       const trigger = profile.querySelector("[data-profile-trigger]");
       const menu = profile.querySelector(".nav-profile-menu");
       if (!trigger || !menu) return;
-      trigger.innerHTML = `Profile <span class="nav-profile-caret" aria-hidden="true">&#9660;</span>`;
+      const signedIn = Boolean(token() && portalState.signedIn);
+      trigger.classList.add("nav-profile-holo");
+      trigger.dataset.accountState = signedIn ? "signed-in" : "signed-out";
+      trigger.setAttribute("aria-label", signedIn
+        ? "Open Profile and Crack Packs account options"
+        : "Open Profile to sign in or create an account");
+      trigger.innerHTML = `<span class="nav-profile-label">Profile</span><span class="nav-profile-caret" aria-hidden="true">&#9660;</span>`;
       menu.innerHTML = accountMenuMarkup();
     });
-    syncHeaderAccountBubble();
     ensureHeaderActionLinks();
   }
 

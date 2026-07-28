@@ -47,35 +47,31 @@
   }
   mountHeaderLiveStar();
 
-  function setHeaderAccountBubbleState(link) {
+  function setHeaderProfileState(control) {
     const signedIn = Boolean(localStorage.getItem("cp_rewards_token"));
-    link.href = signedIn ? "referral.html" : "referral.html?mode=signin";
-    link.dataset.accountState = signedIn ? "signed-in" : "signed-out";
-    link.setAttribute("aria-label", signedIn ? "Open your Crack Packs account dashboard" : "Sign in to Crack Packs");
-    const label = link.querySelector("span") || link;
-    label.textContent = signedIn ? "Account" : "Sign-In";
+    control.classList.add("nav-profile-holo");
+    control.dataset.accountState = signedIn ? "signed-in" : "signed-out";
+    control.setAttribute("aria-label", signedIn
+      ? "Open Profile and Crack Packs account details"
+      : "Open Profile to sign in or create an account");
+    if (control.matches("a") && !control.querySelector(".nav-profile-label")) {
+      const label = document.createElement("span");
+      label.className = "nav-profile-label";
+      label.textContent = control.textContent.trim();
+      control.replaceChildren(label);
+    }
   }
 
-  function mountHeaderAccountBubble() {
-    const shell = document.querySelector(".nav-shell");
-    const brand = shell?.querySelector(".brand");
-    if (!shell || !brand || shell.querySelector(".nav-account-main-bubble")) return;
-    shell.classList.add("has-account-cta");
-    const link = document.createElement("a");
-    link.className = "nav-account-main-bubble";
-    link.dataset.headerAccountBubble = "";
-    link.innerHTML = "<span></span>";
-    setHeaderAccountBubbleState(link);
-    const liveStar = shell.querySelector(".nav-live-star");
-    (liveStar || brand).insertAdjacentElement("afterend", link);
+  function syncHeaderProfileControls() {
+    document.querySelectorAll("[data-profile-trigger], .site-nav > a[href^='referral.html']").forEach(setHeaderProfileState);
   }
-  mountHeaderAccountBubble();
+  syncHeaderProfileControls();
   window.addEventListener("storage", event => {
     if (event.key !== "cp_rewards_token") return;
-    document.querySelectorAll("[data-header-account-bubble]").forEach(setHeaderAccountBubbleState);
+    syncHeaderProfileControls();
   });
   document.addEventListener("crackpacks:account-state-change", () => {
-    document.querySelectorAll("[data-header-account-bubble]").forEach(setHeaderAccountBubbleState);
+    syncHeaderProfileControls();
   });
 
   document.querySelectorAll("[data-live-hub]").forEach(link => {
