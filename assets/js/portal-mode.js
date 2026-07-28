@@ -139,7 +139,7 @@
     portalRequest("/portal/status").then(status => {
       localStorage.setItem(SELLER_ALLOWED_KEY, status.sellerAccess ? "true" : "false");
       localStorage.setItem(MASTER_ALLOWED_KEY, status.isMaster ? "true" : "false");
-      const confirmed = status.isMaster && status.activePortal === "master"
+      const confirmed = status.isMaster && getMode() === "master"
         ? "master"
         : (status.sellerAccess && status.activePortal === "seller" ? "seller" : "buyer");
       mode = setMode(confirmed);

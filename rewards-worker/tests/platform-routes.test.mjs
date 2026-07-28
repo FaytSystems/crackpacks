@@ -73,6 +73,53 @@ test("master account recognizes configured emails but still requires ID verifica
   assert.equal(hasMasterPortalAccess({ ...complete, email: "seller@example.com" }, env), false);
 });
 
+test("master portal mode keeps the constrained D1 value schema-safe", async () => {
+  const member = {
+    id: "db319ec3-aa9a-436a-a094-2fca08c85f8a",
+    email: "robertreese@faytsystems.com",
+    email_verified_at: "2026-07-24T00:00:00.000Z",
+    device_verified: 1,
+    identity_status: "verified",
+    stripe_identity_status: "verified",
+    active_portal: "buyer"
+  };
+  const updates = [];
+  const env = {
+    AUTH_SECRET: "test-secret",
+    MASTER_EMAILS: "robertreese@faytsystems.com",
+    DB: {
+      prepare(sql) {
+        return {
+          bind(...args) {
+            return {
+              first: async () => {
+                if (sql.includes("JOIN members")) return member;
+                if (sql.includes("breaker_profiles")) return null;
+                return null;
+              },
+              run: async () => {
+                updates.push({ sql, args });
+                return { success: true };
+              }
+            };
+          }
+        };
+      }
+    }
+  };
+  const response = await handlePlatformRoute(new Request("https://api.crackpacks.test/portal/mode", {
+    method: "POST",
+    headers: { Authorization: "Bearer session-token" },
+    body: JSON.stringify({ mode: "master" })
+  }), env, {});
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { activePortal: "master" });
+  assert.equal(updates.length, 1);
+  assert.match(updates[0].sql, /UPDATE members SET active_portal/);
+  assert.equal(updates[0].args[0], "buyer");
+  assert.notEqual(updates[0].args[0], "master");
+});
+
 test("identity session force starts a fresh Stripe check for already verified accounts", async t => {
   const originalFetch = globalThis.fetch;
   const stripeCalls = [];

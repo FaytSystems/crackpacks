@@ -144,12 +144,13 @@
     }
     try {
       const status = await requestJson("/portal/status");
+      const preferredPortal = localStorage.getItem("cp_portal_mode");
       portalState = {
         signedIn: true,
         sellerAccess: Boolean(status.sellerAccess),
         employeeAccess: Boolean(status.employeeAccess),
         masterAccess: Boolean(status.isMaster || status.isAdmin || status.isOwnerEmail || status.isMasterCandidate),
-        activePortal: status.isMaster && status.activePortal === "master"
+        activePortal: status.isMaster && preferredPortal === "master"
           ? "master"
           : (status.sellerAccess && status.activePortal === "seller" ? "seller" : "buyer")
       };
