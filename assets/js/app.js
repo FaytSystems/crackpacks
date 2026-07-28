@@ -143,8 +143,12 @@
       const serverOffset = data.serverNow ? Date.parse(data.serverNow) - Date.now() : 0;
       const update = () => {
         const remainingMs = Date.parse(campaign.expiresAt) - (Date.now() + serverOffset);
-        countdown.textContent = formatCountdown(remainingMs);
-        if (remainingMs <= 0) panel.hidden = true;
+        if (!document.hidden) countdown.textContent = formatCountdown(remainingMs);
+        if (remainingMs <= 0) {
+          panel.hidden = true;
+          window.clearInterval(window.cpHomepagePromoTimer);
+          window.cpHomepagePromoTimer = null;
+        }
       };
       panel.hidden = false;
       update();
@@ -514,6 +518,7 @@
 
     function start() {
       clearInterval(intervalId);
+      if (reduceMotion || document.hidden) return;
       intervalId = window.setInterval(() => show(current + 1), 5200);
     }
 
@@ -521,6 +526,11 @@
     marquee.addEventListener("mouseleave", () => !reduceMotion && start());
     marquee.addEventListener("focusin", () => clearInterval(intervalId));
     marquee.addEventListener("focusout", () => !reduceMotion && start());
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) clearInterval(intervalId);
+      else start();
+    });
+    window.addEventListener("pagehide", () => clearInterval(intervalId), { once: true });
 
     show(0);
     if (!reduceMotion) start();

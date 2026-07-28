@@ -39,6 +39,8 @@
   let dragging = false;
   let lastRenderedBidCents = 0;
   let activePlaybackUrl = "";
+  let refreshInFlight = false;
+  let heartbeatInFlight = false;
 
   const money = (cents) => `$${(Number(cents || 0) / 100).toFixed(2)}`;
   const dollars = (cents) => (Number(cents || 0) / 100).toFixed(2);
@@ -200,6 +202,8 @@
   };
 
   const refresh = async () => {
+    if (refreshInFlight || document.hidden) return;
+    refreshInFlight = true;
     try {
       const data = await api(`/live/auction${showId ? `?show=${encodeURIComponent(showId)}` : ""}`, { method: "GET" });
       renderShow(data.show);
@@ -208,15 +212,21 @@
     } catch (err) {
       els.status.textContent = err.message;
       if (!token()) els.copy.textContent = "Sign in to your Profile before bidding.";
+    } finally {
+      refreshInFlight = false;
     }
   };
 
   const heartbeat = async () => {
-    if (!showId) return;
+    if (!showId || heartbeatInFlight || document.hidden) return;
+    heartbeatInFlight = true;
     try {
       const data = await api("/live/viewers/heartbeat", { method: "POST", body: JSON.stringify({ showId, clientId: viewerClientId }) });
       if (els.viewers) els.viewers.textContent = String(data.viewers || 0);
-    } catch {}
+    } catch {
+    } finally {
+      heartbeatInFlight = false;
+    }
   };
 
   const placeBid = async (payload = {}) => {
@@ -280,6 +290,15 @@
 
   refresh();
   heartbeat();
-  setInterval(refresh, 2000);
-  setInterval(heartbeat, 30000);
+  const refreshTimer = window.setInterval(refresh, 2000);
+  const heartbeatTimer = window.setInterval(heartbeat, 30000);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) return;
+    refresh();
+    heartbeat();
+  });
+  window.addEventListener("pagehide", () => {
+    window.clearInterval(refreshTimer);
+    window.clearInterval(heartbeatTimer);
+  }, { once: true });
 })();

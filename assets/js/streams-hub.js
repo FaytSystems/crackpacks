@@ -21,6 +21,7 @@
   let sellerOrderSearch = "";
   let sellerContextAuthorized = false;
   let showHashFocused = false;
+  let showsLoadPromise = null;
   let pendingCloseShowId = "";
   let closeShowTrigger = null;
   let auctionAdvancePending = false;
@@ -385,9 +386,17 @@
   }
 
   async function loadShows() {
-    try { shows = (await api("/live/shows")).shows || []; }
-    catch (error) { shows = []; $("[data-streams-empty]").textContent = error.message; }
-    renderShows();
+    if (showsLoadPromise) return showsLoadPromise;
+    showsLoadPromise = (async () => {
+      try { shows = (await api("/live/shows")).shows || []; }
+      catch (error) { shows = []; $("[data-streams-empty]").textContent = error.message; }
+      renderShows();
+    })();
+    try {
+      await showsLoadPromise;
+    } finally {
+      showsLoadPromise = null;
+    }
   }
 
   async function loadGiftCatalog(showId) {
@@ -1732,9 +1741,13 @@
   });
 
   loadShows();
-  setInterval(() => {
+  const showsRefreshTimer = window.setInterval(() => {
     if (!document.hidden) loadShows();
   }, 15000);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) loadShows();
+  });
+  window.addEventListener("pagehide", () => window.clearInterval(showsRefreshTimer), { once: true });
   if (!viewerOnly) {
     syncSellerSectionNav();
     window.addEventListener("hashchange", syncSellerSectionNav);

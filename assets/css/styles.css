@@ -408,7 +408,15 @@ button { color: inherit; }
 .show-card-front strong { position: relative; z-index: 2; font-family: Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif; font-size: clamp(3.7rem, 8vw, 6rem); line-height: .78; letter-spacing: -.045em; }
 .show-card-front em { position: relative; z-index: 2; align-self: flex-start; padding: 9px 12px; color: var(--electric); background: #070815; font-style: normal; font-size: .7rem; font-weight: 950; letter-spacing: .14em; }
 .holo-card::after,
-.holo-sheen { content: ""; position: absolute; inset: -45%; background: linear-gradient(115deg, transparent 30%, rgba(255,255,255,.42) 43%, rgba(56,232,255,.3) 48%, rgba(255,78,219,.28) 52%, transparent 66%); transform: translateX(-42%) rotate(8deg); animation: holoSweep 5.8s ease-in-out infinite; pointer-events: none; }
+.holo-sheen { content: ""; position: absolute; inset: -45%; background: linear-gradient(115deg, transparent 30%, rgba(255,255,255,.42) 43%, rgba(56,232,255,.3) 48%, rgba(255,78,219,.28) 52%, transparent 66%); transform: translateX(-65%) rotate(8deg); pointer-events: none; }
+.holo-card::after { animation: holoSweep 5.8s ease-in-out infinite; }
+.holo-sheen { opacity: .28; transition: transform .72s ease, opacity .72s ease; }
+.product-media:hover .holo-sheen,
+.product-media:focus-within .holo-sheen,
+.catalog-card-media:hover .holo-sheen,
+.catalog-card-media:focus-within .holo-sheen,
+.release-media:hover .holo-sheen,
+.release-media:focus-within .holo-sheen { opacity: .9; transform: translateX(65%) rotate(8deg); }
 .hero-burst { position: absolute; display: grid; place-items: center; width: 66px; height: 66px; border: 1px solid rgba(255,255,255,.25); border-radius: 50%; background: rgba(8,10,31,.72); backdrop-filter: blur(10px); font-size: 1.6rem; box-shadow: 0 0 38px rgba(56,232,255,.2); animation: float 4.3s ease-in-out infinite; }
 .burst-electric { top: 9%; right: 12%; color: var(--electric); }
 .burst-fire { left: 2%; bottom: 15%; color: var(--fire); animation-delay: -1.7s; }

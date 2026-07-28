@@ -449,13 +449,21 @@
 
   function applyFilters() {
     const cards = [...document.querySelectorAll("[data-store-catalog] [data-product-card]")];
-    cards.sort((left, right) => {
+    const sortedCards = cards.sort((left, right) => {
       if (activeSort === "seller") return String(left.querySelector(".store-market-meta strong")?.textContent || "").localeCompare(String(right.querySelector(".store-market-meta strong")?.textContent || ""), undefined, { sensitivity: "base" });
       if (activeSort === "condition") return conditionRank(left.querySelector(".store-market-meta span")?.textContent) - conditionRank(right.querySelector(".store-market-meta span")?.textContent);
       const leftPrice = Number(left.querySelector(".store-current-price")?.textContent.replace(/[^0-9.]/g, "") || 0);
       const rightPrice = Number(right.querySelector(".store-current-price")?.textContent.replace(/[^0-9.]/g, "") || 0);
       return leftPrice - rightPrice;
-    }).forEach(card => catalog?.append(card));
+    });
+    const currentCards = catalog ? [...catalog.querySelectorAll(":scope > [data-product-card]")] : [];
+    const orderChanged = sortedCards.length !== currentCards.length
+      || sortedCards.some((card, index) => card !== currentCards[index]);
+    if (catalog && orderChanged) {
+      const fragment = document.createDocumentFragment();
+      sortedCards.forEach(card => fragment.append(card));
+      catalog.append(fragment);
+    }
     const activeSeries = document.querySelector("[data-store-series].is-active")?.dataset.storeSeries || "all";
     let visible = 0;
     cards.forEach(card => {

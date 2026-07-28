@@ -344,6 +344,7 @@
   }
 
   async function fetchStatus() {
+    if (document.hidden) return;
     const manualVideoId = normalizeVideoId(config.youtubeManualVideoId);
     if (manualVideoId) {
       renderLive({

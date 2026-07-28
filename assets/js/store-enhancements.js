@@ -110,6 +110,7 @@
       card.dataset.rank = card.dataset.rank || String(index + 1);
       card.dataset.createdAt = card.dataset.createdAt || "";
       card.dataset.search = `${text} ${seller} ${primary} ${subcategory}`.toLowerCase();
+      card.dataset.storeEnhanced = "true";
       if (!card.querySelector("[data-store-show-open]")) {
         const action = document.createElement("button");
         action.type = "button";
@@ -311,8 +312,17 @@
     if (syncingCatalog) return;
     hydrateCards();
     const cards = [...catalog.querySelectorAll("[data-product-card]")];
-    syncingCatalog = true;
-    applySorting(cards).forEach(card => catalog.append(card));
+    const sortedCards = applySorting(cards);
+    const currentCards = [...catalog.querySelectorAll(":scope > [data-product-card]")];
+    const orderChanged = sortedCards.length !== currentCards.length
+      || sortedCards.some((card, index) => card !== currentCards[index]);
+    if (orderChanged) {
+      syncingCatalog = true;
+      const fragment = document.createDocumentFragment();
+      sortedCards.forEach(card => fragment.append(card));
+      catalog.append(fragment);
+      syncingCatalog = false;
+    }
     let visible = 0;
     const series = activeSeries();
     cards.forEach(card => {
@@ -329,7 +339,6 @@
     });
     if (emptyState) emptyState.hidden = visible !== 0;
     refreshSuggestions();
-    syncingCatalog = false;
   }
 
   topTenWindow?.addEventListener("change", renderTopTen);
@@ -387,10 +396,21 @@
     applyFilters();
   });
 
-  const observer = new MutationObserver(() => {
-    if (syncingCatalog) return;
-    updatePriceControls();
-    applyFilters();
+  let catalogRefreshQueued = false;
+  const observer = new MutationObserver(records => {
+    const hasNewCards = records.some(record => [...record.addedNodes].some(node => {
+      if (node.nodeType !== Node.ELEMENT_NODE) return false;
+      if (node.matches?.("[data-product-card]:not([data-store-enhanced])")) return true;
+      return Boolean(node.querySelector?.("[data-product-card]:not([data-store-enhanced])"));
+    }));
+    if (syncingCatalog || catalogRefreshQueued || !hasNewCards) return;
+    catalogRefreshQueued = true;
+    queueMicrotask(() => {
+      catalogRefreshQueued = false;
+      if (!catalog.querySelector("[data-product-card]:not([data-store-enhanced])")) return;
+      updatePriceControls();
+      applyFilters();
+    });
   });
   observer.observe(catalog, { childList: true });
 
