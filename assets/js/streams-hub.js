@@ -23,6 +23,7 @@
   let sellerContextAuthorized = false;
   let showHashFocused = false;
   let showsLoadPromise = null;
+  let showsLoadError = "";
   let pendingCloseShowId = "";
   let closeShowTrigger = null;
   let hudCreateShowTrigger = null;
@@ -384,7 +385,7 @@
     return `
     <article class="stream-card holo-panel" id="show-${escapeHtml(show.id)}">
       <a class="stream-card-thumbnail" href="${showUrl}" aria-label="Open ${escapeHtml(show.title)}">
-        <img src="${escapeHtml(show.image || "assets/images/banner-cosmic.svg")}" alt="${escapeHtml(show.title)}" loading="lazy">
+        <img src="${escapeHtml(show.image || "assets/images/banner-cosmic.svg")}" alt="${escapeHtml(show.title)}" width="1600" height="900" loading="lazy" decoding="async">
       </a>
       <div class="stream-card-top"><span class="stream-pill ${escapeHtml(show.state)}">${show.state === "live" ? "LIVE NOW" : "UPCOMING"}</span><span class="viewer-pill">${Number(show.viewers || 0)} viewers</span></div>
       <h3>${escapeHtml(show.title)}</h3><p><strong>${escapeHtml(show.sellerUsername)}</strong></p>
@@ -428,7 +429,18 @@
       if (node.hasAttribute("role")) node.setAttribute("aria-selected", String(active));
     });
     $("[data-streams-list]").innerHTML = filtered.map(showCard).join("");
-    $("[data-streams-empty]").hidden = filtered.length > 0;
+    const empty = $("[data-streams-empty]");
+    if (empty) {
+      const emptyMessages = {
+        all: "No live or upcoming shows are available yet.",
+        live: "No live shows are broadcasting right now.",
+        upcoming: "No upcoming shows are scheduled yet.",
+        followed: "No shows from followed sellers are available yet.",
+        watchlist: "No saved shows are in your watchlist yet."
+      };
+      empty.textContent = showsLoadError || emptyMessages[activeTab] || emptyMessages.all;
+      empty.hidden = filtered.length > 0;
+    }
     if (!showHashFocused && location.hash.startsWith("#show-")) {
       const target = document.getElementById(decodeURIComponent(location.hash.slice(1)));
       if (target) {
@@ -441,8 +453,9 @@
   async function loadShows() {
     if (showsLoadPromise) return showsLoadPromise;
     showsLoadPromise = (async () => {
+      showsLoadError = "";
       try { shows = (await api("/live/shows")).shows || []; }
-      catch (error) { shows = []; $("[data-streams-empty]").textContent = error.message; }
+      catch (error) { shows = []; showsLoadError = error.message; }
       renderShows();
     })();
     try {
@@ -839,7 +852,7 @@
     }
     if (current) {
       const price = dollars(current.current_bid_cents ?? current.starting_bid_cents);
-      const image = current.image_url ? `<img src="${escapeHtml(current.image_url)}" alt="" loading="lazy">` : "";
+      const image = current.image_url ? `<img src="${escapeHtml(current.image_url)}" alt="" width="112" height="112" loading="lazy" decoding="async">` : "";
       currentHost.classList.toggle("has-image", Boolean(image));
       currentHost.innerHTML = `${image}<strong>${escapeHtml(current.title)}</strong><span>${price}${current.winning_display ? ` &middot; leading @${escapeHtml(current.winning_display)}` : " &middot; awaiting bids"}</span><small>${escapeHtml(current.item_condition || current.sale_type || "Sale item")}</small>`;
     } else {
@@ -854,7 +867,7 @@
       const price = dollars(lot.current_bid_cents ?? lot.starting_bid_cents);
       const duration = Number(lot.auction_duration_seconds || 30);
       const image = lot.image_url
-        ? `<img src="${escapeHtml(lot.image_url)}" alt="" loading="lazy">`
+        ? `<img src="${escapeHtml(lot.image_url)}" alt="" width="58" height="58" loading="lazy" decoding="async">`
         : `<span class="seller-auction-queue-image-placeholder" aria-hidden="true">No image</span>`;
       const controls = live
         ? `<span class="seller-auction-queue-status">Live</span>`
@@ -1219,7 +1232,7 @@
       const linked = ["scheduled", "live"].includes(String(item.linkedLotStatus || "").toLowerCase());
       const assignable = Number(item.quantity || 0) > 0 && item.status !== "sold_out" && !linked;
       const image = item.imageUrl
-        ? `<img src="${escapeHtml(item.imageUrl)}" alt="" loading="lazy" decoding="async">`
+        ? `<img src="${escapeHtml(item.imageUrl)}" alt="" width="58" height="58" loading="lazy" decoding="async">`
         : `<span class="seller-hud-inventory-image-placeholder" aria-hidden="true">CP</span>`;
       return `<article class="seller-hud-inventory-row">
         <div class="seller-hud-inventory-image">${image}</div>

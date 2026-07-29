@@ -194,7 +194,7 @@
     return `
       <article class="product-card holo-panel reveal" data-product-card data-category="${escapeHtml(item.category)}" data-search="${escapeHtml(`${item.name} ${item.type} ${item.set} ${item.description}`.toLowerCase())}" id="${escapeHtml(item.id)}">
         <a class="product-media" href="${escapeHtml(url)}"${externalAttributes(url)} aria-label="View ${escapeHtml(item.name)}">
-          <img src="${escapeHtml(item.image)}" alt="Original Crack Packs artwork for ${escapeHtml(item.name)}" loading="lazy">
+          <img src="${escapeHtml(item.image)}" alt="Original Crack Packs artwork for ${escapeHtml(item.name)}" width="800" height="680" loading="lazy" decoding="async">
           <span class="product-badge">${escapeHtml(item.badge)}</span>
           <span class="holo-sheen" aria-hidden="true"></span>
         </a>
@@ -301,7 +301,7 @@
     return `
       <article class="catalog-card holo-panel reveal is-visible">
         <a class="catalog-card-media" href="${escapeHtml(largeImage)}" target="_blank" rel="noopener noreferrer" aria-label="Open large image of ${escapeHtml(card?.name || "card")}">
-          <img src="${escapeHtml(image)}" alt="${escapeHtml(card?.name || "Pokémon trading card")}" loading="lazy">
+          <img src="${escapeHtml(image)}" alt="${escapeHtml(card?.name || "Pokémon trading card")}" width="245" height="342" loading="lazy" decoding="async">
           <span class="holo-sheen" aria-hidden="true"></span>
         </a>
         <div class="catalog-card-body">
@@ -448,7 +448,7 @@
     return `
       <article class="release-card holo-panel reveal accent-${escapeHtml(item.accent || "electric")}" data-release-card data-release-status="${status.group}" id="${escapeHtml(item.id)}">
         <div class="release-media">
-          <img src="${escapeHtml(item.image)}" alt="Original Crack Packs artwork for ${escapeHtml(item.name)} ${escapeHtml(item.product)}" loading="lazy">
+          <img src="${escapeHtml(item.image)}" alt="Original Crack Packs artwork for ${escapeHtml(item.name)} ${escapeHtml(item.product)}" width="800" height="680" loading="lazy" decoding="async">
           <span class="release-date">${escapeHtml(formattedDate)}</span>
           <span class="holo-sheen" aria-hidden="true"></span>
         </div>

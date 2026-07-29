@@ -647,7 +647,7 @@
 
 @media (max-width: 1060px) {
   .lookup-hero-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .lookup-grid {

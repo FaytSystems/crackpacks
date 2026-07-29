@@ -106,7 +106,7 @@ button { color: inherit; }
 .nav-shell.has-live-star { gap: clamp(10px, 1.5vw, 18px); }
 .brand { width: min(300px, 53vw); flex: 0 0 auto; }
 .nav-shell.has-live-star .brand { width: min(270px, 42vw); }
-.brand img { width: 100%; }
+.brand img { width: 100%; height: auto; }
 .site-nav { display: flex; align-items: center; gap: 16px; margin-left: auto; }
 .site-nav a {
   position: relative;
@@ -604,7 +604,7 @@ button { color: inherit; }
 
 .site-footer { border-top: 1px solid var(--line); background: rgba(3,4,14,.74); }
 .footer-grid { display: grid; grid-template-columns: 1.6fr .7fr .9fr; gap: 54px; padding: 60px 0 42px; }
-.footer-brand img { width: min(310px, 100%); }
+.footer-brand img { width: min(310px, 100%); height: auto; }
 .footer-brand p { max-width: 520px; color: var(--muted); }
 .footer-links { display: flex; flex-direction: column; gap: 9px; }
 .footer-links h3 { margin: 0 0 8px; font-size: .82rem; letter-spacing: .14em; text-transform: uppercase; }

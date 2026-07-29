@@ -495,7 +495,7 @@
       <article class="lookup-card holo-panel">
         <div class="lookup-card-media">
           ${image
-            ? `<img src="${escapeHtml(image)}" alt="${escapeHtml(card.name || "Trading card")} card artwork" loading="lazy" decoding="async">`
+            ? `<img src="${escapeHtml(image)}" alt="${escapeHtml(card.name || "Trading card")} card artwork" width="245" height="342" loading="lazy" decoding="async">`
             : `<div class="lookup-image-missing" aria-label="Artwork unavailable">Artwork unavailable</div>`
           }
           <span class="lookup-rarity">${escapeHtml(rarity)}</span>
@@ -548,7 +548,7 @@
       <article class="lookup-card lookup-ebay-card holo-panel">
         <div class="lookup-card-media">
           ${image
-            ? `<img src="${escapeHtml(image)}" alt="${escapeHtml(listing.title || "eBay collectible listing")}" loading="lazy" decoding="async">`
+            ? `<img src="${escapeHtml(image)}" alt="${escapeHtml(listing.title || "eBay collectible listing")}" width="225" height="225" loading="lazy" decoding="async">`
             : `<div class="lookup-image-missing" aria-label="Listing image unavailable">Listing image unavailable</div>`
           }
           <span class="lookup-rarity">eBay active listing</span>

@@ -276,7 +276,11 @@
       els.player.src = url;
     }
     els.player.hidden = false;
-    if (els.showThumbnail) els.showThumbnail.hidden = true;
+    if (els.showThumbnail) {
+      els.showThumbnail.removeAttribute("src");
+      els.showThumbnail.alt = "";
+      els.showThumbnail.hidden = true;
+    }
     if (els.placeholder) els.placeholder.hidden = true;
   };
 
@@ -296,7 +300,11 @@
       if (els.placeholder) els.placeholder.hidden = true;
       return;
     }
-    if (els.showThumbnail) els.showThumbnail.hidden = true;
+    if (els.showThumbnail) {
+      els.showThumbnail.removeAttribute("src");
+      els.showThumbnail.alt = "";
+      els.showThumbnail.hidden = true;
+    }
     if (els.placeholder) els.placeholder.hidden = false;
   };
 
