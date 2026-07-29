@@ -8,7 +8,7 @@
   <meta name="theme-color" content="#07091b">
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/css/styles.css?v=1.11.2">
-  <link rel="stylesheet" href="assets/css/referral.css?v=3.6.0">
+  <link rel="stylesheet" href="assets/css/referral.css?v=3.6.1">
   <link rel="stylesheet" href="assets/css/rewards-modal.css?v=2.2.0">
   <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.7.0">
 </head>
@@ -216,6 +216,7 @@
           <a class="account-subnav-link" href="live-shows.html">Live Feed</a>
         </nav>
         <nav class="account-dashboard-subnav account-dashboard-pages seller-account-subnav" data-seller-account-subnav hidden aria-label="Seller account pages">
+          <button class="account-subnav-link" type="button" data-view="credits">Credits &amp; Subscription</button>
           <a class="account-subnav-link" href="live-shows.html">Live Feed</a>
           <a class="account-subnav-link" href="streams.html#go-live">Broadcast Hub</a>
           <a class="account-subnav-link" href="streams.html#seller-shows">Shows</a>
@@ -238,6 +239,7 @@
           <button class="choice-card choice-card-invites" type="button" data-view="invite"><span>02</span><strong>Invites</strong><small>Copy your personal invite link and open sharing tools.</small></button>
           <button class="choice-card choice-card-orders" type="button" data-view="orders"><span>03</span><strong>Orders</strong><small>See purchases and open live carrier tracking.</small></button>
           <button class="choice-card" type="button" data-view="account"><span>04</span><strong>Account</strong><small>Shipping, phone, identity, and payment method.</small></button>
+          <button class="choice-card choice-card-credits" type="button" data-view="credits" data-seller-only hidden><span>05</span><strong>Add Credits / Subscribe</strong><small>Calculate stream usage, compare plans, and continue to secure Stripe checkout.</small></button>
         </div>
         <section class="reward-card portal-choice-card" data-portal-choice-panel hidden>
           <p class="eyebrow">Choose Account</p>
@@ -343,6 +345,7 @@
             <button class="btn btn-primary" type="button" data-open-seller-portal>Open Seller Portal</button>
             <a class="btn btn-glass" href="seller-store.html#stock">Store Dashboard</a>
             <a class="btn btn-outline" href="streams.html#go-live">Open Broadcast Hub</a>
+            <button class="btn btn-outline" type="button" data-view="credits">Add Credits / Subscribe</button>
           </div>
         </section>
         <section class="reward-card" data-seller-only data-stream-credits-panel hidden>
@@ -350,13 +353,27 @@
             <div><p class="eyebrow">Subscribe / Credits</p><h3>Streaming plans and credit balance</h3></div>
             <button class="btn btn-outline btn-small" type="button" data-stream-credits-refresh>Refresh</button>
           </div>
-          <p>Tell Crack Packs how often you expect to stream and the size of your usual live audience. We’ll estimate your Stream Credit usage and recommend the plan projected to cost the least.</p>
+          <p>Tell Crack Packs how often you expect to stream and the size of your usual live audience. We'll estimate your Stream Credit usage and recommend the plan projected to cost the least.</p>
           <p class="fine-print" data-stream-credits-sync-note>Credits Remaining updates when you refresh.</p>
           <div class="stream-subscription-state" data-stream-subscription-state>
             <div><span>Current plan</span><strong data-current-stream-plan>No active subscription</strong></div>
             <div><span>Stripe status</span><strong data-current-stream-status>Not subscribed</strong></div>
             <button class="btn btn-outline btn-small" type="button" data-manage-subscription hidden>Manage Subscription</button>
           </div>
+          <section class="stream-credit-rebate-policy" aria-labelledby="stream-credit-rebate-title">
+            <div>
+              <p class="eyebrow">End-of-period credit value</p>
+              <h4 id="stream-credit-rebate-title">Unused included credits become a base-value rebate</h4>
+              <p data-stream-rebate-explainer>After stream usage is finalized, eligible unused monthly included credits are converted into your Crack Packs rebate balance.</p>
+              <p class="fine-print">An eligible rebate may be cashed out after the displayed minimum or kept as account credit toward the next subscription period. This is not an automatic refund to the original payment card. Subscription charges are non-refundable after a billing period begins. See the <a href="refund-policy.html">Refund Policy</a>.</p>
+            </div>
+            <div class="stream-credit-rebate-metrics" aria-label="Unused-credit rebate balances">
+              <div><span>Rebate value</span><strong data-stream-rebate-rate>$1.00 / credit</strong></div>
+              <div><span>Pending rebate</span><strong data-stream-pending-rebate>$0.00</strong></div>
+              <div><span>Cash-out eligible</span><strong data-stream-cashout-eligible>$0.00</strong></div>
+              <div><span>Cash-out minimum</span><strong data-stream-cashout-threshold>$25.00</strong></div>
+            </div>
+          </section>
           <div class="stream-credit-meter" data-stream-credit-meter hidden>
             <div class="stream-credit-meter-main">
               <span>Credits Remaining</span>
@@ -567,6 +584,6 @@
   <script src="assets/js/app.js?v=2.0.1"></script>
   <script src="assets/js/nav-profile.js?v=4.6.0"></script>
   <script src="assets/js/portal-mode.js?v=1.2.5"></script>
-  <script src="assets/js/referral.js?v=3.6.3"></script>
+  <script src="assets/js/referral.js?v=3.6.4"></script>
 </body>
 </html>

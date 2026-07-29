@@ -332,6 +332,42 @@ body[data-live-shows-only="true"] .hub-tab {
   box-shadow: 0 15px 34px rgba(117,255,183,0.27), 0 0 24px rgba(56,232,255,0.2);
 }
 
+.seller-credits-bubble {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border-color: rgba(255,255,255,0.52);
+  color: #fff;
+  background:
+    linear-gradient(110deg, rgba(255,255,255,0.3), transparent 24%, transparent 72%, rgba(255,255,255,0.2)),
+    linear-gradient(125deg, #5d28b8, #146eb4 28%, #b51c85 56%, #b87f0e 78%, #176b56);
+  box-shadow: 0 12px 30px rgba(56,232,255,0.14), inset 0 1px rgba(255,255,255,0.55);
+  text-shadow: 0 1px 8px rgba(0,0,0,0.52);
+}
+
+.seller-credits-bubble::after {
+  position: absolute;
+  inset: -70% -35%;
+  z-index: 0;
+  background: linear-gradient(105deg, transparent 38%, rgba(255,255,255,0.48) 50%, transparent 62%);
+  content: "";
+  pointer-events: none;
+  transform: translateX(-52%) rotate(8deg);
+  transition: transform 0.65s ease;
+}
+
+.seller-credits-bubble:hover,
+.seller-credits-bubble:focus-visible {
+  color: #fff;
+  border-color: #fff;
+  box-shadow: 0 15px 36px rgba(255,78,219,0.22), 0 0 26px rgba(56,232,255,0.18);
+}
+
+.seller-credits-bubble:hover::after,
+.seller-credits-bubble:focus-visible::after {
+  transform: translateX(52%) rotate(8deg);
+}
+
 .seller-show-go-live-bubble {
   flex: 1 0 100%;
   min-height: 48px;
@@ -609,6 +645,7 @@ body[data-seller-tool="show-control"] .seller-tool-menu.is-open .seller-tool-men
 .seller-dashboard-launcher > :nth-child(4)::before { background: #72ffa4; }
 .seller-dashboard-launcher > :nth-child(5)::before { background: #8d7aff; }
 .seller-dashboard-launcher > :nth-child(6)::before { background: #ffb13b; }
+.seller-dashboard-launcher > :nth-child(7)::before { background: #38e8ff; }
 
 .seller-dashboard-metrics button:hover,
 .seller-dashboard-metrics button:focus-visible,
@@ -660,6 +697,14 @@ body[data-seller-tool="show-control"] .seller-tool-menu.is-open .seller-tool-men
   color: rgba(255,255,255,0.62);
   font-size: 0.78rem;
   line-height: 1.4;
+}
+
+.seller-dashboard-launcher > .seller-dashboard-credits {
+  grid-column: 1 / -1;
+  min-height: 90px;
+  background:
+    linear-gradient(110deg, rgba(56,232,255,0.09), transparent 40%, rgba(255,78,219,0.08)),
+    rgba(12,15,42,0.92);
 }
 
 .seller-workspace-heading {
@@ -765,7 +810,12 @@ body[data-seller-tool="show-control"] .seller-tool-menu.is-open .seller-tool-men
   }
 
   .seller-hub-heading {
-    align-items: start;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .seller-hub-heading-actions {
+    width: 100%;
   }
 
   .seller-dashboard-metrics {
@@ -3439,6 +3489,10 @@ body[data-seller-tool="show-control"] .seller-tool-menu.is-open .seller-tool-men
   .seller-go-live-dot,
   .seller-go-live-bubble::before {
     animation: none;
+  }
+
+  .seller-credits-bubble::after {
+    transition: none;
   }
 
   .seller-auction-next-button.is-holding::after {

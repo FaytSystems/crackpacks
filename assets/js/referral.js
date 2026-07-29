@@ -69,6 +69,7 @@
   let streamCreditsRefreshInFlight = false;
   let selectedStreamPlanCode = "";
   let streamCreditPurchaseRate = { unitPrice: 1.50, subscriber: false };
+  let streamCreditPolicyConfig = { unusedCreditRebateRate: 1, cashOutThreshold: 25, finalizationDelayHours: 72 };
   let streamSubscriptionState = null;
   let requestedAccountViewHandled = false;
   let streamCheckoutResultHandled = false;
@@ -805,6 +806,26 @@
       safetyBufferPercentage: Number(form.get("safetyBufferPercentage") || 0) || undefined
     };
   };
+  function renderStreamCreditRebatePolicy(subscription = null) {
+    const rate = Number(streamCreditPolicyConfig.unusedCreditRebateRate ?? 1);
+    const threshold = Number(streamCreditPolicyConfig.cashOutThreshold ?? 25);
+    const delayHours = Number(streamCreditPolicyConfig.finalizationDelayHours ?? 72);
+    const pending = Number(subscription?.pendingRebateBalance || 0);
+    const eligible = Number(subscription?.cashOutEligibleBalance || 0);
+    const rateNode = $("[data-stream-rebate-rate]");
+    const pendingNode = $("[data-stream-pending-rebate]");
+    const eligibleNode = $("[data-stream-cashout-eligible]");
+    const thresholdNode = $("[data-stream-cashout-threshold]");
+    const explainer = $("[data-stream-rebate-explainer]");
+    if (rateNode) rateNode.textContent = `$${rate.toFixed(2)} / credit`;
+    if (pendingNode) pendingNode.textContent = `$${pending.toFixed(2)}`;
+    if (eligibleNode) eligibleNode.textContent = `$${eligible.toFixed(2)}`;
+    if (thresholdNode) thresholdNode.textContent = `$${threshold.toFixed(2)}`;
+    if (explainer) {
+      const delayLabel = delayHours === 1 ? "1 hour" : `${delayHours} hours`;
+      explainer.textContent = `After stream usage is finalized, eligible unused monthly included credits convert at the current $${rate.toFixed(2)} base-value rebate rate. Finalization normally completes after ${delayLabel}.`;
+    }
+  }
   function renderStreamCreditComparison(result) {
     const container = $("[data-stream-credits-comparison]");
     container.replaceChildren();
@@ -812,6 +833,7 @@
     const availableCodes = comparisons.map(plan => String(plan.code || ""));
     const recommendedCode = String(result?.recommendedPlan?.code || "");
     const currentPlanCode = String(result?.currentPlanCode || "");
+    const checkoutEnabled = result?.checkoutEnabled !== false;
     if (!availableCodes.includes(selectedStreamPlanCode)) {
       selectedStreamPlanCode = availableCodes.includes(currentPlanCode) ? currentPlanCode : recommendedCode;
     }
@@ -850,14 +872,30 @@
         selectedStreamPlanCode = plan.code;
         renderStreamCreditComparison(result);
       });
-      card.append(main, select);
+      const actions = document.createElement("div");
+      actions.className = "stream-plan-actions";
+      actions.append(select);
+      if (checkoutEnabled) {
+        const subscribe = document.createElement("button");
+        subscribe.className = "btn btn-primary btn-small";
+        subscribe.type = "button";
+        subscribe.dataset.streamPlanStripe = plan.code;
+        subscribe.textContent = "Subscribe with Stripe";
+        subscribe.setAttribute("aria-label", `Subscribe to ${plan.name} with Stripe`);
+        subscribe.addEventListener("click", async () => {
+          selectedStreamPlanCode = plan.code;
+          await startStreamPlanCheckout(plan.code, subscribe);
+        });
+        actions.append(subscribe);
+      }
+      card.append(main, actions);
       container.append(card);
     });
     const selectedPlan = comparisons.find(plan => plan.code === selectedStreamPlanCode);
     const checkoutButton = $("[data-stream-plan-checkout]");
     if (checkoutButton) {
       checkoutButton.disabled = !selectedPlan;
-      checkoutButton.textContent = selectedPlan ? `Checkout ${selectedPlan.name}` : "Choose a plan";
+      checkoutButton.textContent = selectedPlan ? `Subscribe to ${selectedPlan.name} with Stripe` : "Choose a plan";
     }
   }
   function updateStreamCreditPurchaseQuote() {
@@ -880,7 +918,10 @@
     const dashboard = data?.dashboard;
     const projection = data?.projection;
     if (Object.prototype.hasOwnProperty.call(data || {}, "subscription")) streamSubscriptionState = data.subscription || null;
+    const policyConfig = data?.config || projection?.config;
+    if (policyConfig) streamCreditPolicyConfig = { ...streamCreditPolicyConfig, ...policyConfig };
     const subscription = streamSubscriptionState;
+    renderStreamCreditRebatePolicy(subscription);
     const subscriptionStatus = String(subscription?.stripeSubscriptionStatus || "").toLowerCase();
     const statusLabel = subscriptionStatus
       ? subscriptionStatus.replace(/_/g, " ").replace(/\b\w/g, character => character.toUpperCase())
@@ -950,7 +991,12 @@
     });
     card.append(main);
     panel.append(card);
-    renderStreamCreditComparison({ comparison: projection.comparison, recommendedPlan: projection.recommendedPlan, currentPlanCode: subscription?.selectedPlanCode || "" });
+    renderStreamCreditComparison({
+      comparison: projection.comparison,
+      recommendedPlan: projection.recommendedPlan,
+      currentPlanCode: subscription?.selectedPlanCode || "",
+      checkoutEnabled: !hasManageableSubscription
+    });
   }
   function updateStreamCreditSyncNote(message = "", kind = "") {
     const node = $("[data-stream-credits-sync-note]");
@@ -1970,6 +2016,26 @@
       streamCreditStatus(error.message, "error");
     }
   });
+  async function startStreamPlanCheckout(planCode = "", button = null) {
+    if (button) button.disabled = true;
+    try {
+      streamCreditStatus("Opening secure Stripe checkout for your seller plan...");
+      const base = readStreamCreditForm();
+      let selectedCode = String(planCode || selectedStreamPlanCode || "").toLowerCase();
+      if (!selectedCode) {
+        const recommendation = await request("/seller/stream-credits/calculate", { method: "POST", body: JSON.stringify(base) });
+        selectedCode = String(recommendation.recommendedPlan?.code || "").toLowerCase();
+      }
+      if (!selectedCode) throw new Error("Choose a paid seller plan before opening Stripe checkout.");
+      selectedStreamPlanCode = selectedCode;
+      const result = await request("/seller/stream-credits/checkout-plan", { method: "POST", body: JSON.stringify({ ...base, selectedPlanCode: selectedCode }) });
+      if (!result.checkoutUrl) throw new Error("Stripe did not return a plan checkout page.");
+      location.href = result.checkoutUrl;
+    } catch (error) {
+      if (button) button.disabled = false;
+      streamCreditStatus(error.message, "error");
+    }
+  }
   $("[data-stream-credits-form]")?.addEventListener("submit", async event => {
     event.preventDefault();
     try {
@@ -1985,19 +2051,7 @@
       streamCreditStatus(error.message, "error");
     }
   });
-  $("[data-stream-plan-checkout]")?.addEventListener("click", async () => {
-    try {
-      streamCreditStatus("Opening Stripe checkout for your seller plan...");
-      const base = readStreamCreditForm();
-      const recommendation = await request("/seller/stream-credits/calculate", { method: "POST", body: JSON.stringify(base) });
-      const selectedCode = selectedStreamPlanCode || recommendation.recommendedPlan?.code;
-      const result = await request("/seller/stream-credits/checkout-plan", { method: "POST", body: JSON.stringify({ ...base, selectedPlanCode: selectedCode }) });
-      if (!result.checkoutUrl) throw new Error("Stripe did not return a plan checkout page.");
-      location.href = result.checkoutUrl;
-    } catch (error) {
-      streamCreditStatus(error.message, "error");
-    }
-  });
+  $("[data-stream-plan-checkout]")?.addEventListener("click", event => startStreamPlanCheckout("", event.currentTarget));
   $("[data-stream-credit-quantity]")?.addEventListener("input", updateStreamCreditPurchaseQuote);
   updateStreamCreditPurchaseQuote();
   $("[data-stream-credit-purchase-form]")?.addEventListener("submit", async event => {

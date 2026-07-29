@@ -41,6 +41,29 @@ test("Seller Hub exposes the connected Seller Live cockpit controls", async () =
   assert.ok(nextAuctionIndex > commandDeckIndex);
 });
 
+test("Seller accounts expose calculator, credit purchase, and direct Stripe subscription entry points", async () => {
+  const [sellerHtml, accountHtml, script, routes] = await Promise.all([
+    read("streams.html"),
+    read("referral.html"),
+    read("assets/js/referral.js"),
+    read("rewards-worker/src/platform-routes.js")
+  ]);
+  assert.match(sellerHtml, /seller-credits-bubble[^>]+href="referral\.html\?view=credits"/);
+  assert.match(sellerHtml, /Add credits or subscribe/);
+  assert.match(accountHtml, /data-view="credits"[^>]*>Credits &amp; Subscription/);
+  assert.match(accountHtml, /data-stream-credits-calculate/);
+  assert.match(accountHtml, /data-stream-credit-buy/);
+  assert.match(accountHtml, /data-stream-rebate-rate/);
+  assert.match(accountHtml, /toward the next subscription period/);
+  assert.match(script, /subscribe\.dataset\.streamPlanStripe = plan\.code/);
+  assert.match(script, /Subscribe with Stripe/);
+  assert.match(script, /startStreamPlanCheckout/);
+  assert.match(script, /pendingRebateBalance/);
+  assert.match(script, /cashOutEligibleBalance/);
+  assert.match(routes, /\/seller\/stream-credits\/checkout-plan/);
+  assert.match(routes, /\["mode", "subscription"\]/);
+});
+
 test("Seller Live long-press and queue-selection behavior is wired", async () => {
   const script = await read("assets/js/streams-hub.js");
   assert.match(script, /AUTO_NEXT_HOLD_MS = 3000/);

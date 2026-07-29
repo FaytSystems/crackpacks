@@ -3,6 +3,8 @@
 .choice-card{transition:transform .2s ease,border-color .2s ease,box-shadow .2s ease}
 .choice-card-invites{background:linear-gradient(125deg,rgba(255,78,219,.15),rgba(56,232,255,.08));box-shadow:inset 0 0 30px rgba(255,78,219,.04)}
 .choice-card-invites:hover{border-color:var(--magenta);box-shadow:0 0 36px rgba(255,78,219,.14)}
+.choice-card-credits{border-color:rgba(56,232,255,.28);background:linear-gradient(125deg,rgba(93,40,184,.2),rgba(20,110,180,.13),rgba(181,28,133,.12))}
+.choice-card-credits:hover{border-color:var(--cyan);box-shadow:0 0 36px rgba(56,232,255,.14)}
 .action-panel,.progress-card,.profile-settings-card,.social-links-card{max-width:1040px}
 .qr-download-button{width:100%;margin-top:15px}
 .username-settings-form{grid-template-columns:minmax(0,1fr) auto;align-items:end}
@@ -248,6 +250,14 @@
   border-color: rgba(248,255,70,.7);
 }
 
+.stream-plan-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: .55rem;
+  max-width: 330px;
+}
+
 .stream-plan-badges {
   display: flex;
   flex-wrap: wrap;
@@ -264,6 +274,60 @@
   background: rgba(56,232,255,.08);
   font-size: .7rem;
   font-weight: 900;
+}
+
+.stream-credit-rebate-policy {
+  display: grid;
+  gap: 1rem;
+  margin: 1.35rem 0;
+  padding: 1.1rem 0;
+  border-block: 1px solid rgba(56,232,255,.24);
+}
+
+.stream-credit-rebate-policy h4 {
+  margin: 0 0 .5rem;
+  color: #fff;
+  font-size: 1.15rem;
+}
+
+.stream-credit-rebate-policy p {
+  margin: .35rem 0;
+}
+
+.stream-credit-rebate-policy a {
+  color: var(--cyan);
+  font-weight: 850;
+}
+
+.stream-credit-rebate-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-block: 1px solid rgba(255,255,255,.1);
+}
+
+.stream-credit-rebate-metrics > div {
+  display: grid;
+  gap: .3rem;
+  min-width: 0;
+  padding: .9rem;
+  border-right: 1px solid rgba(255,255,255,.1);
+}
+
+.stream-credit-rebate-metrics > div:last-child {
+  border-right: 0;
+}
+
+.stream-credit-rebate-metrics span {
+  color: var(--muted);
+  font-size: .72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.stream-credit-rebate-metrics strong {
+  overflow-wrap: anywhere;
+  color: var(--electric);
+  font-size: .95rem;
 }
 
 .stream-credit-purchase-form {
@@ -311,6 +375,17 @@
   }
   .stream-plan-row {
     grid-template-columns: 1fr;
+  }
+  .stream-plan-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    max-width: none;
+  }
+  .stream-credit-rebate-metrics {
+    grid-template-columns: 1fr 1fr;
+  }
+  .stream-credit-rebate-metrics > div:nth-child(2) {
+    border-right: 0;
   }
   .stream-plan-row .btn,
   .stream-credit-purchase-form .btn {
