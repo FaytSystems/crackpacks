@@ -8,7 +8,7 @@
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/css/styles.css?v=1.11.2">
   <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.7.0">
-  <link rel="stylesheet" href="assets/css/referral.css?v=3.6.3">
+  <link rel="stylesheet" href="assets/css/referral.css?v=3.6.4">
   <link rel="stylesheet" href="assets/css/rewards-modal.css?v=2.2.0">
   <link rel="stylesheet" href="assets/css/admin.css?v=3.5.0">
 </head>
@@ -385,15 +385,16 @@
             </fieldset>
             <fieldset>
               <legend>Public plans</legend>
+              <p class="fine-print">Included credits are sold in 25-credit increments. Keep every plan price above its included-credit face value because unused included credits reconcile at $1.00 each.</p>
               <div class="inventory-form-grid inventory-money-grid">
                 <label>Starter price ($)<input name="starterPrice" type="number" min="0" step="0.01" inputmode="decimal" required></label>
-                <label>Starter credits<input name="starterCredits" type="number" min="0" step="0.01" inputmode="decimal" required></label>
+                <label>Starter credits<input name="starterCredits" type="number" min="25" step="25" inputmode="numeric" required></label>
                 <label>Growth price ($)<input name="growthPrice" type="number" min="0" step="0.01" inputmode="decimal" required></label>
-                <label>Growth credits<input name="growthCredits" type="number" min="0" step="0.01" inputmode="decimal" required></label>
+                <label>Growth credits<input name="growthCredits" type="number" min="25" step="25" inputmode="numeric" required></label>
                 <label>Pro price ($)<input name="proPrice" type="number" min="0" step="0.01" inputmode="decimal" required></label>
-                <label>Pro credits<input name="proCredits" type="number" min="0" step="0.01" inputmode="decimal" required></label>
+                <label>Pro credits<input name="proCredits" type="number" min="25" step="25" inputmode="numeric" required></label>
                 <label>Power price ($)<input name="powerPrice" type="number" min="0" step="0.01" inputmode="decimal" required></label>
-                <label>Power credits<input name="powerCredits" type="number" min="0" step="0.01" inputmode="decimal" required></label>
+                <label>Power credits<input name="powerCredits" type="number" min="25" step="25" inputmode="numeric" required></label>
               </div>
             </fieldset>
             <label>Owner note<textarea name="notes" maxlength="300" rows="3" placeholder="Why this pricing version changed"></textarea></label>
@@ -648,6 +649,6 @@
   <script src="assets/js/social-footer.js?v=1.1.0" data-crackpacks-social-loader></script>
   <script src="assets/js/app.js?v=2.0.1"></script>
   <script src="assets/js/nav-profile.js?v=4.6.0"></script>
-  <script src="assets/js/admin.js?v=3.5.1"></script>
+  <script src="assets/js/admin.js?v=3.5.2"></script>
 </body>
 </html>

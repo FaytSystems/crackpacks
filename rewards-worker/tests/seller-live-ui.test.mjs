@@ -57,6 +57,8 @@ test("Seller accounts expose calculator, credit purchase, and direct Stripe subs
   assert.match(accountHtml, /data-stream-credit-buy/);
   assert.match(accountHtml, /data-stream-rebate-rate/);
   assert.match(accountHtml, /toward the next subscription period/);
+  assert.match(accountHtml, /195 finalized credits used from a 200-credit plan/);
+  assert.match(accountHtml, /non-refundable service portion/);
   assert.match(accountHtml, /stream-tier-recommendation/);
   assert.match(accountHtml, />Recommended tier</);
   assert.match(accountHtml, /data-stream-plan-name/);
@@ -73,7 +75,12 @@ test("Seller accounts expose calculator, credit purchase, and direct Stripe subs
   assert.match(calculator, /replayReservePercentage:\s*0\.10/);
   assert.match(calculator, /safetyBufferPercentage:\s*0\.20/);
   assert.match(accountCss, /\.stream-credits-result/);
+  assert.match(accountCss, /\.stream-plan-profile/);
   assert.match(script, /Recommended tier:/);
+  assert.match(script, /Actual usage always overrides a lower forecast/);
+  assert.match(script, /Estimated end-of-period rebate:/);
+  assert.match(script, /Non-refundable service portion/);
+  assert.match(script, /New terms available/);
   assert.match(script, /subscribe\.dataset\.streamPlanStripe = plan\.code/);
   assert.match(script, /Subscribe with Stripe/);
   assert.match(script, /startStreamPlanCheckout/);

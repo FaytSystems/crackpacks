@@ -298,6 +298,16 @@
   font-size: .86rem;
 }
 
+.stream-plan-row .stream-plan-profile {
+  color: var(--cyan);
+  font-weight: 850;
+}
+
+.stream-plan-row .stream-plan-financials {
+  color: rgba(255,255,255,.88);
+  font-weight: 750;
+}
+
 .stream-plan-row.is-selected {
   border-color: rgba(248,255,70,.7);
 }

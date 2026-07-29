@@ -10,7 +10,7 @@ const DEFAULT_CONFIG = Object.freeze({
   streamCreditUnderlyingValue: 1,
   prepaidExtraCreditPrice: 1.50,
   subscriberExtraCreditPrice: 1.25,
-  paygOveragePrice: 2.25,
+  paygOveragePrice: 1.25,
   unusedCreditRebateRate: 1,
   finalizationDelayHours: 72,
   protectedEvidenceReserveCredits: 5,
@@ -24,10 +24,10 @@ const DEFAULT_CONFIG = Object.freeze({
 });
 
 const DEFAULT_PLANS = Object.freeze([
-  { code: "starter", name: "Starter", monthlyPrice: 49, includedCredits: 30, sortOrder: 1, isPublic: true },
-  { code: "growth", name: "Growth", monthlyPrice: 109, includedCredits: 65, sortOrder: 2, isPublic: true },
-  { code: "pro", name: "Pro", monthlyPrice: 219, includedCredits: 130, sortOrder: 3, isPublic: true },
-  { code: "power", name: "Power", monthlyPrice: 439, includedCredits: 260, sortOrder: 4, isPublic: true },
+  { code: "starter", name: "Starter", monthlyPrice: 29, includedCredits: 25, sortOrder: 1, isPublic: true },
+  { code: "growth", name: "Growth", monthlyPrice: 99, includedCredits: 75, sortOrder: 2, isPublic: true },
+  { code: "pro", name: "Pro", monthlyPrice: 525, includedCredits: 425, sortOrder: 3, isPublic: true },
+  { code: "power", name: "Power", monthlyPrice: 1999, includedCredits: 1600, sortOrder: 4, isPublic: true },
   { code: "enterprise", name: "Enterprise", monthlyPrice: null, includedCredits: null, sortOrder: 5, isPublic: true }
 ]);
 
@@ -102,18 +102,27 @@ function calculateProjection(inputs = {}, rawConfig = DEFAULT_CONFIG, rawPlans =
 
   const comparison = eligiblePlans.map(plan => {
     const includedCredits = Number(plan.includedCredits || 0);
+    const monthlyPrice = Number(plan.monthlyPrice || 0);
     const projectedOverageCredits = round2(Math.max(0, roundedBaseCredits - includedCredits));
     const projectedOverageCharge = round2(projectedOverageCredits * config.paygOveragePrice);
     const projectedUnusedCredits = round2(Math.max(0, includedCredits - roundedBaseCredits));
     const projectedUnusedRebate = round2(projectedUnusedCredits * config.unusedCreditRebateRate);
-    const projectedMonthlyTotal = round2(Number(plan.monthlyPrice || 0) + projectedOverageCharge);
+    const includedCreditFaceValue = round2(includedCredits * config.unusedCreditRebateRate);
+    const nonRefundableServicePortion = round2(Math.max(0, monthlyPrice - includedCreditFaceValue));
+    const effectiveCreditRate = includedCredits > 0 ? round2(monthlyPrice / includedCredits) : 0;
+    const projectedMonthlyTotal = round2(monthlyPrice + projectedOverageCharge);
     const projectedNetCost = round2(projectedMonthlyTotal - projectedUnusedRebate);
     return {
       ...plan,
+      projectedUsageCredits: roundedBaseCredits,
       projectedOverageCredits,
       projectedOverageCharge,
+      projectedOverageRate: round2(config.paygOveragePrice),
       projectedUnusedCredits,
       projectedUnusedRebate,
+      includedCreditFaceValue,
+      nonRefundableServicePortion,
+      effectiveCreditRate,
       projectedMonthlyTotal,
       projectedNetCost
     };
@@ -131,6 +140,7 @@ function calculateProjection(inputs = {}, rawConfig = DEFAULT_CONFIG, rawPlans =
           projectedSavings: round2(plan.projectedNetCost - recommendedComparison.projectedNetCost)
         }))
     : [];
+  const largestIncludedPlan = eligiblePlans.reduce((largest, plan) => Math.max(largest, Number(plan.includedCredits || 0)), 0);
 
   return {
     config,
@@ -158,7 +168,7 @@ function calculateProjection(inputs = {}, rawConfig = DEFAULT_CONFIG, rawPlans =
     recommendedPlan,
     comparison,
     lowerTierComparison,
-    enterpriseRequired: !recommendedPlan || recommendedPlan.code === "enterprise" || roundedCapacity > 260
+    enterpriseRequired: !recommendedPlan || recommendedPlan.code === "enterprise" || roundedCapacity > largestIncludedPlan
   };
 }
 
@@ -167,6 +177,28 @@ function calculateActualCredits(usage = {}, rawConfig = DEFAULT_CONFIG) {
   const deliveredMinutes = Number(usage.actualDeliveredMinutes || 0);
   const storedMinutes = Number(usage.actualStoredMinutes || 0);
   return round2((deliveredMinutes / config.deliveryMinutesPerCredit) + (storedMinutes / config.storageMinutesPerCredit));
+}
+
+function validatePlanEconomics(rawPlans = DEFAULT_PLANS, rawConfig = DEFAULT_CONFIG) {
+  const plans = normalizePlans(rawPlans);
+  const config = normalizeConfig(rawConfig);
+  for (const plan of plans) {
+    const hasPrice = Number.isFinite(plan.monthlyPrice);
+    const hasCredits = Number.isFinite(plan.includedCredits);
+    if (!hasPrice && !hasCredits) continue;
+    if (!hasPrice || !hasCredits || plan.monthlyPrice <= 0 || plan.includedCredits < 25) {
+      return { valid: false, error: `${plan.name || "Plan"} needs a positive price and at least 25 included credits.` };
+    }
+    const increments = plan.includedCredits / 25;
+    if (Math.abs(increments - Math.round(increments)) > 1e-8) {
+      return { valid: false, error: `${plan.name} included credits must use 25-credit increments.` };
+    }
+    const refundableFaceValue = round2(plan.includedCredits * config.unusedCreditRebateRate);
+    if (plan.monthlyPrice + Number.EPSILON < refundableFaceValue) {
+      return { valid: false, error: `${plan.name} must cost at least $${refundableFaceValue.toFixed(2)} to cover its unused-credit face value.` };
+    }
+  }
+  return { valid: true, error: "" };
 }
 
 function creditPurchaseQuote(rawQuantity, { subscriber = false } = {}, rawConfig = DEFAULT_CONFIG) {
@@ -205,9 +237,10 @@ function estimateDashboard(subscription = {}, usage = {}, rawConfig = DEFAULT_CO
     actualStoredMinutes: usage.actual_stored_minutes
   }, rawConfig);
   const creditsRemaining = round2(Math.max(0, totalCreditsAvailable - actualCreditsUsed));
-  const projectedUnusedCredits = round2(Math.max(0, includedCredits - projection.metrics.projectedBaseCredits));
+  const projectedEndOfMonthUsage = round2(Math.max(actualCreditsUsed, projection.metrics.projectedBaseCredits));
+  const projectedUnusedCredits = round2(Math.max(0, includedCredits - projectedEndOfMonthUsage));
   const projectedRebate = round2(projectedUnusedCredits * projection.config.unusedCreditRebateRate);
-  const projectedOverage = round2(Math.max(0, projection.metrics.projectedBaseCredits - includedCredits));
+  const projectedOverage = round2(Math.max(0, projectedEndOfMonthUsage - includedCredits));
   const utilization = totalCreditsAvailable > 0 ? round2((actualCreditsUsed / totalCreditsAvailable) * 100) : 0;
   return {
     includedCredits: round2(includedCredits),
@@ -215,7 +248,7 @@ function estimateDashboard(subscription = {}, usage = {}, rawConfig = DEFAULT_CO
     totalCreditsAvailable,
     actualCreditsUsed,
     creditsRemaining,
-    projectedEndOfMonthUsage: projection.metrics.projectedBaseCredits,
+    projectedEndOfMonthUsage,
     projectedUnusedCredits,
     projectedRebate,
     projectedOverage,
@@ -235,6 +268,7 @@ export {
   DEFAULT_PLANS,
   normalizeConfig,
   normalizePlans,
+  validatePlanEconomics,
   calculateProjection,
   calculateActualCredits,
   creditPurchaseQuote,

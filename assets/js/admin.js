@@ -206,19 +206,19 @@
     form.streamCreditUnderlyingValue.value = config.streamCreditUnderlyingValue ?? 1;
     form.prepaidExtraCreditPrice.value = config.prepaidExtraCreditPrice ?? 1.50;
     form.subscriberExtraCreditPrice.value = config.subscriberExtraCreditPrice ?? 1.25;
-    form.paygOveragePrice.value = config.paygOveragePrice ?? 2.25;
+    form.paygOveragePrice.value = config.paygOveragePrice ?? 1.25;
     form.unusedCreditRebateRate.value = config.unusedCreditRebateRate ?? 1;
     form.cashOutThreshold.value = config.cashOutThreshold ?? 25;
     form.spendingLimitDefault.value = config.spendingLimitDefault ?? 250;
     const planByCode = Object.fromEntries((payload?.plans || []).map(plan => [String(plan.code || "").toLowerCase(), plan]));
-    form.starterPrice.value = planByCode.starter?.monthlyPrice ?? 49;
-    form.starterCredits.value = planByCode.starter?.includedCredits ?? 30;
-    form.growthPrice.value = planByCode.growth?.monthlyPrice ?? 109;
-    form.growthCredits.value = planByCode.growth?.includedCredits ?? 65;
-    form.proPrice.value = planByCode.pro?.monthlyPrice ?? 219;
-    form.proCredits.value = planByCode.pro?.includedCredits ?? 130;
-    form.powerPrice.value = planByCode.power?.monthlyPrice ?? 439;
-    form.powerCredits.value = planByCode.power?.includedCredits ?? 260;
+    form.starterPrice.value = planByCode.starter?.monthlyPrice ?? 29;
+    form.starterCredits.value = planByCode.starter?.includedCredits ?? 25;
+    form.growthPrice.value = planByCode.growth?.monthlyPrice ?? 99;
+    form.growthCredits.value = planByCode.growth?.includedCredits ?? 75;
+    form.proPrice.value = planByCode.pro?.monthlyPrice ?? 525;
+    form.proCredits.value = planByCode.pro?.includedCredits ?? 425;
+    form.powerPrice.value = planByCode.power?.monthlyPrice ?? 1999;
+    form.powerCredits.value = planByCode.power?.includedCredits ?? 1600;
   }
   async function refreshStreamConfig() {
     const payload = await request("/admin/stream-credits/config");

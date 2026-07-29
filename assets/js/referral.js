@@ -70,6 +70,12 @@
   let selectedStreamPlanCode = "";
   let streamCreditPurchaseRate = { unitPrice: 1.50, subscriber: false };
   let streamCreditPolicyConfig = { unusedCreditRebateRate: 1, cashOutThreshold: 25, finalizationDelayHours: 72 };
+  const streamPlanProfiles = Object.freeze({
+    starter: "Occasional: about 2 two-hour shows per month at 10 average viewers",
+    growth: "Average: about 8 three-hour shows per month at 25 average viewers",
+    pro: "Full-time: about 20 four-hour shows per month at 50 average viewers",
+    power: "High viewer: about 24 five-hour shows per month at 150 average viewers"
+  });
   let streamSubscriptionState = null;
   let requestedAccountViewHandled = false;
   let streamCheckoutResultHandled = false;
@@ -852,7 +858,7 @@
     if (thresholdNode) thresholdNode.textContent = `$${threshold.toFixed(2)}`;
     if (explainer) {
       const delayLabel = delayHours === 1 ? "1 hour" : `${delayHours} hours`;
-      explainer.textContent = `After stream usage is finalized, eligible unused monthly included credits convert at the current $${rate.toFixed(2)} base-value rebate rate. Finalization normally completes after ${delayLabel}.`;
+      explainer.textContent = `After finalization, rebate = unused included credits x $${rate.toFixed(2)}. Actual usage always overrides a lower forecast. The plan service portion and purchased credits are excluded. Finalization normally completes after ${delayLabel}.`;
     }
   }
   function renderStreamCreditComparison(result) {
@@ -861,24 +867,38 @@
     const comparisons = Array.isArray(result?.comparison) ? result.comparison : [];
     const availableCodes = comparisons.map(plan => String(plan.code || ""));
     const recommendedCode = String(result?.recommendedPlan?.code || "");
-    const currentPlanCode = String(result?.currentPlanCode || "");
+    const currentPlan = result?.currentPlan || null;
+    const currentPlanCode = String(currentPlan?.code || result?.currentPlanCode || "");
     const checkoutEnabled = result?.checkoutEnabled !== false;
     if (!availableCodes.includes(selectedStreamPlanCode)) {
       selectedStreamPlanCode = availableCodes.includes(currentPlanCode) ? currentPlanCode : recommendedCode;
     }
     comparisons.forEach(plan => {
+      const includedCredits = Number(plan.includedCredits || 0);
+      const monthlyPrice = Number(plan.monthlyPrice || 0);
+      const effectiveRate = Number(plan.effectiveCreditRate || (includedCredits > 0 ? monthlyPrice / includedCredits : 0));
+      const rebateRate = Number(streamCreditPolicyConfig.unusedCreditRebateRate ?? 1);
+      const servicePortion = Number(plan.nonRefundableServicePortion ?? Math.max(0, monthlyPrice - (includedCredits * rebateRate)));
       const card = document.createElement("article");
       card.className = "stream-plan-row";
       card.classList.toggle("is-selected", plan.code === selectedStreamPlanCode);
       card.classList.toggle("is-recommended", plan.code === recommendedCode);
       const main = document.createElement("div");
       const title = document.createElement("h4");
-      title.textContent = `${plan.name} - $${Number(plan.monthlyPrice || 0).toFixed(2)}/mo`;
+      title.textContent = `${plan.name} - $${monthlyPrice.toFixed(2)}/mo`;
+      const profile = document.createElement("p");
+      profile.className = "stream-plan-profile";
+      profile.textContent = streamPlanProfiles[plan.code] || "Custom streaming profile";
       const reward = document.createElement("p");
-      reward.textContent = `${Number(plan.includedCredits || 0).toFixed(2)} included credits`;
-      const detail = document.createElement("p");
-      detail.textContent = `Overage ${Number(plan.projectedOverageCredits || 0).toFixed(2)} | Rebate $${Number(plan.projectedUnusedRebate || 0).toFixed(2)} | Net $${Number(plan.projectedNetCost || 0).toFixed(2)}`;
-      main.append(title, reward, detail);
+      reward.textContent = `${includedCredits.toLocaleString()} included credits | Effective rate $${effectiveRate.toFixed(2)} per credit`;
+      const usageDetail = document.createElement("p");
+      usageDetail.textContent = `Projected usage ${Number(plan.projectedUsageCredits || 0).toFixed(2)} | Overage ${Number(plan.projectedOverageCredits || 0).toFixed(2)} credits ($${Number(plan.projectedOverageCharge || 0).toFixed(2)} at $${Number(plan.projectedOverageRate || 1.25).toFixed(2)}/credit)`;
+      const rebateDetail = document.createElement("p");
+      rebateDetail.textContent = `Projected unused ${Number(plan.projectedUnusedCredits || 0).toFixed(2)} credits | Estimated rebate $${Number(plan.projectedUnusedRebate || 0).toFixed(2)} at $${rebateRate.toFixed(2)}/credit`;
+      const costDetail = document.createElement("p");
+      costDetail.className = "stream-plan-financials";
+      costDetail.textContent = `Non-refundable service portion $${servicePortion.toFixed(2)} | Estimated net after rebate $${Number(plan.projectedNetCost || 0).toFixed(2)}`;
+      main.append(title, profile, reward, usageDetail, rebateDetail, costDetail);
       const badges = document.createElement("div");
       badges.className = "stream-plan-badges";
       if (plan.code === recommendedCode) {
@@ -888,7 +908,9 @@
       }
       if (plan.code === currentPlanCode) {
         const current = document.createElement("span");
-        current.textContent = "Current plan";
+        const samePrice = !currentPlan || Math.abs(Number(plan.monthlyPrice || 0) - Number(currentPlan.monthlyPrice || 0)) < 0.005;
+        const sameCredits = !currentPlan || Math.abs(Number(plan.includedCredits || 0) - Number(currentPlan.includedCredits || 0)) < 0.005;
+        current.textContent = samePrice && sameCredits ? "Current plan" : "New terms available";
         badges.append(current);
       }
       if (badges.childElementCount) main.append(badges);
@@ -1008,8 +1030,9 @@
     const lines = [
       `Monthly credits used: ${Number(dashboard.actualCreditsUsed || 0).toFixed(2)}`,
       `Credits remaining: ${Number(dashboard.creditsRemaining || 0).toFixed(2)}`,
-      `Projected unused credits: ${Number(dashboard.projectedUnusedCredits || 0).toFixed(2)}`,
-      `Projected rebate: $${Number(dashboard.projectedRebate || 0).toFixed(2)}`,
+      `Estimated end-of-period usage: ${Number(dashboard.projectedEndOfMonthUsage || 0).toFixed(2)}`,
+      `Estimated unused included credits: ${Number(dashboard.projectedUnusedCredits || 0).toFixed(2)}`,
+      `Estimated end-of-period rebate: $${Number(dashboard.projectedRebate || 0).toFixed(2)} at $${Number(streamCreditPolicyConfig.unusedCreditRebateRate || 1).toFixed(2)} per unused credit`,
       `Projected overage: ${Number(dashboard.projectedOverage || 0).toFixed(2)}`
     ];
     main.append(title);
@@ -1023,7 +1046,11 @@
     renderStreamCreditComparison({
       comparison: projection.comparison,
       recommendedPlan: projection.recommendedPlan,
-      currentPlanCode: subscription?.selectedPlanCode || "",
+      currentPlan: subscription ? {
+        code: subscription.selectedPlanCode || "",
+        monthlyPrice: subscription.monthlyPrice,
+        includedCredits: subscription.includedCredits
+      } : null,
       checkoutEnabled: !hasManageableSubscription
     });
   }

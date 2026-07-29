@@ -9,6 +9,7 @@ import {
   nextAlertThreshold,
   normalizeConfig,
   normalizePlans,
+  validatePlanEconomics,
   round2
 } from "./stream-credits.js";
 import { calculateTimeEntry, hourlyRateCents, workforceSummary } from "./employee-workforce.js";
@@ -622,6 +623,8 @@ async function saveStreamCreditConfig(request, env, cors) {
   const data = await boundedJson(request, 12000);
   const config = normalizeConfig(data.config || {});
   const plans = normalizePlans(Array.isArray(data.plans) && data.plans.length ? data.plans : STREAM_DEFAULT_PLANS);
+  const planValidation = validatePlanEconomics(plans, config);
+  if (!planValidation.valid) return json({ error: planValidation.error }, 400, cors);
   const effectiveAt = Number.isFinite(Date.parse(data.effectiveAt)) ? new Date(data.effectiveAt).toISOString() : now();
   const stamp = now();
   const statements = [

@@ -434,7 +434,7 @@ CREATE TABLE IF NOT EXISTS stream_credit_config_versions (
   stream_credit_underlying_value REAL NOT NULL DEFAULT 1,
   prepaid_extra_credit_price REAL NOT NULL DEFAULT 1.50,
   subscriber_extra_credit_price REAL NOT NULL DEFAULT 1.25,
-  payg_overage_price REAL NOT NULL DEFAULT 2.25,
+  payg_overage_price REAL NOT NULL DEFAULT 1.25,
   unused_credit_rebate_rate REAL NOT NULL DEFAULT 1,
   finalization_delay_hours REAL NOT NULL DEFAULT 72,
   protected_evidence_reserve_credits REAL NOT NULL DEFAULT 5,
