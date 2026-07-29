@@ -46,6 +46,23 @@ test("Seller Live long-press and queue-selection behavior is wired", async () =>
   assert.match(script, /nextLotId/);
 });
 
+test("Seller Live alone collapses the Seller Hub subheader into a dropdown", async () => {
+  const [html, script, css] = await Promise.all([
+    read("streams.html"),
+    read("assets/js/streams-hub.js"),
+    read("assets/css/streams-hub.css")
+  ]);
+  assert.match(html, /data-seller-tool-menu-toggle/);
+  assert.match(html, /aria-controls="seller-tool-menu-items"/);
+  assert.match(html, /data-seller-tool-menu-current>Seller Live/);
+  assert.match(script, /document\.body\.dataset\.sellerTool === "show-control"/);
+  assert.match(script, /setSellerToolMenuOpen\(false\)/);
+  assert.match(script, /event\.key === "Escape"/);
+  assert.match(css, /body\[data-seller-tool="show-control"\] \.seller-tool-menu-toggle/);
+  assert.match(css, /body\[data-seller-tool="show-control"\] \.seller-tool-menu\.is-open \.seller-tool-menu-items/);
+  assert.doesNotMatch(css, /body\[data-seller-tool="(?!show-control)[^"]+"\] \.seller-tool-menu-toggle/);
+});
+
 test("Live Shows gives the owning seller an exact-show GO LIVE NOW handoff", async () => {
   const script = await read("assets/js/streams-hub.js");
   assert.match(script, /data-seller-go-live/);

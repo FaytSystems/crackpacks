@@ -9,7 +9,7 @@
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/css/styles.css?v=1.11.1">
   <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.7.0">
-  <link rel="stylesheet" href="assets/css/streams-hub.css?v=2.4.0">
+  <link rel="stylesheet" href="assets/css/streams-hub.css?v=2.4.1">
   <link rel="stylesheet" href="assets/css/live-chat.css?v=1.0.0">
   <link rel="stylesheet" href="assets/css/video-auction-hud.css?v=1.0.0">
 </head>
@@ -60,23 +60,30 @@
       </div>
     </section>
 
-    <nav class="container seller-tool-menu" data-seller-only hidden aria-label="Seller Hub tools">
-      <button class="seller-tool-menu-button is-active" type="button" data-seller-tool-button="home">Home</button>
-      <button class="seller-tool-menu-button" type="button" data-seller-tool-button="show-control">Seller Live</button>
-      <button class="seller-tool-menu-button" type="button" data-seller-tool-button="obs">OBS Connection</button>
-      <button class="seller-tool-menu-button" type="button" data-seller-tool-button="simulcast">Simulcast</button>
-      <button class="seller-tool-menu-button" type="button" data-seller-tool-button="shows">Shows</button>
-      <button class="seller-tool-menu-button" type="button" data-seller-tool-button="show-inventory">Show Inventory</button>
-      <button class="seller-tool-menu-button" type="button" data-seller-tool-button="social">Social Launcher</button>
-      <button class="seller-tool-menu-button" type="button" data-seller-tool-button="inventory">Seller Inventory</button>
-      <button class="seller-tool-menu-button" type="button" data-seller-tool-button="categories">Product Types</button>
-      <button class="seller-tool-menu-button" type="button" data-seller-tool-button="cogs">Order COGS</button>
-      <button class="seller-tool-menu-button" type="button" data-seller-tool-button="shipping">Fulfill Orders</button>
-      <button class="seller-tool-menu-button" type="button" data-seller-tool-button="giveaways">Giveaways</button>
-      <a class="seller-tool-menu-button seller-tool-menu-link" href="seller-store.html#stock">Stock</a>
-      <a class="seller-tool-menu-button seller-tool-menu-link" href="seller-store.html#preview">Store Preview</a>
-      <a class="seller-tool-menu-button seller-tool-menu-link" data-seller-storefront-link href="shop.html">My Store</a>
-      <a class="seller-tool-menu-button seller-tool-menu-link" href="referral.html">Account</a>
+    <nav class="container seller-tool-menu" data-seller-tool-menu data-seller-only hidden aria-label="Seller Hub tools">
+      <button class="seller-tool-menu-toggle" type="button" data-seller-tool-menu-toggle aria-expanded="false" aria-controls="seller-tool-menu-items">
+        <span class="seller-tool-menu-toggle-icon" aria-hidden="true"><span></span><span></span><span></span></span>
+        <span class="seller-tool-menu-toggle-copy"><small>Seller HUD menu</small><strong data-seller-tool-menu-current>Seller Live</strong></span>
+        <span class="seller-tool-menu-toggle-caret" aria-hidden="true"></span>
+      </button>
+      <div class="seller-tool-menu-items" id="seller-tool-menu-items" data-seller-tool-menu-items>
+        <button class="seller-tool-menu-button is-active" type="button" data-seller-tool-button="home">Home</button>
+        <button class="seller-tool-menu-button" type="button" data-seller-tool-button="show-control">Seller Live</button>
+        <button class="seller-tool-menu-button" type="button" data-seller-tool-button="obs">OBS Connection</button>
+        <button class="seller-tool-menu-button" type="button" data-seller-tool-button="simulcast">Simulcast</button>
+        <button class="seller-tool-menu-button" type="button" data-seller-tool-button="shows">Shows</button>
+        <button class="seller-tool-menu-button" type="button" data-seller-tool-button="show-inventory">Show Inventory</button>
+        <button class="seller-tool-menu-button" type="button" data-seller-tool-button="social">Social Launcher</button>
+        <button class="seller-tool-menu-button" type="button" data-seller-tool-button="inventory">Seller Inventory</button>
+        <button class="seller-tool-menu-button" type="button" data-seller-tool-button="categories">Product Types</button>
+        <button class="seller-tool-menu-button" type="button" data-seller-tool-button="cogs">Order COGS</button>
+        <button class="seller-tool-menu-button" type="button" data-seller-tool-button="shipping">Fulfill Orders</button>
+        <button class="seller-tool-menu-button" type="button" data-seller-tool-button="giveaways">Giveaways</button>
+        <a class="seller-tool-menu-button seller-tool-menu-link" href="seller-store.html#stock">Stock</a>
+        <a class="seller-tool-menu-button seller-tool-menu-link" href="seller-store.html#preview">Store Preview</a>
+        <a class="seller-tool-menu-button seller-tool-menu-link" data-seller-storefront-link href="shop.html">My Store</a>
+        <a class="seller-tool-menu-button seller-tool-menu-link" href="referral.html">Account</a>
+      </div>
     </nav>
 
     <section class="container seller-tool-region" data-seller-only hidden>
@@ -678,6 +685,6 @@
   <script src="assets/js/app.js?v=2.0.0"></script>
   <script src="assets/js/portal-mode.js?v=1.2.5"></script>
   <script src="assets/js/live-chat.js?v=1.0.0"></script>
-  <script src="assets/js/streams-hub.js?v=2.4.1"></script>
+  <script src="assets/js/streams-hub.js?v=2.4.2"></script>
 </body>
 </html>

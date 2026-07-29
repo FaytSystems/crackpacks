@@ -93,6 +93,13 @@
     if (sellerToolAliases[hash]) return sellerToolAliases[hash];
     return Object.entries(sellerToolMeta).find(([, meta]) => meta.hash === hash)?.[0] || "home";
   }
+  function setSellerToolMenuOpen(open) {
+    const menu = $("[data-seller-tool-menu]");
+    const toggle = $("[data-seller-tool-menu-toggle]");
+    const expanded = Boolean(open && document.body.dataset.sellerTool === "show-control");
+    menu?.classList.toggle("is-open", expanded);
+    toggle?.setAttribute("aria-expanded", String(expanded));
+  }
   function setSellerTool(tool, { updateHash = true } = {}) {
     const next = sellerToolMeta[tool] ? tool : "home";
     $$("[data-seller-tool-panel]").forEach(panel => {
@@ -111,6 +118,9 @@
     $$("[data-seller-tool-title], [data-seller-inventory-tool-title]").forEach(node => { node.textContent = meta.title; });
     $$("[data-seller-tool-copy], [data-seller-inventory-tool-copy]").forEach(node => { node.textContent = meta.copy; });
     document.body.dataset.sellerTool = next;
+    const menuCurrent = $("[data-seller-tool-menu-current]");
+    if (menuCurrent) menuCurrent.textContent = meta.title;
+    setSellerToolMenuOpen(false);
     if (updateHash && location.hash !== meta.hash) history.replaceState({}, document.title, `${location.pathname}${location.search}${meta.hash}`);
   }
   function syncSellerStorefront(username = "") {
@@ -2194,6 +2204,19 @@
       await api(`/seller/inventory/${encodeURIComponent(button.dataset.inventoryId)}/adjust`, { method: "POST", body: JSON.stringify({ action: button.dataset.inventoryAdjust, quantity }) });
       await loadSellerInventory(); setStatus("[data-seller-inventory-status]", "Inventory updated.", "success");
     } catch (error) { button.disabled = false; setStatus("[data-seller-inventory-status]", error.message, "error"); }
+  });
+
+  $("[data-seller-tool-menu-toggle]")?.addEventListener("click", () => {
+    const menu = $("[data-seller-tool-menu]");
+    setSellerToolMenuOpen(!menu?.classList.contains("is-open"));
+  });
+
+  document.addEventListener("click", event => {
+    if (!event.target.closest("[data-seller-tool-menu]")) setSellerToolMenuOpen(false);
+  });
+
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape") setSellerToolMenuOpen(false);
   });
 
   document.addEventListener("click", event => {
