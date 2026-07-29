@@ -98,3 +98,32 @@ test("video auction HUD exposes live buyer bids and a locked seller preview", as
   assert.match(hudCss, /@media \(max-width: 520px\)/);
   assert.match(routes, /Sellers cannot bid on their own auction\./);
 });
+
+test("Seller Live shows confirmed purchases for two seconds and links the recap to fulfillment", async () => {
+  const [html, script, css, routes, worker, wrangler] = await Promise.all([
+    read("streams.html"),
+    read("assets/js/streams-hub.js"),
+    read("assets/css/streams-hub.css"),
+    read("rewards-worker/src/platform-routes.js"),
+    read("rewards-worker/src/index.js"),
+    read("rewards-worker/wrangler.jsonc")
+  ]);
+  assert.match(html, /data-seller-purchase-toast/);
+  assert.match(html, />PURCHASED</);
+  assert.match(html, /data-seller-purchase-recap-list/);
+  assert.match(html, />FULFILL ORDERS</);
+  assert.match(script, /purchase\.paymentStatus !== "paid"/);
+  assert.match(script, /window\.setTimeout\(\(\) => \{[\s\S]*toast\.hidden = true;[\s\S]*\}, 2000\)/);
+  assert.match(script, /data-fulfill-order/);
+  assert.match(script, /setSellerTool\("shipping"\)/);
+  assert.match(script, /\}, 2500\)/);
+  assert.match(css, /\.seller-purchase-toast/);
+  assert.match(css, /background: #75ffb7/);
+  assert.match(routes, /off_session/);
+  assert.match(routes, /live-auction-\$\{lot\.id\}/);
+  assert.match(routes, /INSERT OR IGNORE INTO member_orders/);
+  assert.match(script, /settle-expired/);
+  assert.match(routes, /runAuctionSettlementCycle/);
+  assert.match(worker, /runAuctionSettlementCycle\(env\)/);
+  assert.match(wrangler, /"\* \* \* \* \*"/);
+});

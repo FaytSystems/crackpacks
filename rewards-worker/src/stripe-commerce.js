@@ -27,8 +27,10 @@ export async function stripeRequest(secretKey, path, entries = [], idempotencyKe
     error.stripeStatus = result.status;
     error.stripeType = payload?.error?.type || "";
     error.stripeCode = payload?.error?.code || "";
+    error.stripeDeclineCode = payload?.error?.decline_code || "";
     error.stripeParam = payload?.error?.param || "";
     error.stripeMessage = payload?.error?.message || "";
+    error.stripePaymentIntent = payload?.error?.payment_intent || null;
     throw error;
   }
   return payload;

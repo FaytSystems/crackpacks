@@ -9,7 +9,7 @@
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/css/styles.css?v=1.10.1">
   <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.7.0">
-  <link rel="stylesheet" href="assets/css/streams-hub.css?v=2.3.0">
+  <link rel="stylesheet" href="assets/css/streams-hub.css?v=2.3.1">
   <link rel="stylesheet" href="assets/css/live-chat.css?v=1.0.0">
   <link rel="stylesheet" href="assets/css/video-auction-hud.css?v=1.0.0">
 </head>
@@ -71,7 +71,7 @@
       <button class="seller-tool-menu-button" type="button" data-seller-tool-button="inventory">Seller Inventory</button>
       <button class="seller-tool-menu-button" type="button" data-seller-tool-button="categories">Product Types</button>
       <button class="seller-tool-menu-button" type="button" data-seller-tool-button="cogs">Order COGS</button>
-      <button class="seller-tool-menu-button" type="button" data-seller-tool-button="shipping">Shipping</button>
+      <button class="seller-tool-menu-button" type="button" data-seller-tool-button="shipping">Fulfill Orders</button>
       <button class="seller-tool-menu-button" type="button" data-seller-tool-button="giveaways">Giveaways</button>
       <a class="seller-tool-menu-button seller-tool-menu-link" data-seller-storefront-link href="shop.html">My Store</a>
       <a class="seller-tool-menu-button seller-tool-menu-link" href="referral.html">Account</a>
@@ -215,6 +215,18 @@
             </button>
           </div>
           <div class="campaign-form-status seller-auction-control-status" data-broadcast-auction-status aria-live="polite"></div>
+          <section class="seller-purchase-recap" aria-labelledby="seller-purchase-recap-title">
+            <header>
+              <div>
+                <span>Stream recap</span>
+                <strong id="seller-purchase-recap-title">Purchases in show order</strong>
+              </div>
+              <button type="button" data-seller-tool-button="shipping">FULFILL ORDERS</button>
+            </header>
+            <ol data-seller-purchase-recap-list>
+              <li class="seller-purchase-recap-empty">Completed auction payments will appear here.</li>
+            </ol>
+          </section>
         </article>
         <article class="holo-panel seller-broadcast-monitor" data-seller-tool-panel="show-control">
           <div class="seller-broadcast-monitor-head">
@@ -531,7 +543,7 @@
       <div class="holo-panel seller-orders-panel" id="seller-shipping" data-seller-tool-panel="shipping">
         <div class="seller-show-manager-head">
           <div>
-            <p class="eyebrow">Seller Shipping</p>
+            <p class="eyebrow">Fulfill Orders</p>
             <h3>Orders, labels, clips, giveaways, and package weights</h3>
             <p class="fine-print">Paid orders with saved EasyPost shipment details can create labels here. After a label is purchased, the action changes to Ship Now and opens the label/tracking tools.</p>
           </div>
@@ -643,7 +655,7 @@
       <section class="seller-close-show-dialog" role="dialog" aria-modal="true" aria-labelledby="close-show-title" aria-describedby="close-show-copy">
         <p class="eyebrow">End Seller Broadcast</p>
         <h2 id="close-show-title">Close this stream?</h2>
-        <p id="close-show-copy" data-close-show-copy>Closing the show ends the broadcast session and cancels every remaining scheduled or open auction.</p>
+        <p id="close-show-copy" data-close-show-copy>Closing the show settles the active auction, ends the broadcast session, and cancels the remaining queued auctions.</p>
         <div class="seller-close-show-actions">
           <button class="btn btn-outline" type="button" data-close-show-cancel>Cancel</button>
           <button class="btn btn-danger" type="button" data-close-show-confirm>YES CLOSE STREAM</button>
@@ -651,12 +663,19 @@
         <div class="campaign-form-status" data-close-show-status aria-live="polite"></div>
       </section>
     </div>
+    <div class="seller-purchase-toast" data-seller-purchase-toast hidden role="status" aria-live="assertive">
+      <span aria-hidden="true">&#10003;</span>
+      <div>
+        <strong>PURCHASED</strong>
+        <small data-seller-purchase-toast-copy>Payment confirmed.</small>
+      </div>
+    </div>
   </main>
 
   <script src="assets/js/config.js?v=4.1.1"></script>
   <script src="assets/js/app.js?v=1.9.9"></script>
   <script src="assets/js/portal-mode.js?v=1.2.5"></script>
   <script src="assets/js/live-chat.js?v=1.0.0"></script>
-  <script src="assets/js/streams-hub.js?v=2.3.1"></script>
+  <script src="assets/js/streams-hub.js?v=2.3.2"></script>
 </body>
 </html>

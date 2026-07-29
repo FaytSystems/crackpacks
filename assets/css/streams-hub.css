@@ -256,6 +256,11 @@
   margin-top: 1.5rem;
 }
 
+.seller-show-tools.section {
+  padding-top: 32px;
+  padding-bottom: 56px;
+}
+
 .seller-hub-heading {
   display: flex;
   align-items: end;
@@ -1263,6 +1268,188 @@
   min-height: 1.4rem;
 }
 
+.seller-purchase-recap {
+  display: grid;
+  gap: 0.75rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.seller-purchase-recap > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.seller-purchase-recap > header div {
+  display: grid;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.seller-purchase-recap > header span {
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 0.64rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.seller-purchase-recap > header strong {
+  color: #fff;
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
+}
+
+.seller-purchase-recap > header button {
+  flex: 0 0 auto;
+  min-height: 34px;
+  padding: 0.42rem 0.68rem;
+  border: 1px solid rgba(117, 255, 183, 0.5);
+  border-radius: 999px;
+  color: #aaffd0;
+  background: rgba(117, 255, 183, 0.08);
+  font: inherit;
+  font-size: 0.62rem;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.seller-purchase-recap > header button:hover,
+.seller-purchase-recap > header button:focus-visible {
+  border-color: #75ffb7;
+  background: rgba(117, 255, 183, 0.15);
+  outline: none;
+}
+
+.seller-purchase-recap ol {
+  display: grid;
+  gap: 0.4rem;
+  max-height: 250px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.seller-purchase-recap-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.18rem 0.65rem;
+  padding: 0.58rem 0.62rem;
+  border-left: 3px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.seller-purchase-recap-item.is-paid {
+  border-left-color: #75ffb7;
+  background: rgba(117, 255, 183, 0.055);
+}
+
+.seller-purchase-recap-item.is-failed,
+.seller-purchase-recap-item.is-requires_action {
+  border-left-color: #ff6f91;
+}
+
+.seller-purchase-recap-item strong,
+.seller-purchase-recap-item span,
+.seller-purchase-recap-item small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.seller-purchase-recap-item strong {
+  color: #fff;
+  font-size: 0.74rem;
+}
+
+.seller-purchase-recap-item > span {
+  color: #aaffd0;
+  font-size: 0.72rem;
+  font-weight: 950;
+}
+
+.seller-purchase-recap-item small {
+  grid-column: 1 / -1;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 0.64rem;
+  line-height: 1.35;
+}
+
+.seller-purchase-recap-item button {
+  grid-column: 1 / -1;
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  color: var(--electric);
+  background: transparent;
+  font: inherit;
+  font-size: 0.64rem;
+  font-weight: 900;
+  text-decoration: underline;
+  text-underline-offset: 0.18rem;
+  cursor: pointer;
+}
+
+.seller-purchase-recap-empty {
+  padding: 0.65rem;
+  color: rgba(255, 255, 255, 0.52);
+  background: rgba(255, 255, 255, 0.025);
+  font-size: 0.7rem;
+  line-height: 1.4;
+}
+
+.seller-purchase-toast {
+  position: fixed;
+  z-index: 1500;
+  top: 112px;
+  right: max(18px, calc((100vw - 1440px) / 2));
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 0.7rem;
+  align-items: center;
+  width: min(340px, calc(100vw - 36px));
+  padding: 0.85rem 1rem;
+  border: 1px solid rgba(117, 255, 183, 0.82);
+  border-radius: 8px;
+  color: #07140e;
+  background: #75ffb7;
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.42), 0 0 28px rgba(117, 255, 183, 0.24);
+  animation: seller-purchase-toast-in 180ms ease-out both;
+}
+
+.seller-purchase-toast > span {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 2px solid rgba(7, 20, 14, 0.45);
+  border-radius: 50%;
+  font-size: 1.3rem;
+  font-weight: 950;
+}
+
+.seller-purchase-toast div {
+  display: grid;
+  gap: 0.05rem;
+}
+
+.seller-purchase-toast strong {
+  font-size: 1rem;
+  font-weight: 1000;
+}
+
+.seller-purchase-toast small {
+  color: rgba(7, 20, 14, 0.76);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+@keyframes seller-purchase-toast-in {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 .seller-close-show-modal {
   position: fixed;
   inset: 0;
@@ -2179,6 +2366,20 @@
     width: 100%;
   }
 
+  .seller-purchase-recap > header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .seller-purchase-recap > header button {
+    width: 100%;
+  }
+
+  .seller-purchase-toast {
+    top: 86px;
+    right: 18px;
+  }
+
   .seller-auction-queue-item {
     grid-template-columns: 32px 48px minmax(0, 1fr);
   }
@@ -2246,5 +2447,9 @@
   .seller-auction-next-button.is-holding::after {
     animation: none;
     transform: scaleX(0);
+  }
+
+  .seller-purchase-toast {
+    animation: none;
   }
 }

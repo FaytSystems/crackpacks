@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { stripeFormBody, verifyStripeWebhook } from "../src/stripe-commerce.js";
+import { stripeFormBody, stripeRequest, verifyStripeWebhook } from "../src/stripe-commerce.js";
 
 const encoder = new TextEncoder();
 const hex = bytes => [...new Uint8Array(bytes)].map(value => value.toString(16).padStart(2, "0")).join("");
@@ -26,4 +26,29 @@ test("Stripe form encoder preserves nested parameter names", () => {
   assert.equal(body.get("mode"), "payment");
   assert.equal(body.get("line_items[0][quantity]"), "1");
   assert.equal(body.get("metadata[checkout_id]"), "abc");
+});
+
+test("Stripe request errors preserve the declined PaymentIntent for settlement recovery", async t => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    error: {
+      type: "card_error",
+      code: "card_declined",
+      decline_code: "insufficient_funds",
+      message: "Your card was declined.",
+      payment_intent: { id: "pi_declined", status: "requires_payment_method" }
+    }
+  }), { status: 402, headers: { "Content-Type": "application/json" } });
+  t.after(() => { globalThis.fetch = originalFetch; });
+
+  await assert.rejects(
+    stripeRequest("sk_test_example", "/payment_intents", [["amount", 2500]], "auction-lot-1"),
+    error => {
+      assert.equal(error.message, "STRIPE_PROVIDER_ERROR");
+      assert.equal(error.stripeStatus, 402);
+      assert.equal(error.stripeDeclineCode, "insufficient_funds");
+      assert.equal(error.stripePaymentIntent.id, "pi_declined");
+      return true;
+    }
+  );
 });

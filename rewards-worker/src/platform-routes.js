@@ -1203,6 +1203,25 @@ async function handleRefund(env, object) {
     await env.DB.prepare(`UPDATE breaker_inventory_items SET quantity=quantity+?,updated_at=? WHERE id=?`).bind(Number(gift.reserved_units), now(), gift.breaker_inventory_item_id).run();
     await env.DB.prepare(`UPDATE gifted_giveaways SET status='refunded',reserved_units=0,refunded_at=?,updated_at=? WHERE id=?`).bind(now(), now(), gift.id).run();
   }
+  if (object.refunded === true) {
+    const auction = await env.DB.prepare(`
+      SELECT payment.*,lot.seller_store_listing_id
+      FROM breaker_auction_payments payment
+      JOIN breaker_auction_lots lot ON lot.id=payment.lot_id
+      WHERE payment.stripe_payment_intent_id=? AND payment.status='paid'
+    `).bind(paymentIntent).first();
+    if (auction) {
+      const stamp = now();
+      await env.DB.batch([
+        env.DB.prepare(`UPDATE breaker_auction_payments SET status='refunded',updated_at=? WHERE lot_id=? AND status='paid'`)
+          .bind(stamp, auction.lot_id),
+        env.DB.prepare(`UPDATE member_orders SET payment_status='refunded',status='cancelled',refunded_at=?,updated_at=? WHERE id=?`)
+          .bind(stamp, stamp, auction.member_order_id),
+        env.DB.prepare(`UPDATE seller_store_listings SET quantity=quantity+1,status='active',updated_at=? WHERE id=? AND member_id=?`)
+          .bind(stamp, auction.seller_store_listing_id || "", auction.seller_member_id)
+      ]);
+    }
+  }
 }
 
 async function applyStripeIdentityStatus(env, memberId, status, { notifyFailure = true } = {}) {
@@ -1297,6 +1316,19 @@ async function stripeWebhook(request, env, cors) {
     }
   } else if (event.type === "checkout.session.expired" || event.type === "checkout.session.async_payment_failed") {
     await expireSession(env, event.data?.object || {});
+  } else if (event.type === "payment_intent.succeeded") {
+    const paymentIntent = event.data?.object || {};
+    if (paymentIntent.metadata?.kind === "live_auction") await finalizeAuctionPayment(env, paymentIntent);
+  } else if (event.type === "payment_intent.payment_failed") {
+    const paymentIntent = event.data?.object || {};
+    if (paymentIntent.metadata?.kind === "live_auction" && validUuid(paymentIntent.metadata?.lot_id)) {
+      await updateAuctionPaymentState(env, paymentIntent.metadata.lot_id, "failed", paymentIntent);
+    }
+  } else if (event.type === "payment_intent.processing" || event.type === "payment_intent.requires_action") {
+    const paymentIntent = event.data?.object || {};
+    if (paymentIntent.metadata?.kind === "live_auction" && validUuid(paymentIntent.metadata?.lot_id)) {
+      await updateAuctionPaymentState(env, paymentIntent.metadata.lot_id, event.type.endsWith("requires_action") ? "requires_action" : "processing", paymentIntent);
+    }
   } else if (event.type === "invoice.payment_succeeded") {
     const invoice = event.data?.object || {};
     const subscriptionId = typeof invoice.subscription === "string" ? invoice.subscription : "";
@@ -1856,6 +1888,282 @@ function playbackUrl(env, liveInputUid) {
   return `https://${host}/${encodeURIComponent(uidValue)}/iframe?autoplay=true&muted=false`;
 }
 
+function auctionPaymentView(row) {
+  if (!row) return null;
+  return {
+    lotId: row.lot_id,
+    orderId: row.member_order_id,
+    orderNumber: row.order_number,
+    amountCents: Number(row.amount_cents || 0),
+    currency: row.currency || "USD",
+    status: row.payment_status || row.status || "processing",
+    paymentIntentId: row.stripe_payment_intent_id || "",
+    failureMessage: row.failure_message || "",
+    attemptedAt: row.attempted_at || "",
+    paidAt: row.paid_at || ""
+  };
+}
+
+function closedAuctionPaymentView(lot, payment, winningDisplay = "") {
+  const view = auctionPaymentView(payment);
+  return {
+    id: lot.id,
+    title: lot.title,
+    status: "sold",
+    winningDisplay: winningDisplay || lot.winning_display || "",
+    paymentStatus: view?.status || "processing",
+    orderId: view?.orderId || "",
+    orderNumber: view?.orderNumber || "",
+    amountCents: view?.amountCents || Number(lot.current_bid_cents || lot.starting_bid_cents || 0),
+    paymentIntentId: view?.paymentIntentId || "",
+    failureMessage: view?.failureMessage || "",
+    attemptedAt: view?.attemptedAt || "",
+    paidAt: view?.paidAt || ""
+  };
+}
+
+async function auctionPaymentForLot(env, lotId) {
+  return env.DB.prepare(`
+    SELECT payment.*,payment.status payment_status
+    FROM breaker_auction_payments payment
+    WHERE payment.lot_id=?
+  `).bind(lotId).first();
+}
+
+async function updateAuctionPaymentState(env, lotId, status, paymentIntent = null, error = null) {
+  const intentId = clean(paymentIntent?.id || error?.stripePaymentIntent?.id || "", 120);
+  const failureCode = clean(error?.stripeDeclineCode || error?.stripeCode || paymentIntent?.last_payment_error?.decline_code || paymentIntent?.last_payment_error?.code || "", 120);
+  const failureMessage = clean(error?.stripeMessage || paymentIntent?.last_payment_error?.message || "", 500);
+  await env.DB.prepare(`
+    UPDATE breaker_auction_payments
+    SET status=?,stripe_payment_intent_id=COALESCE(NULLIF(?,''),stripe_payment_intent_id),
+        failure_code=?,failure_message=?,updated_at=?
+    WHERE lot_id=? AND status<>'paid'
+  `).bind(status, intentId, failureCode, failureMessage, now(), lotId).run();
+  return auctionPaymentForLot(env, lotId);
+}
+
+async function finalizeAuctionPayment(env, paymentIntent) {
+  const metadata = paymentIntent?.metadata || {};
+  const lotId = clean(metadata.lot_id, 80);
+  if (!validUuid(lotId) || paymentIntent?.status !== "succeeded") return null;
+  const row = await env.DB.prepare(`
+    SELECT payment.*,payment.status payment_status,
+      lot.title,lot.description,lot.image_url,lot.item_condition,lot.sale_type,
+      COALESCE(lot.seller_store_listing_id,legacy_listing.id) seller_store_listing_id,
+      buyer.email buyer_email,buyer.live_username buyer_username,buyer.buyer_username buyer_buyer_username,
+      buyer.shipping_address_json
+    FROM breaker_auction_payments payment
+    JOIN breaker_auction_lots lot ON lot.id=payment.lot_id
+    JOIN members buyer ON buyer.id=payment.buyer_member_id
+    LEFT JOIN seller_store_listings legacy_listing ON legacy_listing.linked_lot_id=lot.id
+    WHERE payment.lot_id=?
+  `).bind(lotId).first();
+  if (!row) return null;
+  if (row.payment_status === "paid") return auctionPaymentView(row);
+  if (Number(paymentIntent.amount || 0) !== Number(row.amount_cents || 0)) {
+    throw new Error("AUCTION_PAYMENT_AMOUNT_MISMATCH");
+  }
+  if (metadata.buyer_member_id && metadata.buyer_member_id !== row.buyer_member_id) {
+    throw new Error("AUCTION_PAYMENT_BUYER_MISMATCH");
+  }
+  const stamp = now();
+  const items = JSON.stringify([{
+    name: row.title,
+    quantity: 1,
+    unitAmountCents: Number(row.amount_cents),
+    lotId: row.lot_id,
+    showId: row.session_id,
+    imageUrl: row.image_url || "",
+    condition: row.item_condition || "",
+    saleType: row.sale_type || "sealed"
+  }]);
+  const buyerAddress = String(row.shipping_address_json || "{}");
+  const listingId = String(row.seller_store_listing_id || "");
+  await env.DB.batch([
+    env.DB.prepare(`
+      INSERT OR IGNORE INTO member_orders(
+        id,member_id,owner_member_id,order_number,channel,items_json,status,placed_at,created_at,updated_at,
+        subtotal_cents,shipping_cents,tax_cents,total_cents,currency,payment_status,
+        stripe_payment_intent_id,shipping_address_json,shipping_service
+      ) VALUES(?,?,?,?,? ,?,?,?,?,? ,?,?,?,?,? ,?,?,?,?)
+    `).bind(
+      row.member_order_id, row.buyer_member_id, row.seller_member_id, row.order_number, "live",
+      items, "processing", stamp, stamp, stamp,
+      Number(row.amount_cents), 0, 0, Number(row.amount_cents), row.currency || "USD", "paid",
+      paymentIntent.id, buyerAddress, ""
+    ),
+    env.DB.prepare(`
+      UPDATE seller_store_listings
+      SET quantity=MAX(0,quantity-1),
+          status=CASE WHEN quantity<=1 THEN 'sold_out' ELSE status END,
+          updated_at=?
+      WHERE id=? AND member_id=? AND quantity>0
+        AND EXISTS (
+          SELECT 1 FROM breaker_auction_payments payment
+          WHERE payment.lot_id=? AND payment.inventory_adjusted_at IS NULL
+        )
+    `).bind(stamp, listingId, row.seller_member_id, row.lot_id),
+    env.DB.prepare(`
+      UPDATE breaker_auction_payments
+      SET status='paid',stripe_payment_intent_id=?,failure_code='',failure_message='',
+          paid_at=COALESCE(paid_at,?),inventory_adjusted_at=COALESCE(inventory_adjusted_at,?),updated_at=?
+      WHERE lot_id=? AND status<>'paid'
+    `).bind(paymentIntent.id, stamp, stamp, stamp, row.lot_id),
+    env.DB.prepare(`UPDATE breaker_auction_lots SET status='sold',sold_at=COALESCE(sold_at,?),updated_at=? WHERE id=?`)
+      .bind(stamp, stamp, row.lot_id),
+    env.DB.prepare(`UPDATE breaker_auction_bids SET status='winning' WHERE lot_id=? AND bidder_member_id=? AND status='leading'`)
+      .bind(row.lot_id, row.buyer_member_id)
+  ]);
+  return auctionPaymentView({
+    ...row,
+    payment_status: "paid",
+    stripe_payment_intent_id: paymentIntent.id,
+    paid_at: stamp
+  });
+}
+
+async function settleAuctionLot(env, lot) {
+  const stamp = now();
+  const bannerUntil = new Date(Date.now() + 5000).toISOString();
+  if (!lot?.winning_member_id) {
+    await env.DB.prepare(`UPDATE breaker_auction_lots SET status='cancelled',sold_at=?,winner_banner_until=?,updated_at=? WHERE id=? AND status='live'`)
+      .bind(stamp, bannerUntil, stamp, lot.id).run();
+    return {
+      id: lot.id,
+      title: lot.title,
+      status: "cancelled",
+      winningDisplay: "",
+      paymentStatus: "not_applicable"
+    };
+  }
+
+  await env.DB.batch([
+    env.DB.prepare(`UPDATE breaker_auction_lots SET status='sold',sold_at=COALESCE(sold_at,?),winner_banner_until=?,updated_at=? WHERE id=? AND status='live'`)
+      .bind(stamp, bannerUntil, stamp, lot.id),
+    env.DB.prepare(`UPDATE breaker_auction_bids SET status='winning' WHERE lot_id=? AND bidder_member_id=? AND status='leading'`)
+      .bind(lot.id, lot.winning_member_id)
+  ]);
+
+  await env.DB.prepare(`
+    INSERT OR IGNORE INTO breaker_auction_payments(
+      lot_id,session_id,seller_member_id,buyer_member_id,member_order_id,order_number,
+      amount_cents,currency,status,attempted_at,created_at,updated_at
+    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+  `).bind(
+    lot.id, lot.session_id, lot.member_id, lot.winning_member_id, uid(), orderNumber(),
+    Number(lot.current_bid_cents || lot.starting_bid_cents), "USD", "processing", stamp, stamp, stamp
+  ).run();
+  let payment = await auctionPaymentForLot(env, lot.id);
+  if (!payment) throw new Error("AUCTION_PAYMENT_RECORD_MISSING");
+  if (["paid", "failed", "requires_action"].includes(payment.payment_status)) {
+    return closedAuctionPaymentView(lot, payment);
+  }
+
+  const buyer = await env.DB.prepare(`
+    SELECT id,email,first_name,last_name,live_username,buyer_username,phone,shipping_address_json,
+      stripe_customer_id,stripe_payment_method_id
+    FROM members WHERE id=?
+  `).bind(lot.winning_member_id).first();
+  if (!buyer?.stripe_customer_id || !buyer?.stripe_payment_method_id) {
+    payment = await updateAuctionPaymentState(env, lot.id, "failed", null, {
+      stripeCode: "payment_method_missing",
+      stripeMessage: "The winning buyer no longer has a saved payment method."
+    });
+  } else if (!env.STRIPE_SECRET_KEY) {
+    payment = await updateAuctionPaymentState(env, lot.id, "failed", null, {
+      stripeCode: "stripe_not_configured",
+      stripeMessage: "Stripe payment processing is not configured."
+    });
+  } else {
+    const address = parseJsonSafe(buyer.shipping_address_json, {});
+    const amountCents = Number(payment.amount_cents);
+    const entries = [
+      ["amount", amountCents],
+      ["currency", "usd"],
+      ["customer", buyer.stripe_customer_id],
+      ["payment_method", buyer.stripe_payment_method_id],
+      ["confirm", "true"],
+      ["off_session", "true"],
+      ["error_on_requires_action", "true"],
+      ["receipt_email", buyer.email],
+      ["description", `Crack Packs live auction: ${clean(lot.title, 120)}`],
+      ["metadata[kind]", "live_auction"],
+      ["metadata[lot_id]", lot.id],
+      ["metadata[show_id]", lot.session_id],
+      ["metadata[seller_member_id]", lot.member_id],
+      ["metadata[buyer_member_id]", lot.winning_member_id],
+      ["metadata[order_id]", payment.member_order_id],
+      ["metadata[order_number]", payment.order_number],
+      ["shipping[name]", address.name || clean(`${buyer.first_name || ""} ${buyer.last_name || ""}`, 120)],
+      ["shipping[phone]", buyer.phone],
+      ["shipping[address][line1]", address.street1],
+      ["shipping[address][line2]", address.street2],
+      ["shipping[address][city]", address.city],
+      ["shipping[address][state]", address.state],
+      ["shipping[address][postal_code]", address.postalCode],
+      ["shipping[address][country]", address.country || "US"]
+    ];
+    try {
+      const paymentIntent = await stripeRequest(env.STRIPE_SECRET_KEY, "/payment_intents", entries, `live-auction-${lot.id}`);
+      if (paymentIntent.status === "succeeded") {
+        await finalizeAuctionPayment(env, paymentIntent);
+        payment = await auctionPaymentForLot(env, lot.id);
+      } else {
+        const nextStatus = paymentIntent.status === "requires_action" ? "requires_action"
+          : paymentIntent.status === "requires_payment_method" ? "failed"
+            : "processing";
+        payment = await updateAuctionPaymentState(env, lot.id, nextStatus, paymentIntent);
+      }
+    } catch (error) {
+      const paymentIntent = error?.stripePaymentIntent || null;
+      if (paymentIntent?.status === "succeeded") {
+        await finalizeAuctionPayment(env, paymentIntent);
+        payment = await auctionPaymentForLot(env, lot.id);
+      } else {
+        const nextStatus = paymentIntent?.status === "requires_action" || error?.stripeCode === "authentication_required"
+          ? "requires_action"
+          : error?.stripeStatus === 402 ? "failed" : "processing";
+        payment = await updateAuctionPaymentState(env, lot.id, nextStatus, paymentIntent, error);
+      }
+    }
+  }
+
+  return closedAuctionPaymentView(lot, payment, lot.winning_display || buyer?.buyer_username || buyer?.live_username || "");
+}
+
+async function expiredAuctionLot(env, { showId = "", sellerMemberId = "" } = {}) {
+  return env.DB.prepare(`
+    SELECT lot.*,winner.live_username winning_display
+    FROM breaker_auction_lots lot
+    LEFT JOIN members winner ON winner.id=lot.winning_member_id
+    WHERE lot.status='live' AND lot.closes_at IS NOT NULL AND lot.closes_at<=?
+      AND (?='' OR lot.session_id=?)
+      AND (?='' OR lot.member_id=?)
+    ORDER BY lot.closes_at ASC
+    LIMIT 1
+  `).bind(now(), showId, showId, sellerMemberId, sellerMemberId).first();
+}
+
+async function runAuctionSettlementCycle(env, { limit = 100 } = {}) {
+  let settled = 0;
+  let failed = 0;
+  const cappedLimit = Math.max(1, Math.min(100, Number(limit || 100)));
+  for (let index = 0; index < cappedLimit; index += 1) {
+    const lot = await expiredAuctionLot(env);
+    if (!lot) break;
+    try {
+      await settleAuctionLot(env, lot);
+      settled += 1;
+    } catch (error) {
+      failed += 1;
+      console.error("Expired live auction settlement failed", { lotId: lot.id, message: clean(error?.message || "", 200) });
+      break;
+    }
+  }
+  return { settled, failed };
+}
+
 function auctionView(row, viewerId = "", env = {}) {
   if (!row) return null;
   const current = Number(row.current_bid_cents ?? row.starting_bid_cents);
@@ -1869,6 +2177,7 @@ function auctionView(row, viewerId = "", env = {}) {
     auctionDurationSeconds: Number(row.auction_duration_seconds || 30), openedAt: row.opened_at || "", closesAt: row.closes_at || "",
     viewerBidState: !viewerId || !row.winning_member_id ? "ready" : row.winning_member_id === viewerId ? "winning" : "losing",
     showWinnerBanner: row.status === "sold" && bannerUntil > Date.now(), winningDisplay: row.winning_display || "CRACKPACKS buyer",
+    paymentStatus: row.payment_status || "", orderNumber: row.order_number || "",
     playbackUrl: playbackUrl(env, row.cloudflare_live_input_uid)
   };
 }
@@ -1878,9 +2187,11 @@ async function currentAuction(request, env, cors, url) {
   const requestedShow = String(url.searchParams.get("show") || "");
   if (requestedShow && !validUuid(requestedShow)) return json({ error: "Choose a valid live show." }, 400, cors);
   const row = await env.DB.prepare(`
-    SELECT lot.*,session.viewer_count,session.cloudflare_live_input_uid,winner.live_username winning_display
+    SELECT lot.*,session.viewer_count,session.cloudflare_live_input_uid,winner.live_username winning_display,
+      payment.status payment_status,payment.order_number
     FROM breaker_auction_lots lot JOIN breaker_stream_sessions session ON session.id=lot.session_id
     LEFT JOIN members winner ON winner.id=lot.winning_member_id
+    LEFT JOIN breaker_auction_payments payment ON payment.lot_id=lot.id
     WHERE (?='' OR session.id=?)
       AND (
         lot.status='live'
@@ -3605,20 +3916,62 @@ async function showThumbnailMedia(env, cors, url, request) {
   return new Response(object.body, { status: 200, headers });
 }
 
+async function settleExpiredSellerAuction(request, env, cors, showId) {
+  const auth = await requireMember(request, env, cors, { seller: true });
+  if (auth.error) return auth.error;
+  const show = await env.DB.prepare(`SELECT id FROM breaker_stream_sessions WHERE id=? AND member_id=?`)
+    .bind(showId, auth.member.id).first();
+  if (!show) return json({ error: "Show not found." }, 404, cors);
+  const lot = await expiredAuctionLot(env, { showId, sellerMemberId: auth.member.id });
+  if (!lot) return json({ closedLot: null }, 200, cors);
+  return json({ closedLot: await settleAuctionLot(env, lot) }, 200, cors);
+}
+
 async function sellerShowLots(request, env, cors, showId) {
   const auth = await requireMember(request, env, cors, { seller: true });
   if (auth.error) return auth.error;
   const show = await env.DB.prepare(`SELECT * FROM breaker_stream_sessions WHERE id=? AND member_id=?`).bind(showId, auth.member.id).first();
   if (!show) return json({ error: "Show not found." }, 404, cors);
   const rows = await env.DB.prepare(`
-    SELECT lot.*,COALESCE(lot.queue_position,lot.rowid) queue_position,winner.live_username winning_display
+    SELECT lot.*,COALESCE(lot.queue_position,lot.rowid) queue_position,winner.live_username winning_display,
+      payment.status payment_status,payment.order_number,payment.member_order_id
     FROM breaker_auction_lots lot LEFT JOIN members winner ON winner.id=lot.winning_member_id
+    LEFT JOIN breaker_auction_payments payment ON payment.lot_id=lot.id
     WHERE lot.session_id=? AND lot.member_id=?
     ORDER BY CASE lot.status WHEN 'live' THEN 0 WHEN 'scheduled' THEN 1 ELSE 2 END,
       COALESCE(lot.queue_position,lot.rowid) ASC,lot.created_at ASC,lot.rowid ASC
     LIMIT 200
   `).bind(showId, auth.member.id).all();
-  return json({ show, lots: rows.results || [] }, 200, cors);
+  const purchases = await env.DB.prepare(`
+    SELECT payment.*,lot.title,lot.image_url,
+      COALESCE(NULLIF(buyer.buyer_username,''),NULLIF(buyer.live_username,''),'CRACKPACKS buyer') buyer_display
+    FROM breaker_auction_payments payment
+    JOIN breaker_auction_lots lot ON lot.id=payment.lot_id
+    JOIN members buyer ON buyer.id=payment.buyer_member_id
+    WHERE payment.session_id=? AND payment.seller_member_id=?
+    ORDER BY payment.attempted_at ASC,payment.created_at ASC
+    LIMIT 500
+  `).bind(showId, auth.member.id).all();
+  return json({
+    show,
+    lots: rows.results || [],
+    purchases: (purchases.results || []).map(row => ({
+      id: row.lot_id,
+      lotId: row.lot_id,
+      orderId: row.member_order_id,
+      orderNumber: row.order_number,
+      title: row.title,
+      imageUrl: row.image_url || "",
+      buyerUsername: row.buyer_display,
+      amountCents: Number(row.amount_cents || 0),
+      currency: row.currency || "USD",
+      status: row.status,
+      failureMessage: row.failure_message || "",
+      attemptedAt: row.attempted_at,
+      paidAt: row.paid_at || "",
+      fulfillmentUrl: `${siteUrl(env)}/streams.html#seller-shipping`
+    }))
+  }, 200, cors);
 }
 
 async function reorderAuctionLots(request, env, cors, showId) {
@@ -3650,11 +4003,19 @@ async function reorderAuctionLots(request, env, cors, showId) {
 async function endSellerShow(request, env, cors, showId) {
   const auth = await requireMember(request, env, cors, { seller: true });
   if (auth.error) return auth.error;
+  const activeLot = await env.DB.prepare(`
+    SELECT lot.*,winner.live_username winning_display
+    FROM breaker_auction_lots lot
+    LEFT JOIN members winner ON winner.id=lot.winning_member_id
+    WHERE lot.session_id=? AND lot.member_id=? AND lot.status='live'
+    ORDER BY lot.opened_at DESC,lot.updated_at DESC LIMIT 1
+  `).bind(showId, auth.member.id).first();
+  const closedLot = activeLot ? await settleAuctionLot(env, activeLot) : null;
   const stamp = now();
   const changed = await env.DB.prepare(`UPDATE breaker_stream_sessions SET status='ended',ended_at=?,updated_at=? WHERE id=? AND member_id=? AND status IN ('open','live')`)
     .bind(stamp, stamp, showId, auth.member.id).run();
   if (Number(changed.meta?.changes || 0) !== 1) return json({ error: "That show is already ended or was not found." }, 409, cors);
-  await env.DB.prepare(`UPDATE breaker_auction_lots SET status='cancelled',updated_at=? WHERE session_id=? AND member_id=? AND status IN ('scheduled','live')`)
+  await env.DB.prepare(`UPDATE breaker_auction_lots SET status='cancelled',updated_at=? WHERE session_id=? AND member_id=? AND status='scheduled'`)
     .bind(stamp, showId, auth.member.id).run();
   const remainingOpen = await env.DB.prepare(`SELECT id,cloudflare_live_input_uid FROM breaker_stream_sessions WHERE member_id=? AND id<>? AND status IN ('open','live') LIMIT 1`).bind(auth.member.id, showId).first();
   if (!remainingOpen) {
@@ -3666,7 +4027,7 @@ async function endSellerShow(request, env, cors, showId) {
     console.error("Post-show Stream Credit sync failed", error);
     return { syncedMembers: 0, syncedVideos: 0, syncFailed: true };
   });
-  return json({ ended: true, endedAt: stamp, streamCreditSync }, 200, cors);
+  return json({ ended: true, endedAt: stamp, closedLot, streamCreditSync }, 200, cors);
 }
 
 async function createAuctionLot(request, env, cors, showId) {
@@ -3720,8 +4081,8 @@ async function createAuctionLot(request, env, cors, showId) {
   const lotIds = Array.from({ length: lotCount }, () => uid());
   const insertLots = lotIds.map((lotId, index) => {
     const lotTitle = lotCount > 1 ? `${title} #${numberStart + index}` : title;
-    return env.DB.prepare(`INSERT INTO breaker_auction_lots(id,session_id,member_id,title,description,status,starting_bid_cents,bid_increment_cents,created_at,updated_at,image_url,item_condition,sale_type,queue_position,auction_duration_seconds) VALUES(?,?,?,?,?,'scheduled',?,?,?,?,?,?,?,?,?)`)
-      .bind(lotId, showId, auth.member.id, lotTitle, description, startingBid, increment, stamp, stamp, imageUrl, condition, saleType, queueStart + index, auctionDurationSeconds);
+    return env.DB.prepare(`INSERT INTO breaker_auction_lots(id,session_id,member_id,title,description,status,starting_bid_cents,bid_increment_cents,created_at,updated_at,image_url,item_condition,sale_type,queue_position,auction_duration_seconds,seller_store_listing_id) VALUES(?,?,?,?,?,'scheduled',?,?,?,?,?,?,?,?,?,?)`)
+      .bind(lotId, showId, auth.member.id, lotTitle, description, startingBid, increment, stamp, stamp, imageUrl, condition, saleType, queueStart + index, auctionDurationSeconds, storeListing?.id || null);
   });
   if (!storeListing) {
     if (insertLots.length === 1) await insertLots[0].run();
@@ -3756,8 +4117,14 @@ async function createAuctionLot(request, env, cors, showId) {
 async function changeAuctionStatus(request, env, cors, lotId, action) {
   const auth = await requireMember(request, env, cors, { seller: true });
   if (auth.error) return auth.error;
-  const lot = await env.DB.prepare(`SELECT * FROM breaker_auction_lots WHERE id=? AND member_id=?`).bind(lotId, auth.member.id).first();
+  const lot = await env.DB.prepare(`
+    SELECT lot.*,winner.live_username winning_display
+    FROM breaker_auction_lots lot
+    LEFT JOIN members winner ON winner.id=lot.winning_member_id
+    WHERE lot.id=? AND lot.member_id=?
+  `).bind(lotId, auth.member.id).first();
   if (!lot) return json({ error: "Auction lot not found." }, 404, cors);
+  let closedLot = null;
   if (action === "open") {
     if (String(env.LIVE_AUCTIONS_ENABLED || "false") !== "true") return json({ error: "Live auctions are locked until production payment and seller payout review is complete." }, 503, cors);
     const openedAt = now();
@@ -3768,14 +4135,19 @@ async function changeAuctionStatus(request, env, cors, lotId, action) {
       env.DB.prepare(`UPDATE breaker_stream_sessions SET status='live',updated_at=? WHERE id=?`).bind(openedAt, lot.session_id)
     ]);
   } else {
-    const bannerUntil = new Date(Date.now() + 5000).toISOString();
-    await env.DB.batch([
-      env.DB.prepare(`UPDATE breaker_auction_lots SET status=CASE WHEN winning_member_id IS NULL THEN 'cancelled' ELSE 'sold' END,sold_at=?,winner_banner_until=?,updated_at=? WHERE id=? AND status='live'`).bind(now(), bannerUntil, now(), lot.id),
-      env.DB.prepare(`UPDATE breaker_auction_bids SET status='winning' WHERE lot_id=? AND bidder_member_id=(SELECT winning_member_id FROM breaker_auction_lots WHERE id=?) AND status='leading'`).bind(lot.id, lot.id)
-    ]);
+    if (!["live", "sold"].includes(lot.status)) return json({ error: "This auction is not live." }, 409, cors);
+    closedLot = await settleAuctionLot(env, lot);
   }
-  const updated = await env.DB.prepare(`SELECT lot.*,session.viewer_count,session.cloudflare_live_input_uid,winner.live_username winning_display FROM breaker_auction_lots lot JOIN breaker_stream_sessions session ON session.id=lot.session_id LEFT JOIN members winner ON winner.id=lot.winning_member_id WHERE lot.id=?`).bind(lot.id).first();
-  return json({ lot: auctionView(updated, auth.member.id, env) }, 200, cors);
+  const updated = await env.DB.prepare(`
+    SELECT lot.*,session.viewer_count,session.cloudflare_live_input_uid,winner.live_username winning_display,
+      payment.status payment_status,payment.order_number
+    FROM breaker_auction_lots lot
+    JOIN breaker_stream_sessions session ON session.id=lot.session_id
+    LEFT JOIN members winner ON winner.id=lot.winning_member_id
+    LEFT JOIN breaker_auction_payments payment ON payment.lot_id=lot.id
+    WHERE lot.id=?
+  `).bind(lot.id).first();
+  return json({ lot: auctionView(updated, auth.member.id, env), closedLot }, 200, cors);
 }
 
 async function auctionOffNext(request, env, cors, showId) {
@@ -3806,27 +4178,17 @@ async function auctionOffNext(request, env, cors, showId) {
     ORDER BY COALESCE(lot.queue_position,lot.rowid) ASC,lot.created_at ASC,lot.rowid ASC LIMIT 1
   `).bind(showId, auth.member.id, requestedLotId, requestedLotId).first();
   if (!next) return json({ error: "No queued item is ready. Add another sale item before using NEXT AUCTION." }, 409, cors);
+  const closedLot = current ? await settleAuctionLot(env, current) : null;
   const stamp = now();
   const closesAt = new Date(Date.now() + Number(next.auction_duration_seconds || 30) * 1000).toISOString();
-  const statements = [];
-  if (current) {
-    const bannerUntil = new Date(Date.now() + 5000).toISOString();
-    statements.push(
-      env.DB.prepare(`UPDATE breaker_auction_lots SET status=CASE WHEN winning_member_id IS NULL THEN 'cancelled' ELSE 'sold' END,sold_at=?,winner_banner_until=?,updated_at=? WHERE id=? AND member_id=? AND status='live'`)
-        .bind(stamp, bannerUntil, stamp, current.id, auth.member.id),
-      env.DB.prepare(`UPDATE breaker_auction_bids SET status='winning' WHERE lot_id=? AND bidder_member_id=(SELECT winning_member_id FROM breaker_auction_lots WHERE id=?) AND status='leading'`)
-        .bind(current.id, current.id)
-    );
-  }
-  const nextStatementIndex = statements.length;
-  statements.push(
+  const statements = [
     env.DB.prepare(`UPDATE breaker_auction_lots SET status='live',opened_at=?,closes_at=?,current_bid_cents=NULL,winning_member_id=NULL,updated_at=? WHERE id=? AND session_id=? AND member_id=? AND status='scheduled'`)
       .bind(stamp, closesAt, stamp, next.id, showId, auth.member.id),
     env.DB.prepare(`UPDATE breaker_stream_sessions SET status='live',updated_at=? WHERE id=? AND member_id=? AND status IN ('open','live')`)
       .bind(stamp, showId, auth.member.id)
-  );
+  ];
   const results = await env.DB.batch(statements);
-  if (Number(results?.[nextStatementIndex]?.meta?.changes || 0) !== 1) {
+  if (Number(results?.[0]?.meta?.changes || 0) !== 1) {
     return json({ error: "The Auction Block changed while NEXT AUCTION was running. Refresh the queue and try again." }, 409, cors);
   }
   const updated = await env.DB.prepare(`
@@ -3840,12 +4202,7 @@ async function auctionOffNext(request, env, cors, showId) {
     .bind(showId, auth.member.id).first();
   return json({
     lot: auctionView(updated, auth.member.id, env),
-    closedLot: current ? {
-      id: current.id,
-      title: current.title,
-      status: current.winning_member_id ? "sold" : "cancelled",
-      winningDisplay: current.winning_display || ""
-    } : null,
+    closedLot,
     remainingQueued: Number(remaining?.queued || 0)
   }, 200, cors);
 }
@@ -4165,6 +4522,8 @@ export async function handlePlatformRoute(request, env, cors) {
   if (sellerLotReorderMatch && request.method === "POST") return reorderAuctionLots(request, env, cors, sellerLotReorderMatch[1]);
   const sellerShowEndMatch = url.pathname.match(/^\/seller\/shows\/([0-9a-f-]{36})\/end$/i);
   if (sellerShowEndMatch && request.method === "POST") return endSellerShow(request, env, cors, sellerShowEndMatch[1]);
+  const sellerExpiredAuctionMatch = url.pathname.match(/^\/seller\/shows\/([0-9a-f-]{36})\/settle-expired$/i);
+  if (sellerExpiredAuctionMatch && request.method === "POST") return settleExpiredSellerAuction(request, env, cors, sellerExpiredAuctionMatch[1]);
   const sellerAuctionOffMatch = url.pathname.match(/^\/seller\/shows\/([0-9a-f-]{36})\/auction-off$/i);
   if (sellerAuctionOffMatch && request.method === "POST") return auctionOffNext(request, env, cors, sellerAuctionOffMatch[1]);
   const sellerLotActionMatch = url.pathname.match(/^\/seller\/lots\/([0-9a-f-]{36})\/(open|close)$/i);
@@ -4178,4 +4537,4 @@ export async function handlePlatformRoute(request, env, cors) {
   return null;
 }
 
-export { chooseBestRecordingForSession, runStreamCreditCycle, usernameKey };
+export { chooseBestRecordingForSession, runAuctionSettlementCycle, runStreamCreditCycle, usernameKey };

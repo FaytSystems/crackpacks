@@ -13,6 +13,7 @@
   let sellerInventoryItems = [];
   let sellerStoreListings = [];
   let sellerShowLots = [];
+  let sellerShowPurchases = [];
   let sellerCogsOrders = [];
   let sellerOrders = [];
   let sellerProductCategories = [];
@@ -31,6 +32,12 @@
   let autoNextTickTimer = 0;
   let autoNextStepTimer = 0;
   let auctionHoldTimer = 0;
+  let purchaseToastTimer = 0;
+  let purchaseRecapShowId = "";
+  let purchaseRecapInitialized = false;
+  let sellerLotsRefreshPromise = null;
+  let sellerExpiredSettlementPending = false;
+  let knownPaidPurchaseIds = new Set();
   let suppressAuctionNextClick = false;
   let liveShowsSellerUsername = "";
   let sellerLiveChat = null;
@@ -58,7 +65,7 @@
     inventory: { hash: "#seller-inventory", title: "Seller inventory", copy: "Track stock, PAR levels, reviewed reorders, and available quantities." },
     categories: { hash: "#seller-categories", title: "Types of products selling", copy: "Choose which product categories appear in this seller store." },
     cogs: { hash: "#seller-cogs", title: "Order COGS", copy: "Review landed costs and calculate a safer minimum auction bid." },
-    shipping: { hash: "#seller-shipping", title: "Seller shipping", copy: "Manage orders, labels, clips, package weights, and tracking." },
+    shipping: { hash: "#seller-shipping", title: "Fulfill Orders", copy: "Manage paid orders, labels, clips, package weights, and tracking." },
     giveaways: { hash: "#seller-giveaways", title: "Giveaway presets", copy: "Prepare reusable giveaway rules and inventory labels before going live." }
   };
   const sellerToolAliases = {
@@ -623,6 +630,77 @@
     return loadSellerLots(showId);
   }
 
+  function purchaseStatusLabel(status) {
+    return ({
+      paid: "PURCHASED",
+      processing: "PROCESSING",
+      failed: "PAYMENT FAILED",
+      requires_action: "ACTION NEEDED",
+      refunded: "REFUNDED"
+    })[status] || String(status || "PROCESSING").replace(/_/g, " ").toUpperCase();
+  }
+
+  function showSellerPurchasedToast(purchase) {
+    if (!purchase || purchase.paymentStatus !== "paid" && purchase.status !== "paid") return;
+    const purchaseId = String(purchase.id || purchase.lotId || "");
+    if (purchaseId) knownPaidPurchaseIds.add(purchaseId);
+    const toast = $("[data-seller-purchase-toast]");
+    const copy = $("[data-seller-purchase-toast-copy]");
+    if (!toast || !copy) return;
+    const buyer = purchase.buyerUsername || purchase.winningDisplay || "buyer";
+    copy.textContent = `${purchase.title || "Auction item"} - ${dollars(purchase.amountCents)} - @${buyer}`;
+    window.clearTimeout(purchaseToastTimer);
+    toast.hidden = false;
+    purchaseToastTimer = window.setTimeout(() => {
+      toast.hidden = true;
+      purchaseToastTimer = 0;
+    }, 2000);
+  }
+
+  function renderSellerPurchaseRecap(purchases = [], showId = "", { notify = true } = {}) {
+    const list = $("[data-seller-purchase-recap-list]");
+    const normalized = Array.isArray(purchases) ? purchases : [];
+    if (showId !== purchaseRecapShowId) {
+      purchaseRecapShowId = showId;
+      purchaseRecapInitialized = false;
+      knownPaidPurchaseIds = new Set();
+    }
+    const newlyPaid = purchaseRecapInitialized
+      ? normalized.filter(item => item.status === "paid" && !knownPaidPurchaseIds.has(String(item.id || item.lotId || "")))
+      : [];
+    normalized.filter(item => item.status === "paid").forEach(item => knownPaidPurchaseIds.add(String(item.id || item.lotId || "")));
+    sellerShowPurchases = normalized;
+    purchaseRecapInitialized = Boolean(showId);
+    if (list) {
+      list.innerHTML = normalized.length ? normalized.map(item => {
+        const status = String(item.status || "processing");
+        const buyer = item.buyerUsername ? `@${item.buyerUsername}` : "Buyer pending";
+        const detail = status === "paid"
+          ? `${buyer} - ${item.orderNumber || "Order confirmed"} - ${dateLabel(item.paidAt || item.attemptedAt)}`
+          : `${buyer} - ${item.failureMessage || (status === "processing" ? "Stripe confirmation pending." : "Buyer payment needs attention.")}`;
+        const fulfill = status === "paid" && item.orderNumber
+          ? `<button type="button" data-fulfill-order="${escapeHtml(item.orderNumber)}">Open in Fulfill Orders</button>`
+          : "";
+        return `<li class="seller-purchase-recap-item is-${escapeHtml(status)}">
+          <strong>${escapeHtml(item.title || "Live auction item")}</strong>
+          <span>${escapeHtml(purchaseStatusLabel(status))} - ${escapeHtml(dollars(item.amountCents))}</span>
+          <small>${escapeHtml(detail)}</small>
+          ${fulfill}
+        </li>`;
+      }).join("") : `<li class="seller-purchase-recap-empty">Completed auction payments will appear here.</li>`;
+    }
+    if (notify && newlyPaid.length) showSellerPurchasedToast(newlyPaid[newlyPaid.length - 1]);
+  }
+
+  function auctionSettlementMessage(closedLot) {
+    if (!closedLot || closedLot.status === "cancelled") return "";
+    if (closedLot.paymentStatus === "paid") return " Payment confirmed and added to Fulfill Orders.";
+    if (closedLot.paymentStatus === "processing") return " Stripe payment is processing; the recap will update automatically.";
+    if (closedLot.paymentStatus === "requires_action") return " Buyer payment needs authentication; no purchase was confirmed.";
+    if (closedLot.paymentStatus === "failed") return " Buyer payment failed; no purchase was confirmed.";
+    return "";
+  }
+
   function renderSellerLots(lots = [], show) {
     const list = $("[data-seller-lot-list]");
     sellerShowLots = Array.isArray(lots) ? lots : [];
@@ -841,10 +919,11 @@
         method: "POST",
         body: JSON.stringify(nextLotId ? { nextLotId } : {})
       });
+      showSellerPurchasedToast(result.closedLot);
       await Promise.all([loadSellerLots(show.id), loadShows()]);
       const closed = result.closedLot?.title ? `${result.closedLot.title} finished. ` : "";
       const selected = source === "selected" ? "Selected item" : (result.lot?.title || "The next item");
-      setStatus("[data-broadcast-auction-status]", `${closed}${selected} is live. ${Number(result.remainingQueued || 0)} item(s) remain queued.`, "success");
+      setStatus("[data-broadcast-auction-status]", `${closed}${selected} is live. ${Number(result.remainingQueued || 0)} item(s) remain queued.${auctionSettlementMessage(result.closedLot)}`, result.closedLot?.paymentStatus === "failed" ? "error" : "success");
       return result;
     } finally {
       auctionAdvancePending = false;
@@ -863,9 +942,10 @@
     const queued = queuedBroadcastLots();
     try {
       if (current && !queued.length) {
-        await api(`/seller/lots/${encodeURIComponent(current.id)}/close`, { method: "POST", body: "{}" });
+        const result = await api(`/seller/lots/${encodeURIComponent(current.id)}/close`, { method: "POST", body: "{}" });
+        showSellerPurchasedToast(result.closedLot);
         await Promise.all([loadSellerLots(show.id), loadShows()]);
-        stopAutoNext("Auction Block complete. The final auction closed and Auto-Next stopped.");
+        stopAutoNext(`Auction Block complete. The final auction closed and Auto-Next stopped.${auctionSettlementMessage(result.closedLot)}`, result.closedLot?.paymentStatus === "failed" ? "error" : "success");
         return;
       }
       await advanceAuctionQueue({ source: "auto" });
@@ -1014,11 +1094,42 @@
     updateSellerDashboardMetrics();
   }
 
-  async function loadSellerLots(showId) {
-    if (!showId) { renderSellerLots([]); syncStoreShowOptionsFromSellerShows(); return; }
-    const payload = await api(`/seller/shows/${encodeURIComponent(showId)}/lots`);
-    renderSellerLots(payload.lots || [], payload.show);
-    syncStoreShowOptionsFromSellerShows();
+  async function loadSellerLots(showId, { notify = true } = {}) {
+    if (!showId) {
+      renderSellerLots([]);
+      renderSellerPurchaseRecap([], "");
+      syncStoreShowOptionsFromSellerShows();
+      return null;
+    }
+    const request = api(`/seller/shows/${encodeURIComponent(showId)}/lots`);
+    sellerLotsRefreshPromise = request;
+    try {
+      const payload = await request;
+      const selectedId = $("[data-broadcast-show-select]")?.value || $("[data-seller-show-select]")?.value || showId;
+      if (selectedId !== showId) return payload;
+      renderSellerLots(payload.lots || [], payload.show);
+      renderSellerPurchaseRecap(payload.purchases || [], showId, { notify });
+      syncStoreShowOptionsFromSellerShows();
+      return payload;
+    } finally {
+      if (sellerLotsRefreshPromise === request) sellerLotsRefreshPromise = null;
+    }
+  }
+
+  async function settleExpiredSellerAuction(showId) {
+    if (!showId || sellerExpiredSettlementPending) return null;
+    sellerExpiredSettlementPending = true;
+    try {
+      const result = await api(`/seller/shows/${encodeURIComponent(showId)}/settle-expired`, { method: "POST", body: "{}" });
+      showSellerPurchasedToast(result.closedLot);
+      await loadSellerLots(showId);
+      if (result.closedLot) {
+        setStatus("[data-broadcast-auction-status]", `Auction timer ended.${auctionSettlementMessage(result.closedLot)}`, result.closedLot.paymentStatus === "failed" ? "error" : "success");
+      }
+      return result;
+    } finally {
+      sellerExpiredSettlementPending = false;
+    }
   }
 
   async function loadSellerShows() {
@@ -1853,7 +1964,7 @@
     if (autoNextActive) stopAutoNext("Auto-Next stopped while the show close confirmation is open.");
     pendingCloseShowId = showId;
     closeShowTrigger = trigger || null;
-    if (copy) copy.textContent = `Closing ${show?.title || "this show"} ends the broadcast session and cancels every remaining scheduled or open auction.`;
+    if (copy) copy.textContent = `Closing ${show?.title || "this show"} settles the active auction, ends the broadcast session, and cancels the remaining queued auctions.`;
     setStatus("[data-close-show-status]", "");
     modal.hidden = false;
     modal.setAttribute("aria-hidden", "false");
@@ -1875,8 +1986,12 @@
     try {
       if (action) {
         action.disabled = true;
-        await api(`/seller/lots/${encodeURIComponent(action.dataset.lotId)}/${action.dataset.lotAction}`, { method: "POST", body: "{}" });
+        const result = await api(`/seller/lots/${encodeURIComponent(action.dataset.lotId)}/${action.dataset.lotAction}`, { method: "POST", body: "{}" });
+        showSellerPurchasedToast(result.closedLot);
         await loadSellerLots($("[data-seller-show-select]").value);
+        if (result.closedLot) {
+          setStatus("[data-seller-lot-status]", `Auction closed.${auctionSettlementMessage(result.closedLot)}`, result.closedLot.paymentStatus === "failed" ? "error" : "success");
+        }
       } else if (end) {
         openCloseShowModal(end.dataset.endShow, end);
       }
@@ -1889,13 +2004,14 @@
     if (!pendingCloseShowId) return;
     const showId = pendingCloseShowId;
     button.disabled = true;
-    setStatus("[data-close-show-status]", "Closing stream and cancelling remaining auctions...");
+    setStatus("[data-close-show-status]", "Settling the active auction, closing the stream, and cancelling the remaining queue...");
     try {
       const result = await api(`/seller/shows/${encodeURIComponent(showId)}/end`, { method: "POST", body: "{}" });
+      showSellerPurchasedToast(result.closedLot);
       closeCloseShowModal({ restoreFocus: false });
       await loadSellerShows();
       const synced = result.streamCreditSync?.syncedVideos ? ` ${Number(result.streamCreditSync.syncedVideos)} recording source(s) synced.` : " Usage will also refresh on the next hourly cycle.";
-      setStatus("[data-seller-lot-status]", `Show ended. Stream Credits are syncing.${synced}`, "success");
+      setStatus("[data-seller-lot-status]", `Show ended.${auctionSettlementMessage(result.closedLot)} Stream Credits are syncing.${synced}`, result.closedLot?.paymentStatus === "failed" ? "error" : "success");
     } catch (error) {
       setStatus("[data-close-show-status]", error.message, "error");
     } finally {
@@ -2016,6 +2132,24 @@
     renderSellerOrders();
   });
 
+  $("[data-seller-purchase-recap-list]")?.addEventListener("click", async event => {
+    const button = event.target.closest("[data-fulfill-order]");
+    if (!button) return;
+    sellerOrderTab = "all";
+    sellerOrderSearch = button.dataset.fulfillOrder || "";
+    $$("[data-seller-order-tab]").forEach(node => node.classList.toggle("is-active", node.dataset.sellerOrderTab === "all"));
+    const search = $("[data-seller-order-search]");
+    if (search) search.value = sellerOrderSearch;
+    setSellerTool("shipping");
+    try {
+      await loadSellerOrders();
+      $("#seller-shipping")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      setStatus("[data-seller-orders-status]", `${sellerOrderSearch} is ready for fulfillment.`, "success");
+    } catch (error) {
+      setStatus("[data-seller-orders-status]", error.message, "error");
+    }
+  });
+
   $("[data-seller-orders-refresh]")?.addEventListener("click", async event => {
     const button = event.currentTarget;
     button.disabled = true;
@@ -2094,11 +2228,29 @@
   const showsRefreshTimer = window.setInterval(() => {
     if (!document.hidden) loadShows();
   }, 15000);
+  const sellerLotsRefreshTimer = window.setInterval(() => {
+    const showId = $("[data-broadcast-show-select]")?.value || "";
+    if (!viewerOnly && sellerContextAuthorized && !document.hidden && showId && !sellerLotsRefreshPromise) {
+      const current = currentBroadcastLot();
+      const closesAt = Date.parse(current?.closes_at || "");
+      if (!autoNextActive && Number.isFinite(closesAt) && closesAt <= Date.now()) {
+        settleExpiredSellerAuction(showId).catch(() => {});
+      } else {
+        loadSellerLots(showId).catch(() => {});
+      }
+    }
+  }, 2500);
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) loadShows();
+    if (!document.hidden) {
+      loadShows();
+      const showId = $("[data-broadcast-show-select]")?.value || "";
+      if (sellerContextAuthorized && showId && !sellerLotsRefreshPromise) loadSellerLots(showId).catch(() => {});
+    }
   });
   window.addEventListener("pagehide", () => {
     window.clearInterval(showsRefreshTimer);
+    window.clearInterval(sellerLotsRefreshTimer);
+    window.clearTimeout(purchaseToastTimer);
     sellerLiveChat?.stop();
     stopAutoNext();
   }, { once: true });

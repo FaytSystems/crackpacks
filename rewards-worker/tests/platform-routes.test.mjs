@@ -1403,12 +1403,15 @@ test("seller cannot schedule store inventory already assigned to an active lot",
   assert.equal(batchCalled, false);
 });
 
-test("NEXT AUCTION settles the current lot and promotes a selected queued item", async () => {
+test("NEXT AUCTION charges the winner once, creates fulfillment, and promotes the selected item", async t => {
   const memberId = "11111111-1111-4111-8111-111111111111";
   const showId = "22222222-2222-4222-8222-222222222222";
   const currentLotId = "33333333-3333-4333-8333-333333333333";
   const nextLotId = "44444444-4444-4444-8444-444444444444";
+  const buyerId = "55555555-5555-4555-8555-555555555555";
   const batches = [];
+  let paymentStatus = "processing";
+  let stripeRequest = null;
   let scheduledQueryArgs = [];
   const member = {
     id: memberId,
@@ -1421,6 +1424,7 @@ test("NEXT AUCTION settles the current lot and promotes a selected queued item",
   const env = {
     AUTH_SECRET: "test-secret",
     LIVE_AUCTIONS_ENABLED: "true",
+    STRIPE_SECRET_KEY: "sk_test_auction",
     CLOUDFLARE_STREAM_CUSTOMER_CODE: "customer.example.test",
     DB: {
       prepare(sql) {
@@ -1442,7 +1446,10 @@ test("NEXT AUCTION settles the current lot and promotes a selected queued item",
                     member_id: memberId,
                     title: "Abyss Eye #1",
                     status: "live",
-                    winning_member_id: "55555555-5555-4555-8555-555555555555",
+                    starting_bid_cents: 500,
+                    current_bid_cents: 2500,
+                    bid_increment_cents: 100,
+                    winning_member_id: buyerId,
                     winning_display: "TopBidder"
                   };
                 }
@@ -1456,6 +1463,56 @@ test("NEXT AUCTION settles the current lot and promotes a selected queued item",
                     status: "scheduled",
                     starting_bid_cents: 500,
                     bid_increment_cents: 100
+                  };
+                }
+                if (sql.includes("FROM breaker_auction_payments payment") && sql.includes("JOIN breaker_auction_lots lot")) {
+                  return {
+                    lot_id: currentLotId,
+                    session_id: showId,
+                    seller_member_id: memberId,
+                    buyer_member_id: buyerId,
+                    member_order_id: "66666666-6666-4666-8666-666666666666",
+                    order_number: "CP-20260728-AUCTION",
+                    amount_cents: 2500,
+                    currency: "USD",
+                    payment_status: paymentStatus,
+                    title: "Abyss Eye #1",
+                    description: "",
+                    image_url: "",
+                    item_condition: "Near mint",
+                    sale_type: "singles",
+                    seller_store_listing_id: "77777777-7777-4777-8777-777777777777",
+                    shipping_address_json: JSON.stringify({ name: "Top Bidder", street1: "1 Main St", city: "Columbus", state: "OH", postalCode: "43004", country: "US" }),
+                    attempted_at: "2026-07-28T10:00:00.000Z",
+                    paid_at: paymentStatus === "paid" ? "2026-07-28T10:00:01.000Z" : null
+                  };
+                }
+                if (sql.includes("FROM breaker_auction_payments payment")) {
+                  return {
+                    lot_id: currentLotId,
+                    session_id: showId,
+                    seller_member_id: memberId,
+                    buyer_member_id: buyerId,
+                    member_order_id: "66666666-6666-4666-8666-666666666666",
+                    order_number: "CP-20260728-AUCTION",
+                    amount_cents: 2500,
+                    currency: "USD",
+                    payment_status: paymentStatus,
+                    attempted_at: "2026-07-28T10:00:00.000Z",
+                    paid_at: paymentStatus === "paid" ? "2026-07-28T10:00:01.000Z" : null
+                  };
+                }
+                if (sql.includes("stripe_customer_id,stripe_payment_method_id")) {
+                  return {
+                    id: buyerId,
+                    email: "buyer@example.test",
+                    first_name: "Top",
+                    last_name: "Bidder",
+                    buyer_username: "TopBidder",
+                    phone: "+16145550100",
+                    shipping_address_json: JSON.stringify({ name: "Top Bidder", street1: "1 Main St", city: "Columbus", state: "OH", postalCode: "43004", country: "US" }),
+                    stripe_customer_id: "cus_auction",
+                    stripe_payment_method_id: "pm_auction"
                   };
                 }
                 if (sql.includes("WHERE lot.id=? AND lot.member_id=?")) {
@@ -1481,10 +1538,28 @@ test("NEXT AUCTION settles the current lot and promotes a selected queued item",
       },
       batch: async statements => {
         batches.push(statements);
+        if (statements.some(statement => statement.sql.includes("SET status='paid',stripe_payment_intent_id"))) paymentStatus = "paid";
         return statements.map(() => ({ success: true, meta: { changes: 1 } }));
       }
     }
   };
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, options = {}) => {
+    stripeRequest = { url: String(url), options, body: new URLSearchParams(String(options.body || "")) };
+    return new Response(JSON.stringify({
+      id: "pi_live_auction",
+      status: "succeeded",
+      amount: 2500,
+      metadata: {
+        kind: "live_auction",
+        lot_id: currentLotId,
+        show_id: showId,
+        seller_member_id: memberId,
+        buyer_member_id: buyerId
+      }
+    }), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+  t.after(() => { globalThis.fetch = originalFetch; });
 
   const response = await handlePlatformRoute(new Request(`https://api.crackpacks.test/seller/shows/${showId}/auction-off`, {
     method: "POST",
@@ -1496,17 +1571,31 @@ test("NEXT AUCTION settles the current lot and promotes a selected queued item",
   const payload = await response.json();
   assert.equal(payload.closedLot.id, currentLotId);
   assert.equal(payload.closedLot.status, "sold");
+  assert.equal(payload.closedLot.paymentStatus, "paid");
+  assert.equal(payload.closedLot.orderNumber, "CP-20260728-AUCTION");
+  assert.equal(payload.closedLot.amountCents, 2500);
   assert.equal(payload.lot.id, nextLotId);
   assert.equal(payload.lot.status, "live");
   assert.equal(payload.remainingQueued, 2);
-  assert.equal(batches.length, 1);
-  assert.equal(batches[0].length, 4);
-  assert.match(batches[0][0].sql, /status=CASE WHEN winning_member_id IS NULL THEN 'cancelled' ELSE 'sold' END/);
+  assert.equal(stripeRequest.url, "https://api.stripe.com/v1/payment_intents");
+  assert.equal(stripeRequest.options.headers["Idempotency-Key"], `live-auction-${currentLotId}`);
+  assert.equal(stripeRequest.body.get("amount"), "2500");
+  assert.equal(stripeRequest.body.get("customer"), "cus_auction");
+  assert.equal(stripeRequest.body.get("payment_method"), "pm_auction");
+  assert.equal(stripeRequest.body.get("confirm"), "true");
+  assert.equal(stripeRequest.body.get("off_session"), "true");
+  assert.equal(batches.length, 3);
+  assert.equal(batches[0].length, 2);
+  assert.match(batches[0][0].sql, /SET status='sold'/);
   assert.match(batches[0][1].sql, /UPDATE breaker_auction_bids SET status='winning'/);
-  assert.match(batches[0][2].sql, /SET status='live'/);
-  assert.match(batches[0][2].sql, /closes_at=/);
-  assert.equal(batches[0][2].args[3], nextLotId);
-  assert.match(batches[0][3].sql, /UPDATE breaker_stream_sessions SET status='live'/);
+  assert.equal(batches[1].length, 5);
+  assert.match(batches[1][0].sql, /INSERT OR IGNORE INTO member_orders/);
+  assert.match(batches[1][2].sql, /SET status='paid'/);
+  assert.equal(batches[2].length, 2);
+  assert.match(batches[2][0].sql, /SET status='live'/);
+  assert.match(batches[2][0].sql, /closes_at=/);
+  assert.equal(batches[2][0].args[3], nextLotId);
+  assert.match(batches[2][1].sql, /UPDATE breaker_stream_sessions SET status='live'/);
   assert.deepEqual(scheduledQueryArgs.slice(2), [nextLotId, nextLotId]);
 });
 

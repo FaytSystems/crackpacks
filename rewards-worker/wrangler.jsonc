@@ -25,7 +25,7 @@
     "INTERNATIONAL_INCOTERM": "DAP"
   },
   "triggers": {
-    "crons": ["5 * * * *"]
+    "crons": ["* * * * *", "5 * * * *"]
   },
   "observability": { "enabled": true }
 }
