@@ -3,9 +3,9 @@ import { issueOwnerReferral, ownerReferralSlotAt, verifyOwnerReferral } from "./
 import { campaignWeekAt, parseCampaignExpiryHours } from "./campaign-time.js";
 import { calculateChannelPricing, channelPricingErrors } from "./channel-pricing.js";
 import { sanitizeEasyPostTracker, verifyEasyPostWebhook } from "./easypost-tracking.js";
-import { handlePlatformRoute, refreshStripeIdentityForMember, runAuctionSettlementCycle, runStreamCreditCycle, usernameKey } from "./platform-routes.js";
+import { handlePlatformRoute, refreshStripeIdentityForMember, runAuctionSettlementCycle, runLiveCreditGateCycle, runStreamCreditCycle, usernameKey } from "./platform-routes.js";
 
-const VERSION = "5.2.1";
+const VERSION = "5.3.0";
 const CAMPAIGN_REWARD_TYPES = new Set(["percent", "free_shipping", "pick_a_pack", "pack_draft", "free_single", "product"]);
 const MAX_CAMPAIGN_REDEMPTIONS = 500;
 const STORE_CURRENCIES = new Set(["USD", "CAD", "EUR", "GBP", "AUD", "NZD", "JPY", "CHF", "SEK", "NOK", "DKK", "PLN", "CZK", "HUF", "RON"]);
@@ -2520,6 +2520,7 @@ export default {
     const cron = String(controller?.cron || "");
     if (!cron || cron === "* * * * *") {
       ctx.waitUntil(runAuctionSettlementCycle(env).catch(error => console.error("Scheduled auction settlement cycle failed", error)));
+      ctx.waitUntil(runLiveCreditGateCycle(env).catch(error => console.error("Scheduled live Stream Credit gate failed", error)));
     }
     if (!cron || cron === "5 * * * *") {
       ctx.waitUntil(runStreamCreditCycle(env, { notify: true }).catch(error => console.error("Scheduled stream credit cycle failed", error)));

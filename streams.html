@@ -9,7 +9,7 @@
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/css/styles.css?v=1.11.2">
   <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.7.0">
-  <link rel="stylesheet" href="assets/css/streams-hub.css?v=2.5.3">
+  <link rel="stylesheet" href="assets/css/streams-hub.css?v=2.6.0">
   <link rel="stylesheet" href="assets/css/live-chat.css?v=1.0.0">
   <link rel="stylesheet" href="assets/css/video-auction-hud.css?v=1.0.0">
 </head>
@@ -260,6 +260,10 @@
               <p data-auto-next-copy>Tap NEXT AUCTION once to advance. Hold it for 3 seconds to arm the timed queue.</p>
             </div>
             <div class="seller-auction-controls" aria-label="Live auction controls">
+              <button class="seller-control-bubble seller-control-bubble-start" type="button" data-broadcast-start-show disabled>
+                <span>START STREAM</span>
+                <small>Unlock OBS after the credit check</small>
+              </button>
               <button class="seller-control-bubble seller-control-bubble-primary seller-auction-next-button" type="button" data-auction-off data-auction-next disabled>
                 <span>NEXT AUCTION</span>
                 <small>Tap once &bull; Hold 3 sec for AUTO-NEXT</small>
@@ -274,6 +278,11 @@
               <button class="seller-control-bubble seller-control-bubble-danger" type="button" data-broadcast-end-show disabled>
                 <span>End show</span>
               </button>
+            </div>
+            <div class="seller-live-credit-readout" data-seller-live-credit-readout>
+              <span>Stream Credits</span>
+              <strong data-seller-live-credit-balance>--</strong>
+              <small data-seller-live-credit-state>Checking balance</small>
             </div>
             <div class="campaign-form-status seller-auction-control-status" data-broadcast-auction-status aria-live="polite"></div>
           </section>
@@ -844,6 +853,24 @@
         <div class="campaign-form-status" data-close-show-status aria-live="polite"></div>
       </section>
     </div>
+    <div class="seller-stream-credit-modal" data-stream-credit-gate-modal hidden aria-hidden="true">
+      <div class="seller-close-show-backdrop" aria-hidden="true"></div>
+      <section class="seller-stream-credit-dialog" role="alertdialog" aria-modal="true" aria-labelledby="stream-credit-gate-title" aria-describedby="stream-credit-gate-copy">
+        <p class="eyebrow">Stream Credit protection</p>
+        <h2 id="stream-credit-gate-title" data-stream-credit-gate-title>Purchase credits to go live</h2>
+        <p id="stream-credit-gate-copy" data-stream-credit-gate-copy>A positive Stream Credit balance is required before Cloudflare unlocks your OBS input.</p>
+        <div class="seller-stream-credit-countdown" data-stream-credit-countdown hidden>
+          <span>STREAM ENDS IN</span>
+          <strong data-stream-credit-countdown-value>01:00</strong>
+        </div>
+        <div class="seller-stream-credit-actions">
+          <a class="btn btn-primary" href="referral.html?view=credits" target="_blank" rel="noopener" data-stream-credit-purchase>PURCHASE CREDITS</a>
+          <button class="btn btn-danger" type="button" data-stream-credit-end-now hidden>END STREAM NOW</button>
+          <button class="btn btn-outline" type="button" data-stream-credit-gate-dismiss>Close</button>
+        </div>
+        <p class="fine-print">Buying or redeeming credits before the timer reaches zero automatically keeps the stream live.</p>
+      </section>
+    </div>
     <div class="seller-purchase-toast" data-seller-purchase-toast hidden role="status" aria-live="assertive">
       <span aria-hidden="true">&#10003;</span>
       <div>
@@ -858,6 +885,6 @@
   <script src="assets/js/app.js?v=2.0.1"></script>
   <script src="assets/js/portal-mode.js?v=1.2.5"></script>
   <script src="assets/js/live-chat.js?v=1.0.0"></script>
-  <script src="assets/js/streams-hub.js?v=2.5.3"></script>
+  <script src="assets/js/streams-hub.js?v=2.6.0"></script>
 </body>
 </html>

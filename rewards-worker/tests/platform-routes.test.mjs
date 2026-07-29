@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { chooseBestRecordingForSession, handlePlatformRoute, hasEmployeePortalAccess, hasMasterPortalAccess, hasSellerPortalAccess, hasVerifiedSellerIdentity, isMasterEmail, usernameKey } from "../src/platform-routes.js";
+import { chooseBestRecordingForSession, handlePlatformRoute, hasEmployeePortalAccess, hasMasterPortalAccess, hasSellerPortalAccess, hasVerifiedSellerIdentity, isMasterEmail, normalizeStreamCreditCode, usernameKey } from "../src/platform-routes.js";
 
 test("Crack Packs User ID key blocks case, separator, and common leetspeak clones", () => {
   assert.equal(usernameKey("CRACKPACKS"), "crackpacks");
@@ -11,6 +11,12 @@ test("Crack Packs User ID key blocks case, separator, and common leetspeak clone
 
 test("distinct User IDs keep distinct protected keys", () => {
   assert.notEqual(usernameKey("CrackPacks"), usernameKey("HaloCollector"));
+});
+
+test("Stream Credit codes normalize pasted separators without accepting extra content", () => {
+  assert.equal(normalizeStreamCreditCode(" cpcr-abcd-2345-wxyz "), "CPCRABCD2345WXYZ");
+  assert.equal(normalizeStreamCreditCode("CPCR ABCD/2345.WXYZ"), "CPCRABCD2345WXYZ");
+  assert.equal(normalizeStreamCreditCode("x".repeat(100)).length, 40);
 });
 
 test("recording matcher prefers the video created closest to the show start", () => {
@@ -786,6 +792,67 @@ test("seller stream input creates Cloudflare live input with current API body", 
     requireSignedURLs: false,
     timeoutSeconds: 0
   });
+});
+
+test("seller show start rejects a balance that displays as 0.00 before unlocking Cloudflare", async t => {
+  const memberId = "11111111-1111-4111-8111-111111111111";
+  const showId = "22222222-2222-4222-8222-222222222222";
+  let cloudflareRequests = 0;
+  const member = {
+    id: memberId,
+    email: "seller@example.test",
+    email_verified_at: "2026-07-24T00:00:00.000Z",
+    device_verified: 1,
+    identity_status: "verified",
+    stripe_identity_status: "verified",
+    live_username: "ShowBuilder"
+  };
+  const env = {
+    AUTH_SECRET: "test-secret",
+    DB: {
+      prepare(sql) {
+        const first = async () => {
+          if (sql.includes("JOIN members m")) return member;
+          if (sql.includes("FROM breaker_profiles")) return { status: "active" };
+          if (sql.includes("SELECT * FROM breaker_stream_sessions WHERE id=? AND member_id=?")) {
+            return { id: showId, member_id: memberId, status: "open" };
+          }
+          if (sql.includes("FROM seller_stream_subscriptions WHERE member_id=?")) {
+            return { member_id: memberId, included_credits: 0, prepaid_credits_balance: 0.01, stripe_subscription_status: "" };
+          }
+          if (sql.includes("FROM seller_stream_checkout_sessions")) return null;
+          if (sql.includes("FROM seller_stream_usage_snapshots")) return null;
+          if (sql.includes("pending_live_credits")) return { pending_live_credits: 0.006 };
+          return null;
+        };
+        return {
+          first,
+          bind() {
+            return { first };
+          }
+        };
+      }
+    }
+  };
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    cloudflareRequests += 1;
+    return new Response("{}", { status: 200 });
+  };
+  t.after(() => { globalThis.fetch = originalFetch; });
+
+  const response = await handlePlatformRoute(new Request(`https://api.crackpacks.test/seller/shows/${showId}/start`, {
+    method: "POST",
+    headers: { Authorization: "Bearer session-token" },
+    body: "{}"
+  }), env, {});
+
+  assert.equal(response.status, 402);
+  const payload = await response.json();
+  assert.equal(payload.code, "STREAM_CREDITS_REQUIRED");
+  assert.equal(payload.creditsRemaining, 0);
+  assert.equal(payload.creditState, "blocked");
+  assert.equal(cloudflareRequests, 0);
 });
 
 test("seller stream input explains verified Cloudflare token with blocked Stream account request", async t => {
@@ -1742,109 +1809,136 @@ test("NEXT AUCTION charges the winner once, creates fulfillment, and promotes th
     CLOUDFLARE_STREAM_CUSTOMER_CODE: "customer.example.test",
     DB: {
       prepare(sql) {
+        const first = async args => {
+          if (sql.includes("JOIN members m")) return member;
+          if (sql.includes("FROM breaker_profiles")) return { status: "active" };
+          if (sql.includes("SELECT id,title,status FROM breaker_stream_sessions")) {
+            return { id: showId, title: "Queue Test", status: "live" };
+          }
+          if (sql.includes("SELECT * FROM breaker_stream_sessions WHERE id=? AND member_id=?") ||
+              sql.includes("SELECT * FROM breaker_stream_sessions WHERE id=?")) {
+            return {
+              id: showId,
+              member_id: memberId,
+              title: "Queue Test",
+              status: "live",
+              started_at: new Date(Date.now() - 1000).toISOString(),
+              credit_metered_at: new Date().toISOString(),
+              credit_metered_units: 0,
+              credit_reconciled_units: 0,
+              viewer_count: 12
+            };
+          }
+          if (sql.includes("FROM seller_stream_subscriptions WHERE member_id=?")) {
+            return {
+              member_id: memberId,
+              included_credits: 25,
+              prepaid_credits_balance: 0,
+              stripe_subscription_status: "active",
+              stripe_current_period_end: "2099-01-01T00:00:00.000Z"
+            };
+          }
+          if (sql.includes("FROM seller_stream_usage_snapshots")) return null;
+          if (sql.includes("pending_live_credits")) return { pending_live_credits: 0 };
+          if (sql.includes("lot.member_id=? AND lot.status='live'")) {
+            return {
+              id: currentLotId,
+              session_id: showId,
+              member_id: memberId,
+              title: "Abyss Eye #1",
+              status: "live",
+              starting_bid_cents: 500,
+              current_bid_cents: 2500,
+              bid_increment_cents: 100,
+              winning_member_id: buyerId,
+              winning_display: "TopBidder"
+            };
+          }
+          if (sql.includes("lot.status='scheduled'")) {
+            scheduledQueryArgs = args;
+            return {
+              id: nextLotId,
+              session_id: showId,
+              member_id: memberId,
+              title: "Abyss Eye #2",
+              status: "scheduled",
+              starting_bid_cents: 500,
+              bid_increment_cents: 100
+            };
+          }
+          if (sql.includes("FROM breaker_auction_payments payment") && sql.includes("JOIN breaker_auction_lots lot")) {
+            return {
+              lot_id: currentLotId,
+              session_id: showId,
+              seller_member_id: memberId,
+              buyer_member_id: buyerId,
+              member_order_id: "66666666-6666-4666-8666-666666666666",
+              order_number: "CP-20260728-AUCTION",
+              amount_cents: 2500,
+              currency: "USD",
+              payment_status: paymentStatus,
+              title: "Abyss Eye #1",
+              description: "",
+              image_url: "",
+              item_condition: "Near mint",
+              sale_type: "singles",
+              seller_store_listing_id: "77777777-7777-4777-8777-777777777777",
+              shipping_address_json: JSON.stringify({ name: "Top Bidder", street1: "1 Main St", city: "Columbus", state: "OH", postalCode: "43004", country: "US" }),
+              attempted_at: "2026-07-28T10:00:00.000Z",
+              paid_at: paymentStatus === "paid" ? "2026-07-28T10:00:01.000Z" : null
+            };
+          }
+          if (sql.includes("FROM breaker_auction_payments payment")) {
+            return {
+              lot_id: currentLotId,
+              session_id: showId,
+              seller_member_id: memberId,
+              buyer_member_id: buyerId,
+              member_order_id: "66666666-6666-4666-8666-666666666666",
+              order_number: "CP-20260728-AUCTION",
+              amount_cents: 2500,
+              currency: "USD",
+              payment_status: paymentStatus,
+              attempted_at: "2026-07-28T10:00:00.000Z",
+              paid_at: paymentStatus === "paid" ? "2026-07-28T10:00:01.000Z" : null
+            };
+          }
+          if (sql.includes("stripe_customer_id,stripe_payment_method_id")) {
+            return {
+              id: buyerId,
+              email: "buyer@example.test",
+              first_name: "Top",
+              last_name: "Bidder",
+              buyer_username: "TopBidder",
+              phone: "+16145550100",
+              shipping_address_json: JSON.stringify({ name: "Top Bidder", street1: "1 Main St", city: "Columbus", state: "OH", postalCode: "43004", country: "US" }),
+              stripe_customer_id: "cus_auction",
+              stripe_payment_method_id: "pm_auction"
+            };
+          }
+          if (sql.includes("WHERE lot.id=? AND lot.member_id=?")) {
+            return {
+              id: nextLotId,
+              session_id: showId,
+              member_id: memberId,
+              title: "Abyss Eye #2",
+              status: "live",
+              starting_bid_cents: 500,
+              bid_increment_cents: 100,
+              viewer_count: 12,
+              cloudflare_live_input_uid: "stream-input-123"
+            };
+          }
+          if (sql.includes("SELECT COUNT(*) queued")) return { queued: 2 };
+          return null;
+        };
         return {
+          first: () => first([]),
           bind(...args) {
             return {
               sql,
               args,
-              first: async () => {
-                if (sql.includes("JOIN members m")) return member;
-                if (sql.includes("FROM breaker_profiles")) return { status: "active" };
-                if (sql.includes("SELECT id,title,status FROM breaker_stream_sessions")) {
-                  return { id: showId, title: "Queue Test", status: "live" };
-                }
-                if (sql.includes("lot.member_id=? AND lot.status='live'")) {
-                  return {
-                    id: currentLotId,
-                    session_id: showId,
-                    member_id: memberId,
-                    title: "Abyss Eye #1",
-                    status: "live",
-                    starting_bid_cents: 500,
-                    current_bid_cents: 2500,
-                    bid_increment_cents: 100,
-                    winning_member_id: buyerId,
-                    winning_display: "TopBidder"
-                  };
-                }
-                if (sql.includes("lot.status='scheduled'")) {
-                  scheduledQueryArgs = args;
-                  return {
-                    id: nextLotId,
-                    session_id: showId,
-                    member_id: memberId,
-                    title: "Abyss Eye #2",
-                    status: "scheduled",
-                    starting_bid_cents: 500,
-                    bid_increment_cents: 100
-                  };
-                }
-                if (sql.includes("FROM breaker_auction_payments payment") && sql.includes("JOIN breaker_auction_lots lot")) {
-                  return {
-                    lot_id: currentLotId,
-                    session_id: showId,
-                    seller_member_id: memberId,
-                    buyer_member_id: buyerId,
-                    member_order_id: "66666666-6666-4666-8666-666666666666",
-                    order_number: "CP-20260728-AUCTION",
-                    amount_cents: 2500,
-                    currency: "USD",
-                    payment_status: paymentStatus,
-                    title: "Abyss Eye #1",
-                    description: "",
-                    image_url: "",
-                    item_condition: "Near mint",
-                    sale_type: "singles",
-                    seller_store_listing_id: "77777777-7777-4777-8777-777777777777",
-                    shipping_address_json: JSON.stringify({ name: "Top Bidder", street1: "1 Main St", city: "Columbus", state: "OH", postalCode: "43004", country: "US" }),
-                    attempted_at: "2026-07-28T10:00:00.000Z",
-                    paid_at: paymentStatus === "paid" ? "2026-07-28T10:00:01.000Z" : null
-                  };
-                }
-                if (sql.includes("FROM breaker_auction_payments payment")) {
-                  return {
-                    lot_id: currentLotId,
-                    session_id: showId,
-                    seller_member_id: memberId,
-                    buyer_member_id: buyerId,
-                    member_order_id: "66666666-6666-4666-8666-666666666666",
-                    order_number: "CP-20260728-AUCTION",
-                    amount_cents: 2500,
-                    currency: "USD",
-                    payment_status: paymentStatus,
-                    attempted_at: "2026-07-28T10:00:00.000Z",
-                    paid_at: paymentStatus === "paid" ? "2026-07-28T10:00:01.000Z" : null
-                  };
-                }
-                if (sql.includes("stripe_customer_id,stripe_payment_method_id")) {
-                  return {
-                    id: buyerId,
-                    email: "buyer@example.test",
-                    first_name: "Top",
-                    last_name: "Bidder",
-                    buyer_username: "TopBidder",
-                    phone: "+16145550100",
-                    shipping_address_json: JSON.stringify({ name: "Top Bidder", street1: "1 Main St", city: "Columbus", state: "OH", postalCode: "43004", country: "US" }),
-                    stripe_customer_id: "cus_auction",
-                    stripe_payment_method_id: "pm_auction"
-                  };
-                }
-                if (sql.includes("WHERE lot.id=? AND lot.member_id=?")) {
-                  return {
-                    id: nextLotId,
-                    session_id: showId,
-                    member_id: memberId,
-                    title: "Abyss Eye #2",
-                    status: "live",
-                    starting_bid_cents: 500,
-                    bid_increment_cents: 100,
-                    viewer_count: 12,
-                    cloudflare_live_input_uid: "stream-input-123"
-                  };
-                }
-                if (sql.includes("SELECT COUNT(*) queued")) return { queued: 2 };
-                return null;
-              },
+              first: () => first(args),
               run: async () => ({ success: true, meta: { changes: 1 } })
             };
           }

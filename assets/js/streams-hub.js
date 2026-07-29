@@ -48,6 +48,10 @@
   let suppressAuctionNextClick = false;
   let liveShowsSellerUsername = "";
   let sellerLiveChat = null;
+  let sellerLiveCreditState = null;
+  let sellerLiveCreditRequest = null;
+  let streamCreditCountdownTimer = 0;
+  let streamCreditClockOffset = 0;
   const AUTO_NEXT_HOLD_MS = 3000;
   const HUD_INVENTORY_PAGE_SIZE = 10;
   const ALLOWED_AUCTION_DURATIONS = new Set([15, 30, 45, 60, 90, 120]);
@@ -92,7 +96,13 @@
       headers: { ...(multipart ? {} : { "Content-Type": "application/json" }), Accept: "application/json", ...(token() ? { Authorization: `Bearer ${token()}` } : {}), ...(options.headers || {}) }
     });
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || "The live service could not complete that request.");
+    if (!response.ok) {
+      const error = new Error(payload.error || "The live service could not complete that request.");
+      error.status = response.status;
+      error.payload = payload;
+      if (payload.code === "STREAM_CREDITS_REQUIRED") showStreamCreditGate(payload);
+      throw error;
+    }
     return payload;
   };
   const dateLabel = value => value ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "Schedule pending";
@@ -222,6 +232,111 @@
     const showId = $("[data-broadcast-show-select]")?.value || $("[data-seller-show-select]")?.value || "";
     return sellerShows.find(show => show.id === showId) || null;
   };
+
+  function stopStreamCreditCountdown() {
+    if (streamCreditCountdownTimer) window.clearInterval(streamCreditCountdownTimer);
+    streamCreditCountdownTimer = 0;
+  }
+
+  function hideStreamCreditGate() {
+    const modal = $("[data-stream-credit-gate-modal]");
+    if (!modal) return;
+    modal.hidden = true;
+    modal.setAttribute("aria-hidden", "true");
+    stopStreamCreditCountdown();
+  }
+
+  function updateStreamCreditCountdown() {
+    const value = $("[data-stream-credit-countdown-value]");
+    const shutdownAt = Date.parse(String(sellerLiveCreditState?.shutdownAt || ""));
+    if (!value || !Number.isFinite(shutdownAt)) return;
+    const remaining = Math.max(0, Math.ceil((shutdownAt - (Date.now() + streamCreditClockOffset)) / 1000));
+    value.textContent = `${String(Math.floor(remaining / 60)).padStart(2, "0")}:${String(remaining % 60).padStart(2, "0")}`;
+    if (remaining === 0 && !sellerLiveCreditRequest) {
+      const showId = sellerLiveCreditState?.showId || selectedSellerShow()?.id || "";
+      if (showId) loadSellerLiveCreditStatus(showId).catch(() => {});
+    }
+  }
+
+  function showStreamCreditGate(state = {}) {
+    const modal = $("[data-stream-credit-gate-modal]");
+    if (!modal) return;
+    sellerLiveCreditState = { ...(sellerLiveCreditState || {}), ...state };
+    if (state.serverNow) streamCreditClockOffset = Date.parse(state.serverNow) - Date.now();
+    const grace = state.creditState === "grace" && state.shutdownAt;
+    $("[data-stream-credit-gate-title]").textContent = grace ? "Purchase credits or end the stream" : "Purchase credits to go live";
+    $("[data-stream-credit-gate-copy]").textContent = grace
+      ? "Your Stream Credit balance reached 0.00. Purchase or redeem credits now, or Crack Packs will end this stream in 1 minute."
+      : "A positive Stream Credit balance is required before Cloudflare unlocks your OBS input.";
+    $("[data-stream-credit-countdown]").hidden = !grace;
+    $("[data-stream-credit-end-now]").hidden = !grace;
+    $("[data-stream-credit-gate-dismiss]").hidden = Boolean(grace);
+    const purchase = $("[data-stream-credit-purchase]");
+    if (purchase && state.purchaseUrl) purchase.href = state.purchaseUrl;
+    modal.hidden = false;
+    modal.setAttribute("aria-hidden", "false");
+    stopStreamCreditCountdown();
+    if (grace) {
+      updateStreamCreditCountdown();
+      streamCreditCountdownTimer = window.setInterval(updateStreamCreditCountdown, 1000);
+    } else {
+      $("[data-stream-credit-gate-dismiss]")?.focus();
+    }
+  }
+
+  function renderSellerLiveCreditState(state = null) {
+    const readout = $("[data-seller-live-credit-readout]");
+    const balance = $("[data-seller-live-credit-balance]");
+    const label = $("[data-seller-live-credit-state]");
+    if (!readout || !balance || !label) return;
+    const creditState = state?.creditState || "checking";
+    readout.dataset.state = creditState;
+    balance.textContent = state && Number.isFinite(Number(state.creditsRemaining)) ? Number(state.creditsRemaining).toFixed(2) : "--";
+    label.textContent = creditState === "live" ? "Broadcast unlocked"
+      : creditState === "grace" ? "Purchase credits now"
+        : creditState === "blocked" ? "Credits required"
+          : creditState === "ended" ? "Stream ended"
+            : creditState === "ready" ? "Ready to start" : "Checking balance";
+  }
+
+  function syncSellerLiveCreditState(state) {
+    sellerLiveCreditState = state || null;
+    if (state?.serverNow) streamCreditClockOffset = Date.parse(state.serverNow) - Date.now();
+    const show = sellerShows.find(item => item.id === state?.showId);
+    if (show && state.showStatus) show.status = state.showStatus;
+    renderSellerLiveCreditState(state);
+    renderBroadcastAuctionConsole(sellerShowLots, selectedSellerShow());
+    if (state?.creditState === "grace") {
+      if (autoNextActive) stopAutoNext("Auto-Next stopped because the Stream Credit balance reached 0.00.");
+      showStreamCreditGate(state);
+    } else if (state?.creditState === "blocked") {
+      showStreamCreditGate(state);
+    } else if (["live", "ready"].includes(state?.creditState)) {
+      hideStreamCreditGate();
+    } else if (state?.creditState === "ended") {
+      hideStreamCreditGate();
+      if (autoNextActive) stopAutoNext("Auto-Next stopped because the stream ended.");
+      setStatus("[data-broadcast-auction-status]", "Stream ended after the Stream Credit balance remained at 0.00 for one minute.", "error");
+      Promise.all([loadSellerShows(), loadShows()]).catch(() => {});
+    }
+  }
+
+  async function loadSellerLiveCreditStatus(showId) {
+    if (!showId || !sellerContextAuthorized) {
+      sellerLiveCreditState = null;
+      renderSellerLiveCreditState(null);
+      return null;
+    }
+    const pending = api(`/seller/shows/${encodeURIComponent(showId)}/live-status`);
+    sellerLiveCreditRequest = pending;
+    try {
+      const state = await pending;
+      if (($("[data-broadcast-show-select]")?.value || "") === showId) syncSellerLiveCreditState(state);
+      return state;
+    } finally {
+      if (sellerLiveCreditRequest === pending) sellerLiveCreditRequest = null;
+    }
+  }
   const selectedShowStoreListing = () => {
     const listingId = $("[data-show-store-listing]")?.value || "";
     return sellerStoreListings.find(item => item.id === listingId) || null;
@@ -684,7 +799,7 @@
     updateSellerSocialComposer();
     renderShowStoreInventoryOptions();
     renderHudInventoryAssignment();
-    loadSellerLots(selectedId).catch(error => {
+    Promise.all([loadSellerLots(selectedId), loadSellerLiveCreditStatus(selectedId)]).catch(error => {
       setStatus("[data-seller-lot-status]", error.message, "error");
       setStatus("[data-broadcast-auction-status]", error.message, "error");
     });
@@ -714,7 +829,7 @@
       renderHudInventoryAssignment();
     }
     sellerLiveChat?.refresh({ force: true });
-    return loadSellerLots(showId);
+    return Promise.all([loadSellerLots(showId), loadSellerLiveCreditStatus(showId)]);
   }
 
   function purchaseStatusLabel(status) {
@@ -861,16 +976,20 @@
     const liveState = $("[data-broadcast-live-state]");
     const queueCount = $("[data-broadcast-queue-count]");
     const auctionButton = $("[data-auction-off]");
+    const startButton = $("[data-broadcast-start-show]");
     const endButton = $("[data-broadcast-end-show]");
     const current = lots.find(lot => lot.status === "live") || null;
     renderSellerVideoAuctionHud(current);
     if (!currentHost || !list || !liveState || !queueCount || !auctionButton || !endButton) return;
     const activeShow = show && ["open", "live"].includes(String(show.status || ""));
+    const liveShow = show && String(show.status || "") === "live";
+    const creditState = sellerLiveCreditState?.showId === show?.id ? sellerLiveCreditState.creditState : "";
+    const creditBlocked = ["blocked", "grace", "ended"].includes(creditState);
     const queued = lots.filter(lot => lot.status === "scheduled").sort(auctionQueueOrder);
     const itemsForSale = [...(current ? [current] : []), ...queued];
     const next = queued[0] || null;
     const durationControl = $("[data-auto-next-duration]");
-    liveState.textContent = current ? "LIVE" : (activeShow ? "Ready" : "Waiting");
+    liveState.textContent = current || liveShow ? "LIVE" : (activeShow ? "Ready" : "Waiting");
     queueCount.textContent = `${queued.length} queued`;
     if (durationControl && current) {
       const duration = Number(current.auction_duration_seconds || 30);
@@ -915,12 +1034,18 @@
         </article>
       `;
     }).join("") : `<div class="stream-empty">${activeShow ? "No items are queued for this show." : "Choose an active show to load its sale items."}</div>`;
-    auctionButton.disabled = auctionAdvancePending || !activeShow || !next;
+    auctionButton.disabled = auctionAdvancePending || !activeShow || !next || creditBlocked;
     auctionButton.setAttribute("aria-label", next
       ? `${current ? "Finish the current auction and send" : "Send"} ${next.title} to the live auction`
       : "No queued item is available for the live auction");
     endButton.disabled = !activeShow;
     endButton.dataset.broadcastEndShow = activeShow ? show.id : "";
+    if (startButton) {
+      startButton.disabled = !activeShow || liveShow || creditBlocked;
+      startButton.dataset.broadcastStartShow = activeShow ? show.id : "";
+      startButton.querySelector("span").textContent = liveShow ? "STREAM LIVE" : creditBlocked ? "CREDITS REQUIRED" : "START STREAM";
+      startButton.querySelector("small").textContent = liveShow ? "OBS input is unlocked" : creditBlocked ? "Purchase or redeem Stream Credits" : "Unlock OBS after the credit check";
+    }
     syncAutoNextControls();
   }
 
@@ -2248,6 +2373,29 @@
       button.disabled = false;
     }
   });
+  $("[data-broadcast-start-show]")?.addEventListener("click", async event => {
+    const button = event.currentTarget;
+    const show = selectedSellerShow();
+    if (!show) return setStatus("[data-broadcast-auction-status]", "Create or choose a show first.", "error");
+    button.disabled = true;
+    setStatus("[data-broadcast-auction-status]", "Checking Stream Credits and unlocking the OBS input...");
+    try {
+      const state = await api(`/seller/shows/${encodeURIComponent(show.id)}/start`, { method: "POST", body: "{}" });
+      syncSellerLiveCreditState(state);
+      await Promise.all([loadSellerShows(), loadSellerLots(show.id), loadOrCreateStreamInput(), loadShows()]);
+      setStatus("[data-broadcast-auction-status]", `Stream started with ${Number(state.creditsRemaining || 0).toFixed(2)} credits remaining.`, "success");
+    } catch (error) {
+      setStatus("[data-broadcast-auction-status]", error.message, "error");
+    } finally {
+      renderBroadcastAuctionConsole(sellerShowLots, selectedSellerShow());
+    }
+  });
+  $("[data-stream-credit-gate-dismiss]")?.addEventListener("click", hideStreamCreditGate);
+  $("[data-stream-credit-end-now]")?.addEventListener("click", event => {
+    const showId = sellerLiveCreditState?.showId || selectedSellerShow()?.id || "";
+    hideStreamCreditGate();
+    if (showId) openCloseShowModal(showId, event.currentTarget);
+  });
   const auctionNextButton = $("[data-auction-next]");
   const startAuctionHold = event => {
     if (!auctionNextButton || auctionNextButton.disabled || auctionAdvancePending || autoNextActive) return;
@@ -2491,6 +2639,9 @@
       if (autoNextActive) stopAutoNext("Auto-Next stopped because the show is ending.");
       const result = await api(`/seller/shows/${encodeURIComponent(showId)}/end`, { method: "POST", body: "{}" });
       showSellerPurchasedToast(result.closedLot);
+      sellerLiveCreditState = null;
+      hideStreamCreditGate();
+      renderSellerLiveCreditState(null);
       closeCloseShowModal({ restoreFocus: false });
       await Promise.all([loadSellerShows(), loadShows()]);
       const synced = result.streamCreditSync?.syncedVideos ? ` ${Number(result.streamCreditSync.syncedVideos)} recording source(s) synced.` : " Usage will also refresh on the next hourly cycle.";
@@ -2743,7 +2894,11 @@
   loadShows();
   if (viewerOnly) loadLiveShowsSellerContext();
   const showsRefreshTimer = window.setInterval(() => {
-    if (!document.hidden) loadShows();
+    if (!document.hidden) {
+      loadShows();
+      const showId = $("[data-broadcast-show-select]")?.value || "";
+      if (!viewerOnly && sellerContextAuthorized && showId && !sellerLiveCreditRequest) loadSellerLiveCreditStatus(showId).catch(() => {});
+    }
   }, 5000);
   const sellerLotsRefreshTimer = window.setInterval(() => {
     const showId = $("[data-broadcast-show-select]")?.value || "";
@@ -2761,13 +2916,17 @@
     if (!document.hidden) {
       loadShows();
       const showId = $("[data-broadcast-show-select]")?.value || "";
-      if (sellerContextAuthorized && showId && !sellerLotsRefreshPromise) loadSellerLots(showId).catch(() => {});
+      if (sellerContextAuthorized && showId) {
+        if (!sellerLotsRefreshPromise) loadSellerLots(showId).catch(() => {});
+        if (!sellerLiveCreditRequest) loadSellerLiveCreditStatus(showId).catch(() => {});
+      }
     }
   });
   window.addEventListener("pagehide", () => {
     window.clearInterval(showsRefreshTimer);
     window.clearInterval(sellerLotsRefreshTimer);
     window.clearTimeout(purchaseToastTimer);
+    stopStreamCreditCountdown();
     sellerLiveChat?.stop();
     stopAutoNext();
   }, { once: true });

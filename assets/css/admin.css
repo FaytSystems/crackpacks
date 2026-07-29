@@ -166,3 +166,10 @@
 .master-dashboard-nav small {
   display: none;
 }
+
+/* Stream Credit code generator */
+.credit-code-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px;padding:15px;border:1px solid rgba(56,232,255,.22);border-radius:8px;background:rgba(56,232,255,.035)}
+.credit-code-fields>label,.credit-code-fields .campaign-product-field{min-width:0}.credit-code-fields select,.credit-code-fields input{width:100%;min-height:48px;padding:0 13px;border:1px solid rgba(255,255,255,.2);border-radius:8px;color:#fff;background:#080b24;font:inherit;color-scheme:dark}
+.credit-code-fields input:focus,.credit-code-fields select:focus{outline:2px solid var(--cyan);outline-offset:2px}.credit-code-generated{margin-top:18px}.credit-code-output{display:block;width:min(100%,560px);margin:14px 0;padding:16px;border:1px solid rgba(248,255,70,.48);border-radius:8px;color:var(--electric);background:#080b24;font-size:clamp(1rem,3vw,1.5rem);font-weight:1000;letter-spacing:0;overflow-wrap:anywhere}
+.credit-code-library{margin-top:22px;padding-top:20px;border-top:1px solid rgba(255,255,255,.11)}.credit-code-list{display:grid;gap:10px;margin-top:13px}.credit-code-card{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:16px;padding:15px;border:1px solid rgba(56,232,255,.2);border-radius:8px;background:rgba(8,11,36,.72)}.credit-code-card h4,.credit-code-card p{margin:0}.credit-code-card p{margin-top:5px;color:#e8eaff;font-size:.82rem}.credit-code-card small{display:block;margin-top:4px;color:var(--muted)}.credit-code-card>div:last-child{display:flex;align-items:center;justify-content:flex-end;gap:8px}.credit-code-state{padding:6px 9px;border-radius:7px;color:#07150f;background:var(--mint);font-size:.68rem;font-weight:1000}.credit-code-state.off,.credit-code-state.expired{color:#fff;background:#8d2941}.credit-code-state.full{color:#211707;background:var(--gold)}
+@media(max-width:700px){.credit-code-fields,.credit-code-card{grid-template-columns:1fr}.credit-code-card>div:last-child{justify-content:flex-start}.credit-code-card .btn{flex:1}}

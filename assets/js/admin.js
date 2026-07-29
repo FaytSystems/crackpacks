@@ -27,6 +27,10 @@
   let campaignModalLastFocus = null;
   let campaignClockOffset = 0;
   let campaignListState = [];
+  let generatedCreditCode = null;
+  let streamCreditCodes = [];
+  let selectedCreditTarget = null;
+  let creditMemberSearchTimer = null;
   let legacyClaimsState = [];
   let legacySummaryState = { total: 0, issued: 0, requested: 0, redeemed: 0, expired: 0 };
   let emailAudience = "";
@@ -66,6 +70,7 @@
       button.setAttribute("aria-current", active ? "page" : "false");
     });
     if (section === "signups") refreshCampaigns().catch(error => showStatus(error.message, "error"));
+    if (section === "create_code") refreshStreamCreditCodes().catch(error => showStatus(error.message, "error"));
     if (section === "redeemed") Promise.all([refreshDashboard(), refreshCampaigns(), refreshReferralCredits()]).catch(error => showStatus(error.message, "error"));
     if (section === "inventory") refreshInventory().catch(error => setInventoryStatus(error.message, "error"));
     if (section === "tracking") Promise.all([searchTrackingMembers(), refreshAdminOrders()]).catch(error => setTrackingStatus(error.message, "error"));
@@ -989,6 +994,25 @@
     const shouldOpen = !$("[data-campaign-modal]").hidden && !$("[data-campaign-product-field]").hidden && document.activeElement === input;
     renderCampaignInventoryOptions({ open: shouldOpen });
   }
+  function syncCreditDistributionFields() {
+    const isCredit = $("[data-campaign-reward-type]").value === "stream_credits";
+    const distribution = $("[data-credit-distribution]").value;
+    const memberField = $("[data-credit-member-field]");
+    const emailField = $("[data-credit-email-field]");
+    const memberSearch = $("[data-credit-member-search]");
+    const emailInput = emailField.querySelector("input");
+    const maxField = $("[data-campaign-max-field]");
+    const maxInput = maxField.querySelector("input");
+    memberField.hidden = !isCredit || distribution !== "individual";
+    emailField.hidden = !isCredit || distribution !== "email";
+    memberSearch.required = isCredit && distribution === "individual";
+    emailInput.required = isCredit && distribution === "email";
+    maxField.hidden = isCredit && distribution !== "limited";
+    maxInput.disabled = isCredit && distribution !== "limited";
+    if (isCredit && distribution !== "limited") maxInput.value = "1";
+    if (isCredit && distribution === "limited" && Number(maxInput.value || 0) <= 1) maxInput.value = "25";
+  }
+
   function syncCampaignFields() {
     const type = $("[data-campaign-reward-type]").value;
     const percentField = $("[data-campaign-percent-field]");
@@ -998,6 +1022,7 @@
     const packInput = packField.querySelector("input");
     const needsPacks = type === "pack_draft";
     const needsProduct = type === "product";
+    const isCredit = type === "stream_credits";
     $("[data-campaign-single-help]").hidden = type !== "free_single";
     percentField.hidden = type !== "percent";
     percentInput.required = type === "percent";
@@ -1005,6 +1030,19 @@
     packInput.required = needsPacks;
     productField.hidden = !needsProduct;
     $("[data-campaign-inventory-search]").required = needsProduct;
+    $("[data-credit-code-fields]").hidden = !isCredit;
+    $("[data-credit-code-fields] input[name='creditQuantity']").required = isCredit;
+    $("[data-campaign-modal-title]").textContent = isCredit ? "Create a Stream Credit code" : "Create a discount campaign";
+    $("[data-campaign-modal-copy]").textContent = isCredit
+      ? "Grant a selected number of promotional Stream Credits to a protected recipient or limited audience."
+      : "Each verified member can claim only within the campaign and weekly reward rules.";
+    $("[data-campaign-title-label]").textContent = isCredit ? "Credit code title" : "Campaign title";
+    const note = $("[data-campaign-generator-note]");
+    note.querySelector("strong").textContent = isCredit ? "SECURE CREDIT CODE" : "QR INCLUDED";
+    note.querySelector("span").textContent = isCredit
+      ? "The raw code is shown once. Only its secure hash is stored, and each account can redeem it once."
+      : "The campaign link, scannable QR, branded social graphic, and sharing controls are generated together.";
+    $("[data-campaign-submit]").textContent = isCredit ? "Generate Credit Code" : "Generate Discount + QR";
     if (!needsProduct) {
       closeCampaignInventoryOptions();
       if ($("[data-campaign-inventory-id]").value) {
@@ -1012,22 +1050,25 @@
         clearCampaignInventorySelection();
       }
     }
-    if (type === "pack_draft") {
+    if (needsPacks) {
       const maxInput = $("[data-campaign-form] input[name='maxRedemptions']");
       if (Number(maxInput.value) > Number(packInput.value)) maxInput.value = packInput.value;
+    }
+    const titleInput = $("[data-campaign-form] input[name='title']");
+    if (!titleInput.value) {
+      titleInput.placeholder = type === "free_single"
+        ? "First Show Holographic Singles"
+        : needsProduct
+          ? "Featured Product Giveaway"
+          : isCredit
+            ? "Seller Stream Credit Grant"
+            : "Friday Night Rip Bonus";
     }
     if (type === "free_single") {
       const maxInput = $("[data-campaign-form] input[name='maxRedemptions']");
       if (!maxInput.value || Number(maxInput.value) === 25) maxInput.value = "50";
-      const titleInput = $("[data-campaign-form] input[name='title']");
-      if (!titleInput.value) titleInput.placeholder = "First Show Holographic Singles";
-    } else if (type === "product") {
-      const titleInput = $("[data-campaign-form] input[name='title']");
-      if (!titleInput.value) titleInput.placeholder = "Featured Product Giveaway";
-    } else {
-      const titleInput = $("[data-campaign-form] input[name='title']");
-      if (!titleInput.value) titleInput.placeholder = "Friday Night Rip Bonus";
     }
+    syncCreditDistributionFields();
   }
   function syncCampaignExpiryUnit({ convert = false } = {}) {
     const unitInput = $("[data-campaign-expiry-unit]");
@@ -1038,7 +1079,8 @@
     let value = Number(valueInput.value);
     if (convert && Number.isFinite(value) && previousUnit !== unit && previousUnit !== "indefinite" && unit !== "indefinite") value = unit === "days" ? value / 24 : value * 24;
     const min = 1;
-    const max = unit === "days" ? 7 : 168;
+    const isCredit = $("[data-campaign-reward-type]").value === "stream_credits";
+    const max = unit === "days" ? (isCredit ? 365 : 7) : (isCredit ? 8760 : 168);
     valueInput.disabled = unit === "indefinite";
     valueInput.min = String(min);
     valueInput.max = String(max);
@@ -1046,6 +1088,11 @@
     if (unit !== "indefinite" && Number.isFinite(value)) valueInput.value = String(Math.min(max, Math.max(min, Number(value.toFixed(3)))));
     help.textContent = unit === "indefinite" ? "No time expiration. The QR remains active until its claim limit is reached." : unit === "days" ? "Enter 1–7 days; decimals are allowed to 0.001 (for example, 3.05)." : "Enter 1–168 hours.";
     unitInput.dataset.previousUnit = unit;
+    if (isCredit) {
+      help.textContent = unit === "indefinite"
+        ? "No time expiration. The code remains active until its redemption limit is reached or it is turned off."
+        : unit === "days" ? "Enter 1-365 days." : "Enter 1-8760 hours.";
+    }
   }
   function openCampaignModal() {
     campaignModalLastFocus = document.activeElement;
@@ -1053,13 +1100,159 @@
     setCampaignFormStatus("");
     syncCampaignFields();
     syncCampaignExpiryUnit();
-    refreshCampaignInventory("").catch(error => setCampaignFormStatus(error.message, "error"));
+    if ($("[data-campaign-reward-type]").value === "product") refreshCampaignInventory("").catch(error => setCampaignFormStatus(error.message, "error"));
     $("[data-campaign-form] input[name='title']").focus();
   }
   function closeCampaignModal() {
     closeCampaignInventoryOptions();
+    $("[data-credit-member-options]").hidden = true;
     $("[data-campaign-modal]").hidden = true;
     campaignModalLastFocus?.focus?.();
+  }
+
+  function clearCreditMemberSelection(message = "Choose the account allowed to redeem this code.") {
+    selectedCreditTarget = null;
+    $("[data-credit-member-id]").value = "";
+    $("[data-credit-member-selection]").textContent = message;
+  }
+
+  function selectCreditMember(member) {
+    selectedCreditTarget = member;
+    $("[data-credit-member-id]").value = member.id;
+    $("[data-credit-member-search]").value = member.userId || member.sellerId || member.email;
+    $("[data-credit-member-selection]").textContent = [
+      member.userId ? `User ID: ${member.userId}` : "",
+      member.sellerId ? `Seller ID: ${member.sellerId}` : "",
+      member.email
+    ].filter(Boolean).join(" | ");
+    $("[data-credit-member-options]").hidden = true;
+    $("[data-credit-member-search]").setAttribute("aria-expanded", "false");
+  }
+
+  async function searchCreditMembers() {
+    if (!memberToken || !adminToken || $("[data-credit-distribution]").value !== "individual") return;
+    const query = $("[data-credit-member-search]").value.trim();
+    const container = $("[data-credit-member-options]");
+    container.replaceChildren();
+    const data = await request(`/admin/members?q=${encodeURIComponent(query)}&includeOwner=1`);
+    const members = Array.isArray(data.members) ? data.members.slice(0, 12) : [];
+    if (!members.length) {
+      const empty = document.createElement("div");
+      empty.className = "inventory-combobox-empty";
+      empty.textContent = "No verified accounts match that search.";
+      container.append(empty);
+    } else {
+      members.forEach(member => {
+        const option = document.createElement("button");
+        option.type = "button";
+        option.setAttribute("role", "option");
+        option.setAttribute("aria-selected", "false");
+        const identity = document.createElement("span");
+        const name = document.createElement("strong");
+        name.textContent = `${member.firstName || ""} ${member.lastName || ""}`.trim() || member.email;
+        const detail = document.createElement("small");
+        detail.textContent = [member.userId ? `User ID: ${member.userId}` : "", member.sellerId ? `Seller ID: ${member.sellerId}` : "", member.email].filter(Boolean).join(" | ");
+        identity.append(name, detail);
+        option.append(identity);
+        option.addEventListener("pointerdown", event => event.preventDefault());
+        option.addEventListener("click", () => selectCreditMember(member));
+        container.append(option);
+      });
+    }
+    container.hidden = false;
+    $("[data-credit-member-search]").setAttribute("aria-expanded", "true");
+  }
+
+  const creditCodeIsActive = code => Boolean(code?.isActive) && Date.parse(code.expiresAt || 0) > Date.now() && Number(code.redemptionCount || 0) < Number(code.maxRedemptions || 0);
+
+  function updateGeneratedCreditCode() {
+    if (!generatedCreditCode) return;
+    const active = creditCodeIsActive(generatedCreditCode);
+    const panel = $("[data-credit-code-generated]");
+    panel.classList.toggle("is-qr-disabled", !active);
+    panel.querySelector(".campaign-live-chip").textContent = active ? "CREDIT CODE READY" : "CREDIT CODE OFF";
+    const toggle = $("[data-credit-code-generated-toggle]");
+    toggle.textContent = generatedCreditCode.isActive ? "Turn Off Code" : "Turn On Code";
+    toggle.classList.toggle("btn-danger", Boolean(generatedCreditCode.isActive));
+    toggle.classList.toggle("btn-primary", !generatedCreditCode.isActive);
+    $("[data-credit-code-copy]").disabled = !active;
+    $("[data-credit-code-copy-link]").disabled = !active;
+  }
+
+  function renderGeneratedCreditCode(code) {
+    generatedCreditCode = code;
+    $("[data-credit-code-generated-title]").textContent = code.title;
+    $("[data-credit-code-generated-description]").textContent = `${Number(code.creditQuantity || 0).toFixed(2)} Stream Credits | ${code.distributionType === "limited" ? `${code.maxRedemptions} redemptions` : code.targetLabel || code.targetEmail}`;
+    $("[data-credit-code-generated-value]").textContent = code.code;
+    $("[data-credit-code-generated-email]").textContent = code.distributionType === "email"
+      ? (code.emailSent ? `Sent to ${code.targetEmail}.` : `Code created, but email delivery to ${code.targetEmail} failed. Copy the code now.`)
+      : `Expires ${new Date(code.expiresAt).toLocaleString()}.`;
+    show("[data-campaign-generated]", false);
+    show("[data-credit-code-generated]", true);
+    updateGeneratedCreditCode();
+  }
+
+  async function toggleStreamCreditCode(code, button) {
+    const active = Boolean(code.isActive);
+    if (active && !confirm(`Turn off "${code.title}"? It will stop accepting redemptions immediately.`)) return;
+    button.disabled = true;
+    try {
+      await request(`/admin/stream-credit-codes/${encodeURIComponent(code.id)}/status`, { method: "POST", body: JSON.stringify({ active: !active }) });
+      code.isActive = !active;
+      if (generatedCreditCode?.id === code.id) {
+        generatedCreditCode.isActive = !active;
+        updateGeneratedCreditCode();
+      }
+      await refreshStreamCreditCodes();
+      showStatus(`Stream Credit code turned ${active ? "off" : "on"}.`, "success");
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  function renderStreamCreditCodes(codes) {
+    streamCreditCodes = codes;
+    const container = $("[data-credit-code-list]");
+    container.replaceChildren();
+    if (!codes.length) {
+      const empty = document.createElement("div");
+      empty.className = "campaign-empty";
+      empty.textContent = "No Stream Credit codes have been generated yet.";
+      container.append(empty);
+      return;
+    }
+    codes.forEach(code => {
+      const card = document.createElement("article");
+      card.className = "credit-code-card";
+      const copy = document.createElement("div");
+      const title = document.createElement("h4");
+      title.textContent = code.title;
+      const detail = document.createElement("p");
+      detail.textContent = `${Number(code.creditQuantity || 0).toFixed(2)} credits | ${code.codeHint} | ${code.redemptionCount}/${code.maxRedemptions} redeemed`;
+      const target = document.createElement("small");
+      target.textContent = code.distributionType === "limited" ? "Limited audience code" : `Target: ${code.targetLabel || code.targetEmail}`;
+      copy.append(title, detail, target);
+      const actions = document.createElement("div");
+      const state = document.createElement("span");
+      const expired = Date.parse(code.expiresAt || 0) <= Date.now();
+      const full = Number(code.redemptionCount || 0) >= Number(code.maxRedemptions || 0);
+      state.className = `credit-code-state ${!code.isActive ? "off" : expired ? "expired" : full ? "full" : "active"}`;
+      state.textContent = !code.isActive ? "OFF" : expired ? "EXPIRED" : full ? "FULL" : "ACTIVE";
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = `btn ${code.isActive ? "btn-danger" : "btn-primary"} btn-small`;
+      toggle.textContent = code.isActive ? "Turn Off" : "Turn On";
+      toggle.addEventListener("click", () => toggleStreamCreditCode(code, toggle).catch(error => showStatus(error.message, "error")));
+      actions.append(state, toggle);
+      card.append(copy, actions);
+      container.append(card);
+    });
+  }
+
+  async function refreshStreamCreditCodes() {
+    if (!memberToken || !adminToken) return;
+    const data = await request("/admin/stream-credit-codes");
+    renderStreamCreditCodes(Array.isArray(data.codes) ? data.codes : []);
   }
   async function loadCampaignQr(campaign) {
     const campaignId = String(pick(campaign, "id") || "");
@@ -2204,8 +2397,20 @@
   document.querySelectorAll("[data-campaign-close]").forEach(button => button.addEventListener("click", closeCampaignModal));
   $("[data-campaign-reward-type]").addEventListener("change", () => {
     syncCampaignFields();
+    syncCampaignExpiryUnit();
     if ($("[data-campaign-reward-type]").value === "product") refreshCampaignInventory("").catch(error => setCampaignFormStatus(error.message, "error"));
   });
+  $("[data-credit-distribution]").addEventListener("change", () => {
+    syncCreditDistributionFields();
+    $("[data-credit-member-options]").hidden = true;
+  });
+  $("[data-credit-member-search]").addEventListener("input", () => {
+    clearCreditMemberSelection("Select a matching account result; typed text alone cannot target an account.");
+    clearTimeout(creditMemberSearchTimer);
+    creditMemberSearchTimer = setTimeout(() => searchCreditMembers().catch(error => setCampaignFormStatus(error.message, "error")), 180);
+  });
+  $("[data-credit-member-search]").addEventListener("focus", () => searchCreditMembers().catch(error => setCampaignFormStatus(error.message, "error")));
+  $("[data-credit-member-search]").addEventListener("blur", () => setTimeout(() => { $("[data-credit-member-options]").hidden = true; }, 140));
   $("[data-campaign-inventory-search]").addEventListener("focus", () => refreshCampaignInventory().catch(error => setCampaignFormStatus(error.message, "error")));
   $("[data-campaign-inventory-search]").addEventListener("input", event => {
     clearCampaignInventorySelection("Select a matching inventory result; typed text alone cannot attach a product.");
@@ -2237,8 +2442,10 @@
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
     const rewardType = String(form.get("rewardType") || "");
+    const isCredit = rewardType === "stream_credits";
     const packCount = Number(form.get("packCount") || 0);
-    const maxRedemptions = Number(form.get("maxRedemptions") || 0);
+    const distributionType = String(form.get("distributionType") || "limited");
+    const maxRedemptions = isCredit && distributionType !== "limited" ? 1 : Number(form.get("maxRedemptions") || 0);
     const expiresInValue = Number(form.get("expiresInValue"));
     const expiresInUnit = String(form.get("expiresInUnit") || "hours");
     const neverExpires = expiresInUnit === "indefinite";
@@ -2249,14 +2456,22 @@
       $("[data-campaign-pack-field] input").focus();
       return;
     }
-    if (!neverExpires && (!Number.isFinite(expiresInHours) || expiresInHours < 1 || expiresInHours > 168 || (expiresInUnit === "days" && (expiresInValue < 1 || expiresInValue > 7)))) {
+    const expirationLimit = isCredit ? 8760 : 168;
+    const dayLimit = isCredit ? 365 : 7;
+    if (!neverExpires && (!Number.isFinite(expiresInHours) || expiresInHours < 1 || expiresInHours > expirationLimit || (expiresInUnit === "days" && (expiresInValue < 1 || expiresInValue > dayLimit)))) {
       setCampaignFormStatus("Time to Expire must be 1–168 hours or 1–7 days.", "error");
+      if (isCredit) setCampaignFormStatus("Time to Expire must be 1-8760 hours or 1-365 days.", "error");
       $("[data-campaign-form] input[name='expiresInValue']").focus();
       return;
     }
     if (rewardType === "product" && !inventoryItemId) {
       setCampaignFormStatus("Choose a product from the inventory search results before generating this campaign.", "error");
       $("[data-campaign-inventory-search]").focus();
+      return;
+    }
+    if (isCredit && distributionType === "individual" && !String(form.get("targetMemberId") || "")) {
+      setCampaignFormStatus("Choose an existing account from the account search results.", "error");
+      $("[data-credit-member-search]").focus();
       return;
     }
     const payload = {
@@ -2271,6 +2486,33 @@
     if (rewardType === "product") payload.inventoryItemId = inventoryItemId;
     const submit = $("[data-campaign-submit]"); submit.disabled = true; submit.textContent = "Generating..."; setCampaignFormStatus("");
     try {
+      if (isCredit) {
+        const creditPayload = {
+          title: payload.title,
+          creditQuantity: Number(form.get("creditQuantity")),
+          distributionType,
+          targetMemberId: String(form.get("targetMemberId") || ""),
+          targetEmail: String(form.get("targetEmail") || "").trim(),
+          maxRedemptions,
+          neverExpires
+        };
+        if (!neverExpires) creditPayload.expiresInHours = Number(expiresInHours.toFixed(6));
+        const data = await request("/admin/stream-credit-codes", { method: "POST", body: JSON.stringify(creditPayload) });
+        if (!data.code) throw new Error("The Stream Credit code response was incomplete.");
+        formElement.reset();
+        clearCampaignInventorySelection();
+        clearCreditMemberSelection();
+        $("[data-credit-member-search]").value = "";
+        syncCampaignFields();
+        syncCampaignExpiryUnit();
+        closeCampaignModal();
+        renderGeneratedCreditCode(data.code);
+        await refreshStreamCreditCodes();
+        showStatus(data.code.distributionType === "email" && !data.code.emailSent
+          ? "Credit code created, but its email could not be delivered. Copy the one-time code now."
+          : "Stream Credit code created and ready to redeem.", data.code.distributionType === "email" && !data.code.emailSent ? "error" : "success");
+        return;
+      }
       const data = await request("/admin/campaigns", { method: "POST", body: JSON.stringify(payload) });
       if (data.serverNow) campaignClockOffset = Date.parse(data.serverNow) - Date.now();
       if (!data.campaign) throw new Error("The campaign response was incomplete.");
@@ -2283,12 +2525,24 @@
       const message = campaignWeeklyError(error);
       setCampaignFormStatus(message, "error");
       showStatus(message, "error");
-    } finally { submit.disabled = false; submit.textContent = "Generate Discount + QR"; }
+    } finally { submit.disabled = false; submit.textContent = $("[data-campaign-reward-type]").value === "stream_credits" ? "Generate Credit Code" : "Generate Discount + QR"; }
   });
   $("[data-campaign-copy]").addEventListener("click", () => copyGeneratedCampaign().catch(error => showStatus(error.message, "error")));
   $("[data-campaign-download]").addEventListener("click", event => downloadCampaignQr(event.currentTarget).catch(error => showStatus(error.message, "error")));
   $("[data-campaign-share]").addEventListener("click", () => generatedCampaign ? openCampaignShare(generatedCampaign).catch(error => showStatus(error.message, "error")) : showStatus("Generate a campaign before sharing it.", "error"));
   $("[data-campaign-generated-toggle]").addEventListener("click", event => generatedCampaign ? toggleCampaign(generatedCampaign, event.currentTarget).catch(error => showStatus(error.message, "error")) : showStatus("Generate a campaign before changing its QR status.", "error"));
+  $("[data-credit-code-copy]").addEventListener("click", () => {
+    if (!generatedCreditCode?.code) return showStatus("Generate a Stream Credit code first.", "error");
+    copyCampaignText(generatedCreditCode.code).then(() => showStatus("Stream Credit code copied.", "success")).catch(error => showStatus(error.message, "error"));
+  });
+  $("[data-credit-code-copy-link]").addEventListener("click", () => {
+    if (!generatedCreditCode?.redemptionUrl) return showStatus("Generate a Stream Credit code first.", "error");
+    copyCampaignText(generatedCreditCode.redemptionUrl).then(() => showStatus("Credit redemption link copied.", "success")).catch(error => showStatus(error.message, "error"));
+  });
+  $("[data-credit-code-generated-toggle]").addEventListener("click", event => generatedCreditCode
+    ? toggleStreamCreditCode(generatedCreditCode, event.currentTarget).catch(error => showStatus(error.message, "error"))
+    : showStatus("Generate a Stream Credit code before changing its status.", "error"));
+  $("[data-credit-code-refresh]").addEventListener("click", () => refreshStreamCreditCodes().catch(error => showStatus(error.message, "error")));
   $("[data-campaign-refresh]").addEventListener("click", () => refreshCampaigns().catch(error => showStatus(error.message, "error")));
   $("[data-campaign-search]").addEventListener("input", event => renderCampaigns(campaignListState, event.currentTarget.value));
   ["[data-campaign-type-filter]", "[data-campaign-date-from]", "[data-campaign-date-to]"].forEach(selector => $(selector).addEventListener("change", () => renderCampaigns(campaignListState, $("[data-campaign-search]").value)));

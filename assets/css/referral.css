@@ -728,3 +728,6 @@
   .account-subnav-pill,.account-subnav-link{flex:0 0 auto}
   .identity-status-bubble{min-height:132px}
 }
+
+.stream-credit-code-redeem{display:grid;grid-template-columns:minmax(220px,.75fr) minmax(320px,1.25fr);gap:20px;align-items:center;margin:18px 0;padding:18px;border:1px solid rgba(56,232,255,.3);border-radius:8px;background:linear-gradient(115deg,rgba(56,232,255,.06),rgba(255,78,219,.05))}.stream-credit-code-redeem h4,.stream-credit-code-redeem p{margin:0}.stream-credit-code-redeem h4{margin-top:4px}.stream-credit-code-redeem p:last-child{margin-top:6px;color:var(--muted);font-size:.82rem}.stream-credit-code-redeem form{display:grid;gap:8px}.stream-credit-code-redeem label{color:#fff;font-size:.8rem;font-weight:900}.stream-credit-code-redeem form>div:first-of-type{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}.stream-credit-code-redeem input{width:100%;min-height:48px;padding:0 13px;border:1px solid rgba(255,255,255,.22);border-radius:8px;color:#fff;background:#080b24;font:inherit;text-transform:uppercase;letter-spacing:0}.stream-credit-code-redeem input:focus{outline:2px solid var(--cyan);outline-offset:2px}
+@media(max-width:760px){.stream-credit-code-redeem,.stream-credit-code-redeem form>div:first-of-type{grid-template-columns:1fr}.stream-credit-code-redeem .btn{width:100%}}

@@ -5,6 +5,11 @@
   const api = String(config.rewardsApiUrl || "").replace(/\/$/, "");
   const qs = new URLSearchParams(location.search);
   const requestedAccountView = ["discount", "invite", "orders", "account", "credits"].includes(qs.get("view")) ? qs.get("view") : "";
+  const STREAM_CREDIT_CODE_KEY = "cp_pending_stream_credit_code";
+  const normalizeStreamCreditCode = value => String(value || "").toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 40);
+  const queryStreamCreditCode = normalizeStreamCreditCode(qs.get("credit_code"));
+  if (queryStreamCreditCode) localStorage.setItem(STREAM_CREDIT_CODE_KEY, queryStreamCreditCode);
+  const requestedStreamCreditCode = queryStreamCreditCode || normalizeStreamCreditCode(localStorage.getItem(STREAM_CREDIT_CODE_KEY));
   const requestedPortal = qs.get("portal") === "master" ? "master" : "";
   const referralCode = (qs.get("ref") || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 16);
   const ownerReferralToken = String(qs.get("owner_ref") || "").slice(0, 80);
@@ -1000,7 +1005,7 @@
     }
     const meter = $("[data-stream-credit-meter]");
     if (meter) {
-      const included = Number(dashboard.includedCredits || projection.recommendedPlan.includedCredits || 0);
+      const included = Number(dashboard.includedCredits ?? 0);
       const prepaid = Number(dashboard.prepaidCreditsBalance || 0);
       const used = Number(dashboard.actualCreditsUsed || 0);
       const remaining = Number(dashboard.creditsRemaining || 0);
@@ -1017,7 +1022,7 @@
     }
     summary.hidden = false;
     $("[data-stream-plan-name]").textContent = projection.recommendedPlan.name;
-    $("[data-stream-plan-credits]").textContent = Number(dashboard.includedCredits || projection.recommendedPlan.includedCredits || 0).toFixed(2);
+    $("[data-stream-plan-credits]").textContent = Number(dashboard.includedCredits ?? 0).toFixed(2);
     $("[data-stream-project-base]").textContent = Number(dashboard.projectedEndOfMonthUsage || 0).toFixed(2);
     $("[data-stream-project-buffer]").textContent = Number(projection.metrics?.recommendedCreditCapacity || 0).toFixed(2);
     const panel = $("[data-stream-credits-dashboard]");
@@ -2127,6 +2132,33 @@
     }
   });
   $("[data-stream-credits-refresh]")?.addEventListener("click", () => refreshStreamCreditDashboard());
+  const streamCreditCodeInput = $("[data-stream-credit-code-input]");
+  if (streamCreditCodeInput && requestedStreamCreditCode) streamCreditCodeInput.value = requestedStreamCreditCode;
+  $("[data-stream-credit-code-form]")?.addEventListener("submit", async event => {
+    event.preventDefault();
+    const button = event.submitter || $("[data-stream-credit-code-submit]");
+    const statusNode = $("[data-stream-credit-code-status]");
+    button.disabled = true;
+    statusNode.textContent = "Redeeming protected Stream Credits...";
+    delete statusNode.dataset.kind;
+    try {
+      const code = String(streamCreditCodeInput.value || "").trim();
+      const result = await request("/stream-credits/redeem", { method: "POST", body: JSON.stringify({ code }) });
+      streamCreditCodeInput.value = "";
+      localStorage.removeItem(STREAM_CREDIT_CODE_KEY);
+      statusNode.textContent = `${Number(result.creditsGranted || 0).toFixed(2)} Stream Credits added. Balance: ${Number(result.creditsRemaining || 0).toFixed(2)} credits.`;
+      statusNode.dataset.kind = "success";
+      const nextUrl = new URL(location.href);
+      nextUrl.searchParams.delete("credit_code");
+      history.replaceState({}, document.title, `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`);
+      await refreshStreamCreditDashboard({ silent: true, trigger: "code" });
+    } catch (error) {
+      statusNode.textContent = error.message;
+      statusNode.dataset.kind = "error";
+    } finally {
+      button.disabled = false;
+    }
+  });
   $("[data-stream-credits-calculate]")?.addEventListener("click", async () => {
     try {
       streamCreditStatus("Calculating seller plan...");

@@ -8,9 +8,9 @@
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/css/styles.css?v=1.11.2">
   <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.7.0">
-  <link rel="stylesheet" href="assets/css/referral.css?v=3.6.4">
+  <link rel="stylesheet" href="assets/css/referral.css?v=3.6.5">
   <link rel="stylesheet" href="assets/css/rewards-modal.css?v=2.2.0">
-  <link rel="stylesheet" href="assets/css/admin.css?v=3.5.0">
+  <link rel="stylesheet" href="assets/css/admin.css?v=3.6.0">
 </head>
 <body>
   <header class="site-header">
@@ -125,10 +125,10 @@
           <div class="campaign-generator-head">
             <div>
               <p class="eyebrow">Owner growth tools</p>
-              <h3>Discount Generator</h3>
-              <p>Launch a time-limited campaign link and QR for a live show, social post, or collector drop.</p>
+              <h3>Code Generator</h3>
+              <p>Create discount campaigns or grant promotional Stream Credits to one account, one email, or a limited audience.</p>
             </div>
-            <button class="btn btn-primary" type="button" data-campaign-open>Generate Discount</button>
+            <button class="btn btn-primary" type="button" data-campaign-open>Generate Code</button>
           </div>
           <div class="campaign-generated" data-campaign-generated hidden>
             <div>
@@ -148,6 +148,28 @@
               <button class="btn btn-danger btn-small" type="button" data-campaign-generated-toggle>Turn Off QR</button>
             </div>
           </div>
+          <div class="campaign-generated credit-code-generated" data-credit-code-generated hidden>
+            <div>
+              <span class="campaign-live-chip">CREDIT CODE READY</span>
+              <h4 data-credit-code-generated-title></h4>
+              <p data-credit-code-generated-description></p>
+              <output class="credit-code-output" data-credit-code-generated-value></output>
+              <div class="campaign-generated-share">
+                <button class="btn btn-primary btn-small" type="button" data-credit-code-copy>Copy Code</button>
+                <button class="btn btn-outline btn-small" type="button" data-credit-code-copy-link>Copy Redemption Link</button>
+                <button class="btn btn-danger btn-small" type="button" data-credit-code-generated-toggle>Turn Off Code</button>
+              </div>
+              <p class="fine-print" data-credit-code-generated-email></p>
+              <p class="fine-print">Promotional Stream Credits unlock streaming but have no cash-out or refund value.</p>
+            </div>
+          </div>
+          <section class="credit-code-library" aria-labelledby="credit-code-library-title">
+            <div class="campaign-history-head">
+              <div><p class="eyebrow">Stream Credit controls</p><h3 id="credit-code-library-title">Generated credit codes</h3></div>
+              <button class="btn btn-outline btn-small" type="button" data-credit-code-refresh>Refresh codes</button>
+            </div>
+            <div class="credit-code-list" data-credit-code-list aria-live="polite"></div>
+          </section>
         </section>
         <section class="campaign-library" aria-labelledby="campaign-library-title" data-master-section="signups" hidden>
           <div class="dashboard-head campaign-library-head">
@@ -414,10 +436,10 @@
     <section class="rewards-modal-card campaign-modal-card" role="dialog" aria-modal="true" aria-labelledby="campaign-modal-title">
       <button class="rewards-modal-close" type="button" data-campaign-close aria-label="Close">&times;</button>
       <p class="eyebrow">Protected owner generator</p>
-      <h2 id="campaign-modal-title">Create a discount campaign</h2>
-      <p>Each verified member can claim only within the campaign and weekly reward rules.</p>
+      <h2 id="campaign-modal-title" data-campaign-modal-title>Create a code</h2>
+      <p data-campaign-modal-copy>Choose a discount campaign or a protected Stream Credit grant.</p>
       <form class="campaign-form" data-campaign-form>
-        <label>Campaign title<input name="title" required maxlength="100" placeholder="Friday Night Rip Bonus"></label>
+        <label><span data-campaign-title-label>Campaign title</span><input name="title" required maxlength="100" placeholder="Friday Night Rip Bonus"></label>
         <label>Reward type
           <select name="rewardType" data-campaign-reward-type required>
             <option value="percent">Percentage discount</option>
@@ -426,6 +448,7 @@
             <option value="pack_draft">Choose a Pack #</option>
             <option value="free_single">Free Holographic Single</option>
             <option value="product">Products (Inventory)</option>
+            <option value="stream_credits">Stream Credits</option>
           </select>
         </label>
         <p class="fine-print" data-campaign-single-help hidden>First-show setup: leave Maximum people at 50. Each verified claim receives one unique rank and code for a free holographic single.</p>
@@ -440,6 +463,26 @@
           </div>
           <small data-campaign-inventory-selection>Choose an active product with available stock.</small>
         </div>
+        <div class="credit-code-fields" data-credit-code-fields hidden>
+          <label>Credits to grant<input name="creditQuantity" type="number" min="0.01" max="10000" step="0.01" value="1.00" inputmode="decimal"></label>
+          <label>Distribution
+            <select name="distributionType" data-credit-distribution>
+              <option value="individual">Individual account</option>
+              <option value="email">Send to email</option>
+              <option value="limited">Limited redemptions</option>
+            </select>
+          </label>
+          <div class="campaign-product-field" data-credit-member-field>
+            <label for="credit-member-search">Account search</label>
+            <div class="inventory-combobox">
+              <input id="credit-member-search" type="search" data-credit-member-search role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="credit-member-options" autocomplete="off" placeholder="User ID, Seller ID, name, UUID, or email">
+              <input name="targetMemberId" type="hidden" data-credit-member-id>
+              <div class="inventory-combobox-options" id="credit-member-options" data-credit-member-options role="listbox" hidden></div>
+            </div>
+            <small data-credit-member-selection>Choose the account allowed to redeem this code.</small>
+          </div>
+          <label data-credit-email-field hidden>Recipient email<input name="targetEmail" type="email" maxlength="254" autocomplete="email" placeholder="seller@example.com"></label>
+        </div>
         <div class="field-grid">
           <div class="campaign-expiry-field">
             <span>Time to Expire</span>
@@ -453,13 +496,13 @@
             </div>
             <small id="campaign-expiry-help" data-campaign-expiry-help>Enter 1–168 hours.</small>
           </div>
-          <label>Maximum people<input name="maxRedemptions" type="number" min="1" max="500" value="25" inputmode="numeric" required></label>
+          <label data-campaign-max-field>Maximum people<input name="maxRedemptions" type="number" min="1" max="500" value="25" inputmode="numeric" required></label>
         </div>
-        <p class="campaign-qr-included"><strong>QR INCLUDED</strong><span>The campaign link, scannable QR, branded social graphic, and sharing controls are generated together.</span></p>
+        <p class="campaign-qr-included" data-campaign-generator-note><strong>QR INCLUDED</strong><span>The campaign link, scannable QR, branded social graphic, and sharing controls are generated together.</span></p>
         <div class="campaign-form-status" data-campaign-form-status aria-live="polite"></div>
         <div class="campaign-modal-actions">
           <button class="btn btn-outline" type="button" data-campaign-close>Cancel</button>
-          <button class="btn btn-primary" type="submit" data-campaign-submit>Generate Discount + QR</button>
+          <button class="btn btn-primary" type="submit" data-campaign-submit>Generate Code</button>
         </div>
       </form>
     </section>
@@ -649,6 +692,6 @@
   <script src="assets/js/social-footer.js?v=1.1.0" data-crackpacks-social-loader></script>
   <script src="assets/js/app.js?v=2.0.1"></script>
   <script src="assets/js/nav-profile.js?v=4.6.0"></script>
-  <script src="assets/js/admin.js?v=3.5.2"></script>
+  <script src="assets/js/admin.js?v=3.6.0"></script>
 </body>
 </html>

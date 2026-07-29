@@ -3,6 +3,7 @@ import {
   DEFAULT_CONFIG as STREAM_DEFAULT_CONFIG,
   DEFAULT_PLANS as STREAM_DEFAULT_PLANS,
   calculateActualCredits,
+  calculateLiveMeterCredits,
   calculateProjection,
   creditPurchaseQuote,
   estimateDashboard,
@@ -341,6 +342,267 @@ async function sellerHasSubscriberCreditRate(env, memberId, subscription = null)
   return Boolean(paidThisMonth);
 }
 
+export const normalizeStreamCreditCode = value => String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 40);
+
+function createStreamCreditCode() {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytes = crypto.getRandomValues(new Uint8Array(12));
+  const value = Array.from(bytes, byte => alphabet[byte & 31]).join("");
+  return `CPCR-${value.slice(0, 4)}-${value.slice(4, 8)}-${value.slice(8)}`;
+}
+
+function streamCreditCodeView(row) {
+  return {
+    id: row.id,
+    title: row.title,
+    codeHint: row.code_hint,
+    creditQuantity: round2(row.credit_quantity),
+    distributionType: row.distribution_type,
+    targetMemberId: row.target_member_id || null,
+    targetEmail: row.target_email || "",
+    targetLabel: clean(row.target_label || row.target_email || "", 180),
+    maxRedemptions: Number(row.max_redemptions || 0),
+    redemptionCount: Number(row.redemption_count || 0),
+    isActive: Number(row.is_active) === 1,
+    expiresAt: row.expires_at,
+    sentAt: row.sent_at || null,
+    createdAt: row.created_at
+  };
+}
+
+async function currentStreamCreditBalance(env, memberId, { config: suppliedConfig = null } = {}) {
+  const config = suppliedConfig || (await latestStreamCreditConfig(env)).config;
+  const subscription = await env.DB.prepare(`SELECT * FROM seller_stream_subscriptions WHERE member_id=?`).bind(memberId).first();
+  const subscriberActive = await sellerHasSubscriberCreditRate(env, memberId, subscription);
+  const includedCredits = subscriberActive ? Math.max(0, Number(subscription?.included_credits || 0)) : 0;
+  const prepaidCredits = Math.max(0, Number(subscription?.prepaid_credits_balance || 0));
+  const usage = await env.DB.prepare(`SELECT * FROM seller_stream_usage_snapshots WHERE member_id=? AND month_key=?`)
+    .bind(memberId, monthKeyAt()).first();
+  const actualCreditsUsed = calculateActualCredits({
+    actualDeliveredMinutes: usage?.actual_delivered_minutes,
+    actualStoredMinutes: usage?.actual_stored_minutes
+  }, config);
+  const monthStart = `${monthKeyAt()}-01T00:00:00.000Z`;
+  const liveMeter = await env.DB.prepare(`
+    SELECT COALESCE(SUM(
+      CASE WHEN credit_metered_units>credit_reconciled_units
+        THEN credit_metered_units-credit_reconciled_units ELSE 0 END
+    ),0) pending_live_credits
+    FROM breaker_stream_sessions
+    WHERE member_id=? AND started_at>=?
+  `).bind(memberId, monthStart).first();
+  const pendingLiveCredits = Math.max(0, Number(liveMeter?.pending_live_credits || 0));
+  const totalCreditsAvailable = includedCredits + prepaidCredits;
+  const rawCreditsRemaining = totalCreditsAvailable - actualCreditsUsed - pendingLiveCredits;
+  const creditsRemaining = round2(Math.max(0, rawCreditsRemaining));
+  return {
+    subscription,
+    subscriberActive,
+    includedCredits: round2(includedCredits),
+    prepaidCredits: round2(prepaidCredits),
+    totalCreditsAvailable: round2(totalCreditsAvailable),
+    actualCreditsUsed: round2(actualCreditsUsed),
+    pendingLiveCredits: round2(pendingLiveCredits),
+    creditsUsed: round2(actualCreditsUsed + pendingLiveCredits),
+    rawCreditsRemaining,
+    creditsRemaining,
+    canStream: creditsRemaining > 0,
+    usage
+  };
+}
+
+async function listAdminStreamCreditCodes(request, env, cors) {
+  const auth = await requireOwner(request, env, cors);
+  if (auth.error) return auth.error;
+  const rows = await env.DB.prepare(`
+    SELECT code.*,
+      COUNT(redemption.id) redemption_count,
+      COALESCE(NULLIF(member.buyer_username,''),NULLIF(member.live_username,''),member.email,code.target_email,'') target_label
+    FROM stream_credit_codes code
+    LEFT JOIN stream_credit_code_redemptions redemption ON redemption.code_id=code.id
+    LEFT JOIN members member ON member.id=code.target_member_id
+    GROUP BY code.id
+    ORDER BY code.created_at DESC
+    LIMIT 200
+  `).all();
+  return json({ codes: (rows.results || []).map(streamCreditCodeView), serverNow: now() }, 200, cors);
+}
+
+async function createAdminStreamCreditCode(request, env, cors) {
+  const auth = await requireOwner(request, env, cors);
+  if (auth.error) return auth.error;
+  const data = await boundedJson(request, 6000);
+  const title = clean(data.title, 100);
+  const distributionType = String(data.distributionType || "limited").toLowerCase();
+  const quantity = Number(data.creditQuantity);
+  const hundredths = Math.round(quantity * 100);
+  if (title.length < 2) return json({ error: "Enter a credit code title." }, 400, cors);
+  if (!Number.isFinite(quantity) || Math.abs((quantity * 100) - hundredths) > 1e-7 || hundredths < 1 || hundredths > 1_000_000) {
+    return json({ error: "Choose 0.01 to 10,000.00 Stream Credits in increments of 0.01." }, 400, cors);
+  }
+  if (!["individual", "email", "limited"].includes(distributionType)) {
+    return json({ error: "Choose an individual account, email recipient, or limited-redemption code." }, 400, cors);
+  }
+  let targetMember = null;
+  let targetMemberId = null;
+  let targetEmail = null;
+  let maxRedemptions = 1;
+  if (distributionType === "individual") {
+    targetMemberId = clean(data.targetMemberId, 80);
+    if (!validUuid(targetMemberId)) return json({ error: "Choose an existing account from member search." }, 400, cors);
+    targetMember = await env.DB.prepare(`SELECT id,email,buyer_username,live_username FROM members WHERE id=?`).bind(targetMemberId).first();
+    if (!targetMember) return json({ error: "That account was not found." }, 404, cors);
+  } else if (distributionType === "email") {
+    targetEmail = normalizeEmail(data.targetEmail);
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(targetEmail)) return json({ error: "Enter a valid recipient email." }, 400, cors);
+    targetMember = await env.DB.prepare(`SELECT id,email,buyer_username,live_username FROM members WHERE email=? COLLATE NOCASE`).bind(targetEmail).first();
+    targetMemberId = targetMember?.id || null;
+  } else {
+    maxRedemptions = Number(data.maxRedemptions || 1);
+    if (!Number.isInteger(maxRedemptions) || maxRedemptions < 1 || maxRedemptions > 500) {
+      return json({ error: "Limited codes can allow 1 to 500 redemptions." }, 400, cors);
+    }
+  }
+  const neverExpires = Boolean(data.neverExpires);
+  const expiresInHours = Number(data.expiresInHours || 0);
+  if (!neverExpires && (!Number.isFinite(expiresInHours) || expiresInHours < 1 || expiresInHours > 8760)) {
+    return json({ error: "Choose an expiration between 1 hour and 365 days, or select Indefinite." }, 400, cors);
+  }
+  const stamp = now();
+  const expiresAt = neverExpires ? "9999-12-31T23:59:59.999Z" : new Date(Date.now() + expiresInHours * 3600e3).toISOString();
+  const code = createStreamCreditCode();
+  const normalizedCode = normalizeStreamCreditCode(code);
+  const codeId = uid();
+  const codeHash = await digest(normalizedCode, env.AUTH_SECRET);
+  const codeHint = `ends ${normalizedCode.slice(-4)}`;
+  await env.DB.batch([
+    env.DB.prepare(`
+      INSERT INTO stream_credit_codes(
+        id,title,code_hash,code_hint,credit_quantity,distribution_type,target_member_id,target_email,max_redemptions,is_active,expires_at,created_by_member_id,created_at,updated_at
+      ) VALUES(?,?,?,?,?,?,?,?,?,1,?,?,?,?)
+    `).bind(codeId, title, codeHash, codeHint, hundredths / 100, distributionType, targetMemberId, targetEmail, maxRedemptions, expiresAt, auth.member.id, stamp, stamp),
+    env.DB.prepare(`INSERT INTO audit_events(id,member_id,type,detail,created_at) VALUES(?,?,?,?,?)`)
+      .bind(uid(), auth.member.id, "stream_credit_code_created", JSON.stringify({ codeId, title, creditQuantity: hundredths / 100, distributionType, targetMemberId, targetEmail, maxRedemptions }), stamp)
+  ]);
+  const redemptionUrl = `${siteUrl(env)}/referral.html?view=credits&credit_code=${encodeURIComponent(code)}`;
+  let emailSent = false;
+  if (distributionType === "email") {
+    const html = `<div style="font-family:Arial,sans-serif;color:#111827;line-height:1.55"><h1 style="color:#151936">${round2(hundredths / 100).toFixed(2)} Stream Credits are waiting</h1><p>Crack Packs sent a Stream Credit code to this email address.</p><p style="font-size:24px;font-weight:900;letter-spacing:1px">${escapeHtml(code)}</p><p><a href="${escapeHtml(redemptionUrl)}" style="display:inline-block;padding:15px 24px;background:#f8ff46;color:#070815;text-decoration:none;font-weight:900;border-radius:999px">REDEEM STREAM CREDITS</a></p><p>Sign in with this email address before redeeming. Promotional credits have no cash-out or refund value.</p></div>`;
+    emailSent = await sendTransactionalEmail(env, targetEmail, `${round2(hundredths / 100).toFixed(2)} Crack Packs Stream Credits`, html, `stream-credit-code-${codeId}`, {
+      fromAddress: "rewards@crackpacks.com",
+      fromName: "Crack Packs Rewards"
+    });
+    if (emailSent) await env.DB.prepare(`UPDATE stream_credit_codes SET sent_at=?,updated_at=? WHERE id=?`).bind(now(), now(), codeId).run();
+  }
+  return json({
+    code: {
+      id: codeId,
+      title,
+      code,
+      codeHint,
+      creditQuantity: hundredths / 100,
+      distributionType,
+      targetMemberId,
+      targetEmail: targetEmail || "",
+      targetLabel: clean(targetMember?.buyer_username || targetMember?.live_username || targetMember?.email || targetEmail || "", 180),
+      maxRedemptions,
+      redemptionCount: 0,
+      isActive: true,
+      expiresAt,
+      createdAt: stamp,
+      redemptionUrl,
+      emailSent
+    }
+  }, 201, cors);
+}
+
+async function setAdminStreamCreditCodeStatus(request, env, cors, codeId) {
+  const auth = await requireOwner(request, env, cors);
+  if (auth.error) return auth.error;
+  const data = await boundedJson(request, 1000);
+  const active = Boolean(data.active);
+  const changed = await env.DB.prepare(`UPDATE stream_credit_codes SET is_active=?,updated_at=? WHERE id=?`)
+    .bind(active ? 1 : 0, now(), codeId).run();
+  if (Number(changed.meta?.changes || 0) !== 1) return json({ error: "Stream Credit code not found." }, 404, cors);
+  return json({ ok: true, id: codeId, isActive: active }, 200, cors);
+}
+
+async function redeemStreamCreditCode(request, env, cors) {
+  const auth = await requireMember(request, env, cors);
+  if (auth.error) return auth.error;
+  const data = await boundedJson(request, 1500);
+  const normalizedCode = normalizeStreamCreditCode(data.code);
+  if (normalizedCode.length < 12) return json({ error: "Enter the complete Stream Credit code." }, 400, cors);
+  const codeHash = await digest(normalizedCode, env.AUTH_SECRET);
+  const stamp = now();
+  const redemptionId = uid();
+  const ledgerId = uid();
+  const results = await env.DB.batch([
+    env.DB.prepare(`
+      INSERT OR IGNORE INTO stream_credit_code_redemptions(id,code_id,member_id,credits_granted,redeemed_at)
+      SELECT ?,code.id,?,code.credit_quantity,?
+      FROM stream_credit_codes code
+      WHERE code.code_hash=? AND code.is_active=1 AND code.expires_at>?
+        AND (
+          code.distribution_type='limited'
+          OR (code.distribution_type='individual' AND code.target_member_id=?)
+          OR (code.distribution_type='email' AND code.target_email=? AND (code.target_member_id IS NULL OR code.target_member_id=?))
+        )
+        AND (SELECT COUNT(*) FROM stream_credit_code_redemptions used WHERE used.code_id=code.id)<code.max_redemptions
+    `).bind(redemptionId, auth.member.id, stamp, codeHash, stamp, auth.member.id, normalizeEmail(auth.member.email), auth.member.id),
+    env.DB.prepare(`
+      INSERT OR IGNORE INTO seller_stream_subscriptions(member_id,created_at,updated_at)
+      SELECT ?,?,? WHERE EXISTS(SELECT 1 FROM stream_credit_code_redemptions WHERE id=? AND member_id=?)
+    `).bind(auth.member.id, stamp, stamp, redemptionId, auth.member.id),
+    env.DB.prepare(`
+      UPDATE seller_stream_subscriptions
+      SET prepaid_credits_balance=prepaid_credits_balance+(SELECT credits_granted FROM stream_credit_code_redemptions WHERE id=?),updated_at=?
+      WHERE member_id=? AND EXISTS(SELECT 1 FROM stream_credit_code_redemptions WHERE id=? AND member_id=?)
+    `).bind(redemptionId, stamp, auth.member.id, redemptionId, auth.member.id),
+    env.DB.prepare(`
+      INSERT OR IGNORE INTO seller_stream_credit_ledger(
+        id,member_id,transaction_id,credit_source,credit_quantity,dollar_value,usage_category,status,created_at,administrator_adjustment_reason
+      )
+      SELECT ?,?,?,'admin_adjustment',redemption.credits_granted,0,'credit_code','available',?,
+        'Promotional Stream Credit code: ' || code.title
+      FROM stream_credit_code_redemptions redemption JOIN stream_credit_codes code ON code.id=redemption.code_id
+      WHERE redemption.id=? AND redemption.member_id=?
+    `).bind(ledgerId, auth.member.id, `credit-code-${redemptionId}`, stamp, redemptionId, auth.member.id)
+  ]);
+  if (Number(results?.[0]?.meta?.changes || 0) !== 1) {
+    const code = await env.DB.prepare(`
+      SELECT code.*,
+        (SELECT COUNT(*) FROM stream_credit_code_redemptions redemption WHERE redemption.code_id=code.id) redemption_count,
+        EXISTS(SELECT 1 FROM stream_credit_code_redemptions redemption WHERE redemption.code_id=code.id AND redemption.member_id=?) already_redeemed
+      FROM stream_credit_codes code WHERE code.code_hash=?
+    `).bind(auth.member.id, codeHash).first();
+    if (!code) return json({ error: "That Stream Credit code was not found." }, 404, cors);
+    if (Number(code.already_redeemed || 0) === 1) return json({ error: "This account already redeemed that Stream Credit code." }, 409, cors);
+    if (!code.is_active) return json({ error: "That Stream Credit code has been turned off." }, 409, cors);
+    if (Date.parse(code.expires_at) <= Date.now()) return json({ error: "That Stream Credit code has expired." }, 410, cors);
+    const targetMatches = code.distribution_type === "limited" ||
+      (code.distribution_type === "individual" && code.target_member_id === auth.member.id) ||
+      (code.distribution_type === "email" && normalizeEmail(code.target_email) === normalizeEmail(auth.member.email) && (!code.target_member_id || code.target_member_id === auth.member.id));
+    if (!targetMatches) return json({ error: "That Stream Credit code belongs to a different account or email address." }, 403, cors);
+    if (Number(code.redemption_count || 0) >= Number(code.max_redemptions || 0)) return json({ error: "That Stream Credit code has reached its redemption limit." }, 409, cors);
+    return json({ error: "The Stream Credit code could not be redeemed. Refresh and try again." }, 409, cors);
+  }
+  const redemption = await env.DB.prepare(`
+    SELECT redemption.credits_granted,code.title
+    FROM stream_credit_code_redemptions redemption JOIN stream_credit_codes code ON code.id=redemption.code_id
+    WHERE redemption.id=?
+  `).bind(redemptionId).first();
+  const balance = await currentStreamCreditBalance(env, auth.member.id);
+  return json({
+    ok: true,
+    creditsGranted: round2(redemption?.credits_granted || 0),
+    title: redemption?.title || "Stream Credit code",
+    creditsRemaining: balance.creditsRemaining,
+    promotional: true,
+    cashValue: 0
+  }, 200, cors);
+}
+
 async function streamCreditDashboard(request, env, cors) {
   const auth = await requireMember(request, env, cors, { seller: true });
   if (auth.error) return auth.error;
@@ -348,12 +610,25 @@ async function streamCreditDashboard(request, env, cors) {
   const { row, config } = await latestStreamCreditConfig(env);
   const plans = await latestStreamCreditPlans(env);
   const subscription = await env.DB.prepare(`SELECT * FROM seller_stream_subscriptions WHERE member_id=?`).bind(auth.member.id).first();
-  const subscriberCreditRate = await sellerHasSubscriberCreditRate(env, auth.member.id, subscription);
+  const balance = await currentStreamCreditBalance(env, auth.member.id, { config });
+  const subscriberCreditRate = balance.subscriberActive;
   const creditPurchase = creditPurchaseQuote(1, { subscriber: subscriberCreditRate }, config);
   const monthKey = monthKeyAt();
-  const usage = await env.DB.prepare(`SELECT * FROM seller_stream_usage_snapshots WHERE member_id=? AND month_key=?`).bind(auth.member.id, monthKey).first();
+  const usage = balance.usage;
   const projection = calculateProjection(subscription || {}, config, plans);
-  const dashboard = estimateDashboard(subscription || {}, usage || {}, config, plans);
+  const effectiveSubscription = {
+    ...(subscription || {}),
+    included_credits: balance.includedCredits,
+    prepaid_credits_balance: balance.prepaidCredits
+  };
+  const dashboard = estimateDashboard(effectiveSubscription, usage || {}, config, plans);
+  dashboard.actualCreditsUsed = balance.creditsUsed;
+  dashboard.pendingLiveCredits = balance.pendingLiveCredits;
+  dashboard.creditsRemaining = balance.creditsRemaining;
+  dashboard.totalCreditsAvailable = balance.totalCreditsAvailable;
+  dashboard.utilization = balance.totalCreditsAvailable > 0
+    ? round2((balance.creditsUsed / balance.totalCreditsAvailable) * 100)
+    : 0;
   const ledgerRows = await env.DB.prepare(`
     SELECT credit_source,status,SUM(credit_quantity) quantity,SUM(dollar_value) dollar_value
     FROM seller_stream_credit_ledger WHERE member_id=? GROUP BY credit_source,status ORDER BY created_at DESC
@@ -365,7 +640,8 @@ async function streamCreditDashboard(request, env, cors) {
       selectedPlanCode: subscription.selected_plan_code,
       selectedPlanName: subscription.selected_plan_name,
       monthlyPrice: subscription.monthly_price,
-      includedCredits: subscription.included_credits,
+      includedCredits: balance.includedCredits,
+      configuredIncludedCredits: subscription.included_credits,
       averageConcurrentViewers: subscription.average_concurrent_viewers,
       hoursPerShow: subscription.hours_per_show,
       showsPerMonth: subscription.shows_per_month,
@@ -2248,7 +2524,11 @@ async function viewerHeartbeat(request, env, cors) {
   const count = await env.DB.prepare(`SELECT COUNT(*) count FROM stream_viewer_presence WHERE stream_session_id=? AND last_seen_at>=?`).bind(showId, cutoff).first();
   const viewers = Number(count?.count || 0);
   await env.DB.prepare(`UPDATE breaker_stream_sessions SET viewer_count=?,updated_at=? WHERE id=?`).bind(viewers, stamp, showId).run();
-  return json({ viewers }, 200, cors);
+  const creditState = await meterLiveShowCredits(env, showId).catch(error => {
+    console.error("Viewer heartbeat Stream Credit check failed", { showId, message: clean(error?.message || "", 200) });
+    return null;
+  });
+  return json({ viewers: creditState?.ended ? 0 : viewers, ended: Boolean(creditState?.ended) }, 200, cors);
 }
 
 async function placeBid(request, env, cors, lotId) {
@@ -3553,6 +3833,195 @@ async function setLiveInputEnabled(env, liveInputUid, enabled) {
   });
 }
 
+const streamCreditsPurchaseUrl = env => `${siteUrl(env)}/referral.html?view=credits`;
+
+function streamCreditGatePayload(balance, extra = {}) {
+  const { env, ...detail } = extra;
+  return {
+    creditsRemaining: balance.creditsRemaining,
+    creditsUsed: balance.creditsUsed,
+    pendingLiveCredits: balance.pendingLiveCredits,
+    canStream: balance.canStream,
+    purchaseUrl: streamCreditsPurchaseUrl(env || {}),
+    ...detail
+  };
+}
+
+async function meterLiveShowCredits(env, showId) {
+  let show = await env.DB.prepare(`SELECT * FROM breaker_stream_sessions WHERE id=?`).bind(showId).first();
+  if (!show) return { error: "Show not found.", status: 404 };
+  const { config } = await latestStreamCreditConfig(env);
+  const stamp = now();
+  const previousMeteredAt = Date.parse(show.credit_metered_at || show.started_at || stamp);
+  const elapsedMilliseconds = Number.isFinite(previousMeteredAt) ? Math.max(0, Date.now() - previousMeteredAt) : 0;
+  const creditsAdded = show.status === "live"
+    ? calculateLiveMeterCredits({ elapsedMilliseconds, viewerCount: show.viewer_count }, config)
+    : 0;
+  if (show.status === "live") {
+    await env.DB.prepare(`
+      UPDATE breaker_stream_sessions
+      SET credit_metered_units=credit_metered_units+
+          MAX(0,(julianday(?) - julianday(COALESCE(credit_metered_at,started_at,?))) * 1440.0) *
+          ((MAX(viewer_count,0) / ?) + (1.0 / ?)),
+        credit_metered_at=?,updated_at=?
+      WHERE id=? AND status='live'
+    `).bind(stamp, stamp, config.deliveryMinutesPerCredit, config.storageMinutesPerCredit, stamp, stamp, showId).run();
+    show = await env.DB.prepare(`SELECT * FROM breaker_stream_sessions WHERE id=?`).bind(showId).first();
+  }
+  const balance = await currentStreamCreditBalance(env, show.member_id, { config });
+  if (show.status !== "live") {
+    return streamCreditGatePayload(balance, {
+      env,
+      showId,
+      showStatus: show.status,
+      creditState: show.status === "open" ? (balance.canStream ? "ready" : "blocked") : "ended",
+      shutdownAt: null,
+      serverNow: stamp
+    });
+  }
+  if (balance.canStream) {
+    if (show.credit_exhausted_at || show.credit_shutdown_at) {
+      await env.DB.prepare(`UPDATE breaker_stream_sessions SET credit_exhausted_at=NULL,credit_shutdown_at=NULL,updated_at=? WHERE id=? AND status='live'`)
+        .bind(stamp, showId).run();
+    }
+    return streamCreditGatePayload(balance, {
+      env,
+      showId,
+      showStatus: "live",
+      creditState: "live",
+      shutdownAt: null,
+      serverNow: stamp
+    });
+  }
+  let exhaustedAt = show.credit_exhausted_at || "";
+  let shutdownAt = show.credit_shutdown_at || "";
+  if (!shutdownAt) {
+    let exhaustedAtMs = Date.now();
+    const balanceBeforeMeter = balance.rawCreditsRemaining + creditsAdded;
+    if (creditsAdded > 0 && balanceBeforeMeter > 0 && elapsedMilliseconds > 0) {
+      exhaustedAtMs = previousMeteredAt + Math.min(1, balanceBeforeMeter / creditsAdded) * elapsedMilliseconds;
+    }
+    exhaustedAt = new Date(Math.min(Date.now(), exhaustedAtMs)).toISOString();
+    shutdownAt = new Date(Date.parse(exhaustedAt) + 60_000).toISOString();
+    await env.DB.prepare(`
+      UPDATE breaker_stream_sessions
+      SET credit_exhausted_at=COALESCE(credit_exhausted_at,?),credit_shutdown_at=COALESCE(credit_shutdown_at,?),updated_at=?
+      WHERE id=? AND status='live'
+    `).bind(exhaustedAt, shutdownAt, stamp, showId).run();
+    show = await env.DB.prepare(`SELECT * FROM breaker_stream_sessions WHERE id=?`).bind(showId).first();
+    exhaustedAt = show.credit_exhausted_at || exhaustedAt;
+    shutdownAt = show.credit_shutdown_at || shutdownAt;
+  }
+  if (Date.parse(shutdownAt) <= Date.now()) {
+    const ended = await closeSellerShow(env, show.member_id, showId, "credits_exhausted");
+    return streamCreditGatePayload(balance, {
+      env,
+      showId,
+      showStatus: "ended",
+      creditState: "ended",
+      shutdownAt,
+      ended: true,
+      endReason: "credits_exhausted",
+      streamCreditSync: ended.streamCreditSync,
+      serverNow: now()
+    });
+  }
+  return streamCreditGatePayload(balance, {
+    env,
+    showId,
+    showStatus: "live",
+    creditState: "grace",
+    exhaustedAt,
+    shutdownAt,
+    graceSecondsRemaining: Math.max(0, Math.ceil((Date.parse(shutdownAt) - Date.now()) / 1000)),
+    serverNow: stamp
+  });
+}
+
+async function startSellerShowCore(env, memberId, showId) {
+  const show = await env.DB.prepare(`SELECT * FROM breaker_stream_sessions WHERE id=? AND member_id=?`).bind(showId, memberId).first();
+  if (!show) return { error: "Show not found.", status: 404 };
+  if (!["open", "live"].includes(show.status)) return { error: "That show has already ended.", status: 409 };
+  if (show.status === "live") {
+    const state = await meterLiveShowCredits(env, showId);
+    return state.canStream
+      ? { state }
+      : { error: "Purchase Stream Credits to continue broadcasting.", status: 402, code: "STREAM_CREDITS_REQUIRED", state };
+  }
+  const balance = await currentStreamCreditBalance(env, memberId);
+  if (!balance.canStream) {
+    return {
+      error: "A positive Stream Credit balance is required before this show can go live.",
+      status: 402,
+      code: "STREAM_CREDITS_REQUIRED",
+      state: streamCreditGatePayload(balance, { env, showId, showStatus: "open", creditState: "blocked", shutdownAt: null, serverNow: now() })
+    };
+  }
+  const anotherLive = await env.DB.prepare(`SELECT id FROM breaker_stream_sessions WHERE member_id=? AND id<>? AND status='live' LIMIT 1`)
+    .bind(memberId, showId).first();
+  if (anotherLive) return { error: "End the other live show before starting this one.", status: 409 };
+  const input = await env.DB.prepare(`SELECT * FROM breaker_stream_inputs WHERE member_id=?`).bind(memberId).first();
+  if (!input?.cloudflare_live_input_uid) return { error: "Create your private OBS stream input first.", status: 409 };
+  const stamp = now();
+  try {
+    await setLiveInputEnabled(env, input.cloudflare_live_input_uid, true);
+    const changed = await env.DB.batch([
+      env.DB.prepare(`
+        UPDATE breaker_stream_sessions
+        SET status='live',started_at=?,ended_at=NULL,credit_metered_at=?,credit_metered_units=0,credit_reconciled_units=0,
+          credit_exhausted_at=NULL,credit_shutdown_at=NULL,stream_end_reason='',updated_at=?
+        WHERE id=? AND member_id=? AND status='open'
+      `).bind(stamp, stamp, stamp, showId, memberId),
+      env.DB.prepare(`UPDATE breaker_stream_inputs SET status='enabled',updated_at=? WHERE member_id=?`).bind(stamp, memberId)
+    ]);
+    if (Number(changed?.[0]?.meta?.changes || 0) !== 1) throw new Error("SHOW_START_CONFLICT");
+  } catch (error) {
+    await setLiveInputEnabled(env, input.cloudflare_live_input_uid, false).catch(() => null);
+    await env.DB.prepare(`UPDATE breaker_stream_inputs SET status='disabled',updated_at=? WHERE member_id=?`).bind(now(), memberId).run().catch(() => null);
+    if (error?.message === "SHOW_START_CONFLICT") return { error: "The show changed while it was starting. Refresh and try again.", status: 409 };
+    console.error("Seller live input could not be enabled", { memberId, showId, message: clean(error?.message || "", 180) });
+    return { error: "Cloudflare could not unlock the OBS input for this show.", status: 503 };
+  }
+  const state = await meterLiveShowCredits(env, showId);
+  return { state };
+}
+
+async function startSellerShow(request, env, cors, showId) {
+  const auth = await requireMember(request, env, cors, { seller: true });
+  if (auth.error) return auth.error;
+  const result = await startSellerShowCore(env, auth.member.id, showId);
+  if (result.error) return json({ error: result.error, code: result.code || "", ...(result.state || {}) }, result.status || 409, cors);
+  return json({ started: true, ...result.state }, 200, cors);
+}
+
+async function sellerShowLiveStatus(request, env, cors, showId) {
+  const auth = await requireMember(request, env, cors, { seller: true });
+  if (auth.error) return auth.error;
+  const show = await env.DB.prepare(`SELECT id FROM breaker_stream_sessions WHERE id=? AND member_id=?`).bind(showId, auth.member.id).first();
+  if (!show) return json({ error: "Show not found." }, 404, cors);
+  const state = await meterLiveShowCredits(env, showId);
+  return json(state, 200, cors);
+}
+
+async function runLiveCreditGateCycle(env, { limit = 100 } = {}) {
+  const rows = await env.DB.prepare(`SELECT id FROM breaker_stream_sessions WHERE status='live' ORDER BY credit_metered_at ASC LIMIT ?`)
+    .bind(Math.max(1, Math.min(100, Number(limit || 100)))).all();
+  let checked = 0;
+  let ended = 0;
+  let failed = 0;
+  for (const show of rows.results || []) {
+    try {
+      const state = await meterLiveShowCredits(env, show.id);
+      checked += 1;
+      if (state.ended) ended += 1;
+    } catch (error) {
+      failed += 1;
+      console.error("Live Stream Credit gate cycle failed", { showId: show.id, message: clean(error?.message || "", 200) });
+    }
+  }
+  return { checked, ended, failed };
+}
+
 function chooseBestRecordingForSession(session, videos) {
   const startedMs = Date.parse(session.started_at || "");
   const endedMs = Date.parse(session.ended_at || session.updated_at || session.started_at || "");
@@ -3687,6 +4156,12 @@ async function syncStreamUsageFromCloudflare(env, { memberId = "", showId = "" }
         last_synced_at=excluded.last_synced_at,
         updated_at=excluded.updated_at
     `).bind(uid(), session.member_id, session.id, usageMonthKey, liveInputUid, String(video.uid || videoUid), createdAt || null, readyAt || null, durationSeconds, deliveredMinutes, storedMinutes, recordingMinutes, monthStart, monthEnd, payloadJson, stamp, stamp, stamp).run();
+    const reconciledCredits = calculateActualCredits({ actualDeliveredMinutes: deliveredMinutes, actualStoredMinutes: storedMinutes }, config);
+    await env.DB.prepare(`
+      UPDATE breaker_stream_sessions
+      SET credit_reconciled_units=MAX(credit_reconciled_units,?),updated_at=?
+      WHERE id=?
+    `).bind(reconciledCredits, stamp, session.id).run();
     if (videoUid && videoUid !== session.cloudflare_recording_video_uid) {
       await env.DB.prepare(`UPDATE breaker_stream_sessions SET cloudflare_recording_video_uid=?,status=CASE WHEN status='ended' THEN 'recording_ready' ELSE status END,updated_at=? WHERE id=?`)
         .bind(videoUid, stamp, session.id).run();
@@ -3698,7 +4173,15 @@ async function syncStreamUsageFromCloudflare(env, { memberId = "", showId = "" }
     bucket.sessions += 1;
     byMember.set(session.member_id, bucket);
   }
-  for (const [memberId, totals] of byMember) {
+  for (const memberId of byMember.keys()) {
+    const totals = await env.DB.prepare(`
+      SELECT COALESCE(SUM(delivered_minutes),0) delivered,
+        COALESCE(SUM(stored_minutes),0) stored,
+        COALESCE(SUM(recording_minutes),0) recording,
+        COUNT(DISTINCT stream_session_id) sessions
+      FROM seller_stream_video_sources
+      WHERE member_id=? AND month_key=?
+    `).bind(memberId, currentMonth).first();
     const finalizedCreditsUsed = calculateActualCredits({ actualDeliveredMinutes: totals.delivered, actualStoredMinutes: totals.stored }, config);
     const stamp = now();
     await env.DB.prepare(`
@@ -3716,7 +4199,7 @@ async function syncStreamUsageFromCloudflare(env, { memberId = "", showId = "" }
         finalized_credits_used=excluded.finalized_credits_used,
         source='system',
         updated_at=excluded.updated_at
-    `).bind(uid(), memberId, currentMonth, totals.delivered, 0, totals.buyer, totals.protectedEvidence, totals.delivered, totals.recording, totals.stored, finalizedCreditsUsed, "system", stamp, stamp).run();
+    `).bind(uid(), memberId, currentMonth, totals.delivered, 0, 0, 0, totals.delivered, totals.recording, totals.stored, finalizedCreditsUsed, "system", stamp, stamp).run();
   }
   return { syncedMembers: byMember.size, syncedVideos: [...byMember.values()].reduce((sum, row) => sum + row.sessions, 0) };
 }
@@ -3982,7 +4465,6 @@ async function sellerShows(request, env, cors) {
     }
     thumbnailUrl = `${new URL(request.url).origin}/media/${thumbnailKey}`;
   }
-  await setLiveInputEnabled(env, input.cloudflare_live_input_uid, true).catch(() => null);
   try {
     await env.DB.prepare(`INSERT INTO breaker_stream_sessions(id,member_id,cloudflare_live_input_uid,title,status,started_at,created_at,updated_at,public_slug,scheduled_at,thumbnail_url) VALUES(?,?,?,?,?,?,?,?,?,?,?)`)
       .bind(showId, auth.member.id, input.cloudflare_live_input_uid, title, "open", scheduledAt || stamp, stamp, stamp, slug, scheduledAt, thumbnailUrl).run();
@@ -3990,7 +4472,6 @@ async function sellerShows(request, env, cors) {
     if (thumbnailKey) await env.SHOW_MEDIA.delete(thumbnailKey).catch(() => null);
     throw error;
   }
-  await env.DB.prepare(`UPDATE breaker_stream_inputs SET status='enabled',updated_at=? WHERE member_id=?`).bind(stamp, auth.member.id).run();
   const base = siteUrl(env);
   return json({
     id: showId,
@@ -4122,35 +4603,55 @@ async function reorderAuctionLots(request, env, cors, showId) {
   return json({ ok: true, lotIds }, 200, cors);
 }
 
-async function endSellerShow(request, env, cors, showId) {
-  const auth = await requireMember(request, env, cors, { seller: true });
-  if (auth.error) return auth.error;
+async function closeSellerShow(env, memberId, showId, reason = "seller_ended") {
   const activeLot = await env.DB.prepare(`
     SELECT lot.*,winner.live_username winning_display
     FROM breaker_auction_lots lot
     LEFT JOIN members winner ON winner.id=lot.winning_member_id
     WHERE lot.session_id=? AND lot.member_id=? AND lot.status='live'
     ORDER BY lot.opened_at DESC,lot.updated_at DESC LIMIT 1
-  `).bind(showId, auth.member.id).first();
-  const closedLot = activeLot ? await settleAuctionLot(env, activeLot) : null;
-  const stamp = now();
-  const changed = await env.DB.prepare(`UPDATE breaker_stream_sessions SET status='ended',viewer_count=0,ended_at=?,updated_at=? WHERE id=? AND member_id=? AND status IN ('open','live')`)
-    .bind(stamp, stamp, showId, auth.member.id).run();
-  if (Number(changed.meta?.changes || 0) !== 1) return json({ error: "That show is already ended or was not found." }, 409, cors);
-  await env.DB.prepare(`UPDATE breaker_auction_lots SET status='cancelled',updated_at=? WHERE session_id=? AND member_id=? AND status='scheduled'`)
-    .bind(stamp, showId, auth.member.id).run();
-  await env.DB.prepare(`DELETE FROM stream_viewer_presence WHERE stream_session_id=?`).bind(showId).run();
-  const remainingOpen = await env.DB.prepare(`SELECT id,cloudflare_live_input_uid FROM breaker_stream_sessions WHERE member_id=? AND id<>? AND status IN ('open','live') LIMIT 1`).bind(auth.member.id, showId).first();
-  if (!remainingOpen) {
-    const input = await env.DB.prepare(`SELECT cloudflare_live_input_uid FROM breaker_stream_inputs WHERE member_id=?`).bind(auth.member.id).first();
-    if (input?.cloudflare_live_input_uid) await setLiveInputEnabled(env, input.cloudflare_live_input_uid, false).catch(() => null);
-    await env.DB.prepare(`UPDATE breaker_stream_inputs SET status='disabled',updated_at=? WHERE member_id=?`).bind(stamp, auth.member.id).run();
+  `).bind(showId, memberId).first();
+  let closedLot = null;
+  let settlementError = "";
+  if (activeLot) {
+    try {
+      closedLot = await settleAuctionLot(env, activeLot);
+    } catch (error) {
+      settlementError = "The active auction could not be settled automatically and was cancelled.";
+      console.error("Active auction settlement failed while ending show", { showId, lotId: activeLot.id, reason, message: clean(error?.message || "", 200) });
+      await env.DB.prepare(`UPDATE breaker_auction_lots SET status='cancelled',updated_at=? WHERE id=? AND member_id=? AND status='live'`)
+        .bind(now(), activeLot.id, memberId).run();
+    }
   }
-  const streamCreditSync = await syncStreamUsageFromCloudflare(env, { memberId: auth.member.id, showId }).catch(error => {
+  const stamp = now();
+  const changed = await env.DB.prepare(`
+    UPDATE breaker_stream_sessions
+    SET status='ended',viewer_count=0,ended_at=?,stream_end_reason=?,credit_metered_at=COALESCE(credit_metered_at,?),updated_at=?
+    WHERE id=? AND member_id=? AND status IN ('open','live')
+  `).bind(stamp, clean(reason, 64), stamp, stamp, showId, memberId).run();
+  if (Number(changed.meta?.changes || 0) !== 1) return { ended: false, error: "That show is already ended or was not found." };
+  await env.DB.prepare(`UPDATE breaker_auction_lots SET status='cancelled',updated_at=? WHERE session_id=? AND member_id=? AND status='scheduled'`)
+    .bind(stamp, showId, memberId).run();
+  await env.DB.prepare(`DELETE FROM stream_viewer_presence WHERE stream_session_id=?`).bind(showId).run();
+  const remainingLive = await env.DB.prepare(`SELECT id FROM breaker_stream_sessions WHERE member_id=? AND id<>? AND status='live' LIMIT 1`).bind(memberId, showId).first();
+  if (!remainingLive) {
+    const input = await env.DB.prepare(`SELECT cloudflare_live_input_uid FROM breaker_stream_inputs WHERE member_id=?`).bind(memberId).first();
+    if (input?.cloudflare_live_input_uid) await setLiveInputEnabled(env, input.cloudflare_live_input_uid, false).catch(() => null);
+    await env.DB.prepare(`UPDATE breaker_stream_inputs SET status='disabled',updated_at=? WHERE member_id=?`).bind(stamp, memberId).run();
+  }
+  const streamCreditSync = await syncStreamUsageFromCloudflare(env, { memberId, showId }).catch(error => {
     console.error("Post-show Stream Credit sync failed", error);
     return { syncedMembers: 0, syncedVideos: 0, syncFailed: true };
   });
-  return json({ ended: true, publicRemoved: true, endedAt: stamp, closedLot, streamCreditSync }, 200, cors);
+  return { ended: true, publicRemoved: true, endedAt: stamp, endReason: reason, closedLot, settlementError, streamCreditSync };
+}
+
+async function endSellerShow(request, env, cors, showId) {
+  const auth = await requireMember(request, env, cors, { seller: true });
+  if (auth.error) return auth.error;
+  const result = await closeSellerShow(env, auth.member.id, showId, "seller_ended");
+  if (!result.ended) return json({ error: result.error }, 409, cors);
+  return json(result, 200, cors);
 }
 
 async function createAuctionLot(request, env, cors, showId) {
@@ -4250,6 +4751,8 @@ async function changeAuctionStatus(request, env, cors, lotId, action) {
   let closedLot = null;
   if (action === "open") {
     if (String(env.LIVE_AUCTIONS_ENABLED || "false") !== "true") return json({ error: "Live auctions are locked until production payment and seller payout review is complete." }, 503, cors);
+    const started = await startSellerShowCore(env, auth.member.id, lot.session_id);
+    if (started.error) return json({ error: started.error, code: started.code || "", ...(started.state || {}) }, started.status || 409, cors);
     const openedAt = now();
     const closesAt = new Date(Date.now() + Number(lot.auction_duration_seconds || 30) * 1000).toISOString();
     await env.DB.batch([
@@ -4301,6 +4804,8 @@ async function auctionOffNext(request, env, cors, showId) {
     ORDER BY COALESCE(lot.queue_position,lot.rowid) ASC,lot.created_at ASC,lot.rowid ASC LIMIT 1
   `).bind(showId, auth.member.id, requestedLotId, requestedLotId).first();
   if (!next) return json({ error: "No queued item is ready. Add another sale item before using NEXT AUCTION." }, 409, cors);
+  const started = await startSellerShowCore(env, auth.member.id, showId);
+  if (started.error) return json({ error: started.error, code: started.code || "", ...(started.state || {}) }, started.status || 409, cors);
   const closedLot = current ? await settleAuctionLot(env, current) : null;
   const stamp = now();
   const closesAt = new Date(Date.now() + Number(next.auction_duration_seconds || 30) * 1000).toISOString();
@@ -4352,9 +4857,14 @@ export async function handlePlatformRoute(request, env, cors) {
   if (url.pathname === "/seller/stream-credits/usage" && request.method === "POST") return saveStreamCreditUsage(request, env, cors);
   if (url.pathname === "/seller/stream-credits/checkout-plan" && request.method === "POST") return startStreamPlanCheckout(request, env, cors);
   if (url.pathname === "/seller/stream-credits/checkout-credits" && request.method === "POST") return startStreamCreditPurchase(request, env, cors);
+  if (url.pathname === "/stream-credits/redeem" && request.method === "POST") return redeemStreamCreditCode(request, env, cors);
   if (url.pathname === "/admin/stream-credits/config" && request.method === "GET") return getStreamCreditConfig(request, env, cors);
   if (url.pathname === "/admin/stream-credits/config" && request.method === "POST") return saveStreamCreditConfig(request, env, cors);
   if (url.pathname === "/admin/stream-credits/run-cycle" && request.method === "POST") return runStreamCreditCycleRoute(request, env, cors);
+  if (url.pathname === "/admin/stream-credit-codes" && request.method === "GET") return listAdminStreamCreditCodes(request, env, cors);
+  if (url.pathname === "/admin/stream-credit-codes" && request.method === "POST") return createAdminStreamCreditCode(request, env, cors);
+  const streamCreditCodeStatusMatch = url.pathname.match(/^\/admin\/stream-credit-codes\/([0-9a-f-]{36})\/status$/i);
+  if (streamCreditCodeStatusMatch && request.method === "POST") return setAdminStreamCreditCodeStatus(request, env, cors, streamCreditCodeStatusMatch[1]);
   if (url.pathname === "/store/checkout" && request.method === "POST") return createStoreCheckout(request, env, cors);
   if (url.pathname === "/gifted-giveaways/checkout" && request.method === "POST") return createGiftCheckout(request, env, cors);
   if (url.pathname === "/profile/contact" && request.method === "POST") return saveBuyerContact(request, env, cors);
@@ -4641,6 +5151,10 @@ export async function handlePlatformRoute(request, env, cors) {
   if (url.pathname === "/seller/stream/input/regenerate" && request.method === "POST") return sellerStreamInput(new Request(request, { method: "PUT" }), env, cors);
   if (url.pathname === "/seller/stream/youtube" && ["GET", "POST", "DELETE"].includes(request.method)) return sellerYouTubeOutput(request, env, cors);
   if (url.pathname === "/seller/shows" && ["GET", "POST"].includes(request.method)) return sellerShows(request, env, cors);
+  const sellerShowStartMatch = url.pathname.match(/^\/seller\/shows\/([0-9a-f-]{36})\/start$/i);
+  if (sellerShowStartMatch && request.method === "POST") return startSellerShow(request, env, cors, sellerShowStartMatch[1]);
+  const sellerShowLiveStatusMatch = url.pathname.match(/^\/seller\/shows\/([0-9a-f-]{36})\/live-status$/i);
+  if (sellerShowLiveStatusMatch && request.method === "GET") return sellerShowLiveStatus(request, env, cors, sellerShowLiveStatusMatch[1]);
   const sellerLotMatch = url.pathname.match(/^\/seller\/shows\/([0-9a-f-]{36})\/lots$/i);
   if (sellerLotMatch && request.method === "GET") return sellerShowLots(request, env, cors, sellerLotMatch[1]);
   if (sellerLotMatch && request.method === "POST") return createAuctionLot(request, env, cors, sellerLotMatch[1]);
@@ -4663,4 +5177,4 @@ export async function handlePlatformRoute(request, env, cors) {
   return null;
 }
 
-export { chooseBestRecordingForSession, runAuctionSettlementCycle, runStreamCreditCycle, usernameKey };
+export { chooseBestRecordingForSession, runAuctionSettlementCycle, runLiveCreditGateCycle, runStreamCreditCycle, usernameKey };

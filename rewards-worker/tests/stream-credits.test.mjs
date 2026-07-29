@@ -4,6 +4,7 @@ import {
   DEFAULT_CONFIG,
   DEFAULT_PLANS,
   calculateActualCredits,
+  calculateLiveMeterCredits,
   calculateProjection,
   creditPurchaseQuote,
   estimateDashboard,
@@ -39,6 +40,12 @@ test("lower tier comparison includes overage and rebate net cost", () => {
 
 test("actual usage credits combine delivered and stored minutes", () => {
   assert.equal(calculateActualCredits({ actualDeliveredMinutes: 5000, actualStoredMinutes: 400 }), 7);
+});
+
+test("live meter charges elapsed delivery and recording storage without rounding away the cutoff", () => {
+  assert.ok(Math.abs(calculateLiveMeterCredits({ elapsedMilliseconds: 60 * 60 * 1000, viewerCount: 10 }) - 0.9) < 1e-12);
+  assert.equal(calculateLiveMeterCredits({ elapsedMilliseconds: 30 * 1000, viewerCount: 0 }), 0.0025);
+  assert.equal(calculateLiveMeterCredits({ elapsedMilliseconds: -1, viewerCount: -4 }), 0);
 });
 
 test("dashboard estimate reports remaining credits and projected rebate", () => {
@@ -147,4 +154,15 @@ test("dashboard remaining balance includes purchased rollover credits", () => {
   });
   assert.equal(dashboard.totalCreditsAvailable, 34.25);
   assert.equal(dashboard.creditsRemaining, 29.25);
+});
+
+test("an unsubscribed dashboard never borrows credits from its recommended plan", () => {
+  const dashboard = estimateDashboard({
+    average_concurrent_viewers: 20,
+    hours_per_show: 2,
+    shows_per_month: 4
+  });
+  assert.equal(dashboard.includedCredits, 0);
+  assert.equal(dashboard.totalCreditsAvailable, 0);
+  assert.equal(dashboard.creditsRemaining, 0);
 });

@@ -179,6 +179,16 @@ function calculateActualCredits(usage = {}, rawConfig = DEFAULT_CONFIG) {
   return round2((deliveredMinutes / config.deliveryMinutesPerCredit) + (storedMinutes / config.storageMinutesPerCredit));
 }
 
+function calculateLiveMeterCredits({ elapsedMilliseconds = 0, viewerCount = 0 } = {}, rawConfig = DEFAULT_CONFIG) {
+  const config = normalizeConfig(rawConfig);
+  const elapsedMinutes = Math.max(0, Number(elapsedMilliseconds || 0)) / 60000;
+  const viewers = Math.max(0, Number(viewerCount || 0));
+  return Math.max(0,
+    (elapsedMinutes * viewers / config.deliveryMinutesPerCredit) +
+    (elapsedMinutes / config.storageMinutesPerCredit)
+  );
+}
+
 function validatePlanEconomics(rawPlans = DEFAULT_PLANS, rawConfig = DEFAULT_CONFIG) {
   const plans = normalizePlans(rawPlans);
   const config = normalizeConfig(rawConfig);
@@ -229,7 +239,7 @@ function estimateDashboard(subscription = {}, usage = {}, rawConfig = DEFAULT_CO
     replayReservePercentage: subscription.replay_reserve_percentage,
     safetyBufferPercentage: subscription.safety_buffer_percentage
   }, rawConfig, rawPlans);
-  const includedCredits = Number(subscription.included_credits ?? projection.recommendedPlan?.includedCredits ?? 0);
+  const includedCredits = Number(subscription.included_credits || 0);
   const prepaidCreditsBalance = Number(subscription.prepaid_credits_balance || 0);
   const totalCreditsAvailable = round2(includedCredits + prepaidCreditsBalance);
   const actualCreditsUsed = calculateActualCredits({
@@ -271,6 +281,7 @@ export {
   validatePlanEconomics,
   calculateProjection,
   calculateActualCredits,
+  calculateLiveMeterCredits,
   creditPurchaseQuote,
   estimateDashboard,
   nextAlertThreshold,

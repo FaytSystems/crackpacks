@@ -305,3 +305,56 @@ test("END SHOW terminates the public feed and removes the public directory card"
   assert.match(routes, /SET status='ended',viewer_count=0/);
   assert.match(routes, /publicRemoved: true/);
 });
+
+test("Seller Live enforces Stream Credits before start and during a one-minute grace period", async () => {
+  const [html, script, css, routes, worker] = await Promise.all([
+    read("streams.html"),
+    read("assets/js/streams-hub.js"),
+    read("assets/css/streams-hub.css"),
+    read("rewards-worker/src/platform-routes.js"),
+    read("rewards-worker/src/index.js")
+  ]);
+  assert.match(html, /data-broadcast-start-show/);
+  assert.match(html, /data-stream-credit-gate-modal/);
+  assert.match(html, /data-stream-credit-countdown-value>01:00/);
+  assert.match(html, />PURCHASE CREDITS</);
+  assert.match(html, /data-stream-credit-end-now/);
+  assert.match(script, /STREAM_CREDITS_REQUIRED/);
+  assert.match(script, /\/seller\/shows\/\$\{encodeURIComponent\(showId\)\}\/live-status/);
+  assert.match(script, /\/seller\/shows\/\$\{encodeURIComponent\(show\.id\)\}\/start/);
+  assert.match(script, /balance reached 0\.00/);
+  assert.match(script, /window\.setInterval\(updateStreamCreditCountdown, 1000\)/);
+  assert.match(css, /\.seller-stream-credit-modal/);
+  assert.match(routes, /A positive Stream Credit balance is required before this show can go live/);
+  assert.match(routes, /new Date\(Date\.parse\(exhaustedAt\) \+ 60_000\)/);
+  assert.match(routes, /closeSellerShow\(env, show\.member_id, showId, "credits_exhausted"\)/);
+  assert.match(routes, /await setLiveInputEnabled\(env, input\.cloudflare_live_input_uid, true\)/);
+  assert.match(routes, /await setLiveInputEnabled\(env, input\.cloudflare_live_input_uid, false\)/);
+  assert.match(worker, /runLiveCreditGateCycle\(env\)/);
+});
+
+test("Master credit codes support individual, email, and limited redemption delivery", async () => {
+  const [adminHtml, adminScript, accountHtml, accountScript, routes] = await Promise.all([
+    read("admin.html"),
+    read("assets/js/admin.js"),
+    read("referral.html"),
+    read("assets/js/referral.js"),
+    read("rewards-worker/src/platform-routes.js")
+  ]);
+  assert.match(adminHtml, /option value="stream_credits"/);
+  assert.match(adminHtml, /option value="individual"/);
+  assert.match(adminHtml, /option value="email"/);
+  assert.match(adminHtml, /option value="limited"/);
+  assert.match(adminHtml, /data-credit-code-copy-link/);
+  assert.match(adminScript, /\/admin\/stream-credit-codes/);
+  assert.match(adminScript, /targetMemberId/);
+  assert.match(adminScript, /targetEmail/);
+  assert.match(adminScript, /maxRedemptions/);
+  assert.match(accountHtml, /data-stream-credit-code-form/);
+  assert.match(accountScript, /cp_pending_stream_credit_code/);
+  assert.match(accountScript, /\/stream-credits\/redeem/);
+  assert.match(routes, /distribution_type='individual'/);
+  assert.match(routes, /distribution_type='email'/);
+  assert.match(routes, /distribution_type='limited'/);
+  assert.match(routes, /prepaid_credits_balance=prepaid_credits_balance\+/);
+});
