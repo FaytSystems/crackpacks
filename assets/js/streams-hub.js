@@ -2006,12 +2006,15 @@
     button.disabled = true;
     setStatus("[data-close-show-status]", "Settling the active auction, closing the stream, and cancelling the remaining queue...");
     try {
+      if (autoNextActive) stopAutoNext("Auto-Next stopped because the show is ending.");
       const result = await api(`/seller/shows/${encodeURIComponent(showId)}/end`, { method: "POST", body: "{}" });
       showSellerPurchasedToast(result.closedLot);
       closeCloseShowModal({ restoreFocus: false });
-      await loadSellerShows();
+      await Promise.all([loadSellerShows(), loadShows()]);
       const synced = result.streamCreditSync?.syncedVideos ? ` ${Number(result.streamCreditSync.syncedVideos)} recording source(s) synced.` : " Usage will also refresh on the next hourly cycle.";
-      setStatus("[data-seller-lot-status]", `Show ended.${auctionSettlementMessage(result.closedLot)} Stream Credits are syncing.${synced}`, result.closedLot?.paymentStatus === "failed" ? "error" : "success");
+      const message = `Show ended and removed from Public Live Shows.${auctionSettlementMessage(result.closedLot)} Stream Credits are syncing.${synced}`;
+      setStatus("[data-seller-lot-status]", message, result.closedLot?.paymentStatus === "failed" ? "error" : "success");
+      setStatus("[data-broadcast-auction-status]", message, result.closedLot?.paymentStatus === "failed" ? "error" : "success");
     } catch (error) {
       setStatus("[data-close-show-status]", error.message, "error");
     } finally {
@@ -2227,7 +2230,7 @@
   if (viewerOnly) loadLiveShowsSellerContext();
   const showsRefreshTimer = window.setInterval(() => {
     if (!document.hidden) loadShows();
-  }, 15000);
+  }, 5000);
   const sellerLotsRefreshTimer = window.setInterval(() => {
     const showId = $("[data-broadcast-show-select]")?.value || "";
     if (!viewerOnly && sellerContextAuthorized && !document.hidden && showId && !sellerLotsRefreshPromise) {

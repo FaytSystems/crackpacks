@@ -917,7 +917,9 @@ test("live show list includes the featured item and its starting bid", async () 
             return {
               all: async () => {
                 assert.match(sql, /LEFT JOIN breaker_auction_lots featured_lot/);
-                assert.equal(args.length, 3);
+                assert.match(sql, /WHERE session\.status IN \('open','live'\)/);
+                assert.doesNotMatch(sql, /recording_ready/);
+                assert.equal(args.length, 2);
                 return {
                   results: [{
                     id: showId,
@@ -1023,6 +1025,103 @@ test("dedicated live show endpoint returns its thumbnail and first queued item",
   assert.equal(payload.lot.status, "scheduled");
   assert.equal(payload.lot.startingBidCents, 500);
   assert.equal(payload.lot.bidIncrementCents, 100);
+});
+
+test("ended live show endpoint terminates public playback and auctions", async () => {
+  const showId = "22222222-2222-4222-8222-222222222222";
+  const env = {
+    CLOUDFLARE_STREAM_CUSTOMER_CODE: "customer-test.cloudflarestream.com",
+    DB: {
+      prepare(sql) {
+        return {
+          bind(...args) {
+            return {
+              first: async () => {
+                if (sql.includes("FROM breaker_auction_lots lot")) {
+                  assert.match(sql, /session\.status IN \('open','live'\)/);
+                  return null;
+                }
+                if (sql.includes("FROM breaker_stream_sessions")) {
+                  assert.deepEqual(args, [showId]);
+                  return {
+                    id: showId,
+                    title: "Sunday Slabs",
+                    status: "recording_ready",
+                    viewer_count: 19,
+                    cloudflare_live_input_uid: "stream-input-123",
+                    thumbnail_url: "https://images.example.test/show.jpg",
+                    scheduled_at: "2026-07-27T20:00:00.000Z",
+                    started_at: "2026-07-27T20:00:00.000Z"
+                  };
+                }
+                return null;
+              }
+            };
+          }
+        };
+      }
+    }
+  };
+
+  const response = await handlePlatformRoute(new Request(`https://api.crackpacks.test/live/auction?show=${showId}`), env, {});
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.ended, true);
+  assert.equal(payload.lot, null);
+  assert.equal(payload.show.status, "recording_ready");
+  assert.equal(payload.show.playbackUrl, "");
+});
+
+test("seller END SHOW clears public viewer state and confirms directory removal", async () => {
+  const sellerId = "11111111-1111-4111-8111-111111111111";
+  const showId = "22222222-2222-4222-8222-222222222222";
+  const statements = [];
+  const member = {
+    id: sellerId,
+    email: "seller@example.test",
+    email_verified_at: "2026-07-24T00:00:00.000Z",
+    device_verified: 1,
+    identity_status: "verified",
+    stripe_identity_status: "verified",
+    live_username: "ShowBuilder"
+  };
+  const env = {
+    AUTH_SECRET: "test-secret",
+    DB: {
+      prepare(sql) {
+        return {
+          first: async () => ({ id: "seeded" }),
+          bind(...args) {
+            return {
+              first: async () => {
+                if (sql.includes("SELECT m.* FROM sessions")) return member;
+                if (sql.includes("FROM breaker_profiles")) return { status: "active" };
+                return null;
+              },
+              run: async () => {
+                statements.push({ sql, args });
+                return { success: true, meta: { changes: 1 } };
+              },
+              all: async () => ({ results: [] })
+            };
+          }
+        };
+      }
+    }
+  };
+
+  const response = await handlePlatformRoute(new Request(`https://api.crackpacks.test/seller/shows/${showId}/end`, {
+    method: "POST",
+    headers: { Authorization: "Bearer session-token" },
+    body: "{}"
+  }), env, {});
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.ended, true);
+  assert.equal(payload.publicRemoved, true);
+  assert.ok(statements.some(item => /SET status='ended',viewer_count=0/.test(item.sql)));
+  assert.ok(statements.some(item => /SET status='cancelled'/.test(item.sql)));
+  assert.ok(statements.some(item => /DELETE FROM stream_viewer_presence/.test(item.sql)));
 });
 
 test("live show chat returns public User IDs without personal account details", async () => {

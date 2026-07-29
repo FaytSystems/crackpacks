@@ -54,6 +54,9 @@
   let refreshInFlight = false;
   let heartbeatInFlight = false;
   let videoHudStateKey = "";
+  let showEnded = false;
+  let refreshTimer = 0;
+  let heartbeatTimer = 0;
 
   const money = (cents) => `$${(Number(cents || 0) / 100).toFixed(2)}`;
   const dollars = (cents) => (Number(cents || 0) / 100).toFixed(2);
@@ -297,11 +300,45 @@
     if (els.placeholder) els.placeholder.hidden = false;
   };
 
+  const endPublicShow = show => {
+    if (showEnded) return;
+    showEnded = true;
+    renderShow(show);
+    activePlaybackUrl = "";
+    if (els.player) {
+      els.player.src = "about:blank";
+      els.player.hidden = true;
+    }
+    if (els.viewers) els.viewers.textContent = "0";
+    renderVideoAuctionHud(null);
+    setVideoBidStatus("This show has ended.");
+    els.card.dataset.state = "ended";
+    els.status.textContent = "Show ended.";
+    els.title.textContent = show?.title || "This show has ended";
+    els.description.textContent = "The seller ended this show. Return to Live Shows to find the next broadcast.";
+    if (els.currentLabel) els.currentLabel.textContent = "Final status";
+    if (els.nextLabel) els.nextLabel.textContent = "Bidding";
+    els.current.textContent = "ENDED";
+    els.next.textContent = "CLOSED";
+    els.copy.textContent = "This broadcast and its auction queue are closed.";
+    els.flash.hidden = true;
+    setBiddingEnabled(false);
+    closeVideoCustomBid();
+    setSlider(0);
+    window.clearInterval(refreshTimer);
+    window.clearInterval(heartbeatTimer);
+    liveChat?.stop();
+  };
+
   const refresh = async () => {
-    if (refreshInFlight || document.hidden) return;
+    if (showEnded || refreshInFlight || document.hidden) return;
     refreshInFlight = true;
     try {
       const data = await api(`/live/auction${showId ? `?show=${encodeURIComponent(showId)}` : ""}`, { method: "GET" });
+      if (data.ended || (data.show && !["open", "live"].includes(data.show.status))) {
+        endPublicShow(data.show);
+        return;
+      }
       renderShow(data.show);
       if (els.viewers) els.viewers.textContent = String(data.show?.viewerCount ?? data.lot?.viewerCount ?? 0);
       render(data.lot);
@@ -314,7 +351,7 @@
   };
 
   const heartbeat = async () => {
-    if (!showId || heartbeatInFlight || document.hidden) return;
+    if (showEnded || !showId || heartbeatInFlight || document.hidden) return;
     heartbeatInFlight = true;
     try {
       const data = await api("/live/viewers/heartbeat", { method: "POST", body: JSON.stringify({ showId, clientId: viewerClientId }) });
@@ -426,8 +463,8 @@
 
   refresh();
   heartbeat();
-  const refreshTimer = window.setInterval(refresh, 2000);
-  const heartbeatTimer = window.setInterval(heartbeat, 30000);
+  refreshTimer = window.setInterval(refresh, 2000);
+  heartbeatTimer = window.setInterval(heartbeat, 30000);
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) return;
     refresh();

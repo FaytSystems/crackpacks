@@ -127,3 +127,21 @@ test("Seller Live shows confirmed purchases for two seconds and links the recap 
   assert.match(worker, /runAuctionSettlementCycle\(env\)/);
   assert.match(wrangler, /"\* \* \* \* \*"/);
 });
+
+test("END SHOW terminates the public feed and removes the public directory card", async () => {
+  const [sellerScript, publicScript, routes] = await Promise.all([
+    read("assets/js/streams-hub.js"),
+    read("assets/js/live.js"),
+    read("rewards-worker/src/platform-routes.js")
+  ]);
+  assert.match(sellerScript, /Promise\.all\(\[loadSellerShows\(\), loadShows\(\)\]\)/);
+  assert.match(sellerScript, /removed from Public Live Shows/);
+  assert.match(sellerScript, /\}, 5000\)/);
+  assert.match(publicScript, /const endPublicShow = show =>/);
+  assert.match(publicScript, /data\.ended/);
+  assert.match(publicScript, /els\.player\.src = "about:blank"/);
+  assert.match(publicScript, /clearInterval\(refreshTimer\)/);
+  assert.match(publicScript, /liveChat\?\.stop\(\)/);
+  assert.match(routes, /SET status='ended',viewer_count=0/);
+  assert.match(routes, /publicRemoved: true/);
+});

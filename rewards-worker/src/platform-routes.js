@@ -2193,6 +2193,7 @@ async function currentAuction(request, env, cors, url) {
     LEFT JOIN members winner ON winner.id=lot.winning_member_id
     LEFT JOIN breaker_auction_payments payment ON payment.lot_id=lot.id
     WHERE (?='' OR session.id=?)
+      AND session.status IN ('open','live')
       AND (
         lot.status='live'
         OR (lot.status='sold' AND lot.winner_banner_until>?)
@@ -2204,10 +2205,13 @@ async function currentAuction(request, env, cors, url) {
     LIMIT 1
   `).bind(requestedShow, requestedShow, now(), requestedShow).first();
   let show = null;
+  let ended = false;
   const showId = requestedShow || row?.session_id || "";
   if (showId) {
-    const session = await env.DB.prepare(`SELECT id,title,status,viewer_count,cloudflare_live_input_uid,thumbnail_url,scheduled_at,started_at FROM breaker_stream_sessions WHERE id=? AND status IN ('open','live','recording_ready')`).bind(showId).first();
+    const session = await env.DB.prepare(`SELECT id,title,status,viewer_count,cloudflare_live_input_uid,thumbnail_url,scheduled_at,started_at FROM breaker_stream_sessions WHERE id=?`).bind(showId).first();
     if (session) {
+      const active = ["open", "live"].includes(session.status);
+      ended = !active;
       show = {
         id: session.id,
         title: session.title,
@@ -2215,11 +2219,11 @@ async function currentAuction(request, env, cors, url) {
         viewerCount: Number(session.viewer_count || 0),
         imageUrl: session.thumbnail_url || "assets/images/banner-cosmic.svg",
         startsAt: session.scheduled_at || session.started_at || "",
-        playbackUrl: playbackUrl(env, session.cloudflare_live_input_uid)
+        playbackUrl: active ? playbackUrl(env, session.cloudflare_live_input_uid) : ""
       };
     }
   }
-  return json({ lot: auctionView(row, member?.id || "", env), show, serverNow: now() }, 200, cors);
+  return json({ lot: ended ? null : auctionView(row, member?.id || "", env), show, ended, serverNow: now() }, 200, cors);
 }
 
 async function viewerHeartbeat(request, env, cors) {
@@ -2482,9 +2486,9 @@ async function listShows(request, env, cors) {
       ORDER BY CASE lot.status WHEN 'live' THEN 0 ELSE 1 END,COALESCE(lot.queue_position,lot.rowid) ASC,lot.created_at ASC
       LIMIT 1
     )
-    WHERE session.status IN ('open','live','recording_ready') OR (session.scheduled_at IS NOT NULL AND session.scheduled_at>?)
+    WHERE session.status IN ('open','live')
     ORDER BY CASE session.status WHEN 'live' THEN 0 ELSE 1 END,COALESCE(session.scheduled_at,session.started_at) ASC LIMIT 100
-  `).bind(viewer?.id || "", viewer?.id || "", now()).all();
+  `).bind(viewer?.id || "", viewer?.id || "").all();
   return json({ shows: (rows.results || []).map(row => ({
     id: row.id, sellerId: row.seller_member_id, sellerUsername: row.live_username || "Seller", title: row.title || "Crack Packs live show",
     state: row.status === "live" ? "live" : "upcoming", viewers: Number(row.viewer_count || 0), image: row.thumbnail_url || "assets/images/banner-cosmic.svg",
@@ -3085,7 +3089,7 @@ async function adjustSellerInventory(request, env, cors, itemId) {
 }
 
 function storeListingView(row) {
-  const linkedShow = row.show_id ? {
+  const linkedShow = row.show_id && ["open", "live"].includes(String(row.show_status || "")) ? {
     showId: row.show_id,
     showTitle: row.show_title || "Crack Packs show",
     showStatus: row.show_status || "open",
@@ -4048,11 +4052,12 @@ async function endSellerShow(request, env, cors, showId) {
   `).bind(showId, auth.member.id).first();
   const closedLot = activeLot ? await settleAuctionLot(env, activeLot) : null;
   const stamp = now();
-  const changed = await env.DB.prepare(`UPDATE breaker_stream_sessions SET status='ended',ended_at=?,updated_at=? WHERE id=? AND member_id=? AND status IN ('open','live')`)
+  const changed = await env.DB.prepare(`UPDATE breaker_stream_sessions SET status='ended',viewer_count=0,ended_at=?,updated_at=? WHERE id=? AND member_id=? AND status IN ('open','live')`)
     .bind(stamp, stamp, showId, auth.member.id).run();
   if (Number(changed.meta?.changes || 0) !== 1) return json({ error: "That show is already ended or was not found." }, 409, cors);
   await env.DB.prepare(`UPDATE breaker_auction_lots SET status='cancelled',updated_at=? WHERE session_id=? AND member_id=? AND status='scheduled'`)
     .bind(stamp, showId, auth.member.id).run();
+  await env.DB.prepare(`DELETE FROM stream_viewer_presence WHERE stream_session_id=?`).bind(showId).run();
   const remainingOpen = await env.DB.prepare(`SELECT id,cloudflare_live_input_uid FROM breaker_stream_sessions WHERE member_id=? AND id<>? AND status IN ('open','live') LIMIT 1`).bind(auth.member.id, showId).first();
   if (!remainingOpen) {
     const input = await env.DB.prepare(`SELECT cloudflare_live_input_uid FROM breaker_stream_inputs WHERE member_id=?`).bind(auth.member.id).first();
@@ -4063,7 +4068,7 @@ async function endSellerShow(request, env, cors, showId) {
     console.error("Post-show Stream Credit sync failed", error);
     return { syncedMembers: 0, syncedVideos: 0, syncFailed: true };
   });
-  return json({ ended: true, endedAt: stamp, closedLot, streamCreditSync }, 200, cors);
+  return json({ ended: true, publicRemoved: true, endedAt: stamp, closedLot, streamCreditSync }, 200, cors);
 }
 
 async function createAuctionLot(request, env, cors, showId) {
