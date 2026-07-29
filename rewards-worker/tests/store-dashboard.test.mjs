@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { runInNewContext } from "node:vm";
 
 const root = new URL("../../", import.meta.url);
 const read = file => readFile(new URL(file, root), "utf8");
@@ -15,6 +16,10 @@ test("buyer store uses one public, paginated marketplace controller", async () =
   assert.match(html, /data-store-catalog/);
   assert.match(html, /data-marketplace-more/);
   assert.match(html, /data-filter-summary/);
+  assert.match(html, /data-marketplace-quick-sort="newest"/);
+  assert.match(html, /data-marketplace-quick-sort="price-low"/);
+  assert.match(html, /data-marketplace-quick-sort="price-high"/);
+  assert.match(html, />Newest uploads</);
   assert.match(html, /assets\/js\/buyer-store\.js/);
   assert.doesNotMatch(html, /assets\/js\/store-enhancements\.js/);
   assert.doesNotMatch(html, /data-store-auth-gate/);
@@ -22,9 +27,32 @@ test("buyer store uses one public, paginated marketplace controller", async () =
   assert.match(script, /sessionStorage\.getItem\(CACHE_KEY\)/);
   assert.match(script, /\/marketplace\/listings/);
   assert.match(script, /requestAnimationFrame/);
+  assert.match(script, /function boundedEditDistance/);
+  assert.match(script, /function closeMatchScore/);
+  assert.match(script, /No exact spelling match/);
+  assert.match(script, /state\.sort === "newest"/);
+  assert.match(script, /state\.sort === "price-low"/);
+  assert.match(script, /state\.sort === "price-high"/);
+  assert.match(script, /Date\.parse\(item\.createdAt\)/);
   assert.doesNotMatch(script, /MutationObserver|setInterval/);
   assert.match(app, /allProducts && !dedicatedStoreCatalog/);
   assert.match(css, /\.buyer-store-shortcuts\s*\{[\s\S]*position:\s*sticky[\s\S]*top:\s*var\(--site-header-height\)/);
+  assert.match(css, /\.buyer-store-quick-sort/);
+  assert.match(css, /\.buyer-filter-summary strong\.is-close-match/);
+});
+
+test("buyer store typo matching finds close spellings without unrelated short-word matches", async () => {
+  const source = await read("assets/js/buyer-store.js");
+  const start = source.indexOf("  const normalizeText");
+  const end = source.indexOf("\n  const pretty", start);
+  assert.ok(start >= 0 && end > start);
+  const helpers = source.slice(start, end).replace(/^  /gm, "");
+  const context = {};
+  runInNewContext(`${helpers}\nglobalThis.searchHelpers = { boundedEditDistance, closeMatchScore };`, context);
+  assert.equal(context.searchHelpers.boundedEditDistance("charzard", "charizard", 2), 1);
+  assert.equal(context.searchHelpers.boundedEditDistance("pokmon", "pokemon", 2), 1);
+  assert.equal(context.searchHelpers.closeMatchScore({ searchTokens: ["charizard", "graded", "slab"] }, ["charzard"]), 1);
+  assert.equal(Number.isFinite(context.searchHelpers.closeMatchScore({ searchTokens: ["a", "sealed", "box"] }, ["cat"])), false);
 });
 
 test("seller store separates public stock, private inventory, and show stock", async () => {

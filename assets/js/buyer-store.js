@@ -16,6 +16,7 @@
   const searchInput = document.querySelector("[data-product-search]");
   const suggestionsNode = document.querySelector("[data-product-suggestions]");
   const sortSelect = document.querySelector("[data-marketplace-sort]");
+  const quickSortButtons = [...document.querySelectorAll("[data-marketplace-quick-sort]")];
   const seriesTabs = document.querySelector("[data-store-series-tabs]");
   const primaryTabs = document.querySelector("[data-store-primary-tabs]");
   const subcategorySelect = document.querySelector("[data-subcategory-filter]");
@@ -45,6 +46,8 @@
     minPrice: 0,
     maxPrice: 1000,
     sort: String(sortSelect?.value || "rank"),
+    closeMatchUsed: false,
+    closeMatchScores: new Map(),
     source: "live",
     controller: null,
     renderFrame: 0
@@ -63,6 +66,49 @@
     .replace(/[\u0300-\u036f]/g, "")
     .trim()
     .toLowerCase();
+
+  const tokenize = value => normalizeText(value).match(/[a-z0-9]+/g) || [];
+
+  function boundedEditDistance(source, target, maximum) {
+    if (source === target) return 0;
+    if (Math.abs(source.length - target.length) > maximum) return maximum + 1;
+    let previous = Array.from({ length: target.length + 1 }, (_, index) => index);
+    for (let sourceIndex = 1; sourceIndex <= source.length; sourceIndex += 1) {
+      const current = [sourceIndex];
+      let rowMinimum = sourceIndex;
+      for (let targetIndex = 1; targetIndex <= target.length; targetIndex += 1) {
+        const substitution = previous[targetIndex - 1] + (source[sourceIndex - 1] === target[targetIndex - 1] ? 0 : 1);
+        const distance = Math.min(previous[targetIndex] + 1, current[targetIndex - 1] + 1, substitution);
+        current.push(distance);
+        rowMinimum = Math.min(rowMinimum, distance);
+      }
+      if (rowMinimum > maximum) return maximum + 1;
+      previous = current;
+    }
+    return previous[target.length];
+  }
+
+  function closeTokenDistance(queryToken, candidateToken) {
+    if (queryToken === candidateToken) return 0;
+    if (queryToken.length < 3 || candidateToken.length < 3) return Number.POSITIVE_INFINITY;
+    const maximum = queryToken.length >= 8 ? 2 : 1;
+    return boundedEditDistance(queryToken, candidateToken, maximum);
+  }
+
+  function closeMatchScore(item, queryTokens) {
+    let score = 0;
+    for (const queryToken of queryTokens) {
+      let best = Number.POSITIVE_INFINITY;
+      for (const candidateToken of item.searchTokens) {
+        const distance = closeTokenDistance(queryToken, candidateToken);
+        if (distance < best) best = distance;
+        if (best === 0) break;
+      }
+      if (!Number.isFinite(best) || best > (queryToken.length >= 8 ? 2 : 1)) return Number.POSITIVE_INFINITY;
+      score += best;
+    }
+    return score;
+  }
 
   const pretty = value => String(value || "other")
     .replace(/[_-]+/g, " ")
@@ -156,6 +202,15 @@
       normalized.saleType,
       normalized.series
     ].join(" "));
+    normalized.searchTokens = [...new Set([
+      ...tokenize(normalized.title),
+      ...tokenize(normalized.sellerUsername),
+      ...tokenize(normalized.primaryLabel),
+      ...tokenize(normalized.condition),
+      ...tokenize(normalized.saleType),
+      ...tokenize(normalized.series),
+      ...tokenize(normalized.description).slice(0, 36)
+    ])].slice(0, 64);
     return normalized;
   }
 
@@ -308,8 +363,8 @@
   }
 
   function sortedFilteredItems() {
-    const queryTokens = state.search.split(/\s+/).filter(Boolean);
-    const rows = state.items.filter(item => {
+    const queryTokens = tokenize(state.search).slice(0, 8);
+    const candidates = state.items.filter(item => {
       if (requestedSeller && item.sellerKey !== requestedSeller) return false;
       if (state.seller && !item.sellerKey.includes(state.seller)) return false;
       if (state.category !== "all" && item.category !== state.category) return false;
@@ -318,21 +373,38 @@
       if (state.subcategory !== "all" && item.subcategory !== state.subcategory) return false;
       const price = Number(item.priceCents || 0) / 100;
       if (item.priceCents !== null && (price < state.minPrice || price > state.maxPrice)) return false;
-      return queryTokens.every(token => item.searchText.includes(token));
+      return true;
     });
+    let rows = queryTokens.length
+      ? candidates.filter(item => queryTokens.every(token => item.searchText.includes(token)))
+      : candidates;
+    state.closeMatchUsed = false;
+    state.closeMatchScores.clear();
+    if (queryTokens.length && !rows.length) {
+      rows = candidates.filter(item => {
+        const score = closeMatchScore(item, queryTokens);
+        if (!Number.isFinite(score)) return false;
+        state.closeMatchScores.set(item.id, score);
+        return true;
+      });
+      state.closeMatchUsed = rows.length > 0;
+    }
     const conditionRank = value => {
       const ranking = ["mint", "near mint", "light play", "moderate play", "heavy play", "damaged"];
       const index = ranking.indexOf(normalizeText(value));
       return index < 0 ? 999 : index;
     };
+    const uploadedAt = item => Number.isFinite(Date.parse(item.createdAt)) ? Date.parse(item.createdAt) : 0;
+    const newestFirst = (left, right) => uploadedAt(right) - uploadedAt(left) || left.title.localeCompare(right.title, undefined, { sensitivity: "base" });
     return rows.sort((left, right) => {
       if (state.sort === "alpha") return left.title.localeCompare(right.title, undefined, { sensitivity: "base" });
-      if (state.sort === "newest") return right.createdAt.localeCompare(left.createdAt);
-      if (state.sort === "oldest") return left.createdAt.localeCompare(right.createdAt);
-      if (state.sort === "price-low") return Number(left.priceCents ?? Infinity) - Number(right.priceCents ?? Infinity);
-      if (state.sort === "price-high") return Number(right.priceCents ?? -1) - Number(left.priceCents ?? -1);
+      if (state.sort === "newest") return newestFirst(left, right);
+      if (state.sort === "oldest") return -newestFirst(left, right);
+      if (state.sort === "price-low") return Number(left.priceCents ?? Infinity) - Number(right.priceCents ?? Infinity) || newestFirst(left, right);
+      if (state.sort === "price-high") return Number(right.priceCents ?? -1) - Number(left.priceCents ?? -1) || newestFirst(left, right);
       if (state.sort === "condition") return conditionRank(left.condition) - conditionRank(right.condition);
       if (state.sort === "seller") return left.sellerUsername.localeCompare(right.sellerUsername, undefined, { sensitivity: "base" });
+      if (state.closeMatchUsed) return Number(state.closeMatchScores.get(left.id) || 0) - Number(state.closeMatchScores.get(right.id) || 0) || newestFirst(left, right);
       return left.rank - right.rank;
     });
   }
@@ -344,12 +416,19 @@
       suggestionsNode.innerHTML = "";
       return;
     }
-    const matches = state.items
+    let closeMatches = false;
+    let matches = state.items
       .filter(item => item.searchText.includes(state.search))
       .slice(0, 6);
+    if (!matches.length && state.closeMatchUsed) {
+      matches = [...state.filtered]
+        .sort((left, right) => Number(state.closeMatchScores.get(left.id) || 0) - Number(state.closeMatchScores.get(right.id) || 0) || (Date.parse(right.createdAt || "") || 0) - (Date.parse(left.createdAt || "") || 0))
+        .slice(0, 6);
+      closeMatches = matches.length > 0;
+    }
     suggestionsNode.innerHTML = matches.map(item => `
       <button type="button" data-suggestion="${escapeHtml(item.title)}">
-        <strong>${escapeHtml(item.title)}</strong><span>@${escapeHtml(item.sellerUsername)} - ${escapeHtml(formatMoney(item.priceCents))}</span>
+        <strong>${escapeHtml(item.title)}</strong><span>${closeMatches ? "<em>Close match</em>" : ""}@${escapeHtml(item.sellerUsername)} - ${escapeHtml(formatMoney(item.priceCents))}</span>
       </button>`).join("");
     suggestionsNode.hidden = matches.length === 0;
   }
@@ -364,8 +443,17 @@
     if (state.subcategory !== "all") chips.push(pretty(state.subcategory));
     if (state.seller && !requestedSeller) chips.push(`Seller: ${state.seller}`);
     filterSummary.innerHTML = chips.length
-      ? `<span>Applied filters</span>${chips.map(chip => `<strong>${escapeHtml(chip)}</strong>`).join("")}<button type="button" data-clear-filters>Clear</button>`
+      ? `<span>Applied filters</span>${chips.map(chip => `<strong>${escapeHtml(chip)}</strong>`).join("")}${state.closeMatchUsed ? '<strong class="is-close-match">Close spelling matches</strong>' : ""}<button type="button" data-clear-filters>Clear</button>`
       : "<span>All active seller inventory</span>";
+  }
+
+  function syncSortControls() {
+    if (sortSelect) sortSelect.value = state.sort;
+    quickSortButtons.forEach(button => {
+      const active = button.dataset.marketplaceQuickSort === state.sort;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-pressed", String(active));
+    });
   }
 
   function renderResults({ reset = false } = {}) {
@@ -381,10 +469,10 @@
     renderSuggestions();
     renderFilterSummary();
     const sourceLabel = state.source === "preview" ? "preview products" : "seller listings";
-    setStatus(
-      `${state.filtered.length.toLocaleString()} matching ${sourceLabel}. Showing ${visible.length.toLocaleString()}.`,
-      state.source === "preview" ? "fallback" : "success"
-    );
+    const resultMessage = state.closeMatchUsed
+      ? `No exact spelling match for "${state.search}". Showing ${state.filtered.length.toLocaleString()} close ${sourceLabel}.`
+      : `${state.filtered.length.toLocaleString()} matching ${sourceLabel}. Showing ${visible.length.toLocaleString()}.`;
+    setStatus(resultMessage, state.source === "preview" ? "fallback" : "success");
   }
 
   function scheduleRender({ reset = true } = {}) {
@@ -444,7 +532,7 @@
     state.sort = "rank";
     if (searchInput) searchInput.value = "";
     if (sellerInput) sellerInput.value = requestedSellerLabel;
-    if (sortSelect) sortSelect.value = "rank";
+    syncSortControls();
     if (priceMinInput) priceMinInput.value = "0";
     document.querySelectorAll("[data-product-filter]").forEach(button => button.classList.toggle("is-active", button.dataset.productFilter === "all"));
     primaryTabs?.querySelectorAll("[data-store-primary]").forEach(button => button.classList.toggle("is-active", button.dataset.storePrimary === "all"));
@@ -490,7 +578,15 @@
     });
     sortSelect?.addEventListener("change", event => {
       state.sort = String(event.currentTarget.value || "rank");
+      syncSortControls();
       scheduleRender();
+    });
+    quickSortButtons.forEach(button => {
+      button.addEventListener("click", () => {
+        state.sort = String(button.dataset.marketplaceQuickSort || "newest");
+        syncSortControls();
+        scheduleRender();
+      });
     });
     subcategorySelect?.addEventListener("change", event => {
       state.subcategory = String(event.currentTarget.value || "all");
@@ -604,6 +700,7 @@
   }
   applyStorefrontContext();
   bindControls();
+  syncSortControls();
   renderTopItems();
   loadCatalog();
 })();
