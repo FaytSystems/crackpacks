@@ -27,6 +27,13 @@
   box-shadow: 0 0 28px rgba(248, 255, 70, .12), 0 30px 80px rgba(0, 0, 0, .35);
 }
 
+.live-buyer-protection {
+  margin: 4px 0 0;
+  color: rgba(255, 255, 255, .68);
+  font-size: .76rem;
+  line-height: 1.45;
+}
+
 .slide-bid button:disabled,
 .custom-bid-form input:disabled,
 .custom-bid-form button:disabled {

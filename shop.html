@@ -10,10 +10,10 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="stylesheet" href="assets/css/styles.css?v=1.11.2">
   <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.7.0">
-  <link rel="stylesheet" href="assets/css/store.css?v=4.0.3">
+  <link rel="stylesheet" href="assets/css/store.css?v=4.1.0">
   
   <!-- CRACK PACKS CONTACT ASSETS:START -->
-  <link rel="stylesheet" href="assets/css/contact-form.css?v=1.7.1">
+  <link rel="stylesheet" href="assets/css/contact-form.css?v=1.8.0">
   <!-- CRACK PACKS CONTACT ASSETS:END -->
 </head>
 <body data-page="shop" data-store-market="us">
@@ -37,8 +37,8 @@
     </div>
   </header>
 
-  <div class="store-coming-soon-tape" role="status" aria-label="Crack Packs marketplace is live for searching seller listings">
-    <span>Buyer marketplace</span><span>Search all seller stores</span><span>Buyer marketplace</span><span aria-hidden="true">Seller listings</span>
+  <div class="store-coming-soon-tape" role="status" data-marketplace-tape aria-label="Crack Packs marketplace status">
+    <span data-marketplace-tape-label>Marketplace preview</span><span>Search all seller stores</span><span data-marketplace-tape-label>Marketplace preview</span><span aria-hidden="true">Seller listings</span>
   </div>
 
   <main id="main">
@@ -83,36 +83,18 @@
           </div>
           <div class="buyer-store-suggestions" data-product-suggestions hidden></div>
         </div>
-        <div class="store-prelaunch-note holo-panel" data-marketplace-only>
+        <div class="store-prelaunch-note holo-panel" data-marketplace-only data-marketplace-state-note>
           <span class="store-lock-icon" aria-hidden="true">&#128269;</span>
-          <div><strong>All seller stores in one search</strong><p>Search by card, box, pack, or product name. Results show seller ID, price, condition, and live listed quantity.</p></div>
+          <div><strong data-marketplace-state-title>Marketplace preview</strong><p data-marketplace-state-copy>Browse real seller inventory while checkout and payout readiness are being verified.</p></div>
           <nav class="store-market-switch" aria-label="Choose storefront"><a href="shop.html" aria-current="page">Buyer marketplace</a><a href="international-shop.html">International</a></nav>
         </div>
-        <section class="top-ten-marketplace holo-panel" aria-labelledby="top-ten-title" data-marketplace-only>
+        <section class="top-ten-marketplace holo-panel" aria-labelledby="top-ten-title" data-marketplace-only data-marketplace-spotlight hidden>
           <div class="top-ten-head">
             <div>
               <p class="eyebrow">Store spotlight</p>
-              <h2 id="top-ten-title">Top 10 non-repeating products</h2>
-              <p>When buyers open Store, Crack Packs can spotlight the strongest-selling unique products across adjustable time windows.</p>
+              <h2 id="top-ten-title">Featured seller listings</h2>
+              <p>A rotating view of current products from active seller storefronts.</p>
             </div>
-            <label class="store-currency-control top-ten-window">
-              <span>Time window</span>
-              <select data-top-ten-window>
-                <option value="1hr">1 hour</option>
-                <option value="3hr">3 hours</option>
-                <option value="5hr">5 hours</option>
-                <option value="12hr">12 hours</option>
-                <option value="24hr">24 hours</option>
-                <option value="3day">3 days</option>
-                <option value="5day">5 days</option>
-                <option value="7day">7 days</option>
-                <option value="30day">30 days</option>
-                <option value="3months">3 months</option>
-                <option value="6months">6 months</option>
-                <option value="year">1 year</option>
-                <option value="ytd">Year to date</option>
-              </select>
-            </label>
           </div>
           <div class="top-ten-grid" data-top-ten-grid aria-live="polite"></div>
         </section>
@@ -242,13 +224,12 @@
   <!-- CRACK PACKS CONTACT FOOTER:END -->
 </footer>
 
-  <script src="assets/js/config.js?v=4.2.0"></script>
+  <script src="assets/js/config.js?v=4.3.0"></script>
   <script src="assets/js/social-footer.js?v=1.1.0" data-crackpacks-social-loader></script>
   <script src="assets/js/data.js?v=1.5.0"></script>
   <script src="assets/js/app.js?v=2.0.1"></script>
-  <script src="assets/js/store-top-items.js?v=1.0.0"></script>
   <script src="assets/js/portal-mode.js?v=1.2.5"></script>
-  <script src="assets/js/buyer-store.js?v=1.1.0"></script>
+  <script src="assets/js/buyer-store.js?v=1.2.1"></script>
 
 
 <!-- CRACK PACKS CONTACT MODAL:START -->
@@ -290,8 +271,8 @@
 </div>
 <!-- CRACK PACKS CONTACT MODAL:END -->
 <!-- CRACK PACKS CONTACT SCRIPT:START -->
-<script src="assets/js/nav-profile.js?v=4.6.0"></script>
-<script src="assets/js/contact-form.js?v=1.7.1"></script>
+<script src="assets/js/nav-profile.js?v=4.7.0"></script>
+<script src="assets/js/contact-form.js?v=1.8.0"></script>
 <!-- CRACK PACKS CONTACT SCRIPT:END -->
 </body>
 </html>

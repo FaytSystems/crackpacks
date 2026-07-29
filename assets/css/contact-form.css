@@ -251,6 +251,11 @@ Crack Packs Contact Form v1.7.1
   line-height: 1.4;
 }
 
+.contact-turnstile {
+  min-height: 65px;
+  overflow: hidden;
+}
+
 .contact-form-status[data-state="success"] {
   color: #8fffc1;
 }

@@ -118,6 +118,58 @@ const randomToken = (length = 40) => Array.from(crypto.getRandomValues(new Uint8
 const employeeId = () => `EMP-${crypto.randomUUID().replace(/-/g, "").slice(0, 10).toUpperCase()}`;
 const orderNumber = () => `CP-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
 const siteUrl = env => String(env.SITE_URL || "https://crackpacks.com").replace(/\/$/, "");
+const marketplaceMode = env => {
+  const configured = String(env.MARKETPLACE_MODE || "").trim().toLowerCase();
+  if (["preview", "live", "paused"].includes(configured)) return configured;
+  return String(env.STORE_COMING_SOON || "true") === "false" ? "live" : "preview";
+};
+const marketplaceCheckoutEnabled = env => marketplaceMode(env) === "live" && String(env.STORE_CHECKOUT_ENABLED || "false") === "true";
+const sellerPayoutsRequired = env => String(env.SELLER_PAYOUTS_REQUIRED || "false") === "true";
+const sellerConnectReady = profile => Boolean(
+  profile?.stripe_connect_account_id &&
+  Number(profile?.stripe_connect_details_submitted) === 1 &&
+  Number(profile?.stripe_connect_charges_enabled) === 1 &&
+  Number(profile?.stripe_connect_payouts_enabled) === 1 &&
+  Number(profile?.stripe_connect_requirements_due || 0) === 0 &&
+  !profile?.stripe_connect_disabled_reason
+);
+const sellerFeeQuote = (env, amountCents) => {
+  const amount = Math.max(1, Math.round(Number(amountCents || 0)));
+  const commissionBps = Math.max(0, Math.min(5000, Number(env.SELLER_COMMISSION_BPS || 800)));
+  const processingBps = Math.max(0, Math.min(5000, Number(env.SELLER_PROCESSING_FEE_BPS || 290)));
+  const processingFixedCents = Math.max(0, Math.min(5000, Number(env.SELLER_PROCESSING_FIXED_CENTS || 30)));
+  const platformCommissionCents = Math.round(amount * commissionBps / 10000);
+  const processingFeeCents = Math.round(amount * processingBps / 10000) + processingFixedCents;
+  const applicationFeeCents = Math.min(amount - 1, platformCommissionCents + processingFeeCents);
+  return {
+    platformCommissionCents,
+    processingFeeCents,
+    applicationFeeCents: Math.max(0, applicationFeeCents),
+    sellerProceedsCents: Math.max(0, amount - Math.max(0, applicationFeeCents)),
+    commissionBps,
+    processingBps,
+    processingFixedCents
+  };
+};
+const auctionRoomStub = (env, showId) => {
+  if (!env.SHOW_AUCTION_ROOM || !validUuid(showId)) return null;
+  return typeof env.SHOW_AUCTION_ROOM.getByName === "function"
+    ? env.SHOW_AUCTION_ROOM.getByName(showId)
+    : env.SHOW_AUCTION_ROOM.get(env.SHOW_AUCTION_ROOM.idFromName(showId));
+};
+async function publishShowEvent(env, showId, type, payload = {}) {
+  const stub = auctionRoomStub(env, showId);
+  if (!stub) return;
+  try {
+    await stub.fetch("https://auction-room.internal/publish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ showId, type, payload })
+    });
+  } catch (error) {
+    console.warn("Live auction event publish failed", { showId, type, message: clean(error?.message || "", 160) });
+  }
+}
 const monthKeyAt = (iso = now()) => String(iso).slice(0, 7);
 const dateOnly = iso => String(iso || "").slice(0, 10);
 const parseJsonSafe = (value, fallback) => {
@@ -1121,7 +1173,7 @@ async function releaseOwnerInventory(env, reservation, movementType = "released"
 }
 
 async function createStoreCheckout(request, env, cors) {
-  if (String(env.STORE_COMING_SOON || "true") !== "false" || String(env.STORE_CHECKOUT_ENABLED || "false") !== "true") {
+  if (!marketplaceCheckoutEnabled(env)) {
     return json({ error: "Checkout is locked until the owner enables the production store." }, 503, cors);
   }
   const auth = await requireMember(request, env, cors, { seller: true });
@@ -1574,11 +1626,23 @@ async function syncStreamSubscriptionStatus(env, subscription) {
 }
 
 async function stripeWebhook(request, env, cors) {
-  if (!env.STRIPE_WEBHOOK_SECRET) return json({ error: "Stripe webhook is not configured." }, 503, cors);
+  const webhookSecrets = [...new Set([
+    String(env.STRIPE_WEBHOOK_SECRET || "").trim(),
+    String(env.STRIPE_CONNECT_WEBHOOK_SECRET || "").trim()
+  ].filter(Boolean))];
+  if (!webhookSecrets.length) return json({ error: "Stripe webhook is not configured." }, 503, cors);
   const rawBody = await request.text();
   if (rawBody.length > 1_000_000) return json({ error: "Webhook body is too large." }, 413, cors);
-  const verified = await verifyStripeWebhook({ rawBody, signatureHeader: request.headers.get("Stripe-Signature") || "", secret: env.STRIPE_WEBHOOK_SECRET });
-  if (!verified.ok) return json({ error: "Invalid Stripe webhook signature." }, 401, cors);
+  const signatureHeader = request.headers.get("Stripe-Signature") || "";
+  let signatureVerified = false;
+  for (const secret of webhookSecrets) {
+    const verified = await verifyStripeWebhook({ rawBody, signatureHeader, secret });
+    if (verified.ok) {
+      signatureVerified = true;
+      break;
+    }
+  }
+  if (!signatureVerified) return json({ error: "Invalid Stripe webhook signature." }, 401, cors);
   let event;
   try { event = JSON.parse(rawBody); } catch { return json({ error: "Invalid Stripe webhook event." }, 400, cors); }
   if (!event.id || !event.type) return json({ error: "Invalid Stripe webhook event." }, 400, cors);
@@ -1631,7 +1695,11 @@ async function stripeWebhook(request, env, cors) {
   } else if (event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {
     await syncStreamSubscriptionStatus(env, event.data?.object || {});
   } else if (event.type === "account.updated") {
-    await syncEmployeeConnectAccount(env, event.data?.object || {});
+    const account = event.data?.object || {};
+    await Promise.all([
+      syncEmployeeConnectAccount(env, account),
+      syncSellerConnectAccount(env, account)
+    ]);
   } else if (event.type === "charge.refunded") {
     await handleRefund(env, event.data?.object || {});
   } else if (event.type.startsWith("identity.verification_session.")) {
@@ -1935,6 +2003,141 @@ async function syncEmployeeConnectAccount(env, account) {
   `).bind(account.details_submitted ? 1 : 0, account.payouts_enabled ? 1 : 0, requirementsDue, now(), accountId).run();
 }
 
+function sellerPayoutView(profile) {
+  const connected = Boolean(profile?.stripe_connect_account_id);
+  const ready = sellerConnectReady(profile);
+  return {
+    connected,
+    ready,
+    detailsSubmitted: Number(profile?.stripe_connect_details_submitted || 0) === 1,
+    chargesEnabled: Number(profile?.stripe_connect_charges_enabled || 0) === 1,
+    payoutsEnabled: Number(profile?.stripe_connect_payouts_enabled || 0) === 1,
+    requirementsDue: Number(profile?.stripe_connect_requirements_due || 0),
+    disabledReason: clean(profile?.stripe_connect_disabled_reason || "", 240),
+    onboardedAt: profile?.stripe_connect_onboarded_at || "",
+    accountReference: connected ? `...${String(profile.stripe_connect_account_id).slice(-6)}` : "",
+    status: ready ? "ready" : connected ? "action_required" : "not_started"
+  };
+}
+
+async function syncSellerConnectAccount(env, account) {
+  const accountId = String(account?.id || "");
+  if (!accountId) return;
+  const currentlyDue = Array.isArray(account.requirements?.currently_due) ? account.requirements.currently_due : [];
+  const pastDue = Array.isArray(account.requirements?.past_due) ? account.requirements.past_due : [];
+  const pendingVerification = Array.isArray(account.requirements?.pending_verification) ? account.requirements.pending_verification : [];
+  const requirementsDue = new Set([...currentlyDue, ...pastDue, ...pendingVerification]).size;
+  const disabledReason = clean(account.requirements?.disabled_reason || "", 240);
+  const ready = Boolean(account.details_submitted && account.charges_enabled && account.payouts_enabled && requirementsDue === 0 && !disabledReason);
+  await env.DB.prepare(`
+    UPDATE breaker_profiles
+    SET stripe_connect_details_submitted=?,stripe_connect_charges_enabled=?,stripe_connect_payouts_enabled=?,
+        stripe_connect_requirements_due=?,stripe_connect_disabled_reason=?,
+        stripe_connect_onboarded_at=CASE WHEN ?=1 THEN COALESCE(stripe_connect_onboarded_at,?) ELSE stripe_connect_onboarded_at END,
+        updated_at=?
+    WHERE stripe_connect_account_id=?
+  `).bind(
+    account.details_submitted ? 1 : 0,
+    account.charges_enabled ? 1 : 0,
+    account.payouts_enabled ? 1 : 0,
+    requirementsDue,
+    disabledReason,
+    ready ? 1 : 0,
+    now(),
+    now(),
+    accountId
+  ).run();
+}
+
+async function refreshSellerConnectStatus(env, profile) {
+  if (!profile?.stripe_connect_account_id || !env.STRIPE_SECRET_KEY) return profile;
+  try {
+    const account = await stripeGet(env.STRIPE_SECRET_KEY, `/accounts/${encodeURIComponent(profile.stripe_connect_account_id)}`);
+    await syncSellerConnectAccount(env, account);
+    return await sellerProfile(env, profile.member_id) || profile;
+  } catch (error) {
+    console.warn("Seller Stripe Connect status refresh failed", {
+      memberId: profile.member_id,
+      message: clean(error?.stripeMessage || error?.message || "", 200)
+    });
+    return profile;
+  }
+}
+
+async function sellerPayoutStatus(request, env, cors) {
+  const auth = await requireMember(request, env, cors, { seller: true });
+  if (auth.error) return auth.error;
+  const profile = await refreshSellerConnectStatus(env, auth.profile);
+  const fee = sellerFeeQuote(env, 10_000);
+  return json({
+    payout: sellerPayoutView(profile),
+    requiredForAuctions: sellerPayoutsRequired(env),
+    feeExample: {
+      saleAmountCents: 10_000,
+      platformCommissionCents: fee.platformCommissionCents,
+      processingFeeCents: fee.processingFeeCents,
+      sellerProceedsCents: fee.sellerProceedsCents,
+      disclosure: "Illustrative $100 auction. Actual fees are calculated from the final winning bid."
+    }
+  }, 200, cors);
+}
+
+async function startSellerPayoutOnboarding(request, env, cors) {
+  const auth = await requireMember(request, env, cors, { seller: true });
+  if (auth.error) return auth.error;
+  if (!env.STRIPE_SECRET_KEY) return json({ error: "Stripe Connect is not configured." }, 503, cors);
+  let profile = await refreshSellerConnectStatus(env, auth.profile);
+  try {
+    let accountId = String(profile.stripe_connect_account_id || "");
+    if (!accountId) {
+      const shipping = parseJsonSafe(auth.member.shipping_address_json, {});
+      const country = /^[A-Z]{2}$/.test(String(shipping.country || "").toUpperCase())
+        ? String(shipping.country).toUpperCase()
+        : "US";
+      const account = await stripeRequest(env.STRIPE_SECRET_KEY, "/accounts", [
+        ["type", "express"],
+        ["country", country],
+        ["email", auth.member.email],
+        ["business_type", "individual"],
+        ["business_profile[product_description]", "Collectibles marketplace and live-auction sales"],
+        ["individual[first_name]", auth.member.first_name],
+        ["individual[last_name]", auth.member.last_name],
+        ["capabilities[card_payments][requested]", "true"],
+        ["capabilities[transfers][requested]", "true"],
+        ["metadata[member_id]", auth.member.id],
+        ["metadata[seller_id]", auth.member.live_username]
+      ], `seller-connect-${auth.member.id}`);
+      accountId = account.id;
+      await env.DB.prepare(`UPDATE breaker_profiles SET stripe_connect_account_id=?,updated_at=? WHERE member_id=?`)
+        .bind(accountId, now(), auth.member.id).run();
+      profile = { ...profile, stripe_connect_account_id: accountId };
+    }
+    if (sellerConnectReady(profile)) {
+      const login = await stripeRequest(
+        env.STRIPE_SECRET_KEY,
+        `/accounts/${encodeURIComponent(accountId)}/login_links`,
+        [],
+        `seller-connect-login-${auth.member.id}-${Date.now()}`
+      );
+      return json({ url: login.url, mode: "dashboard" }, 201, cors);
+    }
+    const link = await stripeRequest(env.STRIPE_SECRET_KEY, "/account_links", [
+      ["account", accountId],
+      ["refresh_url", `${siteUrl(env)}/streams.html?connect=refresh#seller-payouts`],
+      ["return_url", `${siteUrl(env)}/streams.html?connect=return#seller-payouts`],
+      ["type", "account_onboarding"],
+      ["collection_options[fields]", "eventually_due"]
+    ], `seller-connect-link-${auth.member.id}-${Date.now()}`);
+    return json({ url: link.url, mode: "onboarding" }, 201, cors);
+  } catch (error) {
+    return json({
+      error: error.message === "STRIPE_NOT_CONFIGURED"
+        ? "Stripe Connect is not configured."
+        : stripeSafeError("Stripe could not open seller payout setup", error)
+    }, 503, cors);
+  }
+}
+
 async function employeeDashboard(request, env, cors) {
   const auth = await requireEmployee(request, env, cors);
   if (auth.error) return auth.error;
@@ -2178,6 +2381,10 @@ function auctionPaymentView(row) {
     currency: row.currency || "USD",
     status: row.payment_status || row.status || "processing",
     paymentIntentId: row.stripe_payment_intent_id || "",
+    platformCommissionCents: Number(row.platform_commission_cents || 0),
+    processingFeeCents: Number(row.processing_fee_cents || 0),
+    sellerProceedsCents: Number(row.seller_proceeds_cents || 0),
+    payoutAccountReference: row.stripe_connect_account_id ? `...${String(row.stripe_connect_account_id).slice(-6)}` : "",
     failureMessage: row.failure_message || "",
     attemptedAt: row.attempted_at || "",
     paidAt: row.paid_at || ""
@@ -2325,14 +2532,26 @@ async function settleAuctionLot(env, lot) {
       .bind(lot.id, lot.winning_member_id)
   ]);
 
+  const amountCents = Number(lot.current_bid_cents || lot.starting_bid_cents);
+  let payoutProfile = await sellerProfile(env, lot.member_id);
+  payoutProfile = await refreshSellerConnectStatus(env, payoutProfile);
+  const payoutReady = sellerConnectReady(payoutProfile);
+  const fees = sellerFeeQuote(env, amountCents);
+  const transferGroup = `show_${String(lot.session_id).replace(/-/g, "").slice(0, 24)}`;
+
   await env.DB.prepare(`
     INSERT OR IGNORE INTO breaker_auction_payments(
       lot_id,session_id,seller_member_id,buyer_member_id,member_order_id,order_number,
-      amount_cents,currency,status,attempted_at,created_at,updated_at
-    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+      amount_cents,currency,status,attempted_at,created_at,updated_at,
+      stripe_connect_account_id,platform_commission_cents,processing_fee_cents,
+      application_fee_cents,seller_proceeds_cents,stripe_transfer_group
+    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).bind(
     lot.id, lot.session_id, lot.member_id, lot.winning_member_id, uid(), orderNumber(),
-    Number(lot.current_bid_cents || lot.starting_bid_cents), "USD", "processing", stamp, stamp, stamp
+    amountCents, "USD", "processing", stamp, stamp, stamp,
+    payoutReady ? payoutProfile.stripe_connect_account_id : "",
+    fees.platformCommissionCents, fees.processingFeeCents,
+    fees.applicationFeeCents, fees.sellerProceedsCents, transferGroup
   ).run();
   let payment = await auctionPaymentForLot(env, lot.id);
   if (!payment) throw new Error("AUCTION_PAYMENT_RECORD_MISSING");
@@ -2345,7 +2564,12 @@ async function settleAuctionLot(env, lot) {
       stripe_customer_id,stripe_payment_method_id
     FROM members WHERE id=?
   `).bind(lot.winning_member_id).first();
-  if (!buyer?.stripe_customer_id || !buyer?.stripe_payment_method_id) {
+  if (sellerPayoutsRequired(env) && !payoutReady) {
+    payment = await updateAuctionPaymentState(env, lot.id, "failed", null, {
+      stripeCode: "seller_payout_not_ready",
+      stripeMessage: "The seller payout account is not ready, so the buyer was not charged."
+    });
+  } else if (!buyer?.stripe_customer_id || !buyer?.stripe_payment_method_id) {
     payment = await updateAuctionPaymentState(env, lot.id, "failed", null, {
       stripeCode: "payment_method_missing",
       stripeMessage: "The winning buyer no longer has a saved payment method."
@@ -2384,6 +2608,15 @@ async function settleAuctionLot(env, lot) {
       ["shipping[address][postal_code]", address.postalCode],
       ["shipping[address][country]", address.country || "US"]
     ];
+    if (payoutReady) {
+      entries.push(
+        ["transfer_data[destination]", payoutProfile.stripe_connect_account_id],
+        ["application_fee_amount", fees.applicationFeeCents],
+        ["transfer_group", transferGroup],
+        ["metadata[application_fee_cents]", fees.applicationFeeCents],
+        ["metadata[seller_proceeds_cents]", fees.sellerProceedsCents]
+      );
+    }
     try {
       const paymentIntent = await stripeRequest(env.STRIPE_SECRET_KEY, "/payment_intents", entries, `live-auction-${lot.id}`);
       if (paymentIntent.status === "succeeded") {
@@ -2539,6 +2772,42 @@ async function placeBid(request, env, cors, lotId) {
     return json({ error: "Add a Stripe payment method, phone number, and shipping address in Profile before bidding." }, 409, cors);
   }
   const data = await boundedJson(request, 2000);
+  const idempotencyKey = String(request.headers.get("Idempotency-Key") || "").trim();
+  if (idempotencyKey && !/^[A-Za-z0-9._:-]{16,100}$/.test(idempotencyKey)) {
+    return json({ error: "The bid request key is invalid. Refresh and try again." }, 400, cors);
+  }
+  const idempotencyHash = idempotencyKey ? await digest(idempotencyKey, env.AUTH_SECRET) : "";
+  if (idempotencyHash) {
+    const prior = await env.DB.prepare(`
+      SELECT amount_cents FROM auction_bid_requests
+      WHERE lot_id=? AND bidder_member_id=? AND idempotency_key_hash=?
+    `).bind(lotId, auth.member.id, idempotencyHash).first();
+    if (prior) {
+      const current = await env.DB.prepare(`
+        SELECT lot.*,session.viewer_count,session.cloudflare_live_input_uid,winner.live_username winning_display
+        FROM breaker_auction_lots lot
+        JOIN breaker_stream_sessions session ON session.id=lot.session_id
+        LEFT JOIN members winner ON winner.id=lot.winning_member_id
+        WHERE lot.id=?
+      `).bind(lotId).first();
+      return json({ lot: auctionView(current, auth.member.id, env), duplicate: true }, 200, cors);
+    }
+  }
+  const rapidCutoff = new Date(Date.now() - 10_000).toISOString();
+  const minuteCutoff = new Date(Date.now() - 60_000).toISOString();
+  const recent = await env.DB.prepare(`
+    SELECT
+      SUM(CASE WHEN created_at>=? THEN 1 ELSE 0 END) rapid_count,
+      COUNT(*) minute_count
+    FROM breaker_auction_bids
+    WHERE bidder_member_id=? AND created_at>=?
+  `).bind(rapidCutoff, auth.member.id, minuteCutoff).first();
+  if (Number(recent?.rapid_count || 0) >= 8 || Number(recent?.minute_count || 0) >= 30) {
+    return json({ error: "Too many bids were submitted at once. Wait a moment and try again." }, 429, {
+      ...cors,
+      "Retry-After": "10"
+    });
+  }
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const lot = await env.DB.prepare(`SELECT * FROM breaker_auction_lots WHERE id=? AND status='live'`).bind(lotId).first();
     if (!lot) return json({ error: "This auction is no longer live." }, 410, cors);
@@ -2551,11 +2820,22 @@ async function placeBid(request, env, cors, lotId) {
     const changed = await env.DB.prepare(`UPDATE breaker_auction_lots SET current_bid_cents=?,winning_member_id=?,updated_at=? WHERE id=? AND status='live' AND COALESCE(current_bid_cents,starting_bid_cents)=?`)
       .bind(requested, auth.member.id, now(), lot.id, current).run();
     if (Number(changed.meta?.changes || 0) !== 1) continue;
+    const bidCreatedAt = now();
     await env.DB.batch([
       env.DB.prepare(`UPDATE breaker_auction_bids SET status='outbid' WHERE lot_id=? AND status='leading'`).bind(lot.id),
-      env.DB.prepare(`INSERT INTO breaker_auction_bids(id,lot_id,bidder_member_id,amount_cents,status,created_at) VALUES(?,?,?,?,?,?)`).bind(uid(), lot.id, auth.member.id, requested, "leading", now())
+      env.DB.prepare(`INSERT INTO breaker_auction_bids(id,lot_id,bidder_member_id,amount_cents,status,created_at) VALUES(?,?,?,?,?,?)`)
+        .bind(uid(), lot.id, auth.member.id, requested, "leading", bidCreatedAt),
+      ...(idempotencyHash ? [
+        env.DB.prepare(`INSERT OR IGNORE INTO auction_bid_requests(id,lot_id,bidder_member_id,idempotency_key_hash,amount_cents,created_at) VALUES(?,?,?,?,?,?)`)
+          .bind(uid(), lot.id, auth.member.id, idempotencyHash, requested, bidCreatedAt)
+      ] : [])
     ]);
     const updated = await env.DB.prepare(`SELECT lot.*,session.viewer_count,session.cloudflare_live_input_uid,winner.live_username winning_display FROM breaker_auction_lots lot JOIN breaker_stream_sessions session ON session.id=lot.session_id LEFT JOIN members winner ON winner.id=lot.winning_member_id WHERE lot.id=?`).bind(lot.id).first();
+    await publishShowEvent(env, lot.session_id, "bid.accepted", {
+      lotId: lot.id,
+      currentBidCents: requested,
+      winningDisplay: updated?.winning_display || "CRACKPACKS buyer"
+    });
     return json({ lot: auctionView(updated, auth.member.id, env) }, 201, cors);
   }
   return json({ error: "The bid changed while yours was being placed. Review the new minimum and try again." }, 409, cors);
@@ -3394,6 +3674,17 @@ function storeListingView(row) {
     id: row.id,
     sellerId: row.member_id,
     sellerUsername: row.live_username || clean(`${row.first_name || ""} ${row.last_name || ""}`, 120) || "Seller",
+    sellerTrust: {
+      identityVerified: row.seller_profile_status === "active",
+      payoutReady: Boolean(
+        Number(row.stripe_connect_details_submitted || 0) === 1 &&
+        Number(row.stripe_connect_charges_enabled || 0) === 1 &&
+        Number(row.stripe_connect_payouts_enabled || 0) === 1 &&
+        Number(row.stripe_connect_requirements_due || 0) === 0 &&
+        !row.stripe_connect_disabled_reason
+      ),
+      label: row.seller_profile_status === "active" ? "ID verified seller" : "Seller"
+    },
     showId: row.show_id || "",
     linkedLotId: row.linked_lot_id || "",
     linkedLotStatus: row.linked_lot_status || row.matched_lot_status || "",
@@ -3425,12 +3716,16 @@ async function publicMarketplaceListings(request, env, cors) {
     : "";
   const rows = await env.DB.prepare(`
     SELECT listing.*,member.live_username,member.first_name,member.last_name,inventory.series inventory_series,
+           profile.status seller_profile_status,profile.stripe_connect_details_submitted,
+           profile.stripe_connect_charges_enabled,profile.stripe_connect_payouts_enabled,
+           profile.stripe_connect_requirements_due,profile.stripe_connect_disabled_reason,
            session.title show_title,session.status show_status,session.public_slug show_public_slug,session.scheduled_at show_scheduled_at,session.started_at show_started_at,
            matched_lot.id matched_lot_id,matched_lot.title matched_lot_title,matched_lot.status matched_lot_status,
            matched_lot.starting_bid_cents matched_lot_starting_bid_cents,matched_lot.current_bid_cents matched_lot_current_bid_cents,
            ? __site_url
     FROM seller_store_listings listing
     JOIN members member ON member.id=listing.member_id
+    JOIN breaker_profiles profile ON profile.member_id=listing.member_id AND profile.status='active'
     LEFT JOIN inventory_items inventory ON inventory.id=listing.inventory_item_id
     LEFT JOIN breaker_stream_sessions session ON session.id=listing.show_id
     LEFT JOIN breaker_auction_lots matched_lot ON matched_lot.id=(
@@ -4600,6 +4895,7 @@ async function reorderAuctionLots(request, env, cors, showId) {
     env.DB.prepare(`UPDATE breaker_auction_lots SET queue_position=?,updated_at=? WHERE id=? AND session_id=? AND member_id=? AND status='scheduled'`)
       .bind(index + 1, stamp, lotId, showId, auth.member.id)
   )));
+  await publishShowEvent(env, showId, "queue.reordered", { lotIds });
   return json({ ok: true, lotIds }, 200, cors);
 }
 
@@ -4643,6 +4939,7 @@ async function closeSellerShow(env, memberId, showId, reason = "seller_ended") {
     console.error("Post-show Stream Credit sync failed", error);
     return { syncedMembers: 0, syncedVideos: 0, syncFailed: true };
   });
+  await publishShowEvent(env, showId, "show.ended", { reason, endedAt: stamp });
   return { ended: true, publicRemoved: true, endedAt: stamp, endReason: reason, closedLot, settlementError, streamCreditSync };
 }
 
@@ -4751,6 +5048,14 @@ async function changeAuctionStatus(request, env, cors, lotId, action) {
   let closedLot = null;
   if (action === "open") {
     if (String(env.LIVE_AUCTIONS_ENABLED || "false") !== "true") return json({ error: "Live auctions are locked until production payment and seller payout review is complete." }, 503, cors);
+    const payoutProfile = await refreshSellerConnectStatus(env, auth.profile);
+    if (sellerPayoutsRequired(env) && !sellerConnectReady(payoutProfile)) {
+      return json({
+        error: "Complete Stripe seller payouts before opening a paid auction.",
+        code: "SELLER_PAYOUT_SETUP_REQUIRED",
+        payout: sellerPayoutView(payoutProfile)
+      }, 409, cors);
+    }
     const started = await startSellerShowCore(env, auth.member.id, lot.session_id);
     if (started.error) return json({ error: started.error, code: started.code || "", ...(started.state || {}) }, started.status || 409, cors);
     const openedAt = now();
@@ -4773,6 +5078,11 @@ async function changeAuctionStatus(request, env, cors, lotId, action) {
     LEFT JOIN breaker_auction_payments payment ON payment.lot_id=lot.id
     WHERE lot.id=?
   `).bind(lot.id).first();
+  await publishShowEvent(env, lot.session_id, action === "open" ? "auction.opened" : "auction.closed", {
+    lotId: lot.id,
+    status: updated?.status || (action === "open" ? "live" : "sold"),
+    currentBidCents: Number(updated?.current_bid_cents ?? updated?.starting_bid_cents ?? 0)
+  });
   return json({ lot: auctionView(updated, auth.member.id, env), closedLot }, 200, cors);
 }
 
@@ -4781,6 +5091,14 @@ async function auctionOffNext(request, env, cors, showId) {
   if (auth.error) return auth.error;
   if (String(env.LIVE_AUCTIONS_ENABLED || "false") !== "true") {
     return json({ error: "Live auctions are locked until production payment and seller payout review is complete." }, 503, cors);
+  }
+  const payoutProfile = await refreshSellerConnectStatus(env, auth.profile);
+  if (sellerPayoutsRequired(env) && !sellerConnectReady(payoutProfile)) {
+    return json({
+      error: "Complete Stripe seller payouts before starting the next paid auction.",
+      code: "SELLER_PAYOUT_SETUP_REQUIRED",
+      payout: sellerPayoutView(payoutProfile)
+    }, 409, cors);
   }
   const data = await boundedJson(request, 1200);
   const requestedLotId = clean(data.nextLotId, 80);
@@ -4828,11 +5146,158 @@ async function auctionOffNext(request, env, cors, showId) {
   `).bind(next.id, auth.member.id).first();
   const remaining = await env.DB.prepare(`SELECT COUNT(*) queued FROM breaker_auction_lots WHERE session_id=? AND member_id=? AND status='scheduled'`)
     .bind(showId, auth.member.id).first();
+  await publishShowEvent(env, showId, "auction.advanced", {
+    lotId: next.id,
+    previousLotId: current?.id || "",
+    remainingQueued: Number(remaining?.queued || 0)
+  });
   return json({
     lot: auctionView(updated, auth.member.id, env),
     closedLot,
     remainingQueued: Number(remaining?.queued || 0)
   }, 200, cors);
+}
+
+async function liveAuctionSocket(request, env, cors, showId) {
+  if (!validUuid(showId)) return json({ error: "Choose a valid live show." }, 400, cors);
+  if ((request.headers.get("Upgrade") || "").toLowerCase() !== "websocket") {
+    return json({ error: "WebSocket upgrade required." }, 426, { ...cors, Upgrade: "websocket" });
+  }
+  const show = await env.DB.prepare(`
+    SELECT id,status FROM breaker_stream_sessions
+    WHERE id=? AND status IN ('open','live')
+  `).bind(showId).first();
+  if (!show) return json({ error: "This show is not active." }, 410, cors);
+  const stub = auctionRoomStub(env, showId);
+  if (!stub) return json({ error: "Real-time auction updates are not configured." }, 503, cors);
+  const roomUrl = new URL(request.url);
+  roomUrl.protocol = "https:";
+  roomUrl.hostname = "auction-room.internal";
+  roomUrl.pathname = "/connect";
+  return stub.fetch(new Request(roomUrl.toString(), request));
+}
+
+async function marketplaceStatus(env, cors) {
+  const [listingCount, sellerCount, liveCount] = await Promise.all([
+    env.DB.prepare(`SELECT COUNT(*) count FROM seller_store_listings WHERE status='active' AND quantity>0`).first(),
+    env.DB.prepare(`
+      SELECT COUNT(*) count FROM breaker_profiles
+      WHERE status='active' AND stripe_connect_details_submitted=1
+        AND stripe_connect_charges_enabled=1 AND stripe_connect_payouts_enabled=1
+        AND stripe_connect_requirements_due=0 AND stripe_connect_disabled_reason=''
+    `).first(),
+    env.DB.prepare(`SELECT COUNT(*) count FROM breaker_stream_sessions WHERE status='live'`).first()
+  ]);
+  const mode = marketplaceMode(env);
+  return json({
+    ok: true,
+    mode,
+    checkoutEnabled: marketplaceCheckoutEnabled(env),
+    liveAuctionsEnabled: String(env.LIVE_AUCTIONS_ENABLED || "false") === "true",
+    payoutsRequired: sellerPayoutsRequired(env),
+    realtimeAuctions: Boolean(env.SHOW_AUCTION_ROOM),
+    activeListings: Number(listingCount?.count || 0),
+    payoutReadySellers: Number(sellerCount?.count || 0),
+    liveShows: Number(liveCount?.count || 0),
+    label: mode === "live" ? "Live marketplace" : mode === "paused" ? "Marketplace paused" : "Marketplace preview",
+    buyerMessage: mode === "live"
+      ? "Seller listings and eligible checkout are live."
+      : mode === "paused"
+        ? "Marketplace browsing is available while checkout is paused."
+        : "Browse real seller inventory while checkout and seller payout readiness are being verified."
+  }, 200, cors);
+}
+
+async function adminLaunchReadiness(request, env, cors) {
+  const auth = await requireOwner(request, env, cors);
+  if (auth.error) return auth.error;
+  const [
+    activeSellers,
+    payoutReadySellers,
+    activeListings,
+    activeShows,
+    shippingReadySellers,
+    paymentReadyBuyers,
+    recentStripeEvents
+  ] = await Promise.all([
+    env.DB.prepare(`SELECT COUNT(*) count FROM breaker_profiles WHERE status='active'`).first(),
+    env.DB.prepare(`
+      SELECT COUNT(*) count FROM breaker_profiles
+      WHERE status='active' AND stripe_connect_details_submitted=1
+        AND stripe_connect_charges_enabled=1 AND stripe_connect_payouts_enabled=1
+        AND stripe_connect_requirements_due=0 AND stripe_connect_disabled_reason=''
+    `).first(),
+    env.DB.prepare(`SELECT COUNT(*) count FROM seller_store_listings WHERE status='active' AND quantity>0`).first(),
+    env.DB.prepare(`SELECT COUNT(*) count FROM breaker_stream_sessions WHERE status IN ('open','live')`).first(),
+    env.DB.prepare(`SELECT COUNT(DISTINCT member_id) count FROM seller_shipping_weight_profiles`).first(),
+    env.DB.prepare(`SELECT COUNT(*) count FROM members WHERE stripe_customer_id IS NOT NULL AND stripe_payment_method_id IS NOT NULL`).first(),
+    env.DB.prepare(`SELECT COUNT(*) count FROM stripe_webhook_events WHERE processed_at IS NOT NULL AND received_at>?`)
+      .bind(new Date(Date.now() - 7 * 86400e3).toISOString()).first()
+  ]);
+  const counts = {
+    activeSellers: Number(activeSellers?.count || 0),
+    payoutReadySellers: Number(payoutReadySellers?.count || 0),
+    activeListings: Number(activeListings?.count || 0),
+    activeShows: Number(activeShows?.count || 0),
+    shippingReadySellers: Number(shippingReadySellers?.count || 0),
+    paymentReadyBuyers: Number(paymentReadyBuyers?.count || 0),
+    processedStripeEvents7d: Number(recentStripeEvents?.count || 0)
+  };
+  const checks = {
+    stripeSecretConfigured: Boolean(env.STRIPE_SECRET_KEY),
+    stripeWebhookConfigured: Boolean(env.STRIPE_WEBHOOK_SECRET),
+    stripeConnectWebhookConfigured: Boolean(env.STRIPE_CONNECT_WEBHOOK_SECRET),
+    realtimeAuctionsConfigured: Boolean(env.SHOW_AUCTION_ROOM),
+    turnstileConfigured: Boolean(env.TURNSTILE_SECRET_KEY),
+    emailConfigured: Boolean(env.REWARDS_EMAIL || env.RESEND_API_KEY),
+    streamConfigured: Boolean(env.CLOUDFLARE_STREAM_API_TOKEN && env.CLOUDFLARE_ACCOUNT_ID),
+    atLeastOnePayoutReadySeller: counts.payoutReadySellers > 0,
+    atLeastOneActiveListing: counts.activeListings > 0,
+    atLeastOneShippingProfile: counts.shippingReadySellers > 0
+  };
+  const blockingIssues = Object.entries(checks)
+    .filter(([, ready]) => !ready)
+    .map(([name]) => name);
+  return json({
+    mode: marketplaceMode(env),
+    checkoutEnabled: marketplaceCheckoutEnabled(env),
+    liveAuctionsEnabled: String(env.LIVE_AUCTIONS_ENABLED || "false") === "true",
+    readyToLaunch: blockingIssues.length === 0,
+    checks,
+    counts,
+    blockingIssues,
+    generatedAt: now()
+  }, 200, cors);
+}
+
+async function recordClientAnalytics(request, env, cors) {
+  const data = await boundedJson(request, 2500);
+  const eventName = clean(data.eventName, 64).toLowerCase();
+  const pagePath = clean(data.pagePath, 180);
+  const metricName = clean(data.metricName, 64).toLowerCase();
+  const detail = clean(data.detail, 300);
+  const metricValue = data.metricValue === null || data.metricValue === undefined ? null : Number(data.metricValue);
+  if (!/^[a-z][a-z0-9_.-]{1,63}$/.test(eventName)) return json({ error: "Invalid analytics event." }, 400, cors);
+  if (pagePath && (!pagePath.startsWith("/") || /^\/\//.test(pagePath))) return json({ error: "Invalid analytics page." }, 400, cors);
+  if (metricName && !/^[a-z][a-z0-9_.-]{1,63}$/.test(metricName)) return json({ error: "Invalid analytics metric." }, 400, cors);
+  if (metricValue !== null && (!Number.isFinite(metricValue) || Math.abs(metricValue) > 10_000_000)) {
+    return json({ error: "Invalid analytics value." }, 400, cors);
+  }
+  const member = await memberFromRequest(request, env);
+  const visitorHash = await digest([
+    now().slice(0, 10),
+    request.headers.get("CF-Connecting-IP") || "",
+    request.headers.get("User-Agent") || ""
+  ].join("|"), env.AUTH_SECRET);
+  const cutoff = new Date(Date.now() - 60_000).toISOString();
+  const rate = await env.DB.prepare(`SELECT COUNT(*) count FROM client_analytics_events WHERE visitor_hash=? AND created_at>=?`)
+    .bind(visitorHash, cutoff).first();
+  if (Number(rate?.count || 0) >= 30) return json({ error: "Analytics rate limit reached." }, 429, { ...cors, "Retry-After": "60" });
+  await env.DB.prepare(`
+    INSERT INTO client_analytics_events(id,visitor_hash,member_id,event_name,page_path,metric_name,metric_value,detail,created_at)
+    VALUES(?,?,?,?,?,?,?,?,?)
+  `).bind(uid(), visitorHash, member?.id || null, eventName, pagePath, metricName, metricValue, detail, now()).run();
+  return new Response(null, { status: 204, headers: cors });
 }
 
 export async function handlePlatformRoute(request, env, cors) {
@@ -4844,9 +5309,14 @@ export async function handlePlatformRoute(request, env, cors) {
   if (url.pathname === "/employee/dashboard" && request.method === "GET") return employeeDashboard(request, env, cors);
   if (url.pathname === "/employee/time-entries" && request.method === "POST") return submitEmployeeTimeEntry(request, env, cors);
   if (url.pathname === "/employee/payout/onboarding" && request.method === "POST") return startEmployeePayoutOnboarding(request, env, cors);
+  if (url.pathname === "/seller/payouts/status" && request.method === "GET") return sellerPayoutStatus(request, env, cors);
+  if (url.pathname === "/seller/payouts/onboarding" && request.method === "POST") return startSellerPayoutOnboarding(request, env, cors);
   if (url.pathname === "/admin/employees/invitations" && request.method === "POST") return createEmployeeInvitation(request, env, cors);
   if (url.pathname === "/admin/employees" && request.method === "GET") return adminEmployeeDashboard(request, env, cors);
   if (url.pathname === "/admin/email/history" && request.method === "GET") return adminEmailHistory(request, env, cors);
+  if (url.pathname === "/admin/launch-readiness" && request.method === "GET") return adminLaunchReadiness(request, env, cors);
+  if (url.pathname === "/marketplace/status" && request.method === "GET") return marketplaceStatus(env, cors);
+  if (url.pathname === "/analytics/client" && request.method === "POST") return recordClientAnalytics(request, env, cors);
   const employeeTimeMatch = url.pathname.match(/^\/admin\/employees\/time-entries\/([0-9a-f-]{36})$/i);
   if (employeeTimeMatch && request.method === "POST") return reviewEmployeeTimeEntry(request, env, cors, employeeTimeMatch[1]);
   const employeeStatusMatch = url.pathname.match(/^\/admin\/employees\/([0-9a-f-]{36})\/status$/i);
@@ -5128,6 +5598,8 @@ export async function handlePlatformRoute(request, env, cors) {
   if (url.pathname === "/live/auction" && request.method === "GET") return currentAuction(request, env, cors, url);
   if (url.pathname === "/live/viewers/heartbeat" && request.method === "POST") return viewerHeartbeat(request, env, cors);
   if (url.pathname === "/live/shows" && request.method === "GET") return listShows(request, env, cors);
+  const liveAuctionSocketMatch = url.pathname.match(/^\/live\/shows\/([0-9a-f-]{36})\/socket$/i);
+  if (liveAuctionSocketMatch && request.method === "GET") return liveAuctionSocket(request, env, cors, liveAuctionSocketMatch[1]);
   const liveShowChatMatch = url.pathname.match(/^\/live\/shows\/([0-9a-f-]{36})\/chat$/i);
   if (liveShowChatMatch && ["GET", "POST"].includes(request.method)) return liveShowChat(request, env, cors, liveShowChatMatch[1]);
   if (url.pathname === "/live/watchlist" && request.method === "POST") return updateWatchOrFollow(request, env, cors, "watch");

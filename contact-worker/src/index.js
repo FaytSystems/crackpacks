@@ -2,10 +2,10 @@
 Full file:
   D:\crackpacks\crackpacks-github-ready\contact-worker\src\index.js
 
-Crack Packs Contact Worker v1.7.1
+Crack Packs Contact Worker v1.8.0
 */
 
-const VERSION = "1.7.1";
+const VERSION = "1.8.0";
 const SERVICE = "crackpacks-contact";
 const CONTACT_ADDRESS = "support@crackpacks.com";
 const DEFAULT_MAX_MESSAGE_LENGTH = 4000;
@@ -40,6 +40,9 @@ export default {
       if (!env.CONTACT_DESTINATION) {
         missing.push("CONTACT_DESTINATION");
       }
+      if (String(env.TURNSTILE_REQUIRED || "false") === "true" && !env.TURNSTILE_SECRET_KEY) {
+        missing.push("TURNSTILE_SECRET_KEY");
+      }
 
       return jsonResponse(
         {
@@ -49,6 +52,8 @@ export default {
           configured: missing.length === 0,
           bindingConfigured: Boolean(env.CONTACT_EMAIL),
           destinationConfigured: Boolean(env.CONTACT_DESTINATION),
+          turnstileConfigured: Boolean(env.TURNSTILE_SECRET_KEY),
+          turnstileRequired: String(env.TURNSTILE_REQUIRED || "false") === "true",
           missing,
           contactAddress: CONTACT_ADDRESS,
           endpoints: ["/health", "/contact"]
@@ -136,6 +141,7 @@ export default {
     const message = normalizeMessage(payload?.message);
     const honeypot = normalizeText(payload?.company, 200);
     const page = normalizePage(payload?.page);
+    const turnstileToken = normalizeText(payload?.turnstileToken, 2048);
     const maxMessageLength = positiveInteger(
       env.MAX_MESSAGE_LENGTH,
       DEFAULT_MAX_MESSAGE_LENGTH
@@ -151,6 +157,25 @@ export default {
         200,
         corsHeaders(corsOrigin)
       );
+    }
+
+    const turnstileRequired = String(env.TURNSTILE_REQUIRED || "false") === "true";
+    if (turnstileRequired && !env.TURNSTILE_SECRET_KEY) {
+      return jsonResponse(
+        { ok: false, error: "Contact security is not configured.", reference: "TURNSTILE_NOT_CONFIGURED" },
+        503,
+        corsHeaders(corsOrigin)
+      );
+    }
+    if (turnstileRequired || (turnstileToken && env.TURNSTILE_SECRET_KEY)) {
+      const challenge = await verifyTurnstile(request, env, turnstileToken);
+      if (!challenge.ok) {
+        return jsonResponse(
+          { ok: false, error: "Complete the security check before sending your message.", reference: "TURNSTILE_REJECTED" },
+          403,
+          corsHeaders(corsOrigin)
+        );
+      }
     }
 
     if (!isValidEmail(email)) {
@@ -381,6 +406,44 @@ function normalizePage(value) {
 function positiveInteger(value, fallback) {
   const number = Number.parseInt(String(value || ""), 10);
   return Number.isFinite(number) && number > 0 ? number : fallback;
+}
+
+async function verifyTurnstile(request, env, token) {
+  if (!env.TURNSTILE_SECRET_KEY || !token) return { ok: false };
+  const form = new FormData();
+  form.set("secret", String(env.TURNSTILE_SECRET_KEY));
+  form.set("response", String(token));
+  form.set("remoteip", request.headers.get("CF-Connecting-IP") || "");
+  form.set("idempotency_key", crypto.randomUUID());
+  let response;
+  try {
+    response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+      method: "POST",
+      body: form
+    });
+  } catch {
+    return { ok: false };
+  }
+  if (!response.ok) return { ok: false };
+  const result = await response.json().catch(() => ({}));
+  const hostname = String(result.hostname || "").toLowerCase();
+  const allowedHost = hostname === "crackpacks.com" ||
+    hostname === "www.crackpacks.com" ||
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "crackpacks.pages.dev" ||
+    hostname.endsWith(".crackpacks.pages.dev");
+  const ok = result.success === true &&
+    result.action === "turnstile-spin-v2" &&
+    allowedHost;
+  if (!ok) {
+    console.warn("Turnstile rejected contact form", {
+      action: String(result.action || ""),
+      hostname,
+      errorCodes: Array.isArray(result["error-codes"]) ? result["error-codes"] : []
+    });
+  }
+  return { ok };
 }
 
 async function createRateLimitKey(ip, email) {

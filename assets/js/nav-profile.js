@@ -50,9 +50,10 @@
       <nav class="nav-buyer-account-pages" aria-label="Seller Account pages">
         <a href="streams.html#seller-home">Seller Hub</a>
         <a href="streams.html#seller-live">Go Live</a>
-        <a href="seller-store.html#stock">Store Stock</a>
-        <a href="seller-store.html#preview">Store Preview</a>
+        <a href="streams.html#seller-inventory">Inventory</a>
+        <a href="shop.html">My Store</a>
         <a href="streams.html#seller-shipping">Fulfill Orders</a>
+        <a href="streams.html#seller-payouts">Payouts</a>
       </nav>
     ` : "";
     return `
@@ -82,6 +83,11 @@
     if (!nav) return;
     let createLink = nav.querySelector("[data-header-create-show]");
     let liveLink = nav.querySelector("[data-header-go-live]");
+    if (!portalState.sellerAccess) {
+      createLink?.remove();
+      liveLink?.remove();
+      return;
+    }
     if (!createLink) {
       createLink = document.createElement("a");
       createLink.className = "nav-live nav-account-action";
@@ -98,8 +104,6 @@
     }
     createLink.href = createShowHref();
     liveLink.href = goLiveHref();
-    createLink.classList.toggle("is-signup-route", !portalState.sellerAccess);
-    liveLink.classList.toggle("is-signup-route", !portalState.sellerAccess);
   }
 
   function renderAccountMenus() {

@@ -57,6 +57,7 @@
   let showEnded = false;
   let refreshTimer = 0;
   let heartbeatTimer = 0;
+  let realtime = null;
 
   const money = (cents) => `$${(Number(cents || 0) / 100).toFixed(2)}`;
   const dollars = (cents) => (Number(cents || 0) / 100).toFixed(2);
@@ -288,6 +289,27 @@
     const title = show?.title || "Crack Packs Live Auction";
     if (els.showTitle) els.showTitle.textContent = title;
     document.title = `${title} | Crack Packs`;
+    let structured = document.querySelector("#live-broadcast-data");
+    if (!structured) {
+      structured = document.createElement("script");
+      structured.id = "live-broadcast-data";
+      structured.type = "application/ld+json";
+      document.head.append(structured);
+    }
+    structured.textContent = JSON.stringify({
+      "@context": "https://schema.org",
+      "@type": "VideoObject",
+      name: title,
+      description: "Live collectibles show and auction on Crack Packs.",
+      thumbnailUrl: show?.imageUrl ? [new URL(show.imageUrl, location.href).href] : undefined,
+      uploadDate: show?.startsAt || new Date().toISOString(),
+      publication: {
+        "@type": "BroadcastEvent",
+        isLiveBroadcast: show?.status === "live",
+        startDate: show?.startsAt || undefined,
+        endDate: show?.status === "ended" ? new Date().toISOString() : undefined
+      }
+    });
     if (show?.status === "live" && show.playbackUrl) {
       setPlayback(show.playbackUrl);
       return;
@@ -383,7 +405,11 @@
     els.copy.textContent = "Sending bid...";
     setVideoBidStatus("Sending bid...");
     try {
-      const data = await api(`/live/auction/lots/${lot.id}/bid`, { method: "POST", body: JSON.stringify(payload) });
+      const data = await api(`/live/auction/lots/${lot.id}/bid`, {
+        method: "POST",
+        headers: { "Idempotency-Key": `bid-${lot.id}-${crypto.randomUUID()}` },
+        body: JSON.stringify(payload)
+      });
       render(data.lot);
       setVideoBidStatus(`Bid accepted. Current bid is ${money(data.lot.currentBidCents)}.`);
       return true;
@@ -471,7 +497,14 @@
 
   refresh();
   heartbeat();
-  refreshTimer = window.setInterval(refresh, 2000);
+  if (showId && window.CrackPacksAuctionRealtime) {
+    realtime = window.CrackPacksAuctionRealtime.connect({
+      apiBase,
+      showId,
+      onEvent: () => refresh()
+    });
+  }
+  refreshTimer = window.setInterval(refresh, 15_000);
   heartbeatTimer = window.setInterval(heartbeat, 30000);
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) return;
@@ -481,6 +514,7 @@
   window.addEventListener("pagehide", () => {
     window.clearInterval(refreshTimer);
     window.clearInterval(heartbeatTimer);
+    realtime?.close();
     liveChat?.stop();
   }, { once: true });
 })();

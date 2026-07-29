@@ -18,6 +18,7 @@
   let sellerOrders = [];
   let sellerProductCategories = [];
   let sellerWeightProfiles = [];
+  let sellerPayoutState = null;
   let sellerOrderTab = "all";
   let sellerOrderSearch = "";
   let sellerContextAuthorized = false;
@@ -48,6 +49,9 @@
   let suppressAuctionNextClick = false;
   let liveShowsSellerUsername = "";
   let sellerLiveChat = null;
+  let sellerAuctionRealtime = null;
+  let sellerAuctionRealtimeShowId = "";
+  let sellerLotsFallbackTick = 0;
   let sellerLiveCreditState = null;
   let sellerLiveCreditRequest = null;
   let streamCreditCountdownTimer = 0;
@@ -78,7 +82,8 @@
     categories: { hash: "#seller-categories", title: "Types of products selling", copy: "Choose which product categories appear in this seller store." },
     cogs: { hash: "#seller-cogs", title: "Order COGS", copy: "Review landed costs and calculate a safer minimum auction bid." },
     shipping: { hash: "#seller-shipping", title: "Fulfill Orders", copy: "Manage paid orders, labels, clips, package weights, and tracking." },
-    giveaways: { hash: "#seller-giveaways", title: "Giveaway presets", copy: "Prepare reusable giveaway rules and inventory labels before going live." }
+    giveaways: { hash: "#seller-giveaways", title: "Giveaway presets", copy: "Prepare reusable giveaway rules and inventory labels before going live." },
+    payouts: { hash: "#seller-payouts", title: "Seller payouts", copy: "Complete Stripe Connect and review the checklist required for paid marketplace auctions." }
   };
   const sellerToolAliases = {
     "#go-live": "show-control",
@@ -159,6 +164,47 @@
     if (streamStatus) streamStatus.textContent = hasSavedObsConnection
       ? (activeShows ? "OBS ready - active show available" : "OBS ready - create or select a show")
       : "OBS connection needs setup";
+    const payoutStatus = $("[data-dashboard-payout-status]");
+    if (payoutStatus) payoutStatus.textContent = sellerPayoutState?.ready
+      ? "Stripe payouts are ready for paid sales."
+      : "Connect Stripe before accepting paid auctions.";
+    renderSellerReadiness();
+  }
+
+  function renderSellerReadiness() {
+    const payout = sellerPayoutState || {};
+    const set = (selector, value) => {
+      const node = $(selector);
+      if (node) node.textContent = value;
+    };
+    set("[data-seller-payout-state]", payout.ready ? "Ready" : payout.connected ? "Action required" : "Not connected");
+    set("[data-payout-details]", payout.detailsSubmitted ? "Complete" : "Pending");
+    set("[data-payout-charges]", payout.chargesEnabled ? "Enabled" : "Pending");
+    set("[data-payout-enabled]", payout.payoutsEnabled ? "Enabled" : "Pending");
+    set("[data-payout-requirements]", payout.requirementsDue ? `${payout.requirementsDue} due` : payout.ready ? "None due" : "Not started");
+    const button = $("[data-seller-payout-start]");
+    if (button) button.textContent = payout.ready ? "Open Stripe dashboard" : payout.connected ? "Continue payout setup" : "Set up seller payouts";
+    const checks = [
+      ["Seller ID and identity verified", sellerContextAuthorized],
+      ["Stripe payouts ready", Boolean(payout.ready)],
+      ["OBS connection saved", hasSavedObsConnection],
+      ["At least one active show", sellerShows.some(show => ["open", "live"].includes(show.status))],
+      ["At least one active store listing", sellerStoreListings.some(item => item.status === "active" && Number(item.quantity || 0) > 0)],
+      ["Shipping weight profile saved", sellerWeightProfiles.length > 0]
+    ];
+    const list = $("[data-seller-readiness-list]");
+    if (list) list.innerHTML = checks.map(([label, ready]) => `<li class="${ready ? "is-ready" : "is-pending"}"><span aria-hidden="true">${ready ? "OK" : "NEXT"}</span>${escapeHtml(label)}</li>`).join("");
+  }
+
+  async function loadSellerPayoutStatus() {
+    const payload = await api("/seller/payouts/status");
+    sellerPayoutState = payload.payout || null;
+    renderSellerReadiness();
+    const disclosure = $("[data-seller-payout-disclosure]");
+    if (disclosure && payload.feeExample) {
+      disclosure.textContent = `${payload.feeExample.disclosure} Seller receives ${dollars(payload.feeExample.sellerProceedsCents)} after the listed platform and payment-processing fees. Stripe securely handles bank details; Crack Packs does not store banking credentials.`;
+    }
+    return payload;
   }
   function renderStreamInput(input) {
     const summary = $("[data-stream-connection-status]");
@@ -796,6 +842,7 @@
     if (createLabel) createLabel.textContent = active.length ? "Create another show" : "Create a show";
     if (createCopy) createCopy.textContent = active.length ? "Add a show without leaving Seller Live" : "Build it here, then start broadcasting";
     sellerLiveChat?.refresh({ force: true });
+    connectSellerAuctionRealtime(selectedId);
     updateSellerSocialComposer();
     renderShowStoreInventoryOptions();
     renderHudInventoryAssignment();
@@ -829,7 +876,24 @@
       renderHudInventoryAssignment();
     }
     sellerLiveChat?.refresh({ force: true });
+    connectSellerAuctionRealtime(showId);
     return Promise.all([loadSellerLots(showId), loadSellerLiveCreditStatus(showId)]);
+  }
+
+  function connectSellerAuctionRealtime(showId) {
+    if (sellerAuctionRealtimeShowId === showId) return;
+    sellerAuctionRealtime?.close();
+    sellerAuctionRealtime = null;
+    sellerAuctionRealtimeShowId = showId || "";
+    if (!showId || !window.CrackPacksAuctionRealtime) return;
+    sellerAuctionRealtime = window.CrackPacksAuctionRealtime.connect({
+      apiBase: base,
+      showId,
+      onEvent: () => {
+        if (($("[data-broadcast-show-select]")?.value || "") !== showId) return;
+        loadSellerLots(showId, { notify: true }).catch(() => {});
+      }
+    });
   }
 
   function purchaseStatusLabel(status) {
@@ -1754,7 +1818,7 @@
       syncStreamKeyButtons();
       syncStreamGuideVisibility({ firstOpen: !hasSavedObsConnection && !hasCompletedObsGuide() });
       await loadSellerProductCategories();
-      await Promise.all([loadSellerGiveaways(), loadSellerShows(), loadSellerInventory(), loadSellerStoreListings(), loadSellerCogsOrders(), loadSellerOrders(), loadSellerWeightProfiles()]);
+      await Promise.all([loadSellerGiveaways(), loadSellerShows(), loadSellerInventory(), loadSellerStoreListings(), loadSellerCogsOrders(), loadSellerOrders(), loadSellerWeightProfiles(), loadSellerPayoutStatus()]);
       updateSellerDashboardMetrics();
     } catch {}
   }
@@ -2785,6 +2849,32 @@
     renderSellerOrders();
   });
 
+  $("[data-seller-payout-start]")?.addEventListener("click", async event => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      const payload = await api("/seller/payouts/onboarding", { method: "POST", body: "{}" });
+      if (!payload.url) throw new Error("Stripe did not return a payout setup link.");
+      window.location.assign(payload.url);
+    } catch (error) {
+      setStatus("[data-seller-payout-status]", error.message, "error");
+      button.disabled = false;
+    }
+  });
+
+  $("[data-seller-payout-refresh]")?.addEventListener("click", async event => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      await loadSellerPayoutStatus();
+      setStatus("[data-seller-payout-status]", sellerPayoutState?.ready ? "Seller payouts are ready." : "Payout status refreshed. Complete any remaining Stripe requirements.", sellerPayoutState?.ready ? "success" : "");
+    } catch (error) {
+      setStatus("[data-seller-payout-status]", error.message, "error");
+    } finally {
+      button.disabled = false;
+    }
+  });
+
   $("[data-seller-purchase-recap-list]")?.addEventListener("click", async event => {
     const button = event.target.closest("[data-fulfill-order]");
     if (!button) return;
@@ -2907,7 +2997,7 @@
       const closesAt = Date.parse(current?.closes_at || "");
       if (!autoNextActive && Number.isFinite(closesAt) && closesAt <= Date.now()) {
         settleExpiredSellerAuction(showId).catch(() => {});
-      } else {
+      } else if ((sellerLotsFallbackTick += 1) % 6 === 0) {
         loadSellerLots(showId).catch(() => {});
       }
     }
@@ -2927,6 +3017,7 @@
     window.clearInterval(sellerLotsRefreshTimer);
     window.clearTimeout(purchaseToastTimer);
     stopStreamCreditCountdown();
+    sellerAuctionRealtime?.close();
     sellerLiveChat?.stop();
     stopAutoNext();
   }, { once: true });

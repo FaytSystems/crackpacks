@@ -9,7 +9,7 @@
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/css/styles.css?v=1.11.2">
   <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.7.0">
-  <link rel="stylesheet" href="assets/css/streams-hub.css?v=2.6.0">
+  <link rel="stylesheet" href="assets/css/streams-hub.css?v=2.7.0">
   <link rel="stylesheet" href="assets/css/live-chat.css?v=1.0.0">
   <link rel="stylesheet" href="assets/css/video-auction-hud.css?v=1.0.0">
 </head>
@@ -70,21 +70,27 @@
       <div class="seller-tool-menu-items" id="seller-tool-menu-items" data-seller-tool-menu-items>
         <button class="seller-tool-menu-button is-active" type="button" data-seller-tool-button="home">Home</button>
         <button class="seller-tool-menu-button" type="button" data-seller-tool-button="show-control">Seller Live</button>
-        <button class="seller-tool-menu-button" type="button" data-seller-tool-button="obs">OBS Connection</button>
-        <button class="seller-tool-menu-button" type="button" data-seller-tool-button="simulcast">Simulcast</button>
         <button class="seller-tool-menu-button" type="button" data-seller-tool-button="shows">Shows</button>
-        <button class="seller-tool-menu-button" type="button" data-seller-tool-button="show-inventory">Show Inventory</button>
-        <button class="seller-tool-menu-button" type="button" data-seller-tool-button="social">Social Launcher</button>
-        <button class="seller-tool-menu-button" type="button" data-seller-tool-button="inventory">Seller Inventory</button>
-        <button class="seller-tool-menu-button" type="button" data-seller-tool-button="categories">Product Types</button>
-        <button class="seller-tool-menu-button" type="button" data-seller-tool-button="cogs">Order COGS</button>
+        <button class="seller-tool-menu-button" type="button" data-seller-tool-button="inventory">Inventory</button>
         <button class="seller-tool-menu-button" type="button" data-seller-tool-button="shipping">Fulfill Orders</button>
-        <button class="seller-tool-menu-button" type="button" data-seller-tool-button="giveaways">Giveaways</button>
-        <a class="seller-tool-menu-button seller-tool-menu-link" href="seller-store.html#stock">Stock</a>
-        <a class="seller-tool-menu-button seller-tool-menu-link" href="seller-store.html#preview">Store Preview</a>
         <a class="seller-tool-menu-button seller-tool-menu-link" data-seller-storefront-link href="shop.html">My Store</a>
+        <button class="seller-tool-menu-button" type="button" data-seller-tool-button="payouts">Payouts</button>
         <a class="seller-tool-menu-button seller-tool-menu-link" href="referral.html?view=credits">Credits &amp; Subscription</a>
-        <a class="seller-tool-menu-button seller-tool-menu-link" href="referral.html?view=account">Account</a>
+        <details class="seller-tool-more">
+          <summary>More tools</summary>
+          <div class="seller-tool-more-grid">
+            <button class="seller-tool-menu-button" type="button" data-seller-tool-button="obs">OBS Connection</button>
+            <button class="seller-tool-menu-button" type="button" data-seller-tool-button="simulcast">Simulcast</button>
+            <button class="seller-tool-menu-button" type="button" data-seller-tool-button="show-inventory">Show Inventory</button>
+            <button class="seller-tool-menu-button" type="button" data-seller-tool-button="social">Social Launcher</button>
+            <button class="seller-tool-menu-button" type="button" data-seller-tool-button="categories">Product Types</button>
+            <button class="seller-tool-menu-button" type="button" data-seller-tool-button="cogs">Order COGS</button>
+            <button class="seller-tool-menu-button" type="button" data-seller-tool-button="giveaways">Giveaways</button>
+            <a class="seller-tool-menu-button seller-tool-menu-link" href="seller-store.html#stock">Stock</a>
+            <a class="seller-tool-menu-button seller-tool-menu-link" href="seller-store.html#preview">Store Preview</a>
+            <a class="seller-tool-menu-button seller-tool-menu-link" href="referral.html?view=account">Account</a>
+          </div>
+        </details>
       </div>
     </nav>
 
@@ -115,7 +121,34 @@
           <button type="button" data-seller-tool-button="social"><strong>Promote a show</strong><span>Prepare social messages and launch links.</span></button>
           <a data-seller-storefront-link href="shop.html"><strong>View my store</strong><span>See the public storefront buyers can shop.</span></a>
           <a class="seller-dashboard-credits" href="referral.html?view=credits"><strong>Add credits or subscribe</strong><span>Calculate usage, compare plans, and open secure Stripe checkout.</span></a>
+          <button type="button" data-seller-tool-button="payouts"><strong>Seller payouts</strong><span data-dashboard-payout-status>Connect Stripe before accepting paid auctions.</span></button>
         </div>
+      </div>
+      <div class="holo-panel seller-payout-panel" data-seller-tool-panel="payouts">
+        <header>
+          <div>
+            <p class="eyebrow">Seller payouts</p>
+            <h2>Stripe Connect</h2>
+            <p>Connect a verified payout account before accepting paid marketplace or live-auction orders.</p>
+          </div>
+          <span class="seller-payout-state" data-seller-payout-state>Checking</span>
+        </header>
+        <div class="seller-payout-summary">
+          <div><span>Details</span><strong data-payout-details>Pending</strong></div>
+          <div><span>Charges</span><strong data-payout-charges>Pending</strong></div>
+          <div><span>Payouts</span><strong data-payout-enabled>Pending</strong></div>
+          <div><span>Requirements</span><strong data-payout-requirements>Checking</strong></div>
+        </div>
+        <div class="seller-payout-actions">
+          <button class="btn btn-primary" type="button" data-seller-payout-start>Set up seller payouts</button>
+          <button class="btn btn-outline" type="button" data-seller-payout-refresh>Refresh status</button>
+        </div>
+        <p class="campaign-form-status" data-seller-payout-status aria-live="polite"></p>
+        <section class="seller-launch-readiness" aria-labelledby="seller-readiness-title">
+          <h3 id="seller-readiness-title">Launch readiness</h3>
+          <ul data-seller-readiness-list></ul>
+        </section>
+        <p class="seller-payout-disclosure" data-seller-payout-disclosure>Fees are shown before each settlement. Stripe securely handles bank details; Crack Packs does not store your banking credentials.</p>
       </div>
     </section>
 
@@ -880,11 +913,12 @@
     </div>
   </main>
 
-  <script src="assets/js/config.js?v=4.2.0"></script>
+  <script src="assets/js/config.js?v=4.3.0"></script>
   <script src="assets/js/social-footer.js?v=1.1.0" data-crackpacks-social-loader></script>
   <script src="assets/js/app.js?v=2.0.1"></script>
   <script src="assets/js/portal-mode.js?v=1.2.5"></script>
   <script src="assets/js/live-chat.js?v=1.0.0"></script>
-  <script src="assets/js/streams-hub.js?v=2.6.0"></script>
+  <script src="assets/js/auction-realtime.js?v=1.0.0"></script>
+  <script src="assets/js/streams-hub.js?v=2.7.0"></script>
 </body>
 </html>

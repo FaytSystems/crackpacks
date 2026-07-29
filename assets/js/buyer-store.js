@@ -28,7 +28,7 @@
   const filterSummary = document.querySelector("[data-filter-summary]");
   const loadMoreButton = document.querySelector("[data-marketplace-more]");
   const topItemsGrid = document.querySelector("[data-top-ten-grid]");
-  const topItemsWindow = document.querySelector("[data-top-ten-window]");
+  const topItemsSection = document.querySelector("[data-marketplace-spotlight]");
   const detailsModal = document.querySelector("[data-store-show-modal]");
   const detailsResults = document.querySelector("[data-store-show-results]");
   const detailsCopy = document.querySelector("[data-store-show-copy]");
@@ -49,6 +49,9 @@
     closeMatchUsed: false,
     closeMatchScores: new Map(),
     source: "live",
+    marketplaceMode: "preview",
+    checkoutEnabled: false,
+    lastZeroResultQuery: "",
     controller: null,
     renderFrame: 0
   };
@@ -190,6 +193,7 @@
       createdAt: String(item.createdAt || item.updatedAt || ""),
       rank: Number(item.rank || item.salesRank || index + 1),
       liveShow: item.liveShow || null,
+      sellerTrust: item.sellerTrust && typeof item.sellerTrust === "object" ? item.sellerTrust : {},
       preview: Boolean(item.preview)
     };
     normalized.searchText = normalizeText([
@@ -237,6 +241,62 @@
     statusNode.dataset.state = status;
   }
 
+  function sendAnalytics(eventName, detail = "", metricName = "", metricValue = null) {
+    const base = String(config.rewardsApiUrl || "").trim().replace(/\/+$/, "");
+    if (!base) return;
+    fetch(`${base}/analytics/client`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      keepalive: true,
+      body: JSON.stringify({ eventName, pagePath: location.pathname, detail, metricName, metricValue })
+    }).catch(() => {});
+  }
+
+  function applyMarketplaceStatus(status = {}) {
+    state.marketplaceMode = ["preview", "live", "paused"].includes(status.mode) ? status.mode : "preview";
+    state.checkoutEnabled = Boolean(status.checkoutEnabled);
+    const label = String(status.label || (state.marketplaceMode === "live" ? "Live marketplace" : "Marketplace preview"));
+    document.querySelectorAll("[data-marketplace-tape-label]").forEach(node => { node.textContent = label; });
+    const title = document.querySelector("[data-marketplace-state-title]");
+    const copy = document.querySelector("[data-marketplace-state-copy]");
+    if (title) title.textContent = label;
+    if (copy) copy.textContent = String(status.buyerMessage || "Browse active seller inventory and connected live shows.");
+    document.body.dataset.marketplaceMode = state.marketplaceMode;
+  }
+
+  function syncProductStructuredData(items) {
+    let script = document.querySelector("#marketplace-product-data");
+    if (!script) {
+      script = document.createElement("script");
+      script.id = "marketplace-product-data";
+      script.type = "application/ld+json";
+      document.head.append(script);
+    }
+    script.textContent = JSON.stringify({
+      "@context": "https://schema.org",
+      "@type": "ItemList",
+      name: "Crack Packs seller marketplace",
+      numberOfItems: items.length,
+      itemListElement: items.slice(0, 50).map((item, index) => ({
+        "@type": "ListItem",
+        position: index + 1,
+        item: {
+          "@type": "Product",
+          name: item.title,
+          description: item.description,
+          image: new URL(item.imageUrl, location.href).href,
+          offers: {
+            "@type": "Offer",
+            priceCurrency: "USD",
+            price: Number(item.priceCents || 0) / 100,
+            availability: item.quantity > 0 ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
+            seller: { "@type": "Organization", name: item.sellerUsername }
+          }
+        }
+      }))
+    });
+  }
+
   function applyStorefrontContext() {
     if (!requestedSeller) return;
     const label = `@${requestedSellerLabel}`;
@@ -260,20 +320,27 @@
 
   function renderTopItems() {
     if (!topItemsGrid) return;
-    const windowKey = String(topItemsWindow?.value || "1hr");
-    const rows = Array.isArray(window.CRACKPACKS_TOP_ITEMS?.[windowKey])
-      ? window.CRACKPACKS_TOP_ITEMS[windowKey].slice(0, 10)
-      : [];
+    const uniqueTitles = new Set();
+    const rows = [...state.items]
+      .sort((left, right) => String(right.createdAt || "").localeCompare(String(left.createdAt || "")) || left.rank - right.rank)
+      .filter(item => {
+        const key = normalizeText(item.title);
+        if (!key || uniqueTitles.has(key)) return false;
+        uniqueTitles.add(key);
+        return true;
+      })
+      .slice(0, 10);
+    if (topItemsSection) topItemsSection.hidden = requestedSeller || rows.length === 0;
     topItemsGrid.innerHTML = rows.map((item, index) => {
-      const title = item.name || item.title || "Trending listing";
-      const seller = item.seller || (item.sellerUsername ? `@${item.sellerUsername}` : "@CrackPacks");
-      const price = item.price || (Number.isFinite(Number(item.priceCents)) ? formatMoney(item.priceCents) : "View listing");
+      const title = item.title || "Active listing";
+      const seller = item.sellerUsername ? `@${item.sellerUsername}` : "@CrackPacks";
+      const price = Number.isFinite(Number(item.priceCents)) ? formatMoney(item.priceCents) : "View listing";
       const query = new URLSearchParams({ q: title });
       return `
         <a class="top-ten-card" href="shop.html?${query.toString()}">
           <span class="top-ten-rank">#${index + 1}</span>
           <span class="top-ten-copy"><strong>${escapeHtml(title)}</strong><small>${escapeHtml(seller)}</small></span>
-          <span class="top-ten-meta"><strong>${escapeHtml(price)}</strong><small>${escapeHtml(item.windowLabel || windowKey)}</small></span>
+          <span class="top-ten-meta"><strong>${escapeHtml(price)}</strong><small>${escapeHtml(item.condition || "Active")}</small></span>
         </a>`;
     }).join("");
   }
@@ -347,7 +414,7 @@
         <div class="product-body">
           <p class="card-kicker">${escapeHtml(item.primaryLabel)}</p>
           <h3>${escapeHtml(item.title)}</h3>
-          <p class="store-market-meta"><a href="${escapeHtml(sellerHref)}">@${escapeHtml(item.sellerUsername)}</a>${item.condition ? `<span>${escapeHtml(item.condition)}</span>` : ""}</p>
+          <p class="store-market-meta"><a href="${escapeHtml(sellerHref)}">@${escapeHtml(item.sellerUsername)}</a>${item.sellerTrust?.identityVerified ? '<span class="seller-trust-badge">ID verified</span>' : ""}${item.condition ? `<span>${escapeHtml(item.condition)}</span>` : ""}</p>
           <p class="product-description">${escapeHtml(item.description)}</p>
           <div class="store-listing-facts"><span>${escapeHtml(pretty(item.saleType))}</span><span>${escapeHtml(shipping)}</span></div>
           <div class="product-footer">
@@ -462,6 +529,10 @@
     const visible = state.filtered.slice(0, state.visibleCount);
     catalog.innerHTML = visible.map(productCard).join("");
     if (emptyNode) emptyNode.hidden = state.filtered.length !== 0;
+    if (!state.filtered.length && state.search && state.lastZeroResultQuery !== state.search) {
+      state.lastZeroResultQuery = state.search;
+      sendAnalytics("marketplace.zero_results", state.search);
+    }
     if (loadMoreButton) {
       loadMoreButton.hidden = visible.length >= state.filtered.length;
       loadMoreButton.textContent = `Load more listings (${Math.min(PAGE_SIZE, state.filtered.length - visible.length)} next)`;
@@ -497,7 +568,7 @@
           <h3>${escapeHtml(item.title)}</h3>
           <p>${escapeHtml(item.description)}</p>
           <dl>
-            <div><dt>Seller</dt><dd>@${escapeHtml(item.sellerUsername)}</dd></div>
+            <div><dt>Seller</dt><dd>@${escapeHtml(item.sellerUsername)}${item.sellerTrust?.identityVerified ? " - ID verified" : ""}</dd></div>
             <div><dt>Price</dt><dd>${escapeHtml(formatMoney(item.priceCents))}</dd></div>
             <div><dt>Condition</dt><dd>${escapeHtml(item.condition || "Not specified")}</dd></div>
             <div><dt>Available</dt><dd>${item.quantity.toLocaleString()}</dd></div>
@@ -627,12 +698,23 @@
     document.addEventListener("keydown", event => {
       if (event.key === "Escape" && detailsModal && !detailsModal.hidden) closeDetails();
     });
-    topItemsWindow?.addEventListener("change", renderTopItems);
   }
 
   function hydrate(items, categories = [], source = "live") {
-    state.items = items;
+    const unique = new Map();
+    items.forEach(item => {
+      const key = item.id || [
+        normalizeText(item.sellerUsername),
+        normalizeText(item.title),
+        normalizeText(item.condition),
+        Number(item.priceCents || 0)
+      ].join("|");
+      if (!unique.has(key)) unique.set(key, item);
+    });
+    state.items = [...unique.values()];
     state.source = source;
+    syncProductStructuredData(state.items);
+    renderTopItems();
     renderPrimaryTabs(categories);
     renderSeriesTabs();
     syncSubcategories();
@@ -669,6 +751,10 @@
       setStatus("The live marketplace service is not configured. Showing a catalog preview.", "fallback");
       return;
     }
+    fetch(`${base}/marketplace/status`, { headers: { Accept: "application/json" } })
+      .then(response => response.ok ? response.json() : null)
+      .then(status => { if (status) applyMarketplaceStatus(status); })
+      .catch(() => {});
     state.controller?.abort();
     state.controller = new AbortController();
     const timeout = window.setTimeout(() => state.controller.abort(), 8000);
@@ -701,6 +787,5 @@
   applyStorefrontContext();
   bindControls();
   syncSortControls();
-  renderTopItems();
   loadCatalog();
 })();

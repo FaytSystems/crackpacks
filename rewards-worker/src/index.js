@@ -5,7 +5,9 @@ import { calculateChannelPricing, channelPricingErrors } from "./channel-pricing
 import { sanitizeEasyPostTracker, verifyEasyPostWebhook } from "./easypost-tracking.js";
 import { handlePlatformRoute, refreshStripeIdentityForMember, runAuctionSettlementCycle, runLiveCreditGateCycle, runStreamCreditCycle, usernameKey } from "./platform-routes.js";
 
-const VERSION = "5.3.0";
+export { ShowAuctionRoom } from "./show-auction-room.js";
+
+const VERSION = "6.0.0";
 const CAMPAIGN_REWARD_TYPES = new Set(["percent", "free_shipping", "pick_a_pack", "pack_draft", "free_single", "product"]);
 const MAX_CAMPAIGN_REDEMPTIONS = 500;
 const STORE_CURRENCIES = new Set(["USD", "CAD", "EUR", "GBP", "AUD", "NZD", "JPY", "CHF", "SEK", "NOK", "DKK", "PLN", "CZK", "HUF", "RON"]);
@@ -38,6 +40,11 @@ const now = () => new Date().toISOString();
 const id = () => crypto.randomUUID();
 const normalizeEmail = value => String(value || "").trim().toLowerCase().slice(0, 254);
 const clean = (value, max = 64) => String(value || "").trim().replace(/\s+/g, " ").slice(0, max);
+const marketplaceMode = env => {
+  const configured = String(env.MARKETPLACE_MODE || "").trim().toLowerCase();
+  if (["preview", "live", "paused"].includes(configured)) return configured;
+  return String(env.STORE_COMING_SOON || "true") === "false" ? "live" : "preview";
+};
 const optionalInteger = (value, min, max) => value === "" || value === null || value === undefined ? null : Number.isInteger(value) && value >= min && value <= max ? value : NaN;
 const optionalNumber = (value, min, max) => value === "" || value === null || value === undefined ? null : Number.isFinite(Number(value)) && Number(value) >= min && Number(value) <= max ? Number(value) : NaN;
 function parseInventoryItemInput(data) {
@@ -871,7 +878,21 @@ async function verifyTurnstile(env, token, request) {
 }
 async function route(request, env, cors, ctx) {
   const url = new URL(request.url);
-  if (url.pathname === "/health") return response({ ok: true, service: "crackpacks-rewards", version: VERSION, identityMode: env.IDENTITY_MODE, storeMode: String(env.STORE_COMING_SOON || "true") === "false" ? "live" : "coming_soon" }, 200, cors);
+  if (url.pathname === "/health") {
+    const mode = marketplaceMode(env);
+    return response({
+      ok: true,
+      service: "crackpacks-rewards",
+      version: VERSION,
+      identityMode: env.IDENTITY_MODE,
+      storeMode: mode,
+      marketplaceMode: mode,
+      checkoutEnabled: mode === "live" && String(env.STORE_CHECKOUT_ENABLED || "false") === "true",
+      liveAuctionsEnabled: String(env.LIVE_AUCTIONS_ENABLED || "false") === "true",
+      sellerPayoutsRequired: String(env.SELLER_PAYOUTS_REQUIRED || "false") === "true",
+      realtimeAuctionsConfigured: Boolean(env.SHOW_AUCTION_ROOM)
+    }, 200, cors);
+  }
   const platformResponse = await handlePlatformRoute(request, env, cors);
   if (platformResponse) return platformResponse;
   if (url.pathname === "/webhooks/easypost" && request.method === "POST") {
@@ -979,7 +1000,8 @@ async function route(request, env, cors, ctx) {
       cogs_cents: null, us_shipping_cents: null, profit_cents: 1000, weight_oz: null, length_in: null, width_in: null, height_in: null,
       origin_country: "", hs_code: ""
     }));
-    const comingSoon = String(env.STORE_COMING_SOON || "true") !== "false";
+    const mode = marketplaceMode(env);
+    const comingSoon = mode !== "live";
     return response({
       ok: true,
       market,
@@ -988,7 +1010,8 @@ async function route(request, env, cors, ctx) {
       rate: fx,
       currencyWarning,
       comingSoon,
-      checkoutEnabled: !comingSoon && String(env.STORE_CHECKOUT_ENABLED || "false") === "true",
+      marketplaceMode: mode,
+      checkoutEnabled: mode === "live" && String(env.STORE_CHECKOUT_ENABLED || "false") === "true",
       catalogSource: liveRows.length ? "owner_inventory" : "verified_starter_preview",
       items: storeRows.map(row => publicStoreItem(row, market, currency, fx)),
       pricingDisclosure: market === "us"
@@ -1002,7 +1025,7 @@ async function route(request, env, cors, ctx) {
     const seller = storeMember ? await env.DB.prepare(`SELECT status FROM breaker_profiles WHERE member_id=?`).bind(storeMember.id).first() : null;
     if (!storeMember) return response({ error: "Sign in to the Seller Portal to request shipping." }, 401, cors);
     if (!hasSellerPortalAccess(storeMember, seller) || storeMember.active_portal !== "seller") return response({ error: "Active Seller Portal access is required." }, 403, cors);
-    if (String(env.STORE_COMING_SOON || "true") !== "false" || String(env.STORE_CHECKOUT_ENABLED || "false") !== "true") {
+    if (marketplaceMode(env) !== "live" || String(env.STORE_CHECKOUT_ENABLED || "false") !== "true") {
       return response({ error: "Live carrier quotes are not enabled while the store is marked Coming Soon.", code: "SHIPPING_NOT_CONFIGURED" }, 503, cors);
     }
     const contentLength = Number(request.headers.get("Content-Length") || 0);

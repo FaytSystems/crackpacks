@@ -6,6 +6,12 @@
   "routes": [{ "pattern": "rewards-api.crackpacks.com", "custom_domain": true }],
   "d1_databases": [{ "binding": "DB", "database_name": "crackpacks-rewards", "database_id": "8b0edc0e-4766-47e0-89e0-2dcf1f46ce1b" }],
   "r2_buckets": [{ "binding": "SHOW_MEDIA", "bucket_name": "crackpacks-show-media" }],
+  "durable_objects": {
+    "bindings": [{ "name": "SHOW_AUCTION_ROOM", "class_name": "ShowAuctionRoom" }]
+  },
+  "migrations": [
+    { "tag": "show-auction-room-v1", "new_sqlite_classes": ["ShowAuctionRoom"] }
+  ],
   "send_email": [{ "name": "REWARDS_EMAIL", "allowed_sender_addresses": ["rewards@crackpacks.com", "orders@crackpacks.com", "alerts@crackpacks.com", "support@crackpacks.com", "hello@crackpacks.com", "gig@crackpacks.com"] }],
   "vars": {
     "ALLOWED_ORIGINS": "https://crackpacks.com,https://www.crackpacks.com,http://localhost:8080,http://127.0.0.1:8080",
@@ -21,6 +27,11 @@
     "STORE_BASE_CURRENCY": "USD",
     "STORE_COMING_SOON": "true",
     "STORE_CHECKOUT_ENABLED": "false",
+    "MARKETPLACE_MODE": "preview",
+    "SELLER_PAYOUTS_REQUIRED": "true",
+    "SELLER_COMMISSION_BPS": "800",
+    "SELLER_PROCESSING_FEE_BPS": "290",
+    "SELLER_PROCESSING_FIXED_CENTS": "30",
     "LIVE_AUCTIONS_ENABLED": "true",
     "INTERNATIONAL_INCOTERM": "DAP"
   },

@@ -30,6 +30,7 @@
   const mainCategoryTabs = document.querySelector("[data-main-category-tabs]");
   const suggestionList = document.querySelector("[data-price-check-suggestions]");
   const closeMatches = document.querySelector("[data-close-match-suggestions]");
+  const RECENT_SEARCH_KEY = "cp_card_search_recent_v1";
 
   const state = {
     term: "",
@@ -672,13 +673,31 @@
     const categorySuggestions = seriesOptions
       .filter(option => option.mainCategory === state.mainCategory)
       .flatMap(option => option.suggestions || []);
-    const pool = [...new Set([...(selectedSeries.suggestions || []), ...categorySuggestions, ...allSuggestions])];
+    let recent = [];
+    try { recent = JSON.parse(localStorage.getItem(RECENT_SEARCH_KEY) || "[]"); } catch {}
+    const pool = [...new Set([...recent, ...(selectedSeries.suggestions || []), ...categorySuggestions, ...allSuggestions])];
     return pool
       .map(candidate => ({ candidate, score: scoreSuggestion(term, candidate) }))
       .filter(item => item.score > 0 || !term)
       .sort((left, right) => right.score - left.score || left.candidate.localeCompare(right.candidate))
       .slice(0, 12)
       .map(item => item.candidate);
+  }
+
+  function rememberSearch(term) {
+    const value = String(term || "").trim();
+    if (value.length < 2) return;
+    let recent = [];
+    try { recent = JSON.parse(localStorage.getItem(RECENT_SEARCH_KEY) || "[]"); } catch {}
+    recent = [value, ...recent.filter(item => normalize(item) !== normalize(value))].slice(0, 8);
+    try { localStorage.setItem(RECENT_SEARCH_KEY, JSON.stringify(recent)); } catch {}
+  }
+
+  function activePriceSummary(meta) {
+    const price = meta?.priceSummary;
+    if (!price || !Number(price.sampleSize)) return "";
+    const format = value => money(value, price.currency) || "";
+    return `${format(price.median)} median asking price; ${format(price.low)}-${format(price.high)} range across ${price.sampleSize} active listing${price.sampleSize === 1 ? "" : "s"}`;
   }
 
   function updateSuggestions() {
@@ -805,8 +824,9 @@
       }
 
       if (summary) {
+        const priceSummary = activePriceSummary(ebayPayload.meta);
         summary.textContent = listings.length
-          ? `${compactNumber(state.totalCount)} active eBay listing${state.totalCount === 1 ? "" : "s"} for "${state.term}"`
+          ? `${compactNumber(state.totalCount)} active eBay listing${state.totalCount === 1 ? "" : "s"} for "${state.term}"${priceSummary ? ` - ${priceSummary}` : ""}`
           : `${sourceCards.length} manual price source${sourceCards.length === 1 ? "" : "s"} for "${state.term}"`;
         summary.hidden = false;
       }
@@ -852,6 +872,7 @@
     }
 
     state.term = term;
+    rememberSearch(term);
     state.field = field.value;
     state.orderBy = order.value;
     state.language = language?.value || "any";
@@ -939,7 +960,8 @@
         state.totalCount = 0;
         setHidden(pager, true);
         if (summary) {
-          summary.textContent = `No exact ${selectedSeries.label} database card; ${ebayListings.length} active eBay listing${ebayListings.length === 1 ? "" : "s"} shown`;
+          const priceSummary = activePriceSummary(ebayPayload.meta);
+          summary.textContent = `No exact ${selectedSeries.label} database card; ${ebayListings.length} active eBay listing${ebayListings.length === 1 ? "" : "s"} shown${priceSummary ? ` - ${priceSummary}` : ""}`;
           summary.hidden = false;
         }
       } else {
@@ -953,7 +975,8 @@
         );
         renderCloseMatches([]);
         if (summary) {
-          summary.textContent = `${compactNumber(state.totalCount)} estimated match${state.totalCount === 1 ? "" : "es"} for "${state.term}"`;
+          const priceSummary = activePriceSummary(ebayPayload.meta);
+          summary.textContent = `${compactNumber(state.totalCount)} estimated match${state.totalCount === 1 ? "" : "es"} for "${state.term}"${priceSummary ? ` - ${priceSummary}` : ""}`;
           summary.hidden = false;
         }
       }

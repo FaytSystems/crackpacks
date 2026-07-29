@@ -33,7 +33,68 @@ window.CRACKPACKS_CONFIG = {
   ],
   email: "support@crackpacks.com",
   domain: "https://crackpacks.com",
-  updated: "July 28, 2026",
-  storeNotice: "The Crack Packs storefront is a Coming Soon preview. Checkout is locked until inventory, shipping, and payment settings are verified.",
+  updated: "July 29, 2026",
+  storeNotice: "The Crack Packs marketplace is in preview while seller payouts, shipping, and payment settings complete launch verification.",
   newsletterMessage: "Create your verified Profile to join Crack Packs drop alerts."
 };
+
+(() => {
+  "use strict";
+  if (!/^(?:www\.)?crackpacks\.com$/i.test(location.hostname)) return;
+  const endpoint = `${String(window.CRACKPACKS_CONFIG?.rewardsApiUrl || "").replace(/\/$/, "")}/analytics/client`;
+  if (!endpoint.startsWith("https://")) return;
+  const metrics = new Map();
+  let sent = false;
+  const remember = (name, value) => {
+    if (Number.isFinite(value)) metrics.set(name, Math.round(value * 100) / 100);
+  };
+  try {
+    new PerformanceObserver(list => {
+      const entry = list.getEntries().at(-1);
+      if (entry) remember("lcp", entry.startTime);
+    }).observe({ type: "largest-contentful-paint", buffered: true });
+  } catch {}
+  try {
+    let cls = 0;
+    new PerformanceObserver(list => {
+      list.getEntries().forEach(entry => {
+        if (!entry.hadRecentInput) cls += entry.value;
+      });
+      remember("cls", cls);
+    }).observe({ type: "layout-shift", buffered: true });
+  } catch {}
+  try {
+    let inp = 0;
+    new PerformanceObserver(list => {
+      list.getEntries().forEach(entry => { inp = Math.max(inp, entry.duration || 0); });
+      remember("inp", inp);
+    }).observe({ type: "event", buffered: true, durationThreshold: 40 });
+  } catch {}
+  try {
+    new PerformanceObserver(list => {
+      const fcp = list.getEntriesByName("first-contentful-paint")[0];
+      if (fcp) remember("fcp", fcp.startTime);
+    }).observe({ type: "paint", buffered: true });
+  } catch {}
+  const send = () => {
+    if (sent || !metrics.size) return;
+    sent = true;
+    metrics.forEach((metricValue, metricName) => {
+      fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        keepalive: true,
+        body: JSON.stringify({
+          eventName: "performance.web_vital",
+          pagePath: location.pathname,
+          metricName,
+          metricValue
+        })
+      }).catch(() => {});
+    });
+  };
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") send();
+  });
+  window.addEventListener("pagehide", send, { once: true });
+})();

@@ -2,7 +2,7 @@
 Full file:
   D:\crackpacks\crackpacks-github-ready\assets\js\contact-form.js
 
-Crack Packs Contact Form v1.7.1
+Crack Packs Contact Form v1.8.0
 */
 
 (() => {
@@ -29,6 +29,67 @@ Crack Packs Contact Form v1.7.1
 
   let previouslyFocused = null;
   let submitting = false;
+  let turnstileWidgetId = null;
+  let turnstileToken = "";
+  let turnstileLoader = null;
+  const turnstileSiteKey = String(window.CRACKPACKS_CONFIG?.turnstileSiteKey || "");
+  const turnstileEnabled = Boolean(turnstileSiteKey && /^https?:$/.test(location.protocol));
+
+  const loadTurnstile = () => {
+    if (!turnstileEnabled) return Promise.resolve(null);
+    if (window.turnstile) return Promise.resolve(window.turnstile);
+    if (turnstileLoader) return turnstileLoader;
+    turnstileLoader = new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+      script.async = true;
+      script.defer = true;
+      script.addEventListener("load", () => resolve(window.turnstile));
+      script.addEventListener("error", () => reject(new Error("The security check could not load.")));
+      document.head.append(script);
+    });
+    return turnstileLoader;
+  };
+
+  const mountTurnstile = async () => {
+    if (!turnstileEnabled) return;
+    let container = form.querySelector("[data-contact-turnstile]");
+    if (!container) {
+      container = document.createElement("div");
+      container.className = "contact-turnstile cf-turnstile";
+      container.dataset.contactTurnstile = "";
+      container.dataset.action = "turnstile-spin-v2";
+      container.setAttribute("aria-label", "Security check");
+      statusNode.before(container);
+    }
+    try {
+      const turnstile = await loadTurnstile();
+      if (!turnstile || turnstileWidgetId !== null) return;
+      turnstileWidgetId = turnstile.render(container, {
+        sitekey: turnstileSiteKey,
+        action: "turnstile-spin-v2",
+        theme: "dark",
+        callback: token => {
+          turnstileToken = String(token || "");
+          if (statusNode.dataset.state === "security") setStatus();
+        },
+        "expired-callback": () => { turnstileToken = ""; },
+        "error-callback": () => {
+          turnstileToken = "";
+          setStatus("The security check could not complete. Refresh it and try again.", "error");
+        }
+      });
+    } catch (error) {
+      setStatus(error.message, "error");
+    }
+  };
+
+  const resetTurnstile = () => {
+    turnstileToken = "";
+    if (turnstileWidgetId !== null && window.turnstile) {
+      try { window.turnstile.reset(turnstileWidgetId); } catch {}
+    }
+  };
 
   const setStatus = (message = "", state = "") => {
     statusNode.textContent = message;
@@ -47,6 +108,7 @@ Crack Packs Contact Form v1.7.1
     submitting = false;
     submitButton.disabled = false;
     submitButton.textContent = "Send Message";
+    resetTurnstile();
   };
 
   const openModal = () => {
@@ -55,6 +117,7 @@ Crack Packs Contact Form v1.7.1
     modal.hidden = false;
     modal.setAttribute("aria-hidden", "false");
     document.body.classList.add("contact-modal-open");
+    mountTurnstile();
     window.setTimeout(() => emailInput.focus(), 20);
   };
 
@@ -148,6 +211,12 @@ Crack Packs Contact Form v1.7.1
       return;
     }
 
+    if (turnstileEnabled && !turnstileToken) {
+      setStatus("Complete the security check before sending your message.", "security");
+      form.querySelector("[data-contact-turnstile]")?.scrollIntoView({ block: "center" });
+      return;
+    }
+
     submitting = true;
     submitButton.disabled = true;
     submitButton.textContent = "Sending...";
@@ -167,6 +236,7 @@ Crack Packs Contact Form v1.7.1
           email,
           message,
           company,
+          turnstileToken,
           page: window.location.href
         })
       });
@@ -187,6 +257,7 @@ Crack Packs Contact Form v1.7.1
       submitting = false;
       submitButton.disabled = false;
       submitButton.textContent = "Send Message";
+      resetTurnstile();
 
       const isNetworkFailure =
         error instanceof TypeError &&

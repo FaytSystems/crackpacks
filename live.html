@@ -7,7 +7,7 @@
   <meta name="description" content="Watch Crack Packs breaker streams and slide to bid live.">
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/css/styles.css?v=1.11.2">
-  <link rel="stylesheet" href="assets/css/live.css?v=1.2.0">
+  <link rel="stylesheet" href="assets/css/live.css?v=1.3.0">
   <link rel="stylesheet" href="assets/css/live-chat.css?v=1.0.0">
   <link rel="stylesheet" href="assets/css/video-auction-hud.css?v=1.0.0">
 </head>
@@ -51,12 +51,13 @@
           <button class="btn btn-primary" type="submit">Set Your Bid</button>
         </form>
         <p class="bid-state-copy" data-bid-state-copy>Sign in to your Profile before bidding.</p>
+        <p class="live-buyer-protection">Bids are final when the timer closes. The winning buyer is charged only after the server confirms the result; failed payments remain flagged for review.</p>
         <a class="btn btn-outline" href="referral.html">Sign in / Profile</a>
       </aside>
       <div class="live-video-card">
         <p class="eyebrow">Breaker live</p>
         <h1 data-live-show-title>Crack Packs Live Auction.</h1>
-        <p data-live-status>Loading the current auction...</p>
+        <p data-live-status role="status" aria-live="polite">Loading the current auction...</p>
         <p class="viewer-pill"><strong data-live-viewers>0</strong> watching</p>
         <img class="live-show-thumbnail" data-live-show-thumbnail alt="" width="1600" height="900" hidden>
         <div class="live-video-placeholder" data-live-video-placeholder>Stream player connects here when a breaker session is live.</div>
@@ -110,11 +111,12 @@
       </aside>
     </section>
   </main>
-  <script src="assets/js/config.js?v=4.2.0"></script>
+  <script src="assets/js/config.js?v=4.3.0"></script>
   <script src="assets/js/social-footer.js?v=1.1.0" data-crackpacks-social-loader></script>
   <script src="assets/js/app.js?v=2.0.1"></script>
   <script src="assets/js/portal-mode.js?v=1.2.5"></script>
   <script src="assets/js/live-chat.js?v=1.0.0"></script>
-  <script src="assets/js/live.js?v=1.2.3"></script>
+  <script src="assets/js/auction-realtime.js?v=1.0.0"></script>
+  <script src="assets/js/live.js?v=1.3.0"></script>
 </body>
 </html>

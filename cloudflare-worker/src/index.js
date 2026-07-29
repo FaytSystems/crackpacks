@@ -10,7 +10,7 @@ const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 48;
 const CACHE_SECONDS = 300;
 const EBAY_CACHE_SECONDS = 180;
-const WORKER_VERSION = "2.4.0";
+const WORKER_VERSION = "2.5.0";
 let ebayTokenCache = null;
 let ebayTokenRequest = null;
 const API_TCG_SERIES = new Map([
@@ -721,6 +721,27 @@ function ebayListing(item) {
   };
 }
 
+function activeListingPriceSummary(listings) {
+  const currency = listings.find(listing => listing.price?.currency)?.price?.currency || "USD";
+  const prices = listings
+    .filter(listing => listing.price?.currency === currency)
+    .map(listing => Number(listing.price?.value))
+    .filter(value => Number.isFinite(value) && value > 0)
+    .sort((left, right) => left - right);
+  if (!prices.length) return null;
+  const midpoint = Math.floor(prices.length / 2);
+  const median = prices.length % 2
+    ? prices[midpoint]
+    : (prices[midpoint - 1] + prices[midpoint]) / 2;
+  return {
+    currency,
+    sampleSize: prices.length,
+    low: prices[0],
+    median: Math.round(median * 100) / 100,
+    high: prices.at(-1)
+  };
+}
+
 async function handleEbayListings(incomingUrl, env, cors) {
   if (!ebayConfigured(env)) {
     return jsonResponse(
@@ -790,7 +811,13 @@ async function handleEbayListings(incomingUrl, env, cors) {
   }
 
   const itemSummaries = Array.isArray(payload.itemSummaries) ? payload.itemSummaries : [];
-  const data = itemSummaries.map(ebayListing).filter(listing => listing.url);
+  const unique = new Map();
+  itemSummaries.map(ebayListing).filter(listing => listing.url).forEach(listing => {
+    const key = listing.id || listing.url;
+    if (!unique.has(key)) unique.set(key, listing);
+  });
+  const data = [...unique.values()];
+  const priceSummary = activeListingPriceSummary(data);
   return jsonResponse(
     {
       data,
@@ -805,6 +832,7 @@ async function handleEbayListings(incomingUrl, env, cors) {
         submittedTerm: term,
         environment: ebayEnvironment(env),
         marketplaceId: ebayMarketplaceId(env),
+        priceSummary,
         reason: data.length
           ? ""
           : "eBay returned no active listings for this search. Try fewer keywords or a broader category."
