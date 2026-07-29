@@ -65,7 +65,7 @@ test("Seller Live creates and selects a show without leaving the HUD", async () 
   assert.match(css, /\.seller-create-show-modal/);
 });
 
-test("Seller Live inventory modal searches, sorts, paginates, and assigns products to shows", async () => {
+test("Seller Inventory and Seller Live share one searchable HUD with product image upload", async () => {
   const [html, script, css, routes] = await Promise.all([
     read("streams.html"),
     read("assets/js/streams-hub.js"),
@@ -73,6 +73,7 @@ test("Seller Live inventory modal searches, sorts, paginates, and assigns produc
     read("rewards-worker/src/platform-routes.js")
   ]);
   assert.match(html, /data-hud-inventory-open/);
+  assert.match(html, /data-seller-inventory-hud-open/);
   assert.match(html, /data-hud-inventory-modal/);
   assert.match(html, /data-hud-inventory-search/);
   assert.match(html, /data-hud-inventory-sort/);
@@ -82,15 +83,25 @@ test("Seller Live inventory modal searches, sorts, paginates, and assigns produc
   assert.match(html, /data-hud-inventory-page="next">Next/);
   assert.match(html, /data-hud-inventory-assignment-form/);
   assert.match(html, /data-hud-inventory-show-options/);
+  assert.match(html, /name="imageFile"[^>]+data-hud-product-image-input/);
+  assert.match(html, /data-hud-product-image-preview/);
+  assert.match(html, /data-hud-product-image-remove/);
   assert.match(script, /HUD_INVENTORY_PAGE_SIZE = 10/);
   assert.match(script, /items\.slice\(pageStart, pageStart \+ HUD_INVENTORY_PAGE_SIZE\)/);
   assert.match(script, /function hudInventoryItems\(\)/);
   assert.match(script, /data-hud-add-to-show/);
+  assert.match(script, /function openHudInventorySurface/);
+  assert.match(script, /nextTool === "inventory"/);
+  assert.match(script, /previewHudProductImage/);
+  assert.match(script, /Uploading product image and saving inventory/);
   assert.match(script, /status: "inactive"/);
   assert.match(script, /\/seller\/shows\/\$\{encodeURIComponent\(showId\)\}\/lots/);
   assert.match(css, /\.seller-hud-inventory-row/);
   assert.match(css, /\.seller-hud-add-show-bubble/);
+  assert.match(css, /\.seller-inventory-hud-launcher/);
+  assert.match(css, /\.seller-hud-product-image-upload/);
   assert.match(routes, /status IN \('active','inactive'\) AND quantity>=\?/);
+  assert.match(routes, /media\/product-images/);
 });
 
 test("Seller Live alone collapses the Seller Hub subheader into a dropdown", async () => {

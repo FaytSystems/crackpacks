@@ -1290,7 +1290,7 @@ test("seller can upload a JPEG thumbnail while creating a show", async () => {
           bind(...args) {
             return {
               first: async () => {
-                if (sql.includes("JOIN members m")) return member;
+                if (sql.includes("JOIN members m ON")) return member;
                 if (sql.includes("FROM breaker_profiles")) return { status: "active" };
                 if (sql.includes("FROM breaker_stream_inputs")) return { cloudflare_live_input_uid: "stream-input-123" };
                 return null;
@@ -1357,6 +1357,129 @@ test("uploaded show thumbnail is served with immutable image headers", async () 
   assert.equal(response.headers.get("Cache-Control"), "public, max-age=31536000, immutable");
   assert.equal(response.headers.get("X-Content-Type-Options"), "nosniff");
   assert.equal(response.headers.get("ETag"), "\"show-etag\"");
+  assert.deepEqual(new Uint8Array(await response.arrayBuffer()), imageBytes);
+});
+
+test("seller inventory accepts an uploaded JPEG product image", async () => {
+  const memberId = "11111111-1111-4111-8111-111111111111";
+  const member = {
+    id: memberId,
+    email_verified_at: "2026-07-24T00:00:00.000Z",
+    device_verified: 1,
+    identity_status: "verified",
+    stripe_identity_status: "verified",
+    live_username: "ImageSeller"
+  };
+  const uploads = [];
+  let inserted = null;
+  const env = {
+    AUTH_SECRET: "test-secret",
+    SHOW_MEDIA: {
+      put: async (key, value, options) => {
+        uploads.push({ key, value: new Uint8Array(value), options });
+        return { key };
+      },
+      delete: async () => {}
+    },
+    DB: {
+      prepare(sql) {
+        return {
+          bind(...args) {
+            return {
+              first: async () => {
+                if (sql.includes("JOIN members m ON")) return member;
+                if (sql.includes("FROM breaker_profiles")) return { status: "active" };
+                if (sql.includes("SELECT listing.*,member.live_username")) {
+                  return {
+                    id: inserted[0],
+                    member_id: memberId,
+                    live_username: member.live_username,
+                    title: inserted[5],
+                    description: inserted[6],
+                    sale_type: inserted[7],
+                    product_category_key: inserted[8],
+                    item_condition: inserted[12],
+                    quantity: inserted[13],
+                    price_cents: inserted[14],
+                    shipping_payer: inserted[15],
+                    image_url: inserted[16],
+                    status: inserted[17],
+                    created_at: inserted[18],
+                    updated_at: inserted[19]
+                  };
+                }
+                return null;
+              },
+              run: async () => {
+                if (sql.includes("INSERT INTO seller_store_listings")) inserted = args;
+                return { success: true, meta: { changes: 1 } };
+              }
+            };
+          }
+        };
+      }
+    }
+  };
+  const form = new FormData();
+  form.set("title", "Uploaded Charizard");
+  form.set("productCategoryKey", "pokemon");
+  form.set("condition", "Near Mint");
+  form.set("saleType", "cards");
+  form.set("quantity", "2");
+  form.set("price", "25.50");
+  form.set("shippingPayer", "buyer");
+  form.set("fixedShipping", "5.00");
+  form.set("status", "inactive");
+  form.set("imageFile", new File([
+    Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46])
+  ], "charizard.jpeg", { type: "image/jpeg" }));
+
+  const response = await handlePlatformRoute(new Request("https://rewards-api.crackpacks.test/seller/store-listings", {
+    method: "POST",
+    headers: { Authorization: "Bearer session-token" },
+    body: form
+  }), env, {});
+
+  assert.equal(response.status, 201);
+  const payload = await response.json();
+  assert.equal(uploads.length, 1);
+  assert.ok(inserted);
+  assert.match(inserted[16], /^https:\/\/rewards-api\.crackpacks\.test\/media\/product-images\//);
+  assert.match(payload.item.imageUrl, /^https:\/\/rewards-api\.crackpacks\.test\/media\/product-images\/11111111-1111-4111-8111-111111111111\/[0-9a-f-]{36}\.jpg$/);
+  assert.equal(payload.item.status, "inactive");
+  assert.match(uploads[0].key, /^product-images\/11111111-1111-4111-8111-111111111111\/[0-9a-f-]{36}\.jpg$/);
+  assert.equal(uploads[0].options.httpMetadata.contentType, "image/jpeg");
+  assert.equal(uploads[0].options.customMetadata.memberId, memberId);
+  assert.equal(uploads[0].options.customMetadata.listingId, inserted[0]);
+});
+
+test("uploaded product image is served with immutable image headers", async () => {
+  const memberId = "11111111-1111-4111-8111-111111111111";
+  const listingId = "33333333-3333-4333-8333-333333333333";
+  const imageBytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const env = {
+    SHOW_MEDIA: {
+      get: async key => {
+        assert.equal(key, `product-images/${memberId}/${listingId}.png`);
+        return {
+          body: new Blob([imageBytes]).stream(),
+          httpEtag: '"product-etag"',
+          writeHttpMetadata(headers) {
+            headers.set("Content-Type", "image/png");
+          }
+        };
+      }
+    }
+  };
+
+  const response = await handlePlatformRoute(new Request(`https://rewards-api.crackpacks.test/media/product-images/${memberId}/${listingId}.png`), env, {
+    "Access-Control-Allow-Origin": "*"
+  });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("Content-Type"), "image/png");
+  assert.equal(response.headers.get("Cache-Control"), "public, max-age=31536000, immutable");
+  assert.equal(response.headers.get("X-Content-Type-Options"), "nosniff");
+  assert.equal(response.headers.get("ETag"), '"product-etag"');
   assert.deepEqual(new Uint8Array(await response.arrayBuffer()), imageBytes);
 });
 

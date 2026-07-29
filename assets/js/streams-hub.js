@@ -70,7 +70,7 @@
     shows: { hash: "#create-show", title: "Shows", copy: "Schedule a show, upload its thumbnail, and prepare it for buyers." },
     "show-inventory": { hash: "#seller-shows", title: "Show inventory and store listings", copy: "Publish products to your store and queue account-owned inventory into a show." },
     social: { hash: "#seller-social", title: "Show social launcher", copy: "Prepare a show link and share message for each social channel." },
-    inventory: { hash: "#seller-inventory", title: "Seller inventory", copy: "Track stock, PAR levels, reviewed reorders, and available quantities." },
+    inventory: { hash: "#seller-inventory", title: "Seller inventory", copy: "Search, sort, create, upload, and assign products from the same inventory HUD used by Seller Live." },
     categories: { hash: "#seller-categories", title: "Types of products selling", copy: "Choose which product categories appear in this seller store." },
     cogs: { hash: "#seller-cogs", title: "Order COGS", copy: "Review landed costs and calculate a safer minimum auction bid." },
     shipping: { hash: "#seller-shipping", title: "Fulfill Orders", copy: "Manage paid orders, labels, clips, package weights, and tracking." },
@@ -143,7 +143,7 @@
     const setText = (selector, value) => { const node = $(selector); if (node) node.textContent = String(value); };
     setText("[data-dashboard-show-count]", activeShows);
     setText("[data-dashboard-listing-count]", activeListings);
-    setText("[data-dashboard-inventory-count]", sellerInventoryItems.length);
+    setText("[data-dashboard-inventory-count]", sellerStoreListings.length);
     setText("[data-dashboard-order-count]", ordersToFulfill);
     const streamStatus = $("[data-dashboard-stream-status]");
     if (streamStatus) streamStatus.textContent = hasSavedObsConnection
@@ -226,7 +226,13 @@
     const listingId = $("[data-show-store-listing]")?.value || "";
     return sellerStoreListings.find(item => item.id === listingId) || null;
   };
-  const syncSellerSectionNav = () => setSellerTool(sellerToolFromHash(), { updateHash: false });
+  const syncSellerSectionNav = () => {
+    const tool = sellerToolFromHash();
+    setSellerTool(tool, { updateHash: false });
+    if (tool === "inventory" && sellerContextAuthorized && $("[data-hud-inventory-modal]")?.hidden) {
+      openHudInventorySurface($("[data-seller-tool-button='inventory']"));
+    }
+  };
   const sellerSocialCaption = show => {
     if (!show) throw new Error("Choose a show first.");
     const message = String($("[data-seller-social-message]")?.value || "").trim() || `I'm live on Crack Packs: ${show.title}`;
@@ -281,6 +287,7 @@
   const showThumbnailTypes = new Set(["image/png", "image/jpeg", "image/jpg", "image/pjpeg"]);
   const showThumbnailMaxBytes = 5 * 1024 * 1024;
   const showThumbnailPreviewUrls = new WeakMap();
+  const productImagePreviewUrls = new WeakMap();
   function showThumbnailPreviewNodes(form) {
     return {
       preview: form?.querySelector("[data-show-thumbnail-preview], [data-seller-show-thumbnail-preview]"),
@@ -308,6 +315,35 @@
     if (image) image.src = previewUrl;
     if (name) name.textContent = `${file.name} - ${(file.size / 1024 / 1024).toFixed(2)} MB`;
     if (preview) preview.hidden = false;
+  }
+  function clearHudProductImagePreview(form) {
+    const previewUrl = form ? productImagePreviewUrls.get(form) : "";
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    if (form) productImagePreviewUrls.delete(form);
+    const preview = form?.querySelector("[data-hud-product-image-preview]");
+    const image = form?.querySelector("[data-hud-product-image-preview-image]");
+    const name = form?.querySelector("[data-hud-product-image-preview-name]");
+    const remove = form?.querySelector("[data-hud-product-image-remove]");
+    if (preview) preview.hidden = true;
+    if (image) image.removeAttribute("src");
+    if (name) name.textContent = "";
+    if (remove) remove.hidden = true;
+  }
+  function previewHudProductImage(form, file) {
+    clearHudProductImagePreview(form);
+    if (!file || !file.size) return;
+    if (!showThumbnailTypes.has(String(file.type || "").toLowerCase())) throw new Error("Choose a PNG, JPG, or JPEG product image.");
+    if (file.size > showThumbnailMaxBytes) throw new Error("Product image must be 5 MB or smaller.");
+    const preview = form?.querySelector("[data-hud-product-image-preview]");
+    const image = form?.querySelector("[data-hud-product-image-preview-image]");
+    const name = form?.querySelector("[data-hud-product-image-preview-name]");
+    const remove = form?.querySelector("[data-hud-product-image-remove]");
+    const previewUrl = URL.createObjectURL(file);
+    productImagePreviewUrls.set(form, previewUrl);
+    if (image) image.src = previewUrl;
+    if (name) name.textContent = `${file.name} - ${(file.size / 1024 / 1024).toFixed(2)} MB`;
+    if (preview) preview.hidden = false;
+    if (remove) remove.hidden = false;
   }
   const hasCompletedObsGuide = () => Boolean(obsGuideCompletedAt) || localStorage.getItem(OBS_GUIDE_COMPLETED_KEY) === "true";
   const markObsGuideCompleted = stamp => {
@@ -1932,7 +1968,10 @@
     if (!form) return;
     form.hidden = !open;
     toggle?.setAttribute("aria-expanded", String(open));
-    if (reset) form.reset();
+    if (reset) {
+      form.reset();
+      clearHudProductImagePreview(form);
+    }
     if (open) window.setTimeout(() => form.elements.title?.focus(), 0);
   }
 
@@ -1961,6 +2000,11 @@
     setHudInventoryNewFormOpen(false, { reset: true });
     if (restoreFocus && hudInventoryTrigger?.isConnected) hudInventoryTrigger.focus();
     hudInventoryTrigger = null;
+  }
+
+  function openHudInventorySurface(trigger, options = {}) {
+    openHudInventoryModal(trigger, options);
+    loadSellerStoreListings().catch(error => setStatus("[data-hud-inventory-status]", error.message, "error"));
   }
 
   function openHudInventoryAssignment(listingId, trigger) {
@@ -1993,6 +2037,25 @@
 
   bindShowThumbnailInput("[data-seller-show-thumbnail]", "[data-seller-show-status]");
   bindShowThumbnailInput("[data-hud-show-thumbnail]", "[data-hud-seller-show-status]");
+  $("[data-hud-product-image-input]")?.addEventListener("change", event => {
+    const form = event.currentTarget.closest("form");
+    const file = event.currentTarget.files?.[0] || null;
+    try {
+      previewHudProductImage(form, file);
+      setStatus("[data-hud-inventory-status]", file ? "Product image ready to upload when you save." : "", file ? "success" : "");
+    } catch (error) {
+      event.currentTarget.value = "";
+      clearHudProductImagePreview(form);
+      setStatus("[data-hud-inventory-status]", error.message, "error");
+    }
+  });
+  $("[data-hud-product-image-remove]")?.addEventListener("click", event => {
+    const form = event.currentTarget.closest("form");
+    const input = form?.querySelector("[data-hud-product-image-input]");
+    if (input) input.value = "";
+    clearHudProductImagePreview(form);
+    setStatus("[data-hud-inventory-status]", "Product image removed.", "success");
+  });
 
   $("[data-seller-show-form]")?.addEventListener("submit", async event => {
     event.preventDefault();
@@ -2047,8 +2110,7 @@
 
   $$('[data-hud-inventory-open]').forEach(button => button.addEventListener("click", event => {
     const trigger = event.currentTarget;
-    openHudInventoryModal(trigger, { showNewProduct: trigger.hasAttribute("data-hud-inventory-new-on-open") });
-    loadSellerStoreListings().catch(error => setStatus("[data-hud-inventory-status]", error.message, "error"));
+    openHudInventorySurface(trigger, { showNewProduct: trigger.hasAttribute("data-hud-inventory-new-on-open") });
   }));
   $$('[data-hud-inventory-close]').forEach(button => button.addEventListener("click", () => closeHudInventoryModal()));
   $("[data-hud-inventory-new-toggle]")?.addEventListener("click", () => {
@@ -2087,27 +2149,40 @@
     event.preventDefault();
     const form = event.currentTarget;
     const data = new FormData(form);
+    const imageFile = data.get("imageFile");
     const button = event.submitter || form.querySelector('[type="submit"]');
     if (button) button.disabled = true;
     try {
+      if (imageFile?.size) {
+        if (!showThumbnailTypes.has(String(imageFile.type || "").toLowerCase())) throw new Error("Choose a PNG, JPG, or JPEG product image.");
+        if (imageFile.size > showThumbnailMaxBytes) throw new Error("Product image must be 5 MB or smaller.");
+      }
+      const productPayload = {
+        title: data.get("title"),
+        productCategoryKey: data.get("productCategoryKey"),
+        condition: data.get("condition"),
+        saleType: data.get("saleType"),
+        quantity: Number(data.get("quantity")),
+        price: Number(data.get("price")),
+        shippingPayer: data.get("shippingPayer"),
+        fixedShipping: Number(data.get("fixedShipping") || 0),
+        imageUrl: data.get("imageUrl"),
+        description: data.get("description"),
+        status: "inactive"
+      };
+      let requestBody;
+      if (imageFile?.size) {
+        data.set("status", "inactive");
+        requestBody = data;
+        setStatus("[data-hud-inventory-status]", "Uploading product image and saving inventory...", "success");
+      } else {
+        requestBody = JSON.stringify(productPayload);
+      }
       await api("/seller/store-listings", {
         method: "POST",
-        body: JSON.stringify({
-          title: data.get("title"),
-          productCategoryKey: data.get("productCategoryKey"),
-          condition: data.get("condition"),
-          saleType: data.get("saleType"),
-          quantity: Number(data.get("quantity")),
-          price: Number(data.get("price")),
-          shippingPayer: data.get("shippingPayer"),
-          fixedShipping: Number(data.get("fixedShipping") || 0),
-          imageUrl: data.get("imageUrl"),
-          description: data.get("description"),
-          status: "inactive"
-        })
+        body: requestBody
       });
-      form.reset();
-      setHudInventoryNewFormOpen(false);
+      setHudInventoryNewFormOpen(false, { reset: true });
       const search = $("[data-hud-inventory-search]");
       const sort = $("[data-hud-inventory-sort]");
       if (search) search.value = "";
@@ -2647,7 +2722,9 @@
     const toolButton = event.target.closest("[data-seller-tool-button]");
     if (toolButton) {
       event.preventDefault();
-      setSellerTool(toolButton.dataset.sellerToolButton || "home");
+      const nextTool = toolButton.dataset.sellerToolButton || "home";
+      setSellerTool(nextTool);
+      if (nextTool === "inventory" && sellerContextAuthorized) openHudInventorySurface(toolButton);
     }
 
     const addToStore = event.target.closest("[data-seller-open-store-listing]");

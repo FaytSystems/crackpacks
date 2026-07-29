@@ -15,6 +15,7 @@ import { calculateTimeEntry, hourlyRateCents, workforceSummary } from "./employe
 
 const encoder = new TextEncoder();
 const SHOW_THUMBNAIL_MAX_BYTES = 5 * 1024 * 1024;
+const PRODUCT_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
 const now = () => new Date().toISOString();
 const uid = () => crypto.randomUUID();
 const normalizeEmail = value => String(value || "").trim().toLowerCase().slice(0, 254);
@@ -3212,7 +3213,32 @@ async function sellerStoreListings(request, env, cors, listingId = "") {
     `).bind(auth.member.id).all();
     return json({ items: (rows.results || []).map(storeListingView) }, 200, cors);
   }
-  const data = await boundedJson(request, 6000);
+  let data = {};
+  let productImageFile = null;
+  const productImageMultipart = request.method === "POST" && !listingId && /^multipart\/form-data\b/i.test(request.headers.get("Content-Type") || "");
+  if (productImageMultipart) {
+    const contentLength = Number(request.headers.get("Content-Length") || 0);
+    if (Number.isFinite(contentLength) && contentLength > PRODUCT_IMAGE_MAX_BYTES + 100_000) {
+      return json({ error: "Product image must be 5 MB or smaller." }, 413, cors);
+    }
+    let form;
+    try {
+      form = await request.formData();
+    } catch {
+      return json({ error: "The product image upload could not be read." }, 400, cors);
+    }
+    const candidate = form.get("imageFile");
+    productImageFile = candidate && typeof candidate === "object" && typeof candidate.arrayBuffer === "function" && Number(candidate.size || 0) > 0
+      ? candidate
+      : null;
+    data = Object.fromEntries([
+      "title", "productCategoryKey", "categoryKey", "condition", "saleType", "quantity", "price",
+      "shippingPayer", "shippingWeightProfileId", "fixedShipping", "imageUrl", "description", "status",
+      "showId", "linkedLotId", "inventoryItemId"
+    ].map(key => [key, form.get(key)]));
+  } else {
+    data = await boundedJson(request, 6000);
+  }
   if (request.method === "PATCH" && listingId) {
     const listing = await env.DB.prepare(`SELECT * FROM seller_store_listings WHERE id=? AND member_id=?`).bind(listingId, auth.member.id).first();
     if (!listing) return json({ error: "Store listing not found." }, 404, cors);
@@ -3313,7 +3339,7 @@ async function sellerStoreListings(request, env, cors, listingId = "") {
   const shippingPayer = ["buyer", "seller"].includes(String(data.shippingPayer || "")) ? String(data.shippingPayer) : "buyer";
   const shippingWeightProfileId = validUuid(data.shippingWeightProfileId) ? String(data.shippingWeightProfileId) : "";
   const fixedShippingCents = shippingPayer === "buyer" ? Math.max(0, Math.round(Number(data.fixedShipping || 0) * 100)) : 0;
-  const imageUrl = clean(data.imageUrl, 500);
+  let imageUrl = productImageFile ? "" : clean(data.imageUrl, 500);
   const listingStatus = ["active", "inactive"].includes(String(data.status || "")) ? String(data.status) : "active";
   const showId = clean(data.showId, 80);
   const linkedLotId = clean(data.linkedLotId, 80);
@@ -3347,11 +3373,46 @@ async function sellerStoreListings(request, env, cors, listingId = "") {
   }
   const listingRowId = uid();
   const stamp = now();
-  await env.DB.prepare(`
-    INSERT INTO seller_store_listings(
-      id,member_id,show_id,linked_lot_id,inventory_item_id,title,description,sale_type,product_category_key,shipping_weight_profile_id,fixed_shipping_cents,shipping_overage_policy,item_condition,quantity,price_cents,shipping_payer,image_url,status,created_at,updated_at
-    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-  `).bind(listingRowId, auth.member.id, showId || null, linkedLotId || null, inventoryItemId || null, title, description, saleType, productCategoryKey, shippingWeightProfileId || null, fixedShippingCents, "seller_pays_difference", condition, quantity, price, shippingPayer, imageUrl, listingStatus, stamp, stamp).run();
+  let productImageKey = "";
+  if (productImageFile) {
+    if (!env.SHOW_MEDIA) return json({ error: "Product image storage is not configured yet." }, 503, cors);
+    if (Number(productImageFile.size || 0) > PRODUCT_IMAGE_MAX_BYTES) return json({ error: "Product image must be 5 MB or smaller." }, 413, cors);
+    const bytes = new Uint8Array(await productImageFile.arrayBuffer());
+    const isPng = bytes.length >= 8 &&
+      bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47 &&
+      bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a;
+    const isJpeg = bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+    const declaredType = String(productImageFile.type || "").toLowerCase();
+    const declaredMatches = !declaredType ||
+      (isPng && declaredType === "image/png") ||
+      (isJpeg && ["image/jpeg", "image/jpg", "image/pjpeg"].includes(declaredType));
+    if ((!isPng && !isJpeg) || !declaredMatches) {
+      return json({ error: "Choose a valid PNG, JPG, or JPEG product image." }, 415, cors);
+    }
+    const extension = isPng ? "png" : "jpg";
+    const contentType = isPng ? "image/png" : "image/jpeg";
+    productImageKey = `product-images/${auth.member.id}/${listingRowId}.${extension}`;
+    try {
+      await env.SHOW_MEDIA.put(productImageKey, bytes, {
+        httpMetadata: { contentType, cacheControl: "public, max-age=31536000, immutable" },
+        customMetadata: { memberId: auth.member.id, listingId: listingRowId }
+      });
+    } catch (error) {
+      console.error("Product image upload failed", { memberId: auth.member.id, listingId: listingRowId, message: clean(error?.message || "", 180) });
+      return json({ error: "The product image could not be uploaded. Try again." }, 503, cors);
+    }
+    imageUrl = `${new URL(request.url).origin}/media/${productImageKey}`;
+  }
+  try {
+    await env.DB.prepare(`
+      INSERT INTO seller_store_listings(
+        id,member_id,show_id,linked_lot_id,inventory_item_id,title,description,sale_type,product_category_key,shipping_weight_profile_id,fixed_shipping_cents,shipping_overage_policy,item_condition,quantity,price_cents,shipping_payer,image_url,status,created_at,updated_at
+      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `).bind(listingRowId, auth.member.id, showId || null, linkedLotId || null, inventoryItemId || null, title, description, saleType, productCategoryKey, shippingWeightProfileId || null, fixedShippingCents, "seller_pays_difference", condition, quantity, price, shippingPayer, imageUrl, listingStatus, stamp, stamp).run();
+  } catch (error) {
+    if (productImageKey) await env.SHOW_MEDIA.delete(productImageKey).catch(() => null);
+    throw error;
+  }
   const created = await env.DB.prepare(`
     SELECT listing.*,member.live_username,member.first_name,member.last_name,? inventory_series,lot.title linked_lot_title,lot.status linked_lot_status
     FROM seller_store_listings listing JOIN members member ON member.id=listing.member_id
@@ -3956,6 +4017,24 @@ async function showThumbnailMedia(env, cors, url, request) {
   return new Response(object.body, { status: 200, headers });
 }
 
+async function productImageMedia(env, cors, url, request) {
+  const match = url.pathname.match(/^\/media\/product-images\/([0-9a-f-]{36})\/([0-9a-f-]{36})\.(png|jpg)$/i);
+  if (!match) return json({ error: "Product image not found." }, 404, cors);
+  if (!env.SHOW_MEDIA) return json({ error: "Product image storage is not configured." }, 503, cors);
+  const key = `product-images/${match[1].toLowerCase()}/${match[2].toLowerCase()}.${match[3].toLowerCase()}`;
+  const object = await env.SHOW_MEDIA.get(key);
+  if (!object?.body) return json({ error: "Product image not found." }, 404, cors);
+  const headers = new Headers(cors);
+  if (typeof object.writeHttpMetadata === "function") object.writeHttpMetadata(headers);
+  if (!headers.has("Content-Type")) headers.set("Content-Type", match[3].toLowerCase() === "png" ? "image/png" : "image/jpeg");
+  headers.set("Cache-Control", "public, max-age=31536000, immutable");
+  headers.set("X-Content-Type-Options", "nosniff");
+  headers.set("Content-Security-Policy", "default-src 'none'");
+  if (object.httpEtag) headers.set("ETag", object.httpEtag);
+  if (request.headers.get("If-None-Match") === object.httpEtag) return new Response(null, { status: 304, headers });
+  return new Response(object.body, { status: 200, headers });
+}
+
 async function settleExpiredSellerAuction(request, env, cors, showId) {
   const auth = await requireMember(request, env, cors, { seller: true });
   if (auth.error) return auth.error;
@@ -4251,6 +4330,7 @@ async function auctionOffNext(request, env, cors, showId) {
 export async function handlePlatformRoute(request, env, cors) {
   const url = new URL(request.url);
   if (url.pathname.startsWith("/media/show-thumbnails/") && request.method === "GET") return showThumbnailMedia(env, cors, url, request);
+  if (url.pathname.startsWith("/media/product-images/") && request.method === "GET") return productImageMedia(env, cors, url, request);
   if (url.pathname === "/webhooks/stripe" && request.method === "POST") return stripeWebhook(request, env, cors);
   if (url.pathname === "/employee/activate" && request.method === "POST") return activateEmployee(request, env, cors);
   if (url.pathname === "/employee/dashboard" && request.method === "GET") return employeeDashboard(request, env, cors);
