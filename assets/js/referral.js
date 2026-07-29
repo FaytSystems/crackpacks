@@ -75,6 +75,8 @@
   let streamCheckoutResultHandled = false;
   let checkedBuyerUsername = "";
   let checkedSellerUsername = "";
+  let checkedProfileBuyerUsername = "";
+  let profileBuyerIdEditing = false;
   let pendingSellerIdentityStart = false;
   let portalLauncherShown = false;
   let sellerActivationFinalizePending = false;
@@ -789,6 +791,36 @@
     node.textContent = message;
     node.dataset.kind = kind;
   };
+  const showProfileBuyerIdStatus = (message = "", kind = "") => {
+    const node = $("[data-profile-buyer-id-status]");
+    if (!node) return;
+    node.textContent = message;
+    node.dataset.kind = kind;
+  };
+  function setProfileBuyerIdLocked(locked, { value, message = "", kind = "" } = {}) {
+    const input = $("[data-live-username]");
+    const changeButton = $("[data-change-profile-buyer-id]");
+    const checkButton = $("[data-check-profile-buyer-id]");
+    const saveButton = $("[data-save-profile-buyer-id]");
+    const saveLabel = $("[data-profile-buyer-id-save-label]");
+    const lockIcon = $("[data-profile-buyer-id-lock-icon]");
+    if (!input || !changeButton || !checkButton || !saveButton || !saveLabel || !lockIcon) return;
+    profileBuyerIdEditing = !locked;
+    checkedProfileBuyerUsername = "";
+    if (value !== undefined) input.value = String(value || "");
+    input.readOnly = locked;
+    input.setAttribute("aria-readonly", String(locked));
+    changeButton.disabled = false;
+    changeButton.textContent = locked ? "Change User ID" : "Cancel Change";
+    checkButton.hidden = locked;
+    checkButton.disabled = false;
+    saveButton.disabled = true;
+    saveLabel.textContent = locked ? "Buyer ID Locked" : "Save Buyer ID";
+    lockIcon.hidden = !locked;
+    showProfileBuyerIdStatus(message || (locked
+      ? "Your saved Buyer ID is locked. Choose Change User ID to run a new uniqueness check."
+      : "Enter a new Buyer ID, then choose Check User ID before saving."), kind);
+  }
   const streamCreditStatus = (message = "", kind = "") => {
     const node = $("[data-stream-credits-status]");
     if (!node) return;
@@ -1311,7 +1343,7 @@
       $("[data-invite-copy-message]").textContent = "Your unique referral is ready to paste into a text, post, bio, or group chat.";
       loadPersonalQr(data.inviteUrl).catch(error => showStatus(error.message, "error"));
     }
-    $("[data-live-username]").value = data.buyerUsername || "";
+    setProfileBuyerIdLocked(true, { value: data.buyerUsername || "" });
     const shipping = data.shippingAddress || {};
     $("[data-contact-phone]").value = data.phone || "";
     $("[data-shipping-name]").value = shipping.name || data.firstName || "";
@@ -1922,17 +1954,85 @@
     }
   }
   document.querySelectorAll("[data-download-qr]").forEach(button => button.addEventListener("click", () => downloadInviteQr(button)));
-  $("[data-username-form]").addEventListener("submit", async event => {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
+  $("[data-change-profile-buyer-id]")?.addEventListener("click", () => {
+    const currentBuyerId = String(accountState?.buyerUsername || "");
+    if (profileBuyerIdEditing) {
+      setProfileBuyerIdLocked(true, { value: currentBuyerId, message: "Buyer ID change cancelled. Your saved Buyer ID remains locked." });
+      return;
+    }
+    setProfileBuyerIdLocked(false, { value: currentBuyerId });
+    const input = $("[data-live-username]");
+    input.focus();
+    input.select();
+  });
+  $("[data-check-profile-buyer-id]")?.addEventListener("click", async event => {
+    if (!profileBuyerIdEditing) return;
+    const input = $("[data-live-username]");
+    const saveButton = $("[data-save-profile-buyer-id]");
+    const buyerUsername = String(input.value || "").trim();
+    checkedProfileBuyerUsername = "";
+    saveButton.disabled = true;
+    if (!input.reportValidity()) return;
+    if (buyerUsername === String(accountState?.buyerUsername || "")) {
+      showProfileBuyerIdStatus("Enter a different Buyer ID before running a new uniqueness check.", "error");
+      return;
+    }
+    const checkButton = event.currentTarget;
+    checkButton.disabled = true;
+    showProfileBuyerIdStatus(`Checking whether Buyer ID ${buyerUsername} is unique...`);
     try {
-      const buyerUsername = form.get("buyerUsername") || form.get("liveUsername");
+      const result = await request("/profile/buyer-username/check", { method: "POST", body: JSON.stringify({ buyerUsername }) });
+      checkedProfileBuyerUsername = result.buyerUsername || buyerUsername;
+      input.value = checkedProfileBuyerUsername;
+      saveButton.disabled = false;
+      showProfileBuyerIdStatus(`Buyer ID ${checkedProfileBuyerUsername} is unique and available. Choose Save Buyer ID to lock it to your profile.`, "success");
+    } catch (error) {
+      showProfileBuyerIdStatus(error.message, "error");
+    } finally {
+      checkButton.disabled = false;
+    }
+  });
+  $("[data-live-username]")?.addEventListener("input", event => {
+    if (!profileBuyerIdEditing) return;
+    const current = String(event.currentTarget.value || "").trim();
+    if (current === checkedProfileBuyerUsername) return;
+    checkedProfileBuyerUsername = "";
+    $("[data-save-profile-buyer-id]").disabled = true;
+    showProfileBuyerIdStatus("Run Check User ID after every change before saving.");
+  });
+  $("[data-username-form]")?.addEventListener("submit", async event => {
+    event.preventDefault();
+    const input = $("[data-live-username]");
+    const saveButton = $("[data-save-profile-buyer-id]");
+    const checkButton = $("[data-check-profile-buyer-id]");
+    const changeButton = $("[data-change-profile-buyer-id]");
+    const buyerUsername = String(input.value || "").trim();
+    if (!profileBuyerIdEditing || !buyerUsername || buyerUsername !== checkedProfileBuyerUsername) {
+      saveButton.disabled = true;
+      showProfileBuyerIdStatus("Check that the new Buyer ID is unique before saving it.", "error");
+      return;
+    }
+    saveButton.disabled = true;
+    checkButton.disabled = true;
+    changeButton.disabled = true;
+    showProfileBuyerIdStatus("Saving and locking your new Buyer ID...");
+    try {
       const data = await request("/profile/buyer-username", { method: "POST", body: JSON.stringify({ buyerUsername }) });
       accountState.buyerUsername = data.buyerUsername;
-      $("[data-live-username]").value = data.buyerUsername;
+      $("[data-member-name]").textContent = data.buyerUsername;
+      $("[data-account-buyer-id]").textContent = data.buyerUsername;
+      setProfileBuyerIdLocked(true, {
+        value: data.buyerUsername,
+        message: `Buyer ID ${data.buyerUsername} is saved and locked. Choose Change User ID to run another uniqueness check.`,
+        kind: "success"
+      });
+      document.dispatchEvent(new CustomEvent("crackpacks:account-state-change"));
       showStatus("Buyer ID saved. Seller ID remains separate for live tools and brand pages.", "success");
     } catch (error) {
-      showStatus(error.message, "error");
+      checkedProfileBuyerUsername = "";
+      checkButton.disabled = false;
+      changeButton.disabled = false;
+      showProfileBuyerIdStatus(error.message, "error");
     }
   });
   $("[data-contact-form]")?.addEventListener("submit", async event => {

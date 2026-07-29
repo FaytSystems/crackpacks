@@ -64,6 +64,30 @@ test("Seller accounts expose calculator, credit purchase, and direct Stripe subs
   assert.match(routes, /\["mode", "subscription"\]/);
 });
 
+test("Profile Buyer ID locks after save and requires a fresh uniqueness check before changes", async () => {
+  const [html, script, css, routes] = await Promise.all([
+    read("referral.html"),
+    read("assets/js/referral.js"),
+    read("assets/css/referral.css"),
+    read("rewards-worker/src/platform-routes.js")
+  ]);
+  assert.match(html, /data-live-username[^>]+readonly/);
+  assert.match(html, /data-change-profile-buyer-id>Change User ID/);
+  assert.match(html, /data-check-profile-buyer-id hidden>Check User ID/);
+  assert.match(html, /data-save-profile-buyer-id disabled/);
+  assert.match(html, /data-profile-buyer-id-save-label>Buyer ID Locked/);
+  assert.match(script, /function setProfileBuyerIdLocked/);
+  assert.match(script, /input\.readOnly = locked/);
+  assert.match(script, /checkedProfileBuyerUsername/);
+  assert.match(script, /\/profile\/buyer-username\/check/);
+  assert.match(script, /Buyer ID .* is unique and available/);
+  assert.match(script, /Check User ID after every change before saving/);
+  assert.match(css, /\.buyer-id-lock-icon/);
+  assert.match(css, /\.buyer-id-settings-actions/);
+  assert.match(routes, /\/profile\/buyer-username\/check/);
+  assert.match(routes, /ensureUsernameAvailable\(env, auth\.member\.id, username, "Buyer ID"\)/);
+});
+
 test("Seller Live long-press and queue-selection behavior is wired", async () => {
   const script = await read("assets/js/streams-hub.js");
   assert.match(script, /AUTO_NEXT_HOLD_MS = 3000/);

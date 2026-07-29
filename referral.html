@@ -8,7 +8,7 @@
   <meta name="theme-color" content="#07091b">
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/css/styles.css?v=1.11.2">
-  <link rel="stylesheet" href="assets/css/referral.css?v=3.6.1">
+  <link rel="stylesheet" href="assets/css/referral.css?v=3.6.2">
   <link rel="stylesheet" href="assets/css/rewards-modal.css?v=2.2.0">
   <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.7.0">
 </head>
@@ -439,9 +439,17 @@
           <p class="eyebrow">Profile details</p>
           <h3>Your Buyer ID</h3>
           <p>This is your collector identity for store, rewards, watchlists, and buyer activity. Seller accounts use a separate Seller ID/brand name.</p>
-          <form class="username-settings-form" data-username-form>
-            <label>Buyer ID<input name="buyerUsername" data-live-username required maxlength="32" pattern="[A-Za-z][A-Za-z0-9_]{2,31}"></label>
-            <button class="btn btn-outline" type="submit">Save Buyer ID</button>
+          <form class="username-settings-form buyer-id-settings-form" data-username-form>
+            <label>Buyer ID<input name="buyerUsername" data-live-username required readonly aria-readonly="true" aria-describedby="profile-buyer-id-status" maxlength="32" pattern="[A-Za-z][A-Za-z0-9_]{2,31}"></label>
+            <div class="buyer-id-settings-actions">
+              <button class="btn btn-primary" type="button" data-change-profile-buyer-id>Change User ID</button>
+              <button class="btn btn-outline" type="button" data-check-profile-buyer-id hidden>Check User ID</button>
+              <button class="btn btn-outline buyer-id-lock-button" type="submit" data-save-profile-buyer-id disabled>
+                <span class="buyer-id-lock-icon" data-profile-buyer-id-lock-icon aria-hidden="true"></span>
+                <span data-profile-buyer-id-save-label>Buyer ID Locked</span>
+              </button>
+            </div>
+            <div class="campaign-form-status buyer-id-settings-status" id="profile-buyer-id-status" data-profile-buyer-id-status aria-live="polite">Your saved Buyer ID is locked. Choose Change User ID to run a new uniqueness check.</div>
           </form>
         </section>
         <section class="reward-card profile-settings-card" data-account-panel>
@@ -584,6 +592,6 @@
   <script src="assets/js/app.js?v=2.0.1"></script>
   <script src="assets/js/nav-profile.js?v=4.6.0"></script>
   <script src="assets/js/portal-mode.js?v=1.2.5"></script>
-  <script src="assets/js/referral.js?v=3.6.4"></script>
+  <script src="assets/js/referral.js?v=3.6.5"></script>
 </body>
 </html>
