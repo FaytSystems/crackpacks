@@ -32,9 +32,12 @@
   let autoNextStepTimer = 0;
   let auctionHoldTimer = 0;
   let suppressAuctionNextClick = false;
+  let liveShowsSellerUsername = "";
   const AUTO_NEXT_HOLD_MS = 3000;
   const ALLOWED_AUCTION_DURATIONS = new Set([15, 30, 45, 60, 90, 120]);
-  const requestedHubTab = new URLSearchParams(location.search).get("tab") || "";
+  const pageQuery = new URLSearchParams(location.search);
+  const requestedHubTab = pageQuery.get("tab") || "";
+  const requestedSellerShowId = viewerOnly ? "" : String(pageQuery.get("show") || "");
   let activeTab = ["all", "live", "upcoming", "followed", "watchlist"].includes(requestedHubTab)
     ? requestedHubTab
     : document.body?.dataset.defaultHubTab || "watchlist";
@@ -337,6 +340,10 @@
 
   const showCard = show => {
     const showUrl = `live.html?show=${encodeURIComponent(show.id)}`;
+    const sellerOwnsShow = Boolean(
+      liveShowsSellerUsername &&
+      String(show.sellerUsername || "").toLowerCase() === liveShowsSellerUsername.toLowerCase()
+    );
     const featuredLot = show.featuredLot || null;
     const lotLabel = featuredLot?.status === "live" ? "Currently for sale" : "First item queued";
     const lotPrice = featuredLot ? dollars(featuredLot.startingBidCents) : "";
@@ -364,6 +371,12 @@
       </div>
       <div class="stream-card-meta"><span>${escapeHtml(show.state === "live" ? "Live now" : dateLabel(show.startsAt))}</span><span>${inventoryState}</span></div>
       <div class="stream-card-actions">
+        ${sellerOwnsShow ? `
+          <button class="btn btn-small seller-go-live-bubble seller-show-go-live-bubble" type="button" data-seller-go-live="${show.id}">
+            <span class="seller-go-live-dot" aria-hidden="true"></span>
+            GO LIVE NOW
+          </button>
+        ` : ""}
         <a class="btn btn-primary btn-small" href="${showUrl}">${show.state === "live" ? "Watch &amp; Bid" : "View Show"}</a>
         <button class="btn btn-outline btn-small" type="button" data-watch="${show.id}">${show.saved ? "Saved" : "Add to Watchlist"}</button>
         <button class="btn btn-outline btn-small" type="button" data-follow="${show.sellerId}">${show.followed ? "Following" : "Follow"}</button>
@@ -407,6 +420,17 @@
     } finally {
       showsLoadPromise = null;
     }
+  }
+
+  async function loadLiveShowsSellerContext() {
+    if (!viewerOnly || !token()) return;
+    try {
+      const status = await api("/portal/status");
+      liveShowsSellerUsername = status.sellerAccess ? String(status.sellerUsername || "").trim() : "";
+    } catch {
+      liveShowsSellerUsername = "";
+    }
+    renderShows();
   }
 
   async function loadGiftCatalog(showId) {
@@ -560,7 +584,8 @@
     const current = selectors.map(select => select.value).find(Boolean) || "";
     const active = sellerShows.filter(show => ["open", "live"].includes(show.status));
     const options = `<option value="">${active.length ? "Choose a show" : "Create a show first"}</option>${active.map(show => `<option value="${show.id}">${escapeHtml(show.title)} &middot; ${escapeHtml(show.status)}</option>`).join("")}`;
-    const selectedId = active.some(show => show.id === current) ? current : (active[0]?.id || "");
+    const requestedId = active.some(show => show.id === requestedSellerShowId) ? requestedSellerShowId : "";
+    const selectedId = active.some(show => show.id === current) ? current : (requestedId || active[0]?.id || "");
     selectors.forEach(select => {
       select.innerHTML = options;
       select.value = selectedId;
@@ -1256,12 +1281,27 @@
   }
 
   $("[data-streams-list]")?.addEventListener("click", async event => {
+    const goLive = event.target.closest("[data-seller-go-live]");
     const watch = event.target.closest("[data-watch]");
     const follow = event.target.closest("[data-follow]");
     const gift = event.target.closest("[data-open-gifted]");
     const calendar = event.target.closest("[data-calendar]");
     try {
-      if (watch) {
+      if (goLive) {
+        event.preventDefault();
+        if (!token()) throw new Error("Sign in to open Seller Live.");
+        const show = shows.find(item => item.id === goLive.dataset.sellerGoLive);
+        if (!show || String(show.sellerUsername || "").toLowerCase() !== liveShowsSellerUsername.toLowerCase()) {
+          throw new Error("Only the seller who created this show can open its live controls.");
+        }
+        goLive.disabled = true;
+        const result = await api("/portal/mode", { method: "POST", body: JSON.stringify({ mode: "seller" }) });
+        if (result.activePortal !== "seller") throw new Error("Seller Portal access could not be confirmed.");
+        localStorage.setItem("cp_can_seller_portal", "true");
+        localStorage.setItem("cp_portal_mode", "seller");
+        sessionStorage.setItem("cp_portal_mode", "seller");
+        window.location.href = `streams.html?show=${encodeURIComponent(show.id)}#seller-live`;
+      } else if (watch) {
         if (!token()) throw new Error("Sign in to save a watchlist.");
         const show = shows.find(item => item.id === watch.dataset.watch); await api("/live/watchlist", { method: "POST", body: JSON.stringify({ showId: show.id, enabled: !show.saved }) }); show.saved = !show.saved; renderShows();
       } else if (follow) {
@@ -1276,7 +1316,10 @@
         await loadGiftCatalog(show.id);
         $("[data-gifted-giveaway-form]").scrollIntoView({ behavior: "smooth", block: "center" });
       }
-    } catch (error) { window.alert(error.message); }
+    } catch (error) {
+      if (goLive) goLive.disabled = false;
+      window.alert(error.message);
+    }
   });
 
   $$('[data-hub-tab]').forEach(button => button.addEventListener("click", () => {
@@ -1978,6 +2021,7 @@
   });
 
   loadShows();
+  if (viewerOnly) loadLiveShowsSellerContext();
   const showsRefreshTimer = window.setInterval(() => {
     if (!document.hidden) loadShows();
   }, 15000);

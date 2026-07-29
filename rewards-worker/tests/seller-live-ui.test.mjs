@@ -32,3 +32,14 @@ test("Seller Live long-press and queue-selection behavior is wired", async () =>
   assert.match(script, /lots\/reorder/);
   assert.match(script, /nextLotId/);
 });
+
+test("Live Shows gives the owning seller an exact-show GO LIVE NOW handoff", async () => {
+  const script = await read("assets/js/streams-hub.js");
+  assert.match(script, /data-seller-go-live/);
+  assert.match(script, /GO LIVE NOW/);
+  assert.match(script, /status\.sellerAccess/);
+  assert.match(script, /status\.sellerUsername/);
+  assert.match(script, /\/portal\/mode/);
+  assert.match(script, /streams\.html\?show=\$\{encodeURIComponent\(show\.id\)\}#seller-live/);
+  assert.match(script, /requestedSellerShowId/);
+});
