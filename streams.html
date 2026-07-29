@@ -9,7 +9,8 @@
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/css/styles.css?v=1.10.1">
   <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.7.0">
-  <link rel="stylesheet" href="assets/css/streams-hub.css?v=2.2.1">
+  <link rel="stylesheet" href="assets/css/streams-hub.css?v=2.3.0">
+  <link rel="stylesheet" href="assets/css/live-chat.css?v=1.0.0">
 </head>
 <body data-page="streams">
   <a class="skip-link" href="#main">Skip to content</a>
@@ -136,23 +137,6 @@
         </div>
       </div>
       <div class="seller-cockpit-grid seller-cockpit-grid-premium">
-        <article class="holo-panel seller-broadcast-monitor" data-seller-tool-panel="show-control">
-          <div class="seller-broadcast-monitor-head">
-            <div>
-              <p class="eyebrow"><span class="live-pulse"></span> Seller Video Feed</p>
-              <h3>Broadcast monitor</h3>
-            </div>
-            <strong class="seller-broadcast-state" data-seller-broadcast-state>OBS connection needed</strong>
-          </div>
-          <div class="seller-broadcast-player-shell">
-            <div class="seller-broadcast-placeholder" data-seller-broadcast-placeholder>
-              <strong>Your live video will appear here.</strong>
-              <span>Create or load your OBS connection, then start streaming from OBS.</span>
-            </div>
-            <iframe data-seller-broadcast-player title="Seller live broadcast monitor" allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture" allowfullscreen hidden></iframe>
-          </div>
-          <p class="fine-print">This monitor follows your permanent Cloudflare Live Input. When OBS is disconnected, Cloudflare displays that the stream has not started.</p>
-        </article>
         <article class="holo-panel seller-auction-console" data-seller-tool-panel="show-control">
           <header class="seller-auction-console-head">
             <div>
@@ -231,6 +215,44 @@
           </div>
           <div class="campaign-form-status seller-auction-control-status" data-broadcast-auction-status aria-live="polite"></div>
         </article>
+        <article class="holo-panel seller-broadcast-monitor" data-seller-tool-panel="show-control">
+          <div class="seller-broadcast-monitor-head">
+            <div>
+              <p class="eyebrow"><span class="live-pulse"></span> Seller Video Feed</p>
+              <h3>Broadcast monitor</h3>
+            </div>
+            <strong class="seller-broadcast-state" data-seller-broadcast-state>OBS connection needed</strong>
+          </div>
+          <div class="seller-broadcast-player-shell">
+            <div class="seller-broadcast-placeholder" data-seller-broadcast-placeholder>
+              <strong>Your live video will appear here.</strong>
+              <span>Create or load your OBS connection, then start streaming from OBS.</span>
+            </div>
+            <iframe data-seller-broadcast-player title="Seller live broadcast monitor" allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture" allowfullscreen hidden></iframe>
+          </div>
+          <p class="fine-print">This monitor follows your permanent Cloudflare Live Input. When OBS is disconnected, Cloudflare displays that the stream has not started.</p>
+        </article>
+        <aside class="holo-panel seller-live-chat live-chat-panel" data-live-chat data-seller-tool-panel="show-control" aria-label="Live show chat">
+          <header class="live-chat-head">
+            <div>
+              <p>Selected show</p>
+              <h3>Live chat</h3>
+            </div>
+            <span class="live-chat-count" data-chat-count aria-label="Visible messages">0</span>
+          </header>
+          <div class="live-chat-messages" data-chat-messages role="log" aria-live="polite" aria-relevant="additions">
+            <div class="live-chat-empty">
+              <strong>Choose a show.</strong>
+              <span>Its live room will appear here.</span>
+            </div>
+          </div>
+          <form class="live-chat-form" data-chat-form>
+            <label class="sr-only" for="seller-live-chat-message">Live chat message</label>
+            <input id="seller-live-chat-message" data-chat-input maxlength="280" autocomplete="off" placeholder="Choose a show to open chat" disabled>
+            <button class="live-chat-send" data-chat-submit type="submit" aria-label="Send chat message" title="Send" disabled>&uarr;</button>
+          </form>
+          <p class="live-chat-status" data-chat-status aria-live="polite">Choose a show to open chat.</p>
+        </aside>
         <article class="holo-panel seller-stream-input" data-seller-tool-panel="obs">
           <h3>Private OBS connection</h3>
           <p class="fine-print">One-time OBS setup. Your Crack Packs RTMPS server and stream key stay saved to your seller profile until you regenerate them, but the live input is locked except during your active show window.</p>
@@ -613,6 +635,7 @@
   <script src="assets/js/config.js?v=4.1.1"></script>
   <script src="assets/js/app.js?v=1.9.9"></script>
   <script src="assets/js/portal-mode.js?v=1.2.5"></script>
-  <script src="assets/js/streams-hub.js?v=2.2.1"></script>
+  <script src="assets/js/live-chat.js?v=1.0.0"></script>
+  <script src="assets/js/streams-hub.js?v=2.3.0"></script>
 </body>
 </html>

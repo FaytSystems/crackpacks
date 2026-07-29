@@ -2190,6 +2190,91 @@ async function listShows(request, env, cors) {
   })) }, 200, cors);
 }
 
+function liveShowChatMessageView(row, viewerId = "") {
+  return {
+    id: row.id,
+    showId: row.show_id,
+    username: row.display_username || "Collector",
+    message: row.message,
+    createdAt: row.created_at,
+    isSeller: Boolean(row.is_seller),
+    isOwn: Boolean(viewerId && row.member_id === viewerId)
+  };
+}
+
+async function liveShowChat(request, env, cors, showId) {
+  if (!validUuid(showId)) return json({ error: "Choose a valid live show." }, 400, cors);
+  const viewer = request.method === "GET" ? await memberFromRequest(request, env) : null;
+  const show = await env.DB.prepare(`SELECT id,member_id,status FROM breaker_stream_sessions WHERE id=?`)
+    .bind(showId).first();
+  if (!show) return json({ error: "Live show not found." }, 404, cors);
+
+  if (request.method === "GET") {
+    const rows = await env.DB.prepare(`
+      SELECT chat.id,chat.show_id,chat.member_id,chat.message,chat.created_at,
+        CASE
+          WHEN chat.member_id=session.member_id THEN COALESCE(NULLIF(member.live_username,''),NULLIF(member.buyer_username,''),'Seller')
+          ELSE COALESCE(NULLIF(member.buyer_username,''),NULLIF(member.live_username,''),'Collector')
+        END display_username,
+        CASE WHEN chat.member_id=session.member_id THEN 1 ELSE 0 END is_seller
+      FROM live_show_chat_messages chat
+      JOIN breaker_stream_sessions session ON session.id=chat.show_id
+      JOIN members member ON member.id=chat.member_id
+      WHERE chat.show_id=? AND chat.deleted_at IS NULL
+      ORDER BY chat.created_at DESC,chat.id DESC
+      LIMIT 100
+    `).bind(showId).all();
+    return json({
+      showId,
+      status: show.status,
+      messages: (rows.results || []).reverse().map(row => liveShowChatMessageView(row, viewer?.id || ""))
+    }, 200, cors);
+  }
+
+  const auth = await requireMember(request, env, cors);
+  if (auth.error) return auth.error;
+  if (!["open", "live"].includes(show.status)) {
+    return json({ error: "Chat is read-only because this show has ended." }, 409, cors);
+  }
+  let data;
+  try {
+    data = await boundedJson(request, 1500);
+  } catch (error) {
+    return json({ error: error.message === "REQUEST_TOO_LARGE" ? "Chat message is too large." : "Send a valid chat message." }, 400, cors);
+  }
+  const message = clean(data.message, 280);
+  if (!message) return json({ error: "Enter a chat message." }, 400, cors);
+  const latest = await env.DB.prepare(`
+    SELECT created_at
+    FROM live_show_chat_messages
+    WHERE show_id=? AND member_id=? AND deleted_at IS NULL
+    ORDER BY created_at DESC
+    LIMIT 1
+  `).bind(showId, auth.member.id).first();
+  if (latest?.created_at && Date.now() - Date.parse(latest.created_at) < 1500) {
+    return json({ error: "Wait a moment before sending another message." }, 429, cors);
+  }
+  const messageId = uid();
+  const stamp = now();
+  await env.DB.prepare(`
+    INSERT INTO live_show_chat_messages(id,show_id,member_id,message,created_at)
+    VALUES(?,?,?,?,?)
+  `).bind(messageId, showId, auth.member.id, message, stamp).run();
+  const row = await env.DB.prepare(`
+    SELECT chat.id,chat.show_id,chat.member_id,chat.message,chat.created_at,
+      CASE
+        WHEN chat.member_id=session.member_id THEN COALESCE(NULLIF(member.live_username,''),NULLIF(member.buyer_username,''),'Seller')
+        ELSE COALESCE(NULLIF(member.buyer_username,''),NULLIF(member.live_username,''),'Collector')
+      END display_username,
+      CASE WHEN chat.member_id=session.member_id THEN 1 ELSE 0 END is_seller
+    FROM live_show_chat_messages chat
+    JOIN breaker_stream_sessions session ON session.id=chat.show_id
+    JOIN members member ON member.id=chat.member_id
+    WHERE chat.id=?
+  `).bind(messageId).first();
+  return json({ message: liveShowChatMessageView(row, auth.member.id) }, 201, cors);
+}
+
 async function giftCatalog(request, env, cors, url) {
   const showId = String(url.searchParams.get("show") || "");
   if (!validUuid(showId)) return json({ error: "Choose a valid seller show." }, 400, cors);
@@ -4052,6 +4137,8 @@ export async function handlePlatformRoute(request, env, cors) {
   if (url.pathname === "/live/auction" && request.method === "GET") return currentAuction(request, env, cors, url);
   if (url.pathname === "/live/viewers/heartbeat" && request.method === "POST") return viewerHeartbeat(request, env, cors);
   if (url.pathname === "/live/shows" && request.method === "GET") return listShows(request, env, cors);
+  const liveShowChatMatch = url.pathname.match(/^\/live\/shows\/([0-9a-f-]{36})\/chat$/i);
+  if (liveShowChatMatch && ["GET", "POST"].includes(request.method)) return liveShowChat(request, env, cors, liveShowChatMatch[1]);
   if (url.pathname === "/live/watchlist" && request.method === "POST") return updateWatchOrFollow(request, env, cors, "watch");
   if (url.pathname === "/live/follow" && request.method === "POST") return updateWatchOrFollow(request, env, cors, "follow");
   if (url.pathname === "/gifted-giveaways/catalog" && request.method === "GET") return giftCatalog(request, env, cors, url);

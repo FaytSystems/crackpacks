@@ -19,6 +19,14 @@ test("Seller Hub exposes the connected Seller Live cockpit controls", async () =
   assert.match(html, /data-auto-next-duration/);
   assert.match(html, /data-seller-tool-button="show-inventory"/);
   assert.match(html, /data-seller-tool-button="inventory"/);
+  const auctionIndex = html.indexOf("seller-auction-console");
+  const videoIndex = html.indexOf("seller-broadcast-monitor");
+  const chatIndex = html.indexOf("seller-live-chat");
+  assert.ok(auctionIndex >= 0);
+  assert.ok(auctionIndex < videoIndex);
+  assert.ok(videoIndex < chatIndex);
+  assert.match(html, /data-chat-messages/);
+  assert.match(html, /data-chat-form/);
 });
 
 test("Seller Live long-press and queue-selection behavior is wired", async () => {
@@ -42,4 +50,24 @@ test("Live Shows gives the owning seller an exact-show GO LIVE NOW handoff", asy
   assert.match(script, /\/portal\/mode/);
   assert.match(script, /streams\.html\?show=\$\{encodeURIComponent\(show\.id\)\}#seller-live/);
   assert.match(script, /requestedSellerShowId/);
+});
+
+test("desktop live rooms order auction, video, and shared chat", async () => {
+  const [liveHtml, sellerCss, liveCss, chatScript] = await Promise.all([
+    read("live.html"),
+    read("assets/css/streams-hub.css"),
+    read("assets/css/live.css"),
+    read("assets/js/live-chat.js")
+  ]);
+  const auctionIndex = liveHtml.indexOf("live-bid-card");
+  const videoIndex = liveHtml.indexOf("live-video-card");
+  const chatIndex = liveHtml.indexOf("live-chat-card");
+  assert.ok(auctionIndex >= 0);
+  assert.ok(auctionIndex < videoIndex);
+  assert.ok(videoIndex < chatIndex);
+  assert.match(sellerCss, /grid-template-areas:\s*"auction video chat"/);
+  assert.match(liveCss, /grid-template-areas:\s*"auction video chat"/);
+  assert.match(chatScript, /encodeURIComponent\(activeShowId\).*\/chat/s);
+  assert.match(chatScript, /escapeHtml\(message\.message/);
+  assert.match(chatScript, /setInterval\(refresh/);
 });

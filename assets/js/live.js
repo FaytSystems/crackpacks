@@ -55,6 +55,13 @@
     return data;
   };
 
+  const liveChat = window.CrackPacksLiveChat?.create({
+    root: $("[data-live-chat]"),
+    apiBase,
+    token,
+    getShowId: () => showId
+  });
+
   const setSlider = (pct) => {
     const value = Math.max(0, Math.min(100, pct));
     if (els.fill) els.fill.style.width = `${value}%`;
@@ -300,5 +307,6 @@
   window.addEventListener("pagehide", () => {
     window.clearInterval(refreshTimer);
     window.clearInterval(heartbeatTimer);
+    liveChat?.stop();
   }, { once: true });
 })();

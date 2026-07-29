@@ -1025,6 +1025,144 @@ test("dedicated live show endpoint returns its thumbnail and first queued item",
   assert.equal(payload.lot.bidIncrementCents, 100);
 });
 
+test("live show chat returns public User IDs without personal account details", async () => {
+  const showId = "22222222-2222-4222-8222-222222222222";
+  const sellerId = "11111111-1111-4111-8111-111111111111";
+  const buyerId = "33333333-3333-4333-8333-333333333333";
+  const env = {
+    DB: {
+      prepare(sql) {
+        return {
+          bind(...args) {
+            return {
+              first: async () => {
+                if (sql.includes("SELECT id,member_id,status FROM breaker_stream_sessions")) {
+                  assert.deepEqual(args, [showId]);
+                  return { id: showId, member_id: sellerId, status: "live" };
+                }
+                return null;
+              },
+              all: async () => {
+                assert.match(sql, /FROM live_show_chat_messages chat/);
+                assert.deepEqual(args, [showId]);
+                return {
+                  results: [
+                    {
+                      id: "55555555-5555-4555-8555-555555555555",
+                      show_id: showId,
+                      member_id: buyerId,
+                      display_username: "BuyerUser",
+                      message: "Let us go!",
+                      created_at: "2026-07-29T01:02:00.000Z",
+                      is_seller: 0,
+                      email: "private@example.test",
+                      first_name: "Private"
+                    },
+                    {
+                      id: "44444444-4444-4444-8444-444444444444",
+                      show_id: showId,
+                      member_id: sellerId,
+                      display_username: "GARAGESALEdotcom",
+                      message: "Welcome to the show.",
+                      created_at: "2026-07-29T01:01:00.000Z",
+                      is_seller: 1
+                    }
+                  ]
+                };
+              }
+            };
+          }
+        };
+      }
+    }
+  };
+
+  const response = await handlePlatformRoute(
+    new Request(`https://api.crackpacks.test/live/shows/${showId}/chat`),
+    env,
+    {}
+  );
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.status, "live");
+  assert.deepEqual(payload.messages.map(message => message.username), ["GARAGESALEdotcom", "BuyerUser"]);
+  assert.equal(payload.messages[0].isSeller, true);
+  assert.equal(payload.messages[1].isSeller, false);
+  assert.doesNotMatch(JSON.stringify(payload), /private@example|Private/);
+});
+
+test("verified members can post a rate-limited live show chat message", async () => {
+  const showId = "22222222-2222-4222-8222-222222222222";
+  const memberId = "33333333-3333-4333-8333-333333333333";
+  const writes = [];
+  const member = {
+    id: memberId,
+    email_verified_at: "2026-07-24T00:00:00.000Z",
+    device_verified: 1,
+    identity_status: "verified",
+    buyer_username: "BuyerUser"
+  };
+  let recentMessage = null;
+  const env = {
+    AUTH_SECRET: "test-secret",
+    DB: {
+      prepare(sql) {
+        return {
+          bind(...args) {
+            return {
+              first: async () => {
+                if (sql.includes("SELECT id,member_id,status FROM breaker_stream_sessions")) {
+                  return { id: showId, member_id: "11111111-1111-4111-8111-111111111111", status: "live" };
+                }
+                if (sql.includes("JOIN members m ON")) return member;
+                if (sql.includes("SELECT created_at") && sql.includes("live_show_chat_messages")) return recentMessage;
+                if (sql.includes("WHERE chat.id=?")) {
+                  return {
+                    id: args[0],
+                    show_id: showId,
+                    member_id: memberId,
+                    display_username: "BuyerUser",
+                    message: "Great pull!",
+                    created_at: "2026-07-29T01:03:00.000Z",
+                    is_seller: 0
+                  };
+                }
+                return null;
+              },
+              run: async () => {
+                writes.push({ sql, args });
+                return { success: true, meta: { changes: 1 } };
+              }
+            };
+          }
+        };
+      }
+    }
+  };
+
+  const request = () => new Request(`https://api.crackpacks.test/live/shows/${showId}/chat`, {
+    method: "POST",
+    headers: { Authorization: "Bearer session-token" },
+    body: JSON.stringify({ message: "Great pull!" })
+  });
+  const response = await handlePlatformRoute(request(), env, {});
+  assert.equal(response.status, 201);
+  const payload = await response.json();
+  assert.equal(payload.message.username, "BuyerUser");
+  assert.equal(payload.message.isOwn, true);
+  assert.equal(writes.length, 1);
+  assert.match(writes[0].sql, /INSERT INTO live_show_chat_messages/);
+  assert.equal(writes[0].args[1], showId);
+  assert.equal(writes[0].args[2], memberId);
+  assert.equal(writes[0].args[3], "Great pull!");
+
+  recentMessage = { created_at: new Date(Date.now() - 250).toISOString() };
+  const limited = await handlePlatformRoute(request(), env, {});
+  assert.equal(limited.status, 429);
+  assert.match((await limited.json()).error, /Wait a moment/);
+  assert.equal(writes.length, 1);
+});
+
 test("seller can upload a JPEG thumbnail while creating a show", async () => {
   const memberId = "11111111-1111-4111-8111-111111111111";
   const uploads = [];

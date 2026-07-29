@@ -7,7 +7,8 @@
   <meta name="description" content="Watch Crack Packs breaker streams and slide to bid live.">
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/css/styles.css?v=1.10.1">
-  <link rel="stylesheet" href="assets/css/live.css?v=1.1.0">
+  <link rel="stylesheet" href="assets/css/live.css?v=1.2.0">
+  <link rel="stylesheet" href="assets/css/live-chat.css?v=1.0.0">
 </head>
 <body data-page="live">
   <header class="site-header">
@@ -18,15 +19,6 @@
   </header>
   <main class="live-main" data-live-app>
     <section class="container live-stage">
-      <div class="live-video-card">
-        <p class="eyebrow">Breaker live</p>
-        <h1 data-live-show-title>Crack Packs Live Auction.</h1>
-        <p data-live-status>Loading the current auction...</p>
-        <p class="viewer-pill"><strong data-live-viewers>0</strong> watching</p>
-        <img class="live-show-thumbnail" data-live-show-thumbnail src="" alt="" hidden>
-        <div class="live-video-placeholder" data-live-video-placeholder>Stream player connects here when a breaker session is live.</div>
-        <iframe class="live-stream-player" data-live-stream-player title="Crack Packs live stream" allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture" allowfullscreen hidden></iframe>
-      </div>
       <aside class="live-bid-card" data-live-bid-card data-state="ready">
         <div class="winner-flash" data-winner-flash hidden></div>
         <p class="eyebrow">Current auction</p>
@@ -60,11 +52,42 @@
         <p class="bid-state-copy" data-bid-state-copy>Sign in to your Profile before bidding.</p>
         <a class="btn btn-outline" href="referral.html">Sign in / Profile</a>
       </aside>
+      <div class="live-video-card">
+        <p class="eyebrow">Breaker live</p>
+        <h1 data-live-show-title>Crack Packs Live Auction.</h1>
+        <p data-live-status>Loading the current auction...</p>
+        <p class="viewer-pill"><strong data-live-viewers>0</strong> watching</p>
+        <img class="live-show-thumbnail" data-live-show-thumbnail src="" alt="" hidden>
+        <div class="live-video-placeholder" data-live-video-placeholder>Stream player connects here when a breaker session is live.</div>
+        <iframe class="live-stream-player" data-live-stream-player title="Crack Packs live stream" allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture" allowfullscreen hidden></iframe>
+      </div>
+      <aside class="live-chat-card live-chat-panel" data-live-chat aria-label="Live show chat">
+        <header class="live-chat-head">
+          <div>
+            <p>Live room</p>
+            <h2>Chat</h2>
+          </div>
+          <span class="live-chat-count" data-chat-count aria-label="Visible messages">0</span>
+        </header>
+        <div class="live-chat-messages" data-chat-messages role="log" aria-live="polite" aria-relevant="additions">
+          <div class="live-chat-empty">
+            <strong>Chat is loading.</strong>
+            <span>Sign in to join the conversation.</span>
+          </div>
+        </div>
+        <form class="live-chat-form" data-chat-form>
+          <label class="sr-only" for="viewer-live-chat-message">Live chat message</label>
+          <input id="viewer-live-chat-message" data-chat-input maxlength="280" autocomplete="off" placeholder="Sign in to join the show chat" disabled>
+          <button class="live-chat-send" data-chat-submit type="submit" aria-label="Send chat message" title="Send" disabled>&uarr;</button>
+        </form>
+        <p class="live-chat-status" data-chat-status aria-live="polite">Loading show chat...</p>
+      </aside>
     </section>
   </main>
   <script src="assets/js/config.js?v=4.1.1"></script>
   <script src="assets/js/app.js?v=1.9.9"></script>
   <script src="assets/js/portal-mode.js?v=1.2.5"></script>
-  <script src="assets/js/live.js?v=1.1.1"></script>
+  <script src="assets/js/live-chat.js?v=1.0.0"></script>
+  <script src="assets/js/live.js?v=1.2.0"></script>
 </body>
 </html>

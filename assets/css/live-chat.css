@@ -1,0 +1,209 @@
+.live-chat-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  min-width: 0;
+  min-height: 620px;
+  padding: 1rem;
+  border: 1px solid rgba(56, 232, 255, 0.2);
+  border-radius: 8px;
+  color: #fff;
+  background:
+    linear-gradient(155deg, rgba(16, 22, 47, 0.96), rgba(5, 8, 22, 0.98)),
+    #07091b;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
+}
+
+.live-chat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-bottom: 0.8rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.11);
+}
+
+.live-chat-head h2,
+.live-chat-head h3,
+.live-chat-head p {
+  margin: 0;
+}
+
+.live-chat-head p {
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
+.live-chat-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 38px;
+  min-height: 30px;
+  padding: 0 0.55rem;
+  border: 1px solid rgba(248, 255, 70, 0.32);
+  border-radius: 999px;
+  color: var(--electric, #f8ff46);
+  background: rgba(248, 255, 70, 0.06);
+  font-size: 0.72rem;
+  font-weight: 950;
+}
+
+.live-chat-messages {
+  min-height: 0;
+  max-height: min(60vh, 650px);
+  padding: 0.8rem 0.25rem 0.8rem 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: rgba(56, 232, 255, 0.45) rgba(255, 255, 255, 0.04);
+}
+
+.live-chat-message {
+  padding: 0.62rem 0.7rem;
+  border-left: 2px solid rgba(255, 255, 255, 0.12);
+}
+
+.live-chat-message + .live-chat-message {
+  margin-top: 0.35rem;
+}
+
+.live-chat-message.is-seller {
+  border-left-color: var(--electric, #f8ff46);
+  background: rgba(248, 255, 70, 0.045);
+}
+
+.live-chat-message.is-own {
+  border-left-color: var(--cyan, #38e8ff);
+}
+
+.live-chat-message header {
+  display: flex;
+  align-items: center;
+  gap: 0.42rem;
+  min-width: 0;
+}
+
+.live-chat-message header strong {
+  overflow: hidden;
+  color: #fff;
+  font-size: 0.76rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.live-chat-message header span {
+  flex: 0 0 auto;
+  padding: 0.18rem 0.35rem;
+  border-radius: 999px;
+  color: #071019;
+  background: var(--electric, #f8ff46);
+  font-size: 0.52rem;
+  font-weight: 1000;
+}
+
+.live-chat-message time {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 0.62rem;
+}
+
+.live-chat-message p {
+  margin: 0.28rem 0 0;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.8rem;
+  line-height: 1.42;
+  overflow-wrap: anywhere;
+}
+
+.live-chat-empty {
+  display: grid;
+  place-content: center;
+  min-height: 180px;
+  gap: 0.3rem;
+  color: rgba(255, 255, 255, 0.54);
+  text-align: center;
+}
+
+.live-chat-empty strong {
+  color: #fff;
+}
+
+.live-chat-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.55rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.11);
+}
+
+.live-chat-form input {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 0.8rem;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  color: #fff;
+  background: rgba(3, 6, 18, 0.82);
+  font: inherit;
+  font-size: 0.78rem;
+}
+
+.live-chat-form input:focus {
+  border-color: rgba(56, 232, 255, 0.7);
+  outline: 2px solid rgba(56, 232, 255, 0.16);
+}
+
+.live-chat-send {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid rgba(248, 255, 70, 0.52);
+  border-radius: 50%;
+  color: #071019;
+  background: var(--electric, #f8ff46);
+  font-size: 1.05rem;
+  font-weight: 1000;
+  cursor: pointer;
+}
+
+.live-chat-send:disabled,
+.live-chat-form input:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.live-chat-status {
+  min-height: 1.2rem;
+  margin: 0.45rem 0 0;
+  color: rgba(255, 255, 255, 0.54);
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
+.live-chat-status[data-kind="error"] {
+  color: #ff9eb2;
+}
+
+@media (max-width: 1100px) {
+  .live-chat-panel {
+    min-height: 480px;
+  }
+
+  .live-chat-messages {
+    max-height: 420px;
+  }
+}
+
+@media (max-width: 680px) {
+  .live-chat-panel {
+    min-height: 420px;
+  }
+
+  .live-chat-messages {
+    max-height: 340px;
+  }
+}

@@ -33,6 +33,7 @@
   let auctionHoldTimer = 0;
   let suppressAuctionNextClick = false;
   let liveShowsSellerUsername = "";
+  let sellerLiveChat = null;
   const AUTO_NEXT_HOLD_MS = 3000;
   const ALLOWED_AUCTION_DURATIONS = new Set([15, 30, 45, 60, 90, 120]);
   const pageQuery = new URLSearchParams(location.search);
@@ -590,6 +591,7 @@
       select.innerHTML = options;
       select.value = selectedId;
     });
+    sellerLiveChat?.refresh({ force: true });
     updateSellerSocialComposer();
     renderShowStoreInventoryOptions();
     loadSellerLots(selectedId).catch(error => {
@@ -617,6 +619,7 @@
     });
     updateSellerSocialComposer();
     renderShowStoreInventoryPreview();
+    sellerLiveChat?.refresh({ force: true });
     return loadSellerLots(showId);
   }
 
@@ -2020,6 +2023,15 @@
     }, 80);
   });
 
+  const sellerChatRoot = $("[data-live-chat]");
+  if (!viewerOnly && sellerChatRoot && window.CrackPacksLiveChat) {
+    sellerLiveChat = window.CrackPacksLiveChat.create({
+      root: sellerChatRoot,
+      apiBase: base,
+      token,
+      getShowId: () => $("[data-broadcast-show-select]")?.value || ""
+    });
+  }
   loadShows();
   if (viewerOnly) loadLiveShowsSellerContext();
   const showsRefreshTimer = window.setInterval(() => {
@@ -2030,6 +2042,7 @@
   });
   window.addEventListener("pagehide", () => {
     window.clearInterval(showsRefreshTimer);
+    sellerLiveChat?.stop();
     stopAutoNext();
   }, { once: true });
   if (!viewerOnly) {

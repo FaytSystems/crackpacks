@@ -661,15 +661,26 @@
 
 .seller-cockpit-grid-premium {
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+  grid-template-columns: minmax(310px, 0.78fr) minmax(430px, 1.32fr) minmax(280px, 0.72fr);
+  grid-template-areas: "auction video chat";
   gap: 1.25rem;
   align-items: start;
 }
 
 .seller-broadcast-monitor {
-  grid-column: 1 / -1;
+  grid-area: video;
   display: grid;
   gap: 0.9rem;
+}
+
+.seller-live-chat {
+  grid-area: chat;
+  position: sticky;
+  top: 148px;
+}
+
+.seller-cockpit-grid-premium > [data-seller-tool-panel]:not([data-seller-tool-panel="show-control"]) {
+  grid-column: 1 / -1;
 }
 
 .seller-broadcast-monitor-head {
@@ -733,10 +744,58 @@
 }
 
 .seller-auction-console {
-  grid-column: 1 / -1;
+  grid-area: auction;
   display: grid;
   gap: 1rem;
   background: rgba(7, 9, 27, 0.58);
+}
+
+@media (min-width: 1101px) {
+  .seller-auction-console .seller-auction-console-head,
+  .seller-auction-console .seller-auction-console-grid,
+  .seller-auction-console .seller-auto-next-panel,
+  .seller-auction-console .seller-auction-controls,
+  .seller-auction-console .seller-live-quick-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .seller-auction-console .seller-broadcast-show-picker {
+    width: 100%;
+  }
+
+  .seller-auction-console .seller-auction-current {
+    padding-right: 0;
+    border-right: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  }
+
+  .seller-auction-console .seller-auction-sale-list {
+    padding-left: 0;
+  }
+
+  .seller-auction-console .seller-auction-queue-item {
+    grid-template-columns: 32px 48px minmax(0, 1fr);
+  }
+
+  .seller-auction-console .seller-auction-queue-actions,
+  .seller-auction-console .seller-auction-queue-status {
+    grid-column: 3;
+    justify-self: start;
+  }
+
+  .seller-auction-console .seller-auction-queue-actions {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .seller-auction-console .seller-auction-queue-image-placeholder {
+    width: 48px;
+  }
+
+  .seller-auction-console .seller-control-bubble {
+    width: 100%;
+  }
 }
 
 .seller-auction-console-head,
@@ -2043,6 +2102,20 @@
 
 .seller-order-weight-picker select {
   border-radius: 999px;
+}
+
+@media (max-width: 1100px) {
+  .seller-cockpit-grid-premium {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "video"
+      "auction"
+      "chat";
+  }
+
+  .seller-live-chat {
+    position: static;
+  }
 }
 
 @media (max-width: 680px) {
