@@ -4096,8 +4096,8 @@ async function createAuctionLot(request, env, cors, showId) {
       WHERE listing.id=? AND listing.member_id=?
     `).bind(storeListingId, auth.member.id).first();
     if (!storeListing) return json({ error: "That personal-store listing was not found in your seller account." }, 404, cors);
-    if (storeListing.status !== "active" || Number(storeListing.quantity || 0) < 1) {
-      return json({ error: "Activate this store listing and make sure it has inventory before adding it to a show." }, 409, cors);
+    if (!["active", "inactive"].includes(storeListing.status) || Number(storeListing.quantity || 0) < 1) {
+      return json({ error: "Make sure this inventory product has available quantity before adding it to a show." }, 409, cors);
     }
     if (lotCount > Number(storeListing.quantity || 0)) {
       return json({ error: `Only ${Number(storeListing.quantity || 0)} units are available. Reduce the number of auctions.` }, 409, cors);
@@ -4135,7 +4135,7 @@ async function createAuctionLot(request, env, cors, showId) {
     env.DB.prepare(`
       UPDATE seller_store_listings
       SET show_id=?,linked_lot_id=?,updated_at=?
-      WHERE id=? AND member_id=? AND status='active' AND quantity>=?
+      WHERE id=? AND member_id=? AND status IN ('active','inactive') AND quantity>=?
         AND (
           linked_lot_id IS NULL OR linked_lot_id=''
           OR NOT EXISTS (

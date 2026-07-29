@@ -65,6 +65,34 @@ test("Seller Live creates and selects a show without leaving the HUD", async () 
   assert.match(css, /\.seller-create-show-modal/);
 });
 
+test("Seller Live inventory modal searches, sorts, paginates, and assigns products to shows", async () => {
+  const [html, script, css, routes] = await Promise.all([
+    read("streams.html"),
+    read("assets/js/streams-hub.js"),
+    read("assets/css/streams-hub.css"),
+    read("rewards-worker/src/platform-routes.js")
+  ]);
+  assert.match(html, /data-hud-inventory-open/);
+  assert.match(html, /data-hud-inventory-modal/);
+  assert.match(html, /data-hud-inventory-search/);
+  assert.match(html, /data-hud-inventory-sort/);
+  assert.match(html, /data-hud-inventory-new-form/);
+  assert.match(html, /data-hud-inventory-list/);
+  assert.match(html, /data-hud-inventory-page="previous">Previous/);
+  assert.match(html, /data-hud-inventory-page="next">Next/);
+  assert.match(html, /data-hud-inventory-assignment-form/);
+  assert.match(html, /data-hud-inventory-show-options/);
+  assert.match(script, /HUD_INVENTORY_PAGE_SIZE = 10/);
+  assert.match(script, /items\.slice\(pageStart, pageStart \+ HUD_INVENTORY_PAGE_SIZE\)/);
+  assert.match(script, /function hudInventoryItems\(\)/);
+  assert.match(script, /data-hud-add-to-show/);
+  assert.match(script, /status: "inactive"/);
+  assert.match(script, /\/seller\/shows\/\$\{encodeURIComponent\(showId\)\}\/lots/);
+  assert.match(css, /\.seller-hud-inventory-row/);
+  assert.match(css, /\.seller-hud-add-show-bubble/);
+  assert.match(routes, /status IN \('active','inactive'\) AND quantity>=\?/);
+});
+
 test("Seller Live alone collapses the Seller Hub subheader into a dropdown", async () => {
   const [html, script, css] = await Promise.all([
     read("streams.html"),

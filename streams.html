@@ -9,7 +9,7 @@
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/css/styles.css?v=1.11.1">
   <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.7.0">
-  <link rel="stylesheet" href="assets/css/streams-hub.css?v=2.4.2">
+  <link rel="stylesheet" href="assets/css/streams-hub.css?v=2.5.0">
   <link rel="stylesheet" href="assets/css/live-chat.css?v=1.0.0">
   <link rel="stylesheet" href="assets/css/video-auction-hud.css?v=1.0.0">
 </head>
@@ -165,13 +165,13 @@
             </div>
           </header>
           <div class="seller-live-quick-actions" aria-label="Seller Live inventory actions">
-            <button class="seller-live-action-bubble" type="button" data-seller-tool-button="show-inventory">
-              <strong>Add inventory to show</strong>
-              <span>Queue store or manual listings</span>
+            <button class="seller-live-action-bubble" type="button" data-hud-inventory-open>
+              <strong>Add to show inventory</strong>
+              <span>Choose from current inventory</span>
             </button>
-            <button class="seller-live-action-bubble" type="button" data-seller-tool-button="inventory">
+            <button class="seller-live-action-bubble" type="button" data-hud-inventory-open data-hud-inventory-new-on-open>
               <strong>Create new inventory</strong>
-              <span>Add products and quantities</span>
+              <span>Save a product without leaving the HUD</span>
             </button>
           </div>
           <div class="seller-auction-console-grid">
@@ -664,6 +664,114 @@
       </div>
     </section>
 
+    <div class="seller-hud-inventory-modal" data-hud-inventory-modal hidden aria-hidden="true">
+      <button class="seller-hud-inventory-backdrop" type="button" data-hud-inventory-close aria-label="Close Add Inventory"></button>
+      <section class="seller-hud-inventory-dialog" role="dialog" aria-modal="true" aria-labelledby="hud-inventory-title">
+        <header class="seller-create-show-dialog-head">
+          <div>
+            <p class="eyebrow">Seller Live</p>
+            <h2 id="hud-inventory-title">Add inventory</h2>
+            <p>Keep products private until you publish them, or assign any available item directly to a show.</p>
+          </div>
+          <button class="seller-create-show-close" type="button" data-hud-inventory-close aria-label="Close Add Inventory" title="Close">&times;</button>
+        </header>
+
+        <div class="seller-hud-inventory-toolbar">
+          <div>
+            <strong>Current inventory</strong>
+            <span data-hud-inventory-range>0 items</span>
+          </div>
+          <button class="seller-hud-inventory-new-bubble" type="button" data-hud-inventory-new-toggle aria-expanded="false" aria-controls="hud-new-inventory-form">
+            <strong>Add new product</strong>
+            <span>Save to private inventory</span>
+          </button>
+        </div>
+        <div class="seller-hud-inventory-filters">
+          <label>Search inventory<input type="search" data-hud-inventory-search autocomplete="off" placeholder="Title, category, condition, or type"></label>
+          <label>Sort listings
+            <select data-hud-inventory-sort>
+              <option value="newest">Newest added</option>
+              <option value="updated">Recently updated</option>
+              <option value="title-asc">Title A-Z</option>
+              <option value="title-desc">Title Z-A</option>
+              <option value="price-asc">Price low to high</option>
+              <option value="price-desc">Price high to low</option>
+              <option value="quantity-desc">Quantity high to low</option>
+              <option value="quantity-asc">Quantity low to high</option>
+            </select>
+          </label>
+        </div>
+
+        <form class="seller-hud-inventory-new-form seller-giveaway-form" id="hud-new-inventory-form" data-hud-inventory-new-form hidden>
+          <div class="seller-hud-inventory-form-head">
+            <div>
+              <strong>New inventory product</strong>
+              <span>It will not appear in the buyer store until you publish it.</span>
+            </div>
+            <button class="seller-create-show-close seller-hud-inventory-inline-close" type="button" data-hud-inventory-new-cancel aria-label="Close new product form" title="Close">&times;</button>
+          </div>
+          <div class="field-grid">
+            <label>Product title<input name="title" required maxlength="120" autocomplete="off" placeholder="Japanese Charizard"></label>
+            <label>Category<select name="productCategoryKey" data-hud-inventory-category-select></select></label>
+            <label>Condition<input name="condition" maxlength="80" placeholder="Near Mint"></label>
+            <label>Sale type<select name="saleType"><option value="singles">Singles</option><option value="cards">Cards</option><option value="breaks">Breaks</option><option value="sealed">Sealed</option><option value="rip_ship">Rip &amp; Ship</option><option value="rtyh">RTYH</option><option value="buy_ship">Buy &amp; Ship</option></select></label>
+            <label>Quantity<input name="quantity" type="number" min="1" max="100000" step="1" value="1" required></label>
+            <label>Reference price ($)<input name="price" type="number" min="0.01" max="100000" step="0.01" value="1.00" required></label>
+            <label>Shipping<select name="shippingPayer"><option value="buyer">Buyer pays shipping</option><option value="seller">Seller pays shipping</option></select></label>
+            <label>Fixed buyer shipping ($)<input name="fixedShipping" type="number" min="0" max="100000" step="0.01" value="5.00"></label>
+          </div>
+          <label>Item image URL<input name="imageUrl" type="url" maxlength="500" placeholder="https://..."></label>
+          <label>Description<textarea name="description" rows="2" maxlength="1000" placeholder="Set, language, grade, or other selling details"></textarea></label>
+          <div class="seller-create-show-actions">
+            <button class="btn btn-outline" type="button" data-hud-inventory-new-cancel>Cancel</button>
+            <button class="btn btn-primary" type="submit">Save to inventory</button>
+          </div>
+        </form>
+
+        <div class="campaign-form-status" data-hud-inventory-status aria-live="polite"></div>
+        <div class="seller-hud-inventory-list" data-hud-inventory-list aria-live="polite"></div>
+        <nav class="seller-hud-inventory-pagination" aria-label="Inventory pages">
+          <button class="btn btn-outline btn-small" type="button" data-hud-inventory-page="previous">Previous</button>
+          <strong data-hud-inventory-page-label>Page 1 of 1</strong>
+          <button class="btn btn-outline btn-small" type="button" data-hud-inventory-page="next">Next</button>
+        </nav>
+
+        <section class="seller-hud-inventory-assignment" data-hud-inventory-assignment hidden aria-labelledby="hud-inventory-assignment-title">
+          <header class="seller-hud-inventory-form-head">
+            <div>
+              <p class="eyebrow">Add to show</p>
+              <h3 id="hud-inventory-assignment-title" data-hud-inventory-assignment-title>Select a show</h3>
+              <span data-hud-inventory-assignment-copy></span>
+            </div>
+            <button class="seller-create-show-close seller-hud-inventory-inline-close" type="button" data-hud-inventory-assignment-close aria-label="Close show selection" title="Close">&times;</button>
+          </header>
+          <form class="seller-giveaway-form" data-hud-inventory-assignment-form>
+            <input name="storeListingId" type="hidden">
+            <input name="showId" type="hidden">
+            <div class="seller-hud-show-options" data-hud-inventory-show-options role="radiogroup" aria-label="Choose a show"></div>
+            <div class="seller-hud-inventory-no-shows" data-hud-inventory-no-shows hidden>
+              <p>Create a show first, then it will appear here automatically.</p>
+              <button class="seller-create-show-bubble" type="button" data-hud-inventory-create-show>
+                <strong>Create a show</strong>
+                <span>Stay in Seller Live</span>
+              </button>
+            </div>
+            <div class="field-grid" data-hud-inventory-auction-fields>
+              <label>Starting bid ($)<input name="startingBid" type="number" min="0.01" max="100000" step="0.01" value="1.00" required></label>
+              <label>Bid increment ($)<input name="bidIncrement" type="number" min="0.01" max="10000" step="0.01" value="1.00" required></label>
+              <label>Auction time<select name="auctionDurationSeconds"><option value="15">15 seconds</option><option value="30" selected>30 seconds</option><option value="45">45 seconds</option><option value="60">60 seconds</option><option value="90">90 seconds</option><option value="120">2 minutes</option></select></label>
+              <label>Auctions to create<input name="lotCount" type="number" min="1" max="100" step="1" value="1" required></label>
+              <label>Numbering starts at<input name="numberStart" type="number" min="1" max="999999" step="1" value="1" required></label>
+            </div>
+            <div class="seller-create-show-actions">
+              <button class="btn btn-outline" type="button" data-hud-inventory-assignment-close>Cancel</button>
+              <button class="btn btn-primary" type="submit" data-hud-inventory-assign-submit>Add to selected show</button>
+            </div>
+          </form>
+        </section>
+      </section>
+    </div>
+
     <div class="seller-create-show-modal" data-hud-create-show-modal hidden aria-hidden="true">
       <button class="seller-create-show-backdrop" type="button" data-hud-create-show-close aria-label="Close Create Show"></button>
       <section class="seller-create-show-dialog" role="dialog" aria-modal="true" aria-labelledby="hud-create-show-title">
@@ -720,6 +828,6 @@
   <script src="assets/js/app.js?v=2.0.0"></script>
   <script src="assets/js/portal-mode.js?v=1.2.5"></script>
   <script src="assets/js/live-chat.js?v=1.0.0"></script>
-  <script src="assets/js/streams-hub.js?v=2.4.3"></script>
+  <script src="assets/js/streams-hub.js?v=2.5.0"></script>
 </body>
 </html>

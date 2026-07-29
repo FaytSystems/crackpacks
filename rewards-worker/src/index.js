@@ -5,7 +5,7 @@ import { calculateChannelPricing, channelPricingErrors } from "./channel-pricing
 import { sanitizeEasyPostTracker, verifyEasyPostWebhook } from "./easypost-tracking.js";
 import { handlePlatformRoute, refreshStripeIdentityForMember, runAuctionSettlementCycle, runStreamCreditCycle, usernameKey } from "./platform-routes.js";
 
-const VERSION = "5.1.1";
+const VERSION = "5.2.0";
 const CAMPAIGN_REWARD_TYPES = new Set(["percent", "free_shipping", "pick_a_pack", "pack_draft", "free_single", "product"]);
 const MAX_CAMPAIGN_REDEMPTIONS = 500;
 const STORE_CURRENCIES = new Set(["USD", "CAD", "EUR", "GBP", "AUD", "NZD", "JPY", "CHF", "SEK", "NOK", "DKK", "PLN", "CZK", "HUF", "RON"]);

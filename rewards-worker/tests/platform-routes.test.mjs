@@ -1360,7 +1360,7 @@ test("uploaded show thumbnail is served with immutable image headers", async () 
   assert.deepEqual(new Uint8Array(await response.arrayBuffer()), imageBytes);
 });
 
-test("seller can create numbered auctions from one personal-store listing", async () => {
+test("seller can create numbered auctions from one private inventory listing", async () => {
   const memberId = "11111111-1111-4111-8111-111111111111";
   const showId = "22222222-2222-4222-8222-222222222222";
   const listingId = "33333333-3333-4333-8333-333333333333";
@@ -1396,7 +1396,7 @@ test("seller can create numbered auctions from one personal-store listing", asyn
                     image_url: "https://images.example.test/charizard.jpg",
                     sale_type: "cards",
                     quantity: 30,
-                    status: "active",
+                    status: "inactive",
                     linked_lot_status: ""
                   };
                 }
@@ -1435,6 +1435,7 @@ test("seller can create numbered auctions from one personal-store listing", asyn
   assert.equal(batches[0][1].args[3], "Japanese Charizard #2");
   assert.equal(batches[0][2].args[3], "Japanese Charizard #3");
   assert.match(batches[0][3].sql, /UPDATE seller_store_listings/);
+  assert.match(batches[0][3].sql, /status IN \('active','inactive'\)/);
   assert.equal(batches[0][3].args[0], showId);
   assert.equal(batches[0][3].args[3], listingId);
   assert.equal(batches[0][3].args[5], 3);

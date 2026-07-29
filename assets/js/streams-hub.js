@@ -26,6 +26,11 @@
   let pendingCloseShowId = "";
   let closeShowTrigger = null;
   let hudCreateShowTrigger = null;
+  let hudInventoryTrigger = null;
+  let hudInventoryAssignmentTrigger = null;
+  let hudInventorySelectedListingId = "";
+  let hudInventorySelectedShowId = "";
+  let hudInventoryPage = 1;
   let auctionAdvancePending = false;
   let autoNextActive = false;
   let autoNextShowId = "";
@@ -43,6 +48,7 @@
   let liveShowsSellerUsername = "";
   let sellerLiveChat = null;
   const AUTO_NEXT_HOLD_MS = 3000;
+  const HUD_INVENTORY_PAGE_SIZE = 10;
   const ALLOWED_AUCTION_DURATIONS = new Set([15, 30, 45, 60, 90, 120]);
   const pageQuery = new URLSearchParams(location.search);
   const requestedHubTab = pageQuery.get("tab") || "";
@@ -628,6 +634,7 @@
     sellerLiveChat?.refresh({ force: true });
     updateSellerSocialComposer();
     renderShowStoreInventoryOptions();
+    renderHudInventoryAssignment();
     loadSellerLots(selectedId).catch(error => {
       setStatus("[data-seller-lot-status]", error.message, "error");
       setStatus("[data-broadcast-auction-status]", error.message, "error");
@@ -653,6 +660,10 @@
     });
     updateSellerSocialComposer();
     renderShowStoreInventoryPreview();
+    if (!$("[data-hud-inventory-assignment]")?.hidden) {
+      hudInventorySelectedShowId = showId;
+      renderHudInventoryAssignment();
+    }
     sellerLiveChat?.refresh({ force: true });
     return loadSellerLots(showId);
   }
@@ -1060,9 +1071,9 @@
     const item = selectedShowStoreListing();
     submit.disabled = !show || !item;
     if (!item) {
-      preview.textContent = sellerStoreListings.some(listing => listing.status === "active" && Number(listing.quantity || 0) > 0)
-        ? "Every active store listing is already assigned to a scheduled or live lot."
-        : "No active personal-store inventory is available. Add or activate a listing below first.";
+      preview.textContent = sellerStoreListings.some(listing => ["active", "inactive"].includes(listing.status) && Number(listing.quantity || 0) > 0)
+        ? "Every available inventory listing is already assigned to a scheduled or live lot."
+        : "No personal inventory is available. Add a product first.";
       return;
     }
     const showMessage = show ? `Ready for ${show.title}.` : "Create or select an active show before adding this listing.";
@@ -1079,7 +1090,7 @@
     if (!select) return;
     const prior = select.value;
     const available = sellerStoreListings.filter(item => (
-      item.status === "active" &&
+      ["active", "inactive"].includes(item.status) &&
       Number(item.quantity || 0) > 0 &&
       !["scheduled", "live"].includes(String(item.linkedLotStatus || "").toLowerCase())
     ));
@@ -1118,7 +1129,120 @@
       </article>
     `).join("") : `<div class="stream-empty">No store listings yet. Use “Add to store” to publish products into the buyer marketplace.</div>`;
     renderShowStoreInventoryOptions();
+    renderHudInventory();
     updateSellerDashboardMetrics();
+  }
+
+  function hudInventoryItems() {
+    const query = String($("[data-hud-inventory-search]")?.value || "").trim().toLowerCase();
+    const sort = $("[data-hud-inventory-sort]")?.value || "newest";
+    const items = sellerStoreListings.filter(item => {
+      if (!query) return true;
+      return [
+        item.title,
+        item.productCategoryLabel,
+        item.productCategoryKey,
+        item.condition,
+        item.saleType,
+        item.status
+      ].some(value => String(value || "").toLowerCase().includes(query));
+    });
+    const time = (item, field) => Number(new Date(item?.[field] || 0)) || 0;
+    return [...items].sort((left, right) => {
+      if (sort === "updated") return time(right, "updatedAt") - time(left, "updatedAt");
+      if (sort === "title-asc") return String(left.title || "").localeCompare(String(right.title || ""));
+      if (sort === "title-desc") return String(right.title || "").localeCompare(String(left.title || ""));
+      if (sort === "price-asc") return Number(left.priceCents || 0) - Number(right.priceCents || 0);
+      if (sort === "price-desc") return Number(right.priceCents || 0) - Number(left.priceCents || 0);
+      if (sort === "quantity-asc") return Number(left.quantity || 0) - Number(right.quantity || 0);
+      if (sort === "quantity-desc") return Number(right.quantity || 0) - Number(left.quantity || 0);
+      return time(right, "createdAt") - time(left, "createdAt");
+    });
+  }
+
+  function hudInventoryPlacement(item) {
+    const linkedStatus = String(item.linkedLotStatus || "").toLowerCase();
+    if (Number(item.quantity || 0) < 1 || item.status === "sold_out") return { label: "Sold out", state: "sold" };
+    if (["scheduled", "live"].includes(linkedStatus)) {
+      const show = sellerShows.find(candidate => candidate.id === item.showId);
+      return { label: show ? `Show: ${show.title}` : "Assigned to show", state: "show" };
+    }
+    if (item.status === "active") return { label: "In store", state: "store" };
+    return { label: "Inventory", state: "inventory" };
+  }
+
+  function renderHudInventoryAssignment() {
+    const panel = $("[data-hud-inventory-assignment]");
+    const form = $("[data-hud-inventory-assignment-form]");
+    if (!panel || !form || panel.hidden) return;
+    const item = sellerStoreListings.find(listing => listing.id === hudInventorySelectedListingId);
+    if (!item) {
+      closeHudInventoryAssignment({ restoreFocus: false });
+      return;
+    }
+    const activeShows = sellerShows.filter(show => ["open", "live"].includes(String(show.status || "")));
+    const broadcastShowId = $("[data-broadcast-show-select]")?.value || "";
+    if (!activeShows.some(show => show.id === hudInventorySelectedShowId)) {
+      hudInventorySelectedShowId = activeShows.some(show => show.id === broadcastShowId) ? broadcastShowId : (activeShows[0]?.id || "");
+    }
+    form.elements.storeListingId.value = item.id;
+    form.elements.showId.value = hudInventorySelectedShowId;
+    form.elements.lotCount.max = String(Math.max(1, Math.min(100, Number(item.quantity || 1))));
+    form.elements.lotCount.value = String(Math.max(1, Math.min(Number(form.elements.lotCount.max), Number(form.elements.lotCount.value || 1))));
+    const title = $("[data-hud-inventory-assignment-title]");
+    const copy = $("[data-hud-inventory-assignment-copy]");
+    if (title) title.textContent = item.title || "Select a show";
+    if (copy) copy.textContent = `${Number(item.quantity || 0)} available - ${dollars(item.priceCents)} reference price`;
+    const options = $("[data-hud-inventory-show-options]");
+    if (options) options.innerHTML = activeShows.map(show => {
+      const selected = show.id === hudInventorySelectedShowId;
+      return `<button class="seller-hud-show-option${selected ? " is-selected" : ""}" type="button" role="radio" aria-checked="${selected}" data-hud-inventory-show="${escapeHtml(show.id)}"><strong>${escapeHtml(show.title)}</strong><span>${escapeHtml(String(show.status || "open").toUpperCase())} &middot; ${escapeHtml(dateLabel(show.scheduled_at || show.started_at || ""))}</span></button>`;
+    }).join("");
+    const noShows = $("[data-hud-inventory-no-shows]");
+    const fields = $("[data-hud-inventory-auction-fields]");
+    const submit = $("[data-hud-inventory-assign-submit]");
+    if (noShows) noShows.hidden = Boolean(activeShows.length);
+    if (fields) fields.hidden = !activeShows.length;
+    if (submit) submit.disabled = !hudInventorySelectedShowId;
+  }
+
+  function renderHudInventory() {
+    const list = $("[data-hud-inventory-list]");
+    if (!list) return;
+    const items = hudInventoryItems();
+    const pageCount = Math.max(1, Math.ceil(items.length / HUD_INVENTORY_PAGE_SIZE));
+    hudInventoryPage = Math.max(1, Math.min(pageCount, hudInventoryPage));
+    const pageStart = (hudInventoryPage - 1) * HUD_INVENTORY_PAGE_SIZE;
+    const pageItems = items.slice(pageStart, pageStart + HUD_INVENTORY_PAGE_SIZE);
+    list.innerHTML = pageItems.length ? pageItems.map(item => {
+      const placement = hudInventoryPlacement(item);
+      const linked = ["scheduled", "live"].includes(String(item.linkedLotStatus || "").toLowerCase());
+      const assignable = Number(item.quantity || 0) > 0 && item.status !== "sold_out" && !linked;
+      const image = item.imageUrl
+        ? `<img src="${escapeHtml(item.imageUrl)}" alt="" loading="lazy" decoding="async">`
+        : `<span class="seller-hud-inventory-image-placeholder" aria-hidden="true">CP</span>`;
+      return `<article class="seller-hud-inventory-row">
+        <div class="seller-hud-inventory-image">${image}</div>
+        <div class="seller-hud-inventory-product">
+          <strong>${escapeHtml(item.title || "Inventory product")}</strong>
+          <span>${escapeHtml(item.productCategoryLabel || categoryLabel(item.productCategoryKey))} &middot; ${escapeHtml(item.condition || "Condition pending")} &middot; ${escapeHtml(String(item.saleType || "sealed").replace(/_/g, " "))}</span>
+        </div>
+        <span class="seller-hud-inventory-location is-${placement.state}">${escapeHtml(placement.label)}</span>
+        <div class="seller-hud-inventory-numbers"><strong>${dollars(item.priceCents)}</strong><span>${Number(item.quantity || 0)} available</span></div>
+        <button class="seller-hud-add-show-bubble" type="button" data-hud-add-to-show="${escapeHtml(item.id)}" ${assignable ? "" : "disabled"}>${linked ? "Already queued" : "ADD TO SHOW"}</button>
+      </article>`;
+    }).join("") : `<div class="stream-empty">${sellerStoreListings.length ? "No inventory matches this search." : "No products yet. Use Add new product to build inventory."}</div>`;
+    const range = $("[data-hud-inventory-range]");
+    const first = items.length ? pageStart + 1 : 0;
+    const last = Math.min(pageStart + pageItems.length, items.length);
+    if (range) range.textContent = `${first}-${last} of ${items.length} listings`;
+    const pageLabel = $("[data-hud-inventory-page-label]");
+    if (pageLabel) pageLabel.textContent = `Page ${hudInventoryPage} of ${pageCount}`;
+    const previous = $("[data-hud-inventory-page='previous']");
+    const next = $("[data-hud-inventory-page='next']");
+    if (previous) previous.disabled = hudInventoryPage <= 1;
+    if (next) next.disabled = hudInventoryPage >= pageCount;
+    renderHudInventoryAssignment();
   }
 
   async function loadSellerLots(showId, { notify = true } = {}) {
@@ -1179,6 +1303,7 @@
     const grid = $("[data-seller-category-options]");
     const inventorySelect = $("[data-seller-inventory-category-select]");
     const storeSelect = $("[data-seller-store-category-select]");
+    const hudInventorySelect = $("[data-hud-inventory-category-select]");
     const weightCategory = $("[data-weight-profile-category]");
     const categories = sellerProductCategories.length ? sellerProductCategories : [{ key: "tcg", label: "TCG / Playing Cards", enabled: true }];
     if (grid) {
@@ -1192,6 +1317,7 @@
     const optionMarkup = categories.map(category => `<option value="${escapeHtml(category.key)}">${escapeHtml(category.label)}</option>`).join("");
     if (inventorySelect) inventorySelect.innerHTML = optionMarkup;
     if (storeSelect) storeSelect.innerHTML = optionMarkup;
+    if (hudInventorySelect) hudInventorySelect.innerHTML = optionMarkup;
     if (weightCategory) weightCategory.innerHTML = `<option value="">Any category</option>${optionMarkup}`;
   }
 
@@ -1787,6 +1913,71 @@
     hudCreateShowTrigger = null;
   }
 
+  function setHudInventoryNewFormOpen(open, { reset = false } = {}) {
+    const form = $("[data-hud-inventory-new-form]");
+    const toggle = $("[data-hud-inventory-new-toggle]");
+    if (!form) return;
+    form.hidden = !open;
+    toggle?.setAttribute("aria-expanded", String(open));
+    if (reset) form.reset();
+    if (open) window.setTimeout(() => form.elements.title?.focus(), 0);
+  }
+
+  function openHudInventoryModal(trigger, { showNewProduct = false } = {}) {
+    const modal = $("[data-hud-inventory-modal]");
+    if (!modal) return;
+    hudInventoryTrigger = trigger || null;
+    hudInventoryPage = 1;
+    setStatus("[data-hud-inventory-status]", "");
+    modal.hidden = false;
+    modal.setAttribute("aria-hidden", "false");
+    setHudInventoryNewFormOpen(showNewProduct);
+    renderHudInventory();
+    window.setTimeout(() => {
+      if (showNewProduct) $("[data-hud-inventory-new-form] [name='title']")?.focus();
+      else $("[data-hud-inventory-search]")?.focus();
+    }, 0);
+  }
+
+  function closeHudInventoryModal({ restoreFocus = true } = {}) {
+    const modal = $("[data-hud-inventory-modal]");
+    if (!modal) return;
+    modal.hidden = true;
+    modal.setAttribute("aria-hidden", "true");
+    closeHudInventoryAssignment({ restoreFocus: false });
+    setHudInventoryNewFormOpen(false, { reset: true });
+    if (restoreFocus && hudInventoryTrigger?.isConnected) hudInventoryTrigger.focus();
+    hudInventoryTrigger = null;
+  }
+
+  function openHudInventoryAssignment(listingId, trigger) {
+    const panel = $("[data-hud-inventory-assignment]");
+    const form = $("[data-hud-inventory-assignment-form]");
+    const item = sellerStoreListings.find(listing => listing.id === listingId);
+    if (!panel || !form || !item) return;
+    hudInventoryAssignmentTrigger = trigger || null;
+    hudInventorySelectedListingId = item.id;
+    hudInventorySelectedShowId = $("[data-broadcast-show-select]")?.value || "";
+    form.reset();
+    panel.hidden = false;
+    renderHudInventoryAssignment();
+    window.setTimeout(() => {
+      panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      const selectedShow = panel.querySelector("[data-hud-inventory-show].is-selected");
+      if (selectedShow) selectedShow.focus();
+      else $("[data-hud-inventory-create-show]")?.focus();
+    }, 0);
+  }
+
+  function closeHudInventoryAssignment({ restoreFocus = true } = {}) {
+    const panel = $("[data-hud-inventory-assignment]");
+    if (panel) panel.hidden = true;
+    if (restoreFocus && hudInventoryAssignmentTrigger?.isConnected) hudInventoryAssignmentTrigger.focus();
+    hudInventoryAssignmentTrigger = null;
+    hudInventorySelectedListingId = "";
+    hudInventorySelectedShowId = "";
+  }
+
   bindShowThumbnailInput("[data-seller-show-thumbnail]", "[data-seller-show-status]");
   bindShowThumbnailInput("[data-hud-show-thumbnail]", "[data-hud-seller-show-status]");
 
@@ -1821,7 +2012,14 @@
       const created = await createSellerShowFromForm(form, "[data-hud-seller-show-status]");
       closeHudCreateShowModal({ restoreFocus: false });
       setStatus("[data-broadcast-auction-status]", "Show created and selected. Add inventory or start the broadcast when ready.", "success");
-      $("[data-broadcast-show-select]")?.focus();
+      if (!$("[data-hud-inventory-assignment]")?.hidden) {
+        hudInventorySelectedShowId = created.id;
+        renderHudInventoryAssignment();
+        setStatus("[data-hud-inventory-status]", "Show created. Select its auction settings and add this item.", "success");
+        window.setTimeout(() => $(`[data-hud-inventory-show="${created.id}"]`)?.focus(), 0);
+      } else {
+        $("[data-broadcast-show-select]")?.focus();
+      }
       const publicLink = $("[data-seller-show-public-link]");
       if (publicLink) {
         publicLink.href = created.liveShowsUrl || `live-shows.html?tab=upcoming#show-${encodeURIComponent(created.id)}`;
@@ -1829,6 +2027,118 @@
       }
     } catch (error) {
       setStatus("[data-hud-seller-show-status]", error.message, "error");
+    } finally {
+      if (button) button.disabled = false;
+    }
+  });
+
+  $$('[data-hud-inventory-open]').forEach(button => button.addEventListener("click", event => {
+    const trigger = event.currentTarget;
+    openHudInventoryModal(trigger, { showNewProduct: trigger.hasAttribute("data-hud-inventory-new-on-open") });
+    loadSellerStoreListings().catch(error => setStatus("[data-hud-inventory-status]", error.message, "error"));
+  }));
+  $$('[data-hud-inventory-close]').forEach(button => button.addEventListener("click", () => closeHudInventoryModal()));
+  $("[data-hud-inventory-new-toggle]")?.addEventListener("click", () => {
+    const form = $("[data-hud-inventory-new-form]");
+    setHudInventoryNewFormOpen(Boolean(form?.hidden));
+  });
+  $$('[data-hud-inventory-new-cancel]').forEach(button => button.addEventListener("click", () => setHudInventoryNewFormOpen(false, { reset: true })));
+  $("[data-hud-inventory-search]")?.addEventListener("input", () => {
+    hudInventoryPage = 1;
+    renderHudInventory();
+  });
+  $("[data-hud-inventory-sort]")?.addEventListener("change", () => {
+    hudInventoryPage = 1;
+    renderHudInventory();
+  });
+  $$('[data-hud-inventory-page]').forEach(button => button.addEventListener("click", event => {
+    hudInventoryPage += event.currentTarget.dataset.hudInventoryPage === "next" ? 1 : -1;
+    renderHudInventory();
+    $("[data-hud-inventory-list]")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }));
+  $("[data-hud-inventory-list]")?.addEventListener("click", event => {
+    const button = event.target.closest("[data-hud-add-to-show]");
+    if (!button || button.disabled) return;
+    openHudInventoryAssignment(button.dataset.hudAddToShow, button);
+  });
+  $("[data-hud-inventory-show-options]")?.addEventListener("click", event => {
+    const button = event.target.closest("[data-hud-inventory-show]");
+    if (!button) return;
+    hudInventorySelectedShowId = button.dataset.hudInventoryShow || "";
+    renderHudInventoryAssignment();
+  });
+  $$('[data-hud-inventory-assignment-close]').forEach(button => button.addEventListener("click", () => closeHudInventoryAssignment()));
+  $("[data-hud-inventory-create-show]")?.addEventListener("click", event => openHudCreateShowModal(event.currentTarget));
+
+  $("[data-hud-inventory-new-form]")?.addEventListener("submit", async event => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const button = event.submitter || form.querySelector('[type="submit"]');
+    if (button) button.disabled = true;
+    try {
+      await api("/seller/store-listings", {
+        method: "POST",
+        body: JSON.stringify({
+          title: data.get("title"),
+          productCategoryKey: data.get("productCategoryKey"),
+          condition: data.get("condition"),
+          saleType: data.get("saleType"),
+          quantity: Number(data.get("quantity")),
+          price: Number(data.get("price")),
+          shippingPayer: data.get("shippingPayer"),
+          fixedShipping: Number(data.get("fixedShipping") || 0),
+          imageUrl: data.get("imageUrl"),
+          description: data.get("description"),
+          status: "inactive"
+        })
+      });
+      form.reset();
+      setHudInventoryNewFormOpen(false);
+      const search = $("[data-hud-inventory-search]");
+      const sort = $("[data-hud-inventory-sort]");
+      if (search) search.value = "";
+      if (sort) sort.value = "newest";
+      hudInventoryPage = 1;
+      await loadSellerStoreListings();
+      setStatus("[data-hud-inventory-status]", "Product saved to private inventory. Use ADD TO SHOW on its row when ready.", "success");
+    } catch (error) {
+      setStatus("[data-hud-inventory-status]", error.message, "error");
+    } finally {
+      if (button) button.disabled = false;
+    }
+  });
+
+  $("[data-hud-inventory-assignment-form]")?.addEventListener("submit", async event => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const listingId = hudInventorySelectedListingId;
+    const showId = hudInventorySelectedShowId;
+    if (!listingId) { setStatus("[data-hud-inventory-status]", "Choose an inventory item first.", "error"); return; }
+    if (!showId) { setStatus("[data-hud-inventory-status]", "Create or choose an active show first.", "error"); return; }
+    const button = event.submitter || $("[data-hud-inventory-assign-submit]");
+    if (button) button.disabled = true;
+    try {
+      const result = await api(`/seller/shows/${encodeURIComponent(showId)}/lots`, {
+        method: "POST",
+        body: JSON.stringify({
+          storeListingId: listingId,
+          startingBid: Number(data.get("startingBid")),
+          bidIncrement: Number(data.get("bidIncrement")),
+          auctionDurationSeconds: Number(data.get("auctionDurationSeconds")),
+          lotCount: Number(data.get("lotCount")),
+          numberStart: Number(data.get("numberStart"))
+        })
+      });
+      closeHudInventoryAssignment({ restoreFocus: false });
+      await loadSellerStoreListings();
+      await selectSellerShow(showId);
+      setStatus("[data-hud-inventory-status]", Number(result.count || 1) > 1
+        ? `${Number(result.count)} numbered auctions added to the selected show.`
+        : "Inventory added to the selected show.", "success");
+    } catch (error) {
+      setStatus("[data-hud-inventory-status]", error.message, "error");
     } finally {
       if (button) button.disabled = false;
     }
@@ -2119,6 +2429,18 @@
     if (event.key !== "Escape") return;
     if (!$("[data-hud-create-show-modal]")?.hidden) {
       closeHudCreateShowModal({ reset: true });
+      return;
+    }
+    if (!$("[data-hud-inventory-modal]")?.hidden) {
+      if (!$("[data-hud-inventory-assignment]")?.hidden) {
+        closeHudInventoryAssignment();
+        return;
+      }
+      if (!$("[data-hud-inventory-new-form]")?.hidden) {
+        setHudInventoryNewFormOpen(false, { reset: true });
+        return;
+      }
+      closeHudInventoryModal();
       return;
     }
     if (!$("[data-close-show-modal]")?.hidden) closeCloseShowModal();
