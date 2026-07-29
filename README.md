@@ -6,7 +6,7 @@ Repository: `FaytSystems/crackpacks`
 
 ## Architecture
 
-- GitHub Pages serves the storefront.
+- Cloudflare Pages serves the storefront from the GitHub `main` branch.
 - The browser calls `https://api.crackpacks.com/cards`.
 - A Cloudflare Worker receives the search request.
 - The Worker reads the encrypted Cloudflare secret named `POKEMON_TCG_API_KEY` for Pokémon searches.
@@ -27,7 +27,7 @@ Repository: `FaytSystems/crackpacks`
 - `cloudflare-worker/wrangler.jsonc` — Worker configuration and allowed public origins
 - `cloudflare-worker/package.json` — Worker development commands
 - `cloudflare-worker/deploy-worker.ps1` — PowerShell deployment helper
-- `.github/workflows/pages.yml` — GitHub Pages deployment
+- Cloudflare Pages Git integration — automatic storefront deployment after each push to `main`
 - `deploy-to-github.ps1` — site repository deployment helper
 
 ## Cloudflare secret
