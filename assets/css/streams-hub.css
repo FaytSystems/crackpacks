@@ -973,6 +973,39 @@ body[data-seller-tool="show-control"] .seller-tool-menu.is-open .seller-tool-men
   color: #fff;
 }
 
+.seller-video-command-deck {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.seller-video-command-deck .seller-video-auction-summary {
+  margin-top: 0;
+}
+
+.seller-video-command-deck .seller-auto-next-panel {
+  grid-template-columns: minmax(140px, 0.75fr) auto;
+}
+
+.seller-video-command-deck .seller-auto-next-panel p {
+  grid-column: 1 / -1;
+}
+
+.seller-video-command-deck .seller-auction-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.seller-video-command-deck .seller-control-bubble {
+  width: 100%;
+  min-width: 0;
+}
+
+.seller-video-command-deck .seller-auction-control-status {
+  margin: 0;
+}
+
 .seller-auction-console {
   grid-area: auction;
   display: grid;
@@ -983,8 +1016,6 @@ body[data-seller-tool="show-control"] .seller-tool-menu.is-open .seller-tool-men
 @media (min-width: 1101px) {
   .seller-auction-console .seller-auction-console-head,
   .seller-auction-console .seller-auction-console-grid,
-  .seller-auction-console .seller-auto-next-panel,
-  .seller-auction-console .seller-auction-controls,
   .seller-auction-console .seller-live-quick-actions {
     display: grid;
     grid-template-columns: 1fr;
@@ -3272,6 +3303,15 @@ body[data-seller-tool="show-control"] .seller-tool-menu.is-open .seller-tool-men
   .seller-auto-next-readout {
     justify-items: start;
     text-align: left;
+  }
+
+  .seller-video-command-deck .seller-auto-next-panel,
+  .seller-video-command-deck .seller-auction-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .seller-video-command-deck .seller-auto-next-panel p {
+    grid-column: 1;
   }
 
   .seller-auction-current {

@@ -30,8 +30,15 @@ test("Seller Hub exposes the connected Seller Live cockpit controls", async () =
   assert.match(html, /data-seller-video-auction-hud/);
   assert.match(html, /data-seller-video-auction-title/);
   assert.match(html, /data-seller-video-auction-bid/);
-  assert.match(html, /data-seller-bid-preview/);
-  assert.match(html, /data-seller-custom-bid-preview/);
+  assert.match(html, /seller-video-command-deck/);
+  assert.doesNotMatch(html, /data-seller-bid-preview/);
+  assert.doesNotMatch(html, /data-seller-custom-bid-preview/);
+  const playerIndex = html.indexOf("seller-broadcast-player-shell");
+  const commandDeckIndex = html.indexOf("seller-video-command-deck");
+  const nextAuctionIndex = html.indexOf("data-auction-next");
+  assert.ok(playerIndex >= 0);
+  assert.ok(commandDeckIndex > playerIndex);
+  assert.ok(nextAuctionIndex > commandDeckIndex);
 });
 
 test("Seller Live long-press and queue-selection behavior is wired", async () => {
@@ -152,11 +159,13 @@ test("desktop live rooms order auction, video, and shared chat", async () => {
   assert.match(chatScript, /setInterval\(refresh/);
 });
 
-test("video auction HUD exposes live buyer bids and a locked seller preview", async () => {
-  const [liveHtml, liveScript, sellerScript, hudCss, routes] = await Promise.all([
+test("video auction HUD keeps buyer bidding public and seller commands below video", async () => {
+  const [liveHtml, sellerHtml, liveScript, sellerScript, sellerCss, hudCss, routes] = await Promise.all([
     read("live.html"),
+    read("streams.html"),
     read("assets/js/live.js"),
     read("assets/js/streams-hub.js"),
+    read("assets/css/streams-hub.css"),
     read("assets/css/video-auction-hud.css"),
     read("rewards-worker/src/platform-routes.js")
   ]);
@@ -168,7 +177,10 @@ test("video auction HUD exposes live buyer bids and a locked seller preview", as
   assert.match(liveScript, /videoQuickBid\.addEventListener\("click"/);
   assert.match(liveScript, /placeBid\(\{ bidAmount \}\)/);
   assert.match(sellerScript, /renderSellerVideoAuctionHud/);
-  assert.match(sellerScript, /quickBid\.textContent = `BID \$\{dollars\(minimumCents\)\}`/);
+  assert.doesNotMatch(sellerHtml, /data-seller-bid-preview|data-seller-custom-bid-preview/);
+  assert.match(sellerHtml, /seller-video-command-deck[\s\S]*data-auction-next[\s\S]*data-auto-next-stop[\s\S]*data-broadcast-queue-refresh[\s\S]*data-broadcast-end-show/);
+  assert.doesNotMatch(sellerScript, /data-seller-bid-preview|data-seller-custom-bid-preview/);
+  assert.match(sellerCss, /\.seller-video-command-deck \.seller-auction-controls/);
   assert.match(hudCss, /\.video-auction-hud\[data-state="live"\]/);
   assert.match(hudCss, /@media \(max-width: 520px\)/);
   assert.match(routes, /Sellers cannot bid on their own auction\./);

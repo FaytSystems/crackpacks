@@ -9,7 +9,7 @@
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/css/styles.css?v=1.11.2">
   <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.7.0">
-  <link rel="stylesheet" href="assets/css/streams-hub.css?v=2.5.1">
+  <link rel="stylesheet" href="assets/css/streams-hub.css?v=2.5.2">
   <link rel="stylesheet" href="assets/css/live-chat.css?v=1.0.0">
   <link rel="stylesheet" href="assets/css/video-auction-hud.css?v=1.0.0">
 </head>
@@ -195,40 +195,6 @@
               </div>
             </section>
           </div>
-          <div class="seller-auto-next-panel" data-auto-next-panel data-state="manual">
-            <label>Auction timer
-              <select data-auto-next-duration>
-                <option value="15">15 seconds</option>
-                <option value="30" selected>30 seconds</option>
-                <option value="45">45 seconds</option>
-                <option value="60">60 seconds</option>
-                <option value="90">90 seconds</option>
-                <option value="120">2 minutes</option>
-              </select>
-            </label>
-            <div class="seller-auto-next-readout" aria-live="polite">
-              <span data-auto-next-mode>Manual queue</span>
-              <strong data-auto-next-countdown>--</strong>
-            </div>
-            <p data-auto-next-copy>Tap NEXT AUCTION once to advance. Hold it for 3 seconds to arm the timed queue.</p>
-          </div>
-          <div class="seller-auction-controls" aria-label="Live auction controls">
-            <button class="seller-control-bubble seller-control-bubble-primary seller-auction-next-button" type="button" data-auction-off data-auction-next disabled>
-              <span>NEXT AUCTION</span>
-              <small>Tap once &bull; Hold 3 sec for AUTO-NEXT</small>
-            </button>
-            <button class="seller-control-bubble seller-control-bubble-danger" type="button" data-auto-next-stop disabled>
-              <span>STOP AUTO-NEXT</span>
-              <small>Return to manual queue control</small>
-            </button>
-            <button class="seller-control-bubble" type="button" data-broadcast-queue-refresh>
-              <span>Refresh queue</span>
-            </button>
-            <button class="seller-control-bubble seller-control-bubble-danger" type="button" data-broadcast-end-show disabled>
-              <span>End show</span>
-            </button>
-          </div>
-          <div class="campaign-form-status seller-auction-control-status" data-broadcast-auction-status aria-live="polite"></div>
           <section class="seller-purchase-recap" aria-labelledby="seller-purchase-recap-title">
             <header>
               <div>
@@ -257,25 +223,56 @@
             </div>
             <iframe data-seller-broadcast-player title="Seller live broadcast monitor" allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture" allowfullscreen hidden></iframe>
           </div>
-          <section class="video-auction-hud" data-seller-video-auction-hud data-state="waiting" aria-label="Auction attached to the seller video monitor">
-            <div class="video-auction-hud-image">
-              <img data-seller-video-auction-image alt="" width="54" height="54" hidden>
-              <span data-seller-video-auction-image-placeholder>No item</span>
+          <section class="seller-video-command-deck" aria-label="Seller auction command deck">
+            <section class="video-auction-hud seller-video-auction-summary" data-seller-video-auction-hud data-state="waiting" aria-label="Auction attached to the seller video monitor">
+              <div class="video-auction-hud-image">
+                <img data-seller-video-auction-image alt="" width="54" height="54" hidden>
+                <span data-seller-video-auction-image-placeholder>No item</span>
+              </div>
+              <div class="video-auction-hud-copy">
+                <span>Now selling</span>
+                <strong data-seller-video-auction-title>Waiting for the next item</strong>
+                <small data-seller-video-auction-detail>No live auction yet.</small>
+              </div>
+              <div class="video-auction-hud-bid">
+                <span>Current bid</span>
+                <strong data-seller-video-auction-bid>$0.00</strong>
+              </div>
+            </section>
+            <div class="seller-auto-next-panel" data-auto-next-panel data-state="manual">
+              <label>Auction timer
+                <select data-auto-next-duration>
+                  <option value="15">15 seconds</option>
+                  <option value="30" selected>30 seconds</option>
+                  <option value="45">45 seconds</option>
+                  <option value="60">60 seconds</option>
+                  <option value="90">90 seconds</option>
+                  <option value="120">2 minutes</option>
+                </select>
+              </label>
+              <div class="seller-auto-next-readout" aria-live="polite">
+                <span data-auto-next-mode>Manual queue</span>
+                <strong data-auto-next-countdown>--</strong>
+              </div>
+              <p data-auto-next-copy>Tap NEXT AUCTION once to advance. Hold it for 3 seconds to arm the timed queue.</p>
             </div>
-            <div class="video-auction-hud-copy">
-              <span>Now selling</span>
-              <strong data-seller-video-auction-title>Waiting for the next item</strong>
-              <small data-seller-video-auction-detail>No live auction yet.</small>
+            <div class="seller-auction-controls" aria-label="Live auction controls">
+              <button class="seller-control-bubble seller-control-bubble-primary seller-auction-next-button" type="button" data-auction-off data-auction-next disabled>
+                <span>NEXT AUCTION</span>
+                <small>Tap once &bull; Hold 3 sec for AUTO-NEXT</small>
+              </button>
+              <button class="seller-control-bubble seller-control-bubble-danger" type="button" data-auto-next-stop disabled>
+                <span>STOP AUTO-NEXT</span>
+                <small>Return to manual queue control</small>
+              </button>
+              <button class="seller-control-bubble" type="button" data-broadcast-queue-refresh>
+                <span>Refresh queue</span>
+              </button>
+              <button class="seller-control-bubble seller-control-bubble-danger" type="button" data-broadcast-end-show disabled>
+                <span>End show</span>
+              </button>
             </div>
-            <div class="video-auction-hud-bid">
-              <span>Current bid</span>
-              <strong data-seller-video-auction-bid>$0.00</strong>
-            </div>
-            <div class="video-auction-hud-actions" aria-label="Buyer bidding controls preview">
-              <button class="video-auction-hud-button is-bid" data-seller-bid-preview type="button" disabled>BID</button>
-              <button class="video-auction-hud-button" data-seller-custom-bid-preview type="button" disabled>CUSTOM BID</button>
-            </div>
-            <p class="video-auction-hud-status" data-seller-video-auction-status>Buyer controls preview. Sellers cannot bid on their own auction.</p>
+            <div class="campaign-form-status seller-auction-control-status" data-broadcast-auction-status aria-live="polite"></div>
           </section>
           <p class="fine-print">This monitor follows your permanent Cloudflare Live Input. When OBS is disconnected, Cloudflare displays that the stream has not started.</p>
         </article>
@@ -858,6 +855,6 @@
   <script src="assets/js/app.js?v=2.0.1"></script>
   <script src="assets/js/portal-mode.js?v=1.2.5"></script>
   <script src="assets/js/live-chat.js?v=1.0.0"></script>
-  <script src="assets/js/streams-hub.js?v=2.5.2"></script>
+  <script src="assets/js/streams-hub.js?v=2.5.3"></script>
 </body>
 </html>
