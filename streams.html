@@ -9,7 +9,7 @@
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/css/styles.css?v=1.11.1">
   <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.7.0">
-  <link rel="stylesheet" href="assets/css/streams-hub.css?v=2.4.1">
+  <link rel="stylesheet" href="assets/css/streams-hub.css?v=2.4.2">
   <link rel="stylesheet" href="assets/css/live-chat.css?v=1.0.0">
   <link rel="stylesheet" href="assets/css/video-auction-hud.css?v=1.0.0">
 </head>
@@ -153,11 +153,16 @@
               <p class="eyebrow">Seller Live</p>
               <h3>Auction block</h3>
             </div>
-            <label class="seller-broadcast-show-picker">Broadcast show
-              <select data-broadcast-show-select>
-                <option value="">Create a show first</option>
+            <div class="seller-broadcast-show-picker" data-broadcast-show-picker>
+              <label for="seller-broadcast-show-select">Broadcast show</label>
+              <select id="seller-broadcast-show-select" data-broadcast-show-select hidden>
+                <option value="">Choose a show</option>
               </select>
-            </label>
+              <button class="seller-create-show-bubble" type="button" data-hud-create-show-open>
+                <strong data-hud-create-show-label>Create a show</strong>
+                <span data-hud-create-show-copy>Build it here, then start broadcasting</span>
+              </button>
+            </div>
           </header>
           <div class="seller-live-quick-actions" aria-label="Seller Live inventory actions">
             <button class="seller-live-action-bubble" type="button" data-seller-tool-button="show-inventory">
@@ -659,6 +664,36 @@
       </div>
     </section>
 
+    <div class="seller-create-show-modal" data-hud-create-show-modal hidden aria-hidden="true">
+      <button class="seller-create-show-backdrop" type="button" data-hud-create-show-close aria-label="Close Create Show"></button>
+      <section class="seller-create-show-dialog" role="dialog" aria-modal="true" aria-labelledby="hud-create-show-title">
+        <header class="seller-create-show-dialog-head">
+          <div>
+            <p class="eyebrow">Seller Live</p>
+            <h2 id="hud-create-show-title">Create a show</h2>
+          </div>
+          <button class="seller-create-show-close" type="button" data-hud-create-show-close aria-label="Close Create Show" title="Close">&times;</button>
+        </header>
+        <form class="seller-giveaway-form seller-hud-show-form" data-hud-seller-show-form>
+          <label>Show title<input name="title" required maxlength="160" autocomplete="off" placeholder="Friday Night Crack Packs"></label>
+          <label>Scheduled time<input name="scheduledAt" type="datetime-local"></label>
+          <label>Show thumbnail
+            <input name="thumbnailFile" type="file" accept=".png,.jpg,.jpeg,image/png,image/jpeg" data-hud-show-thumbnail>
+            <span class="show-thumbnail-help">PNG, JPG, or JPEG. Maximum 5 MB.</span>
+          </label>
+          <figure class="show-thumbnail-preview" data-show-thumbnail-preview hidden>
+            <img data-show-thumbnail-image src="" alt="Selected show thumbnail preview">
+            <figcaption data-show-thumbnail-name></figcaption>
+          </figure>
+          <div class="seller-create-show-actions">
+            <button class="btn btn-outline" type="button" data-hud-create-show-close>Cancel</button>
+            <button class="btn btn-primary" type="submit">Create and select show</button>
+          </div>
+          <div class="campaign-form-status" data-hud-seller-show-status aria-live="polite"></div>
+        </form>
+      </section>
+    </div>
+
     <div class="seller-close-show-modal" data-close-show-modal hidden aria-hidden="true">
       <button class="seller-close-show-backdrop" type="button" data-close-show-cancel aria-label="Cancel closing the stream"></button>
       <section class="seller-close-show-dialog" role="dialog" aria-modal="true" aria-labelledby="close-show-title" aria-describedby="close-show-copy">
@@ -685,6 +720,6 @@
   <script src="assets/js/app.js?v=2.0.0"></script>
   <script src="assets/js/portal-mode.js?v=1.2.5"></script>
   <script src="assets/js/live-chat.js?v=1.0.0"></script>
-  <script src="assets/js/streams-hub.js?v=2.4.2"></script>
+  <script src="assets/js/streams-hub.js?v=2.4.3"></script>
 </body>
 </html>

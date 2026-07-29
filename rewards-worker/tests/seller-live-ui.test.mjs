@@ -46,6 +46,25 @@ test("Seller Live long-press and queue-selection behavior is wired", async () =>
   assert.match(script, /nextLotId/);
 });
 
+test("Seller Live creates and selects a show without leaving the HUD", async () => {
+  const [html, script, css] = await Promise.all([
+    read("streams.html"),
+    read("assets/js/streams-hub.js"),
+    read("assets/css/streams-hub.css")
+  ]);
+  assert.match(html, /data-broadcast-show-picker/);
+  assert.match(html, /data-hud-create-show-open/);
+  assert.match(html, /data-hud-create-show-modal/);
+  assert.match(html, /data-hud-seller-show-form/);
+  assert.match(html, />Create and select show</);
+  assert.match(script, /broadcastSelect\.hidden = !active\.length/);
+  assert.match(script, /createSellerShowFromForm/);
+  assert.match(script, /await selectSellerShow\(created\.id\)/);
+  assert.match(script, /Show created and selected/);
+  assert.match(css, /\.seller-create-show-bubble/);
+  assert.match(css, /\.seller-create-show-modal/);
+});
+
 test("Seller Live alone collapses the Seller Hub subheader into a dropdown", async () => {
   const [html, script, css] = await Promise.all([
     read("streams.html"),

@@ -25,6 +25,7 @@
   let showsLoadPromise = null;
   let pendingCloseShowId = "";
   let closeShowTrigger = null;
+  let hudCreateShowTrigger = null;
   let auctionAdvancePending = false;
   let autoNextActive = false;
   let autoNextShowId = "";
@@ -272,27 +273,32 @@
   const streamKeyCreatorState = { mode: "create", generated: false };
   const showThumbnailTypes = new Set(["image/png", "image/jpeg", "image/jpg", "image/pjpeg"]);
   const showThumbnailMaxBytes = 5 * 1024 * 1024;
-  let showThumbnailPreviewUrl = "";
-  function clearShowThumbnailPreview() {
-    if (showThumbnailPreviewUrl) URL.revokeObjectURL(showThumbnailPreviewUrl);
-    showThumbnailPreviewUrl = "";
-    const preview = $("[data-seller-show-thumbnail-preview]");
-    const image = $("[data-seller-show-thumbnail-image]");
-    const name = $("[data-seller-show-thumbnail-name]");
+  const showThumbnailPreviewUrls = new WeakMap();
+  function showThumbnailPreviewNodes(form) {
+    return {
+      preview: form?.querySelector("[data-show-thumbnail-preview], [data-seller-show-thumbnail-preview]"),
+      image: form?.querySelector("[data-show-thumbnail-image], [data-seller-show-thumbnail-image]"),
+      name: form?.querySelector("[data-show-thumbnail-name], [data-seller-show-thumbnail-name]")
+    };
+  }
+  function clearShowThumbnailPreview(form) {
+    const previewUrl = form ? showThumbnailPreviewUrls.get(form) : "";
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    if (form) showThumbnailPreviewUrls.delete(form);
+    const { preview, image, name } = showThumbnailPreviewNodes(form);
     if (preview) preview.hidden = true;
     if (image) image.removeAttribute("src");
     if (name) name.textContent = "";
   }
-  function previewShowThumbnail(file) {
-    clearShowThumbnailPreview();
+  function previewShowThumbnail(form, file) {
+    clearShowThumbnailPreview(form);
     if (!file || !file.size) return;
     if (!showThumbnailTypes.has(String(file.type || "").toLowerCase())) throw new Error("Choose a PNG, JPG, or JPEG show thumbnail.");
     if (file.size > showThumbnailMaxBytes) throw new Error("Show thumbnail must be 5 MB or smaller.");
-    const preview = $("[data-seller-show-thumbnail-preview]");
-    const image = $("[data-seller-show-thumbnail-image]");
-    const name = $("[data-seller-show-thumbnail-name]");
-    showThumbnailPreviewUrl = URL.createObjectURL(file);
-    if (image) image.src = showThumbnailPreviewUrl;
+    const { preview, image, name } = showThumbnailPreviewNodes(form);
+    const previewUrl = URL.createObjectURL(file);
+    showThumbnailPreviewUrls.set(form, previewUrl);
+    if (image) image.src = previewUrl;
     if (name) name.textContent = `${file.name} - ${(file.size / 1024 / 1024).toFixed(2)} MB`;
     if (preview) preview.hidden = false;
   }
@@ -601,13 +607,24 @@
     if (!selectors.length) return;
     const current = selectors.map(select => select.value).find(Boolean) || "";
     const active = sellerShows.filter(show => ["open", "live"].includes(show.status));
-    const options = `<option value="">${active.length ? "Choose a show" : "Create a show first"}</option>${active.map(show => `<option value="${show.id}">${escapeHtml(show.title)} &middot; ${escapeHtml(show.status)}</option>`).join("")}`;
+    const options = `<option value="">Choose a show</option>${active.map(show => `<option value="${show.id}">${escapeHtml(show.title)} &middot; ${escapeHtml(show.status)}</option>`).join("")}`;
     const requestedId = active.some(show => show.id === requestedSellerShowId) ? requestedSellerShowId : "";
     const selectedId = active.some(show => show.id === current) ? current : (requestedId || active[0]?.id || "");
     selectors.forEach(select => {
       select.innerHTML = options;
       select.value = selectedId;
     });
+    const broadcastSelect = $("[data-broadcast-show-select]");
+    const picker = $("[data-broadcast-show-picker]");
+    const createLabel = $("[data-hud-create-show-label]");
+    const createCopy = $("[data-hud-create-show-copy]");
+    if (broadcastSelect) {
+      broadcastSelect.hidden = !active.length;
+      broadcastSelect.disabled = !active.length;
+    }
+    picker?.classList.toggle("has-active-shows", Boolean(active.length));
+    if (createLabel) createLabel.textContent = active.length ? "Create another show" : "Create a show";
+    if (createCopy) createCopy.textContent = active.length ? "Add a show without leaving Seller Live" : "Build it here, then start broadcasting";
     sellerLiveChat?.refresh({ force: true });
     updateSellerSocialComposer();
     renderShowStoreInventoryOptions();
@@ -1713,41 +1730,108 @@
     catch { field.select(); document.execCommand("copy"); setStatus("[data-stream-input-status]", "OBS value copied.", "success"); }
   }));
 
-  $("[data-seller-show-thumbnail]")?.addEventListener("change", event => {
-    const file = event.currentTarget.files?.[0] || null;
-    try {
-      previewShowThumbnail(file);
-      setStatus("[data-seller-show-status]", file ? "Thumbnail ready to upload with this show." : "", file ? "success" : "");
-    } catch (error) {
-      event.currentTarget.value = "";
-      clearShowThumbnailPreview();
-      setStatus("[data-seller-show-status]", error.message, "error");
+  function bindShowThumbnailInput(inputSelector, statusSelector) {
+    $(inputSelector)?.addEventListener("change", event => {
+      const form = event.currentTarget.closest("form");
+      const file = event.currentTarget.files?.[0] || null;
+      try {
+        previewShowThumbnail(form, file);
+        setStatus(statusSelector, file ? "Thumbnail ready to upload with this show." : "", file ? "success" : "");
+      } catch (error) {
+        event.currentTarget.value = "";
+        clearShowThumbnailPreview(form);
+        setStatus(statusSelector, error.message, "error");
+      }
+    });
+  }
+
+  async function createSellerShowFromForm(form, statusSelector) {
+    const data = new FormData(form);
+    const scheduledValue = String(data.get("scheduledAt") || "");
+    const thumbnailFile = data.get("thumbnailFile");
+    if (thumbnailFile?.size) {
+      if (!showThumbnailTypes.has(String(thumbnailFile.type || "").toLowerCase())) throw new Error("Choose a PNG, JPG, or JPEG show thumbnail.");
+      if (thumbnailFile.size > showThumbnailMaxBytes) throw new Error("Show thumbnail must be 5 MB or smaller.");
     }
-  });
+    data.set("scheduledAt", scheduledValue ? new Date(scheduledValue).toISOString() : "");
+    setStatus(statusSelector, thumbnailFile?.size ? "Uploading thumbnail and publishing show..." : "Publishing show...", "success");
+    const created = await api("/seller/shows", { method: "POST", body: data });
+    form.reset();
+    clearShowThumbnailPreview(form);
+    await Promise.all([loadSellerShows(), loadShows()]);
+    await selectSellerShow(created.id);
+    return created;
+  }
+
+  function openHudCreateShowModal(trigger) {
+    const modal = $("[data-hud-create-show-modal]");
+    if (!modal) return;
+    hudCreateShowTrigger = trigger || null;
+    setStatus("[data-hud-seller-show-status]", "");
+    modal.hidden = false;
+    modal.setAttribute("aria-hidden", "false");
+    window.setTimeout(() => $("[data-hud-seller-show-form] [name='title']")?.focus(), 0);
+  }
+
+  function closeHudCreateShowModal({ restoreFocus = true, reset = false } = {}) {
+    const modal = $("[data-hud-create-show-modal]");
+    const form = $("[data-hud-seller-show-form]");
+    if (!modal) return;
+    modal.hidden = true;
+    modal.setAttribute("aria-hidden", "true");
+    if (reset && form) {
+      form.reset();
+      clearShowThumbnailPreview(form);
+    }
+    if (restoreFocus && hudCreateShowTrigger?.isConnected) hudCreateShowTrigger.focus();
+    hudCreateShowTrigger = null;
+  }
+
+  bindShowThumbnailInput("[data-seller-show-thumbnail]", "[data-seller-show-status]");
+  bindShowThumbnailInput("[data-hud-show-thumbnail]", "[data-hud-seller-show-status]");
 
   $("[data-seller-show-form]")?.addEventListener("submit", async event => {
-    event.preventDefault(); const form = event.currentTarget; const data = new FormData(form); const button = event.submitter; button.disabled = true;
+    event.preventDefault();
+    const form = event.currentTarget;
+    const button = event.submitter || form.querySelector('[type="submit"]');
+    if (button) button.disabled = true;
     try {
-      const scheduledValue = String(data.get("scheduledAt") || "");
-      const thumbnailFile = data.get("thumbnailFile");
-      if (thumbnailFile?.size) {
-        if (!showThumbnailTypes.has(String(thumbnailFile.type || "").toLowerCase())) throw new Error("Choose a PNG, JPG, or JPEG show thumbnail.");
-        if (thumbnailFile.size > showThumbnailMaxBytes) throw new Error("Show thumbnail must be 5 MB or smaller.");
-      }
-      data.set("scheduledAt", scheduledValue ? new Date(scheduledValue).toISOString() : "");
-      setStatus("[data-seller-show-status]", thumbnailFile?.size ? "Uploading thumbnail and publishing show..." : "Publishing show...", "success");
-      const created = await api("/seller/shows", { method: "POST", body: data });
-      form.reset();
-      clearShowThumbnailPreview();
-      await Promise.all([loadSellerShows(), loadShows()]);
+      const created = await createSellerShowFromForm(form, "[data-seller-show-status]");
       const publicLink = $("[data-seller-show-public-link]");
       if (publicLink) {
         publicLink.href = created.liveShowsUrl || `live-shows.html?tab=upcoming#show-${encodeURIComponent(created.id)}`;
         publicLink.hidden = false;
       }
-      setStatus("[data-seller-show-status]", "Show saved and published to Live Shows.", "success");
-    } catch (error) { setStatus("[data-seller-show-status]", error.message, "error"); }
-    finally { button.disabled = false; }
+      setStatus("[data-seller-show-status]", "Show saved, published, and selected for broadcasting.", "success");
+    } catch (error) {
+      setStatus("[data-seller-show-status]", error.message, "error");
+    } finally {
+      if (button) button.disabled = false;
+    }
+  });
+
+  $("[data-hud-create-show-open]")?.addEventListener("click", event => openHudCreateShowModal(event.currentTarget));
+  $$('[data-hud-create-show-close]').forEach(button => button.addEventListener("click", () => closeHudCreateShowModal({ reset: true })));
+  $("[data-hud-seller-show-form]")?.addEventListener("submit", async event => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const button = event.submitter || form.querySelector('[type="submit"]');
+    if (button) button.disabled = true;
+    try {
+      const created = await createSellerShowFromForm(form, "[data-hud-seller-show-status]");
+      closeHudCreateShowModal({ restoreFocus: false });
+      setStatus("[data-broadcast-auction-status]", "Show created and selected. Add inventory or start the broadcast when ready.", "success");
+      $("[data-broadcast-show-select]")?.focus();
+      const publicLink = $("[data-seller-show-public-link]");
+      if (publicLink) {
+        publicLink.href = created.liveShowsUrl || `live-shows.html?tab=upcoming#show-${encodeURIComponent(created.id)}`;
+        publicLink.hidden = false;
+      }
+    } catch (error) {
+      setStatus("[data-hud-seller-show-status]", error.message, "error");
+    } finally {
+      if (button) button.disabled = false;
+    }
   });
 
   [$("[data-seller-show-select]"), $("[data-broadcast-show-select]")].filter(Boolean).forEach(select => {
@@ -2032,7 +2116,12 @@
     }
   });
   document.addEventListener("keydown", event => {
-    if (event.key === "Escape" && !$("[data-close-show-modal]")?.hidden) closeCloseShowModal();
+    if (event.key !== "Escape") return;
+    if (!$("[data-hud-create-show-modal]")?.hidden) {
+      closeHudCreateShowModal({ reset: true });
+      return;
+    }
+    if (!$("[data-close-show-modal]")?.hidden) closeCloseShowModal();
   });
 
   $("[data-seller-store-list]")?.addEventListener("click", async event => {
