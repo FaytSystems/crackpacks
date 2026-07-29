@@ -5,7 +5,7 @@ import { calculateChannelPricing, channelPricingErrors } from "./channel-pricing
 import { sanitizeEasyPostTracker, verifyEasyPostWebhook } from "./easypost-tracking.js";
 import { handlePlatformRoute, refreshStripeIdentityForMember, runAuctionSettlementCycle, runStreamCreditCycle, usernameKey } from "./platform-routes.js";
 
-const VERSION = "5.0.2";
+const VERSION = "5.1.0";
 const CAMPAIGN_REWARD_TYPES = new Set(["percent", "free_shipping", "pick_a_pack", "pack_draft", "free_single", "product"]);
 const MAX_CAMPAIGN_REDEMPTIONS = 500;
 const STORE_CURRENCIES = new Set(["USD", "CAD", "EUR", "GBP", "AUD", "NZD", "JPY", "CHF", "SEK", "NOK", "DKK", "PLN", "CZK", "HUF", "RON"]);
@@ -157,7 +157,7 @@ function passwordSchemaMissing(error) {
 function corsFor(request, env) {
   const origin = request.headers.get("Origin"); const allowed = String(env.ALLOWED_ORIGINS || "").split(",").map(x => x.trim());
   if (!origin) return { "Access-Control-Allow-Origin": "*" };
-  return allowed.includes(origin) ? { "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Admin-Token", "Access-Control-Allow-Methods": "GET, POST, OPTIONS", Vary: "Origin" } : null;
+  return allowed.includes(origin) ? { "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Admin-Token", "Access-Control-Allow-Methods": "GET, POST, PATCH, OPTIONS", Vary: "Origin" } : null;
 }
 async function body(request) { try { return await request.json(); } catch { throw new Error("INVALID_JSON"); } }
 async function sendEmail(env, to, subject, html, idempotencyKey = id(), fromAddress = "rewards@crackpacks.com") {
@@ -2193,6 +2193,34 @@ async function route(request, env, cors, ctx) {
     redemption.redeemed_at = redeemedAt;
     await audit(env, request, "campaign_redemption_redeemed", member.id, `${redemption.id}|member:${redemption.member_id}|code:${redemption.code}`);
     return response({ redemption: adminRedemptionView(redemption) }, 200, cors);
+  }
+  if (url.pathname === "/admin/referral-credits" && request.method === "GET") {
+    if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);
+    const rows = await env.DB.prepare(`
+      SELECT event.id,event.member_id,event.detail,event.created_at,
+             referrer.email referrer_email,referrer.buyer_username referrer_user_id,
+             referrer.live_username referrer_seller_id
+      FROM audit_events event
+      LEFT JOIN members referrer ON referrer.id=event.member_id
+      WHERE event.type='referral_credit_awarded'
+      ORDER BY event.created_at DESC
+      LIMIT 100
+    `).all();
+    return response({ credits: (rows.results || []).map(row => {
+      const [newMemberId = "", newMemberEmail = "", referralCode = "", reason = "qualified_signup"] = String(row.detail || "").split("|");
+      return {
+        id: row.id,
+        referrerId: row.member_id || "",
+        referrerEmail: row.referrer_email || "",
+        referrerUserId: row.referrer_user_id || "",
+        referrerSellerId: row.referrer_seller_id || "",
+        newMemberId,
+        newMemberEmail,
+        referralCode,
+        reason,
+        creditedAt: row.created_at
+      };
+    }) }, 200, cors);
   }
   if (url.pathname === "/admin/members" && request.method === "GET") {
     if (!await hasFreshAdminSession(request, member, env)) return response({ error: "Fresh owner passkey verification required." }, 403, cors);

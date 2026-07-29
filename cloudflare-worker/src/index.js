@@ -10,10 +10,11 @@ const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 48;
 const CACHE_SECONDS = 300;
 const EBAY_CACHE_SECONDS = 180;
-const WORKER_VERSION = "2.3.1";
+const WORKER_VERSION = "2.4.0";
 let ebayTokenCache = null;
 let ebayTokenRequest = null;
 const API_TCG_SERIES = new Map([
+  ["pokemon", "pokemon"],
   ["onepiece", "one-piece"],
   ["yugioh", "yugioh"],
   ["lorcana", "lorcana"],
@@ -24,6 +25,7 @@ const API_TCG_SERIES = new Map([
   ["unionarena", "union-arena"]
 ]);
 const API_TCG_LABELS = new Map([
+  ["pokemon", "Pokemon"],
   ["onepiece", "One Piece"],
   ["yugioh", "Yu-Gi-Oh!"],
   ["lorcana", "Disney Lorcana"],
@@ -236,8 +238,9 @@ async function handleCards(request, env, cors) {
   const series = validSeries(incomingUrl.searchParams.get("series"));
   const language = validLanguage(incomingUrl.searchParams.get("language"));
   if (series === "magic") return handleMagicCards(incomingUrl, cors, language);
-  if (API_TCG_SERIES.has(series)) return handleApiTcgCards(incomingUrl, env, cors, series, language);
+  if (series !== "pokemon" && API_TCG_SERIES.has(series)) return handleApiTcgCards(incomingUrl, env, cors, series, language);
   if (!env.POKEMON_TCG_API_KEY) {
+    if (env.APITCG_API_KEY) return handleApiTcgCards(incomingUrl, env, cors, "pokemon", language);
     return jsonResponse(
       { error: "Card search is not configured on the server." },
       503,
@@ -288,6 +291,7 @@ async function handleCards(request, env, cors) {
       }
     });
   } catch {
+    if (env.APITCG_API_KEY) return handleApiTcgCards(incomingUrl, env, cors, "pokemon", language);
     return jsonResponse(
       { error: "The card database could not be reached. Please try again shortly." },
       502,
@@ -304,6 +308,7 @@ async function handleCards(request, env, cors) {
   }
 
   if (!upstreamResponse.ok) {
+    if (env.APITCG_API_KEY) return handleApiTcgCards(incomingUrl, env, cors, "pokemon", language);
     return jsonResponse(
       {
         error: payload?.error?.message ||

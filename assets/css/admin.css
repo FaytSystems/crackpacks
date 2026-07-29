@@ -127,3 +127,42 @@
 .employee-admin-card,.employee-time-review-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;align-items:center;padding:18px;border:1px solid rgba(255,255,255,.13);border-radius:15px;background:linear-gradient(145deg,rgba(17,23,58,.92),rgba(7,9,27,.96))}
 .employee-admin-card h4,.employee-admin-card p,.employee-time-review-row h4,.employee-time-review-row p{margin:0}.employee-admin-card p,.employee-time-review-row p{margin-top:5px;color:var(--muted);font-size:.8rem}.employee-admin-metrics{display:flex;flex-wrap:wrap;gap:8px;margin-top:11px}.employee-admin-metrics span{padding:6px 9px;border-radius:8px;color:#e9eaff;background:rgba(255,255,255,.06);font-size:.72rem}.employee-admin-actions,.employee-time-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px}.employee-state-chip{display:inline-flex;padding:5px 8px;border-radius:8px;color:#06170e;background:var(--mint);font-size:.68rem;font-weight:950;text-transform:uppercase}.employee-state-chip.suspended,.employee-state-chip.rejected{color:#211707;background:var(--gold)}.employee-state-chip.terminated{color:#fff;background:#9b2946}.employee-state-chip.submitted{color:#061820;background:var(--cyan)}.employee-state-chip.paid{color:#070815;background:var(--electric)}
 @media(max-width:850px){.employee-admin-grid{grid-template-columns:1fr}.employee-admin-head{align-items:stretch;flex-direction:column}}@media(max-width:620px){.employee-account-actions,.employee-admin-card,.employee-time-review-row,.internal-email-row{grid-template-columns:1fr;align-items:stretch}.employee-account-actions{display:grid}.employee-generate-button,.employee-account-actions .btn{width:100%}.employee-admin-actions,.employee-time-actions{justify-content:flex-start}.employee-admin-actions .btn,.employee-time-actions .btn{flex:1}}
+
+/* Persistent Master command row below the account portal row. */
+.master-dashboard-nav {
+  position: sticky;
+  top: calc(var(--site-header-height) + var(--subnav-row-height));
+  z-index: 39;
+  display: flex;
+  grid-template-columns: none;
+  max-width: 1100px;
+  min-height: var(--subnav-row-height);
+  margin: 0 auto 26px;
+  padding: 8px;
+  gap: 8px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  border: 1px solid rgba(255,255,255,.13);
+  border-radius: 8px;
+  background: rgba(7,9,27,.97);
+  box-shadow: 0 14px 34px rgba(0,0,0,.32);
+  backdrop-filter: blur(18px) saturate(135%);
+}
+
+.master-dashboard-nav button {
+  flex: 0 0 148px;
+  min-height: 54px;
+  padding: 9px 11px;
+  border-radius: 7px;
+}
+
+.master-dashboard-nav button:hover,
+.master-dashboard-nav button:focus-visible,
+.master-dashboard-nav button.is-active {
+  transform: none;
+}
+
+.master-dashboard-nav small {
+  display: none;
+}

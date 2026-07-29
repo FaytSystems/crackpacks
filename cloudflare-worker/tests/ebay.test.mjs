@@ -193,3 +193,52 @@ test("API TCG search forwards the requested page and page size", async t => {
   assert.equal(payload.data.length, 3);
   assert.equal(payload.totalCount, 42);
 });
+
+test("Pokemon search falls back to API TCG when the primary catalog rejects its key", async t => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  globalThis.fetch = async (input, init = {}) => {
+    const url = String(input);
+    requests.push({ url, init });
+    if (url.includes("api.pokemontcg.io")) {
+      return Response.json({ error: { message: "Invalid API key" } }, { status: 401 });
+    }
+    if (url.includes("api.apitcg.com")) {
+      return Response.json({
+        data: [{
+          id: "pokemon-1",
+          name: "Charizard ex",
+          type: "card",
+          number: "125/197",
+          setName: "Obsidian Flames"
+        }],
+        total: 1
+      });
+    }
+    throw new Error(`Unexpected request: ${url}`);
+  };
+
+  const response = await worker.fetch(
+    new Request("https://api.crackpacks.com/cards?term=charizard&field=name&series=pokemon&page=1&pageSize=3"),
+    {
+      POKEMON_TCG_API_KEY: "rejected-primary-key",
+      APITCG_API_KEY: "working-fallback-key"
+    }
+  );
+  const payload = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.meta.source, "apitcg");
+  assert.equal(payload.meta.submittedTcg, "pokemon");
+  assert.equal(payload.data.length, 1);
+  assert.equal(payload.data[0].name, "Charizard ex");
+  assert.equal(requests.length, 2);
+  assert.match(requests[0].url, /api\.pokemontcg\.io/);
+  assert.match(requests[1].url, /api\.apitcg\.com\/api\/products/);
+  assert.equal(requests[1].init.headers["x-api-key"], "working-fallback-key");
+});

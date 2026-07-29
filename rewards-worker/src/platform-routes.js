@@ -3138,76 +3138,27 @@ async function publicMarketplaceListings(request, env, cors) {
   const rows = await env.DB.prepare(`
     SELECT listing.*,member.live_username,member.first_name,member.last_name,inventory.series inventory_series,
            session.title show_title,session.status show_status,session.public_slug show_public_slug,session.scheduled_at show_scheduled_at,session.started_at show_started_at,
-           (
-             SELECT lot.id FROM breaker_auction_lots lot
-             WHERE lot.session_id=listing.show_id
-               AND lot.member_id=listing.member_id
-               AND (
-                 (listing.linked_lot_id IS NOT NULL AND listing.linked_lot_id<>'' AND lot.id=listing.linked_lot_id)
-                 OR
-                 ((listing.linked_lot_id IS NULL OR listing.linked_lot_id='') AND lower(trim(lot.title))=lower(trim(listing.title)))
-               )
-               AND lot.status IN ('scheduled','live','sold')
-             ORDER BY CASE lot.status WHEN 'live' THEN 0 WHEN 'scheduled' THEN 1 ELSE 2 END, lot.updated_at DESC
-             LIMIT 1
-           ) matched_lot_id,
-           (
-             SELECT lot.title FROM breaker_auction_lots lot
-             WHERE lot.session_id=listing.show_id
-               AND lot.member_id=listing.member_id
-               AND (
-                 (listing.linked_lot_id IS NOT NULL AND listing.linked_lot_id<>'' AND lot.id=listing.linked_lot_id)
-                 OR
-                 ((listing.linked_lot_id IS NULL OR listing.linked_lot_id='') AND lower(trim(lot.title))=lower(trim(listing.title)))
-               )
-               AND lot.status IN ('scheduled','live','sold')
-             ORDER BY CASE lot.status WHEN 'live' THEN 0 WHEN 'scheduled' THEN 1 ELSE 2 END, lot.updated_at DESC
-             LIMIT 1
-           ) matched_lot_title,
-           (
-             SELECT lot.status FROM breaker_auction_lots lot
-             WHERE lot.session_id=listing.show_id
-               AND lot.member_id=listing.member_id
-               AND (
-                 (listing.linked_lot_id IS NOT NULL AND listing.linked_lot_id<>'' AND lot.id=listing.linked_lot_id)
-                 OR
-                 ((listing.linked_lot_id IS NULL OR listing.linked_lot_id='') AND lower(trim(lot.title))=lower(trim(listing.title)))
-               )
-               AND lot.status IN ('scheduled','live','sold')
-             ORDER BY CASE lot.status WHEN 'live' THEN 0 WHEN 'scheduled' THEN 1 ELSE 2 END, lot.updated_at DESC
-             LIMIT 1
-           ) matched_lot_status,
-           (
-             SELECT lot.starting_bid_cents FROM breaker_auction_lots lot
-             WHERE lot.session_id=listing.show_id
-               AND lot.member_id=listing.member_id
-               AND (
-                 (listing.linked_lot_id IS NOT NULL AND listing.linked_lot_id<>'' AND lot.id=listing.linked_lot_id)
-                 OR
-                 ((listing.linked_lot_id IS NULL OR listing.linked_lot_id='') AND lower(trim(lot.title))=lower(trim(listing.title)))
-               )
-               AND lot.status IN ('scheduled','live','sold')
-             ORDER BY CASE lot.status WHEN 'live' THEN 0 WHEN 'scheduled' THEN 1 ELSE 2 END, lot.updated_at DESC
-             LIMIT 1
-           ) matched_lot_starting_bid_cents,
-           (
-             SELECT lot.current_bid_cents FROM breaker_auction_lots lot
-             WHERE lot.session_id=listing.show_id
-               AND lot.member_id=listing.member_id
-               AND (
-                 (listing.linked_lot_id IS NOT NULL AND listing.linked_lot_id<>'' AND lot.id=listing.linked_lot_id)
-                 OR
-                 ((listing.linked_lot_id IS NULL OR listing.linked_lot_id='') AND lower(trim(lot.title))=lower(trim(listing.title)))
-               )
-               AND lot.status IN ('scheduled','live','sold')
-             ORDER BY CASE lot.status WHEN 'live' THEN 0 WHEN 'scheduled' THEN 1 ELSE 2 END, lot.updated_at DESC
-             LIMIT 1
-           ) matched_lot_current_bid_cents,
+           matched_lot.id matched_lot_id,matched_lot.title matched_lot_title,matched_lot.status matched_lot_status,
+           matched_lot.starting_bid_cents matched_lot_starting_bid_cents,matched_lot.current_bid_cents matched_lot_current_bid_cents,
            ? __site_url
     FROM seller_store_listings listing
     JOIN members member ON member.id=listing.member_id
     LEFT JOIN inventory_items inventory ON inventory.id=listing.inventory_item_id
     LEFT JOIN breaker_stream_sessions session ON session.id=listing.show_id
+    LEFT JOIN breaker_auction_lots matched_lot ON matched_lot.id=(
+      SELECT lot.id
+      FROM breaker_auction_lots lot
+      WHERE lot.session_id=listing.show_id
+        AND lot.member_id=listing.member_id
+        AND (
+          (listing.linked_lot_id IS NOT NULL AND listing.linked_lot_id<>'' AND lot.id=listing.linked_lot_id)
+          OR
+          ((listing.linked_lot_id IS NULL OR listing.linked_lot_id='') AND lower(trim(lot.title))=lower(trim(listing.title)))
+        )
+        AND lot.status IN ('scheduled','live','sold')
+      ORDER BY CASE lot.status WHEN 'live' THEN 0 WHEN 'scheduled' THEN 1 ELSE 2 END, lot.updated_at DESC
+      LIMIT 1
+    )
     WHERE listing.status='active' AND listing.quantity>0
       AND (?='' OR lower(COALESCE(inventory.series,''))=? OR listing.product_category_key=?)
       AND (
@@ -3227,12 +3178,19 @@ async function publicMarketplaceListings(request, env, cors) {
       )
     ORDER BY listing.product_category_key COLLATE NOCASE
   `).all();
-  return json({
+  return new Response(JSON.stringify({
     ok: true,
     items: (rows.results || []).map(storeListingView),
     categories: (categoryRows.results || []).map(row => ({ key: row.category_key || "tcg", label: sellerCategoryLabel(row.category_key || "tcg") })),
     series: series || "all"
-  }, 200, cors);
+  }), {
+    status: 200,
+    headers: {
+      "Content-Type": "application/json",
+      "Cache-Control": "public, max-age=15, stale-while-revalidate=60",
+      ...cors
+    }
+  });
 }
 
 async function sellerStoreListings(request, env, cors, listingId = "") {
@@ -3251,6 +3209,83 @@ async function sellerStoreListings(request, env, cors, listingId = "") {
     return json({ items: (rows.results || []).map(storeListingView) }, 200, cors);
   }
   const data = await boundedJson(request, 6000);
+  if (request.method === "PATCH" && listingId) {
+    const listing = await env.DB.prepare(`SELECT * FROM seller_store_listings WHERE id=? AND member_id=?`).bind(listingId, auth.member.id).first();
+    if (!listing) return json({ error: "Store listing not found." }, 404, cors);
+    const supplied = key => Object.prototype.hasOwnProperty.call(data, key);
+    const title = supplied("title") ? clean(data.title, 120) : listing.title;
+    const description = supplied("description") ? clean(data.description, 1000) : listing.description;
+    const condition = supplied("condition") ? clean(data.condition, 80) : listing.item_condition;
+    const saleType = supplied("saleType") ? String(data.saleType || "") : listing.sale_type;
+    const productCategoryKey = supplied("productCategoryKey") || supplied("categoryKey")
+      ? normalizeSellerCategoryKey(data.productCategoryKey || data.categoryKey || "tcg")
+      : listing.product_category_key;
+    const quantity = supplied("quantity") ? Number(data.quantity) : Number(listing.quantity);
+    const price = supplied("price") ? Math.round(Number(data.price) * 100) : Number(listing.price_cents);
+    const shippingPayer = supplied("shippingPayer") ? String(data.shippingPayer || "") : listing.shipping_payer;
+    const shippingWeightProfileId = supplied("shippingWeightProfileId")
+      ? (validUuid(data.shippingWeightProfileId) ? String(data.shippingWeightProfileId) : "")
+      : String(listing.shipping_weight_profile_id || "");
+    const fixedShippingCents = shippingPayer === "buyer"
+      ? (supplied("fixedShipping") ? Math.round(Number(data.fixedShipping) * 100) : Number(listing.fixed_shipping_cents || 0))
+      : 0;
+    const imageUrl = supplied("imageUrl") ? clean(data.imageUrl, 500) : listing.image_url;
+    const status = supplied("status") ? String(data.status || "") : listing.status;
+    const showId = supplied("showId") ? clean(data.showId, 80) : String(listing.show_id || "");
+    const showChanged = showId !== String(listing.show_id || "");
+    const linkedLotId = supplied("linkedLotId")
+      ? clean(data.linkedLotId, 80)
+      : (showChanged ? "" : String(listing.linked_lot_id || ""));
+    if (
+      !title ||
+      !["cards", "breaks", "singles", "sealed", "rip_ship", "rtyh", "buy_ship"].includes(saleType) ||
+      !["buyer", "seller"].includes(shippingPayer) ||
+      !["active", "inactive", "sold_out"].includes(status) ||
+      !Number.isInteger(quantity) || quantity < 0 || quantity > 100000 ||
+      !Number.isInteger(price) || price < 1 || price > 100000000
+    ) {
+      return json({ error: "Enter valid product details, quantity, price, shipping, and listing status." }, 400, cors);
+    }
+    if (!Number.isInteger(fixedShippingCents) || fixedShippingCents < 0 || fixedShippingCents > 10000000) {
+      return json({ error: "Enter a valid fixed buyer shipping price." }, 400, cors);
+    }
+    if (shippingWeightProfileId) {
+      const profile = await env.DB.prepare(`SELECT id FROM seller_shipping_weight_profiles WHERE id=? AND member_id=?`).bind(shippingWeightProfileId, auth.member.id).first();
+      if (!profile) return json({ error: "Selected shipping profile does not belong to this seller account." }, 404, cors);
+    }
+    if (imageUrl && !/^https:\/\//i.test(imageUrl) && !/^assets\/images\/[a-z0-9._/-]+$/i.test(imageUrl)) {
+      return json({ error: "Listing image must use HTTPS or a local assets/images path." }, 400, cors);
+    }
+    if (showId) {
+      const show = await env.DB.prepare(`SELECT id FROM breaker_stream_sessions WHERE id=? AND member_id=? AND status IN ('open','live')`).bind(showId, auth.member.id).first();
+      if (!show) return json({ error: "Selected show is not open in this seller account." }, 404, cors);
+    }
+    if (linkedLotId) {
+      const lot = await env.DB.prepare(`SELECT id,session_id FROM breaker_auction_lots WHERE id=? AND member_id=?`).bind(linkedLotId, auth.member.id).first();
+      if (!lot || (showId && lot.session_id !== showId)) return json({ error: "Selected auction lot does not belong to the chosen show." }, 409, cors);
+    }
+    const stamp = now();
+    await env.DB.prepare(`
+      UPDATE seller_store_listings
+      SET title=?,description=?,sale_type=?,product_category_key=?,shipping_weight_profile_id=?,fixed_shipping_cents=?,
+          item_condition=?,quantity=?,price_cents=?,shipping_payer=?,image_url=?,status=?,show_id=?,linked_lot_id=?,updated_at=?
+      WHERE id=? AND member_id=?
+    `).bind(
+      title, description, saleType, productCategoryKey, shippingWeightProfileId || null, fixedShippingCents,
+      condition, quantity, price, shippingPayer, imageUrl, status, showId || null, linkedLotId || null, stamp,
+      listing.id, auth.member.id
+    ).run();
+    const updated = await env.DB.prepare(`
+      SELECT listing.*,member.live_username,member.first_name,member.last_name,inventory.series inventory_series,
+             lot.title linked_lot_title,lot.status linked_lot_status
+      FROM seller_store_listings listing
+      JOIN members member ON member.id=listing.member_id
+      LEFT JOIN inventory_items inventory ON inventory.id=listing.inventory_item_id
+      LEFT JOIN breaker_auction_lots lot ON lot.id=listing.linked_lot_id
+      WHERE listing.id=? AND listing.member_id=?
+    `).bind(listing.id, auth.member.id).first();
+    return json({ item: storeListingView(updated) }, 200, cors);
+  }
   if (request.method === "POST" && listingId) {
     const status = ["active", "inactive", "sold_out"].includes(String(data.status || "")) ? String(data.status) : "";
     if (!status) return json({ error: "Choose a valid listing status." }, 400, cors);
@@ -3275,6 +3310,7 @@ async function sellerStoreListings(request, env, cors, listingId = "") {
   const shippingWeightProfileId = validUuid(data.shippingWeightProfileId) ? String(data.shippingWeightProfileId) : "";
   const fixedShippingCents = shippingPayer === "buyer" ? Math.max(0, Math.round(Number(data.fixedShipping || 0) * 100)) : 0;
   const imageUrl = clean(data.imageUrl, 500);
+  const listingStatus = ["active", "inactive"].includes(String(data.status || "")) ? String(data.status) : "active";
   const showId = clean(data.showId, 80);
   const linkedLotId = clean(data.linkedLotId, 80);
   if (!title || !Number.isInteger(quantity) || quantity < 1 || quantity > 100000 || !Number.isInteger(price) || price < 1 || price > 100000000) {
@@ -3310,8 +3346,8 @@ async function sellerStoreListings(request, env, cors, listingId = "") {
   await env.DB.prepare(`
     INSERT INTO seller_store_listings(
       id,member_id,show_id,linked_lot_id,inventory_item_id,title,description,sale_type,product_category_key,shipping_weight_profile_id,fixed_shipping_cents,shipping_overage_policy,item_condition,quantity,price_cents,shipping_payer,image_url,status,created_at,updated_at
-    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'active',?,?)
-  `).bind(listingRowId, auth.member.id, showId || null, linkedLotId || null, inventoryItemId || null, title, description, saleType, productCategoryKey, shippingWeightProfileId || null, fixedShippingCents, "seller_pays_difference", condition, quantity, price, shippingPayer, imageUrl, stamp, stamp).run();
+    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+  `).bind(listingRowId, auth.member.id, showId || null, linkedLotId || null, inventoryItemId || null, title, description, saleType, productCategoryKey, shippingWeightProfileId || null, fixedShippingCents, "seller_pays_difference", condition, quantity, price, shippingPayer, imageUrl, listingStatus, stamp, stamp).run();
   const created = await env.DB.prepare(`
     SELECT listing.*,member.live_username,member.first_name,member.last_name,? inventory_series,lot.title linked_lot_title,lot.status linked_lot_status
     FROM seller_store_listings listing JOIN members member ON member.id=listing.member_id
@@ -4506,6 +4542,8 @@ export async function handlePlatformRoute(request, env, cors) {
   if (url.pathname === "/seller/cogs-orders" && request.method === "GET") return sellerCogsOrders(request, env, cors);
   if (url.pathname === "/seller/orders" && request.method === "GET") return sellerOrders(request, env, cors);
   if (url.pathname === "/seller/store-listings" && ["GET", "POST"].includes(request.method)) return sellerStoreListings(request, env, cors);
+  const sellerStoreListingEditMatch = url.pathname.match(/^\/seller\/store-listings\/([0-9a-f-]{36})$/i);
+  if (sellerStoreListingEditMatch && request.method === "PATCH") return sellerStoreListings(request, env, cors, sellerStoreListingEditMatch[1]);
   const sellerStoreListingMatch = url.pathname.match(/^\/seller\/store-listings\/([0-9a-f-]{36})\/status$/i);
   if (sellerStoreListingMatch && request.method === "POST") return sellerStoreListings(request, env, cors, sellerStoreListingMatch[1]);
   const sellerInventoryAdjustMatch = url.pathname.match(/^\/seller\/inventory\/([0-9a-f-]{36})\/adjust$/i);

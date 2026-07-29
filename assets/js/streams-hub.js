@@ -1313,7 +1313,7 @@
           <div>
             <span class="seller-order-kind">${escapeHtml(sellerOrderKindText(order.kind))}</span>
             <strong>${escapeHtml(order.title || "Crack Packs order")}</strong>
-            <p>${escapeHtml(order.orderNumber || order.id)} Â· ${escapeHtml(dateLabel(order.placedAt))}</p>
+            <p>${escapeHtml(order.orderNumber || order.id)} &middot; ${escapeHtml(dateLabel(order.placedAt))}</p>
           </div>
           <span class="seller-order-status ${escapeHtml(labelStatusClass)}">${escapeHtml(sellerOrderStatusText(order.fulfillmentStatus))}</span>
         </div>
@@ -1325,7 +1325,7 @@
         </div>
         <div class="seller-order-detail-row">
           <span><small>Buyer / giver</small>${escapeHtml(order.customer?.username || order.customer?.email || order.customer?.name || "Not attached")}</span>
-          <span><small>Carrier</small>${escapeHtml([order.carrier, order.service].filter(Boolean).join(" Â· ") || order.trackingStatus || "Not labeled")}</span>
+          <span><small>Carrier</small>${escapeHtml([order.carrier, order.service].filter(Boolean).join(" - ") || order.trackingStatus || "Not labeled")}</span>
           <span><small>Tracking</small>${escapeHtml(order.trackingCode || "Pending")}</span>
         </div>
         ${weightProfilePicker}

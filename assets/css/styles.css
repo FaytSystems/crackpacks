@@ -19,10 +19,15 @@
   --shadow: 0 30px 90px rgba(0, 0, 0, .42);
   --radius: 26px;
   --max-width: 1220px;
+  --site-header-height: 93px;
+  --subnav-row-height: 62px;
 }
 
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; }
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: calc(var(--site-header-height) + var(--subnav-row-height) + 20px);
+}
 body {
   margin: 0;
   min-width: 320px;
@@ -92,11 +97,12 @@ button { color: inherit; }
   position: sticky;
   top: 0;
   z-index: 100;
+  min-height: var(--site-header-height);
   border-bottom: 1px solid var(--line);
   background: rgba(5, 6, 21, .78);
   backdrop-filter: blur(22px) saturate(145%);
 }
-.nav-shell { min-height: 78px; display: flex; align-items: center; justify-content: flex-start; gap: 18px; }
+.nav-shell { min-height: calc(var(--site-header-height) - 1px); display: flex; align-items: center; justify-content: flex-start; gap: 18px; }
 .nav-shell.has-live-star { gap: clamp(10px, 1.5vw, 18px); }
 .brand { width: min(300px, 53vw); flex: 0 0 auto; }
 .nav-shell.has-live-star .brand { width: min(270px, 42vw); }
@@ -635,6 +641,13 @@ button { color: inherit; }
   .site-nav > a[href*="card-lookup.html?"]::after { animation: none; }
 }
 
+@media (max-width: 620px) {
+  :root {
+    --site-header-height: 71px;
+    --subnav-row-height: 58px;
+  }
+}
+
 
 .catalog-section {
   background:
@@ -771,6 +784,10 @@ button { color: inherit; }
 }
 
 @media (max-width: 1320px) {
+  :root {
+    --site-header-height: 79px;
+  }
+
   .nav-shell.has-menu-toggle .site-nav {
     position: absolute;
     left: 18px;
@@ -850,6 +867,10 @@ button { color: inherit; }
 }
 
 @media (max-width: 600px) {
+  :root {
+    --site-header-height: 71px;
+  }
+
   .container { width: min(100% - 24px, var(--max-width)); }
   .section { padding: 72px 0; }
   .nav-shell { min-height: 70px; }

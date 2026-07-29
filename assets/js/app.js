@@ -217,7 +217,8 @@
   }
 
   const allProducts = document.querySelector("[data-all-products]");
-  if (allProducts) {
+  const dedicatedStoreCatalog = Boolean(document.querySelector("[data-store-catalog]"));
+  if (allProducts && !dedicatedStoreCatalog) {
     allProducts.innerHTML = products.map(productCard).join("");
   }
 
@@ -238,24 +239,26 @@
     if (empty) empty.hidden = visible !== 0;
   }
 
-  document.querySelectorAll("[data-product-filter]").forEach(button => {
-    button.addEventListener("click", () => {
-      activeProductFilter = button.dataset.productFilter || "all";
-      document.querySelectorAll("[data-product-filter]").forEach(item => item.classList.toggle("is-active", item === button));
+  if (!dedicatedStoreCatalog) {
+    document.querySelectorAll("[data-product-filter]").forEach(button => {
+      button.addEventListener("click", () => {
+        activeProductFilter = button.dataset.productFilter || "all";
+        document.querySelectorAll("[data-product-filter]").forEach(item => item.classList.toggle("is-active", item === button));
+        applyProductFilters();
+      });
+    });
+
+    const searchInput = document.querySelector("[data-product-search]");
+    searchInput?.addEventListener("input", event => {
+      productSearchTerm = event.currentTarget.value.trim().toLowerCase();
       applyProductFilters();
     });
-  });
 
-  const searchInput = document.querySelector("[data-product-search]");
-  searchInput?.addEventListener("input", event => {
-    productSearchTerm = event.currentTarget.value.trim().toLowerCase();
-    applyProductFilters();
-  });
-
-  const requestedCategory = new URLSearchParams(window.location.search).get("category");
-  if (requestedCategory) {
-    const button = document.querySelector(`[data-product-filter="${CSS.escape(requestedCategory)}"]`);
-    button?.click();
+    const requestedCategory = new URLSearchParams(window.location.search).get("category");
+    if (requestedCategory) {
+      const button = document.querySelector(`[data-product-filter="${CSS.escape(requestedCategory)}"]`);
+      button?.click();
+    }
   }
 
 

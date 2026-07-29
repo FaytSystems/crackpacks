@@ -1350,6 +1350,97 @@ test("seller can create numbered auctions from one personal-store listing", asyn
   assert.equal(batches.length, 1);
 });
 
+test("seller can edit a store product and move it into private inventory", async () => {
+  const memberId = "11111111-1111-4111-8111-111111111111";
+  const listingId = "33333333-3333-4333-8333-333333333333";
+  const member = {
+    id: memberId,
+    email_verified_at: "2026-07-24T00:00:00.000Z",
+    device_verified: 1,
+    identity_status: "verified",
+    stripe_identity_status: "verified",
+    live_username: "StockPilot"
+  };
+  const listing = {
+    id: listingId,
+    member_id: memberId,
+    title: "Original Product",
+    description: "",
+    sale_type: "singles",
+    product_category_key: "pokemon",
+    shipping_weight_profile_id: null,
+    fixed_shipping_cents: 500,
+    item_condition: "Near Mint",
+    quantity: 3,
+    price_cents: 1200,
+    shipping_payer: "buyer",
+    image_url: "",
+    status: "active",
+    show_id: null,
+    linked_lot_id: null,
+    created_at: "2026-07-28T00:00:00.000Z",
+    updated_at: "2026-07-28T00:00:00.000Z"
+  };
+  let update = null;
+  const env = {
+    AUTH_SECRET: "test-secret",
+    DB: {
+      prepare(sql) {
+        return {
+          bind(...args) {
+            return {
+              first: async () => {
+                if (sql.includes("JOIN members m ON")) return member;
+                if (sql.includes("FROM breaker_profiles")) return { status: "active" };
+                if (sql.includes("SELECT * FROM seller_store_listings")) return listing;
+                if (sql.includes("SELECT listing.*,member.live_username")) {
+                  return {
+                    ...listing,
+                    title: "Updated Product",
+                    quantity: 8,
+                    status: "inactive",
+                    live_username: member.live_username,
+                    updated_at: "2026-07-28T01:00:00.000Z"
+                  };
+                }
+                return null;
+              },
+              run: async () => {
+                if (sql.includes("UPDATE seller_store_listings")) update = { sql, args };
+                return { success: true, meta: { changes: 1 } };
+              }
+            };
+          }
+        };
+      }
+    }
+  };
+
+  const response = await handlePlatformRoute(new Request(`https://api.crackpacks.test/seller/store-listings/${listingId}`, {
+    method: "PATCH",
+    headers: { Authorization: "Bearer session-token" },
+    body: JSON.stringify({
+      title: "Updated Product",
+      quantity: 8,
+      price: 12,
+      status: "inactive",
+      showId: ""
+    })
+  }), env, {});
+
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.item.title, "Updated Product");
+  assert.equal(payload.item.quantity, 8);
+  assert.equal(payload.item.status, "inactive");
+  assert.ok(update);
+  assert.match(update.sql, /UPDATE seller_store_listings/);
+  assert.equal(update.args[0], "Updated Product");
+  assert.equal(update.args[7], 8);
+  assert.equal(update.args[11], "inactive");
+  assert.equal(update.args[12], null);
+});
+
 test("seller cannot schedule store inventory already assigned to an active lot", async () => {
   const memberId = "11111111-1111-4111-8111-111111111111";
   const showId = "22222222-2222-4222-8222-222222222222";

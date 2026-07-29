@@ -49,3 +49,34 @@
 .employee-deposit-state.is-ready{background:var(--mint)}
 @media(max-width:860px){.employee-identity-band{grid-template-columns:repeat(2,minmax(0,1fr))}.employee-identity-band div:nth-child(2){border-right:0}.employee-identity-band div:nth-child(-n+2){border-bottom:1px solid rgba(255,255,255,.1)}.employee-hours-layout{grid-template-columns:1fr}.employee-pay-summary{grid-template-columns:1fr}}
 @media(max-width:620px){.employee-main{padding-top:34px}.employee-dashboard-head,.employee-section-heading,.employee-deposit-panel{align-items:stretch;flex-direction:column}.employee-dashboard-head .btn,.employee-deposit-panel .btn{width:100%}.employee-identity-band{grid-template-columns:1fr}.employee-identity-band div{border-right:0;border-bottom:1px solid rgba(255,255,255,.1)}.employee-identity-band div:last-child{border-bottom:0}.employee-time-grid,.employee-time-row{grid-template-columns:1fr}.employee-view-nav{display:grid;grid-template-columns:1fr}.employee-view-nav button{width:100%}}
+
+.employee-view-nav {
+  position: sticky;
+  top: calc(var(--site-header-height) + var(--subnav-row-height));
+  z-index: 39;
+  flex-wrap: nowrap;
+  min-height: var(--subnav-row-height);
+  padding: 8px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  border: 1px solid rgba(255,255,255,.13);
+  border-radius: 8px;
+  background: rgba(7,9,27,.97);
+  box-shadow: 0 14px 34px rgba(0,0,0,.3);
+  backdrop-filter: blur(18px) saturate(135%);
+}
+
+.employee-view-nav button {
+  flex: 0 0 auto;
+  min-height: 42px;
+}
+
+@media(max-width:620px) {
+  .employee-view-nav {
+    display: flex;
+    width: 100%;
+  }
+  .employee-view-nav button {
+    width: auto;
+  }
+}

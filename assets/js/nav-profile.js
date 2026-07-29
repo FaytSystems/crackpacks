@@ -46,6 +46,15 @@
     const sellerLabel = portalState.sellerAccess ? "Seller Account" : "Seller Verification";
     const employeeButton = portalState.employeeAccess ? '<a class="nav-account-bubble" href="employee.html">Employee Account</a>' : "";
     const masterButton = portalState.masterAccess ? `<button class="nav-account-bubble ${portalState.activePortal === "master" ? "is-active" : ""}" type="button" data-open-master-portal>Master Account</button>` : "";
+    const sellerPages = portalState.sellerAccess ? `
+      <nav class="nav-buyer-account-pages" aria-label="Seller Account pages">
+        <a href="streams.html#seller-home">Seller Hub</a>
+        <a href="streams.html#seller-live">Go Live</a>
+        <a href="seller-store.html#stock">Store Stock</a>
+        <a href="seller-store.html#preview">Store Preview</a>
+        <a href="streams.html#seller-shipping">Fulfill Orders</a>
+      </nav>
+    ` : "";
     return `
       <div class="nav-account-bubbles" aria-label="Account portal switcher">
         <a class="nav-account-bubble ${portalState.activePortal === "buyer" ? "is-active" : ""}" href="${buyerProfileUrl}" data-open-buyer-portal>Buyer Account</a>
@@ -60,6 +69,7 @@
         <a href="shop.html" data-open-buyer-portal>Buyer Store</a>
         <a href="live-shows.html" data-open-buyer-portal>Live Shows</a>
       </nav>
+      ${sellerPages}
       <div class="nav-account-menu-section" aria-label="Profile settings">
         <a href="referral.html?view=account" data-open-buyer-portal><strong>Account Details</strong><small>Name, email, address, password, and saved payments</small></a>
         <a href="referral.html?view=credits" data-open-buyer-portal><strong>Subscribe / Credits</strong><small>Usage, balances, plan tiers, and a-la-carte credits</small></a>

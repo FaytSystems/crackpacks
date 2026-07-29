@@ -451,17 +451,25 @@
 }
 
 .account-dashboard-subnav {
+  position: sticky;
+  top: var(--site-header-height);
+  z-index: 42;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 10px;
   max-width: 1040px;
-  margin: 0 auto 14px;
+  min-height: var(--subnav-row-height);
+  margin: 0 auto;
   padding: 10px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
   border: 1px solid rgba(255,255,255,.12);
-  border-radius: 18px;
-  background: linear-gradient(115deg, rgba(56,232,255,.055), rgba(255,78,219,.045));
+  border-radius: 8px;
+  background: linear-gradient(115deg, rgba(56,232,255,.09), rgba(255,78,219,.075)), rgba(7,9,27,.97);
   box-shadow: 0 18px 48px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.08);
+  backdrop-filter: blur(18px) saturate(135%);
 }
 
 .account-dashboard-roles {
@@ -470,11 +478,19 @@
 }
 
 .account-dashboard-pages {
+  top: calc(var(--site-header-height) + (var(--subnav-row-height) * 2));
+  z-index: 40;
   margin-bottom: 22px;
+}
+
+.account-dashboard-settings {
+  top: calc(var(--site-header-height) + var(--subnav-row-height));
+  z-index: 41;
 }
 
 .account-subnav-pill,
 .account-subnav-link {
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -561,7 +577,7 @@
 @media(max-width:900px){
   .portal-launcher-grid{grid-template-columns:1fr}
   .portal-launcher-option{min-height:unset}
-  .account-dashboard-subnav{align-items:stretch}
-  .account-subnav-pill,.account-subnav-link{flex:1 1 140px}
+  .account-dashboard-subnav{align-items:center;width:calc(100% - 20px)}
+  .account-subnav-pill,.account-subnav-link{flex:0 0 auto}
   .identity-status-bubble{min-height:132px}
 }

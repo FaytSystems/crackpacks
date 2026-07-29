@@ -66,7 +66,7 @@
       button.setAttribute("aria-current", active ? "page" : "false");
     });
     if (section === "signups") refreshCampaigns().catch(error => showStatus(error.message, "error"));
-    if (section === "redeemed") Promise.all([refreshDashboard(), refreshCampaigns()]).catch(error => showStatus(error.message, "error"));
+    if (section === "redeemed") Promise.all([refreshDashboard(), refreshCampaigns(), refreshReferralCredits()]).catch(error => showStatus(error.message, "error"));
     if (section === "inventory") refreshInventory().catch(error => setInventoryStatus(error.message, "error"));
     if (section === "tracking") Promise.all([searchTrackingMembers(), refreshAdminOrders()]).catch(error => setTrackingStatus(error.message, "error"));
     if (section === "identity") refreshIdentityReviews().catch(error => setIdentityReviewStatus(error.message, "error"));
@@ -1547,6 +1547,69 @@
     renderClaims(legacyClaimsState);
   }
 
+  function setReferralCreditStatus(message = "", kind = "") {
+    const node = $("[data-referral-credit-status]");
+    node.textContent = message;
+    node.dataset.kind = kind;
+  }
+  function renderReferralCredits(credits) {
+    const container = $("[data-referral-credit-results]");
+    container.replaceChildren();
+    if (!credits.length) {
+      const empty = document.createElement("div");
+      empty.className = "campaign-empty";
+      empty.textContent = "No referral credits have been awarded yet.";
+      container.append(empty);
+      return;
+    }
+    credits.forEach(credit => {
+      const card = document.createElement("article");
+      card.className = "admin-claim";
+
+      const signup = document.createElement("div");
+      const title = document.createElement("h3");
+      title.textContent = "+1 referral credit";
+      const newMember = document.createElement("p");
+      newMember.textContent = credit.newMemberEmail || credit.newMemberId || "Verified new member";
+      signup.append(title, newMember);
+
+      const credited = document.createElement("div");
+      const creditedLabel = document.createElement("p");
+      creditedLabel.textContent = "Credited account";
+      const creditedIdentity = document.createElement("strong");
+      creditedIdentity.textContent = credit.referrerSellerId || credit.referrerUserId || credit.referrerEmail || credit.referrerId || "Account unavailable";
+      const referralCode = document.createElement("p");
+      referralCode.textContent = credit.referralCode ? `Referral code: ${credit.referralCode}` : "Referral code unavailable";
+      credited.append(creditedLabel, creditedIdentity, referralCode);
+
+      const timing = document.createElement("div");
+      const status = document.createElement("span");
+      status.className = "admin-claim-status redeemed";
+      status.textContent = "Credited";
+      const date = document.createElement("p");
+      const creditedAt = Date.parse(credit.creditedAt || "");
+      date.textContent = Number.isFinite(creditedAt) ? new Date(creditedAt).toLocaleString() : "Time unavailable";
+      timing.append(status, date);
+
+      card.append(signup, credited, timing);
+      container.append(card);
+    });
+  }
+  async function refreshReferralCredits({ announce = false } = {}) {
+    if (!memberToken || !adminToken) return;
+    const button = $("[data-referral-credit-refresh]");
+    button.disabled = true;
+    if (announce) setReferralCreditStatus("Refreshing referral credits...");
+    try {
+      const data = await request("/admin/referral-credits");
+      const credits = Array.isArray(data.credits) ? data.credits : [];
+      renderReferralCredits(credits);
+      setReferralCreditStatus(`${credits.length} recent referral credit${credits.length === 1 ? "" : "s"} loaded.`, "success");
+    } finally {
+      button.disabled = false;
+    }
+  }
+
   function setMasterEmailStatus(message = "", kind = "") {
     const node = $("[data-master-email-status]"); node.textContent = message; node.dataset.kind = kind;
   }
@@ -2245,7 +2308,8 @@
     else if (!$("[data-campaign-share-modal]").hidden) closeCampaignShare();
     else if (!$("[data-campaign-modal]").hidden) closeCampaignModal();
   });
-  $("[data-admin-refresh]").addEventListener("click", () => Promise.all([refreshDashboard(), refreshCampaigns(), refreshInventory(), refreshAdminOrders(), refreshEmployees(), refreshEmailHistory()]).catch(error => showStatus(error.message, "error")));
+  $("[data-referral-credit-refresh]").addEventListener("click", () => refreshReferralCredits({ announce: true }).catch(error => setReferralCreditStatus(error.message, "error")));
+  $("[data-admin-refresh]").addEventListener("click", () => Promise.all([refreshDashboard(), refreshCampaigns(), refreshReferralCredits(), refreshInventory(), refreshAdminOrders(), refreshEmployees(), refreshEmailHistory()]).catch(error => showStatus(error.message, "error")));
   $("[data-admin-filter]").addEventListener("change", () => refreshDashboard().catch(error => showStatus(error.message, "error")));
   $("[data-admin-search]").addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => refreshDashboard().catch(error => showStatus(error.message, "error")), 250); });
   ["[data-admin-date-from]", "[data-admin-date-to]"].forEach(selector => $(selector).addEventListener("change", () => renderClaims(legacyClaimsState)));

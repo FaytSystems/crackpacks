@@ -211,6 +211,26 @@
   border-color: rgba(255,255,255,0.32);
 }
 
+body[data-live-shows-only="true"] .hub-tabs {
+  position: sticky;
+  top: var(--site-header-height);
+  z-index: 42;
+  flex-wrap: nowrap;
+  min-height: var(--subnav-row-height);
+  padding: 8px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  border: 1px solid rgba(255,255,255,.13);
+  border-radius: 8px;
+  background: rgba(7,9,27,.97);
+  box-shadow: 0 14px 34px rgba(0,0,0,.3);
+  backdrop-filter: blur(18px) saturate(135%);
+}
+
+body[data-live-shows-only="true"] .hub-tab {
+  flex: 0 0 auto;
+}
+
 .seller-portal-subnav {
   display: flex;
   flex-wrap: wrap;
@@ -331,8 +351,8 @@
 
 .seller-tool-menu {
   position: sticky;
-  top: 76px;
-  z-index: 18;
+  top: var(--site-header-height);
+  z-index: 42;
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 7px;
@@ -590,7 +610,7 @@
 
 @media (max-width: 620px) {
   .seller-tool-menu {
-    top: 66px;
+    top: var(--site-header-height);
     margin-inline: 12px;
     width: calc(100% - 24px);
   }

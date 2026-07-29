@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Manage Crack Packs seller inventory, storefront listings, and show stock from one private dashboard.">
+  <title>Seller Store Dashboard | Crack Packs</title>
+  <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="assets/css/styles.css?v=1.11.1">
+  <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.7.0">
+  <link rel="stylesheet" href="assets/css/seller-store.css?v=1.0.0">
+</head>
+<body data-page="seller-store">
+  <a class="skip-link" href="#seller-store-main">Skip to seller store tools</a>
+  <div class="ambient-layer" aria-hidden="true"><span class="ambient-orb orb-a"></span><span class="ambient-orb orb-b"></span><span class="grain"></span></div>
+
+  <header class="site-header">
+    <div class="container nav-shell">
+      <a class="brand" href="index.html" aria-label="Crack Packs home"><img src="assets/images/logo.svg" alt="Crack Packs"></a>
+      <button class="menu-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="site-nav"><span></span><span></span><span></span></button>
+      <nav class="site-nav" id="site-nav" aria-label="Primary navigation">
+        <a href="index.html">Home</a>
+        <a href="live-shows.html">Live Shows</a>
+        <a href="shop.html">Buyer Store</a>
+        <a href="card-lookup.html">Card Search ($)</a>
+        <div class="nav-profile" data-nav-profile>
+          <button class="nav-profile-trigger" type="button" data-profile-trigger aria-expanded="false">Profile <span class="nav-profile-caret" aria-hidden="true">&#9660;</span></button>
+          <div class="nav-profile-menu" data-profile-menu></div>
+        </div>
+      </nav>
+    </div>
+  </header>
+
+  <main id="seller-store-main" class="seller-store-main">
+    <section class="seller-store-heading">
+      <div class="container seller-store-heading-inner">
+        <div>
+          <p class="eyebrow">Seller Account</p>
+          <h1>Seller Store</h1>
+          <p>Publish products, hold private inventory, assign show stock, and preview exactly what buyers can see.</p>
+        </div>
+        <div class="seller-store-heading-actions">
+          <a class="btn btn-primary" href="streams.html#seller-live">Go Live</a>
+          <a class="btn btn-outline" href="streams.html#seller-home">Seller Hub</a>
+          <a class="btn btn-outline" data-public-store-link href="shop.html">Public Store</a>
+        </div>
+      </div>
+    </section>
+
+    <nav class="seller-store-subnav" aria-label="Seller Store tools">
+      <div class="container seller-store-subnav-inner">
+        <button class="seller-store-tab is-active" type="button" data-store-view-button="stock">Stock</button>
+        <button class="seller-store-tab" type="button" data-store-view-button="preview">Preview</button>
+        <a class="seller-store-tab" href="streams.html#seller-shows">Shows</a>
+        <a class="seller-store-tab" href="streams.html#seller-shipping">Fulfill Orders</a>
+      </div>
+    </nav>
+
+    <div class="container seller-store-content">
+      <section class="seller-store-access" data-seller-store-access hidden>
+        <p class="eyebrow">Seller access required</p>
+        <h2>Sign in to your verified Seller Account.</h2>
+        <p>Your private stock and product editor are available after Seller ID and Stripe Identity approval.</p>
+        <a class="btn btn-primary" href="referral.html?mode=signin&portal=seller&return=seller-store">Sign In</a>
+      </section>
+
+      <div class="seller-store-status" data-seller-store-status aria-live="polite"></div>
+
+      <section class="seller-store-metrics" aria-label="Store inventory summary" data-seller-store-workspace hidden>
+        <button type="button" data-channel-jump="store"><span>In Store</span><strong data-metric-store>0</strong><small>Visible to buyers</small></button>
+        <button type="button" data-channel-jump="inventory"><span>Inventory</span><strong data-metric-inventory>0</strong><small>Private storage</small></button>
+        <button type="button" data-channel-jump="shows"><span>Shows</span><strong data-metric-shows>0</strong><small>Assigned to live sales</small></button>
+        <button type="button" data-channel-jump="sold"><span>Sold Out</span><strong data-metric-sold>0</strong><small>Needs restock</small></button>
+      </section>
+
+      <section data-seller-store-workspace data-store-view="stock" hidden>
+        <header class="seller-stock-toolbar">
+          <div>
+            <p class="eyebrow">Product control</p>
+            <h2>Stock</h2>
+          </div>
+          <button class="btn btn-primary" type="button" data-add-listing>Add Item</button>
+        </header>
+
+        <div class="seller-stock-controls">
+          <label class="seller-stock-search"><span class="sr-only">Search stock</span><input type="search" data-stock-search placeholder="Search product, category, condition, or show"></label>
+          <div class="seller-stock-channels" role="group" aria-label="Stock location">
+            <button class="is-active" type="button" data-stock-channel="all">All</button>
+            <button type="button" data-stock-channel="store">In Store</button>
+            <button type="button" data-stock-channel="inventory">Inventory</button>
+            <button type="button" data-stock-channel="shows">Shows</button>
+            <button type="button" data-stock-channel="sold">Sold Out</button>
+          </div>
+          <label class="seller-stock-sort">Sort
+            <select data-stock-sort>
+              <option value="updated">Recently updated</option>
+              <option value="title">Product name</option>
+              <option value="price-low">Price low to high</option>
+              <option value="price-high">Price high to low</option>
+              <option value="quantity">Quantity</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="seller-stock-table" role="table" aria-label="Seller stock">
+          <div class="seller-stock-table-head" role="row">
+            <span role="columnheader">Product</span><span role="columnheader">Location</span><span role="columnheader">Price</span><span role="columnheader">Qty</span><span role="columnheader">Actions</span>
+          </div>
+          <div data-stock-list></div>
+        </div>
+        <div class="seller-store-empty" data-stock-empty hidden>No products match this stock view.</div>
+      </section>
+
+      <section data-seller-store-workspace data-store-view="preview" hidden>
+        <header class="seller-preview-toolbar">
+          <div>
+            <p class="eyebrow">Buyer-facing storefront</p>
+            <h2>Preview</h2>
+            <p>Active products appear here in the same order buyers will scan them. Edit any product without leaving Preview.</p>
+          </div>
+          <a class="btn btn-primary" data-public-store-link href="shop.html">Open Public Store</a>
+        </header>
+        <div class="seller-preview-grid" data-preview-grid></div>
+        <div class="seller-store-empty" data-preview-empty hidden>Publish an inventory item to preview your public storefront.</div>
+      </section>
+    </div>
+  </main>
+
+  <section class="seller-listing-modal" data-listing-modal hidden aria-hidden="true">
+    <button class="seller-listing-backdrop" type="button" data-listing-close aria-label="Close product editor"></button>
+    <div class="seller-listing-editor" role="dialog" aria-modal="true" aria-labelledby="listing-editor-title">
+      <button class="seller-listing-close" type="button" data-listing-close aria-label="Close">&times;</button>
+      <header>
+        <p class="eyebrow" data-listing-editor-eyebrow>New inventory item</p>
+        <h2 id="listing-editor-title" data-listing-editor-title>Add Product</h2>
+      </header>
+      <form data-listing-form>
+        <input type="hidden" name="listingId">
+        <div class="seller-listing-fields">
+          <label class="field-wide">Product title<input name="title" maxlength="120" required autocomplete="off"></label>
+          <label>Category
+            <select name="productCategoryKey" required>
+              <option value="tcg">TCG / Playing Cards</option>
+              <option value="pokemon">Pokemon</option>
+              <option value="magic">Magic the Gathering</option>
+              <option value="yugioh">Yu-Gi-Oh!</option>
+              <option value="one_piece">One Piece</option>
+              <option value="lorcana">Disney Lorcana</option>
+              <option value="sports_cards">Sports Cards</option>
+              <option value="memorabilia">Memorabilia</option>
+              <option value="collectibles">Collectibles</option>
+              <option value="apparel">Apparel</option>
+              <option value="other">Other</option>
+            </select>
+          </label>
+          <label>Sale type
+            <select name="saleType" required>
+              <option value="singles">Single / Slab</option>
+              <option value="sealed">Sealed</option>
+              <option value="cards">Cards</option>
+              <option value="breaks">Break</option>
+              <option value="rip_ship">Rip and Ship</option>
+              <option value="rtyh">Random Team</option>
+              <option value="buy_ship">Buy and Ship</option>
+            </select>
+          </label>
+          <label>Condition<input name="condition" maxlength="80" placeholder="Near Mint, sealed, used"></label>
+          <label>Quantity<input name="quantity" type="number" min="0" max="100000" step="1" value="1" required inputmode="numeric"></label>
+          <label>Price ($)<input name="price" type="number" min=".01" max="1000000" step=".01" value="1.00" required inputmode="decimal"></label>
+          <label>Stock location
+            <select name="channel" data-listing-channel required>
+              <option value="store">In Store</option>
+              <option value="inventory">Inventory</option>
+              <option value="shows">Shows</option>
+            </select>
+          </label>
+          <label data-listing-show-field hidden>Show
+            <select name="showId" data-listing-show-select><option value="">Choose an open show</option></select>
+          </label>
+          <label>Shipping paid by
+            <select name="shippingPayer" data-listing-shipping-payer>
+              <option value="buyer">Buyer</option>
+              <option value="seller">Seller</option>
+            </select>
+          </label>
+          <label data-fixed-shipping-field>Fixed shipping ($)<input name="fixedShipping" type="number" min="0" max="100000" step=".01" value="5.00" inputmode="decimal"></label>
+          <label class="field-wide">Image URL<input name="imageUrl" maxlength="500" placeholder="https://... or assets/images/..."></label>
+          <label class="field-wide">Description<textarea name="description" rows="4" maxlength="1000" placeholder="Set, printing, condition details, and what the buyer receives"></textarea></label>
+        </div>
+        <div class="seller-listing-form-status" data-listing-form-status aria-live="polite"></div>
+        <div class="seller-listing-form-actions">
+          <button class="btn btn-outline" type="button" data-listing-close>Cancel</button>
+          <button class="btn btn-primary" type="submit" data-listing-submit>Save Product</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <footer class="site-footer">
+    <div class="container footer-grid">
+      <div class="footer-brand"><img src="assets/images/logo.svg" alt="Crack Packs"><p>Private seller inventory and public storefront controls.</p></div>
+      <div class="footer-links"><h3>Store</h3><a href="shop.html">Buyer Store</a><a href="live-shows.html">Live Shows</a><a href="streams.html#seller-home">Seller Hub</a></div>
+      <div class="footer-links"><h3>Policies</h3><a href="terms.html">Terms</a><a href="privacy.html">Privacy</a><a href="shipping-policy.html">Shipping</a><a href="returns-policy.html">Returns</a><a href="refund-policy.html">Refunds</a></div>
+    </div>
+    <div class="container footer-bottom"><span>&copy; <span data-year></span> Crack Packs.</span><span>Seller tools require a verified account.</span></div>
+  </footer>
+
+  <script src="assets/js/config.js?v=4.1.1"></script>
+  <script src="assets/js/app.js?v=2.0.0"></script>
+  <script src="assets/js/portal-mode.js?v=1.2.5"></script>
+  <script src="assets/js/seller-store.js?v=1.0.1"></script>
+  <script src="assets/js/nav-profile.js?v=4.6.0"></script>
+</body>
+</html>

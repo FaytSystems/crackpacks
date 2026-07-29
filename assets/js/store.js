@@ -26,7 +26,7 @@
   const priceMaxInput = document.querySelector("[data-price-max]");
   const priceIncrementSelect = document.querySelector("[data-price-increment]");
   const priceRangeReadout = document.querySelector("[data-price-range-readout]");
-  const inventoryEndpoint = "/marketplace/listings";
+  const inventoryEndpoint = market === "international" ? "/store/inventory" : "/marketplace/listings";
   const quoteEndpoint = "/store/shipping-quote";
   const checkoutEndpoint = "/store/checkout";
   const authToken = () => localStorage.getItem("cp_rewards_token") || "";
@@ -207,8 +207,8 @@
     marketplaceCategories = categories.length
       ? categories
       : primaryCategoryButtons.map(button => ({ key: button.id, label: button.label }));
-    const buttons = [{ key: "all", label: "All", icon: "âœ¦" }].concat(
-      marketplaceCategories.filter(category => category.key !== "all").map(category => ({ key: category.key, label: category.label, icon: "âš¡" }))
+    const buttons = [{ key: "all", label: "All", icon: "*" }].concat(
+      marketplaceCategories.filter(category => category.key !== "all").map(category => ({ key: category.key, label: category.label, icon: "+" }))
     );
     primaryTabs.innerHTML = buttons.map((button, index) => `
       <button class="type-pill${index === 0 ? " is-active" : ""}" type="button" data-store-primary="${escapeHtml(button.key)}">
@@ -593,9 +593,18 @@
 
     try {
       const url = new URL(endpoint);
-      url.searchParams.set("series", document.querySelector("[data-store-series].is-active")?.dataset.storeSeries === "magic" ? "magic" : "pokemon");
+      if (market === "international") {
+        url.searchParams.set("market", "international");
+        url.searchParams.set("currency", selectedCurrency());
+      } else {
+        const selectedSeries = document.querySelector("[data-store-series].is-active")?.dataset.storeSeries || "";
+        if (selectedSeries && selectedSeries !== "all") url.searchParams.set("series", selectedSeries);
+      }
       const response = await fetch(url.toString(), {
-        headers: { Accept: "application/json" },
+        headers: {
+          Accept: "application/json",
+          ...(market === "international" && authToken() ? { Authorization: `Bearer ${authToken()}` } : {})
+        },
         signal: catalogController.signal
       });
       const payload = await response.json().catch(() => ({}));
@@ -612,8 +621,8 @@
         return;
       }
 
-      storeComingSoon = true;
-      storeCheckoutEnabled = false;
+      storeComingSoon = payload?.comingSoon !== false;
+      storeCheckoutEnabled = payload?.checkoutEnabled === true;
       renderPrimaryTabs(payload?.categories || []);
       const normalized = rows.map(item => normalizeApiItem(item, payload));
       renderCatalog(normalized);
