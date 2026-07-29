@@ -42,11 +42,13 @@ test("Seller Hub exposes the connected Seller Live cockpit controls", async () =
 });
 
 test("Seller accounts expose calculator, credit purchase, and direct Stripe subscription entry points", async () => {
-  const [sellerHtml, accountHtml, script, routes] = await Promise.all([
+  const [sellerHtml, accountHtml, accountCss, script, routes, calculator] = await Promise.all([
     read("streams.html"),
     read("referral.html"),
+    read("assets/css/referral.css"),
     read("assets/js/referral.js"),
-    read("rewards-worker/src/platform-routes.js")
+    read("rewards-worker/src/platform-routes.js"),
+    read("rewards-worker/src/stream-credits.js")
   ]);
   assert.match(sellerHtml, /seller-credits-bubble[^>]+href="referral\.html\?view=credits"/);
   assert.match(sellerHtml, /Add credits or subscribe/);
@@ -55,6 +57,23 @@ test("Seller accounts expose calculator, credit purchase, and direct Stripe subs
   assert.match(accountHtml, /data-stream-credit-buy/);
   assert.match(accountHtml, /data-stream-rebate-rate/);
   assert.match(accountHtml, /toward the next subscription period/);
+  assert.match(accountHtml, /stream-tier-recommendation/);
+  assert.match(accountHtml, />Recommended tier</);
+  assert.match(accountHtml, /data-stream-plan-name/);
+  const calculatorStart = accountHtml.indexOf("data-stream-credits-form");
+  const calculatorEnd = accountHtml.indexOf("</form>", calculatorStart);
+  const calculatorForm = accountHtml.slice(calculatorStart, calculatorEnd);
+  assert.deepEqual([...calculatorForm.matchAll(/<input name="([^"]+)"/g)].map(match => match[1]), [
+    "averageConcurrentViewers",
+    "hoursPerShow",
+    "showsPerMonth"
+  ]);
+  assert.doesNotMatch(calculatorForm, /recordingRetentionDays|replayReservePercentage|safetyBufferPercentage/);
+  assert.match(calculator, /recordingRetentionDays:\s*90/);
+  assert.match(calculator, /replayReservePercentage:\s*0\.10/);
+  assert.match(calculator, /safetyBufferPercentage:\s*0\.20/);
+  assert.match(accountCss, /\.stream-credits-result/);
+  assert.match(script, /Recommended tier:/);
   assert.match(script, /subscribe\.dataset\.streamPlanStripe = plan\.code/);
   assert.match(script, /Subscribe with Stripe/);
   assert.match(script, /startStreamPlanCheckout/);

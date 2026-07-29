@@ -832,10 +832,7 @@
     return {
       averageConcurrentViewers: Number(form.get("averageConcurrentViewers") || 0),
       hoursPerShow: Number(form.get("hoursPerShow") || 0),
-      showsPerMonth: Number(form.get("showsPerMonth") || 0),
-      recordingRetentionDays: Number(form.get("recordingRetentionDays") || 0) || undefined,
-      replayReservePercentage: Number(form.get("replayReservePercentage") || 0) || undefined,
-      safetyBufferPercentage: Number(form.get("safetyBufferPercentage") || 0) || undefined
+      showsPerMonth: Number(form.get("showsPerMonth") || 0)
     };
   };
   function renderStreamCreditRebatePolicy(subscription = null) {
@@ -1072,9 +1069,6 @@
         form.averageConcurrentViewers.value = subscription.averageConcurrentViewers ?? "";
         form.hoursPerShow.value = subscription.hoursPerShow ?? "";
         form.showsPerMonth.value = subscription.showsPerMonth ?? "";
-        form.recordingRetentionDays.value = subscription.recordingRetentionDays ?? "";
-        form.replayReservePercentage.value = subscription.replayReservePercentage ?? "";
-        form.safetyBufferPercentage.value = subscription.safetyBufferPercentage ?? "";
       }
       renderStreamCreditDashboard(data);
       streamCreditsLastLoadedAt = Date.now();
@@ -2111,7 +2105,7 @@
       streamCreditStatus("Calculating seller plan...");
       const result = await request("/seller/stream-credits/calculate", { method: "POST", body: JSON.stringify(readStreamCreditForm()) });
       renderStreamCreditDashboard({ dashboard: { includedCredits: result.recommendedPlan?.includedCredits || 0, actualCreditsUsed: 0, creditsRemaining: result.recommendedPlan?.includedCredits || 0, projectedEndOfMonthUsage: result.metrics?.projectedBaseCredits || 0, projectedUnusedCredits: Math.max(0, Number(result.recommendedPlan?.includedCredits || 0) - Number(result.metrics?.projectedBaseCredits || 0)), projectedRebate: Math.max(0, Number(result.recommendedPlan?.includedCredits || 0) - Number(result.metrics?.projectedBaseCredits || 0)) * Number(result.config?.unusedCreditRebateRate || 0), projectedOverage: Math.max(0, Number(result.metrics?.projectedBaseCredits || 0) - Number(result.recommendedPlan?.includedCredits || 0)) }, projection: result });
-      streamCreditStatus(`Recommended plan: ${result.recommendedPlan?.name || "Unavailable"}.`, "success");
+      streamCreditStatus(`Recommended tier: ${result.recommendedPlan?.name || "Unavailable"}.`, "success");
     } catch (error) {
       streamCreditStatus(error.message, "error");
     }
