@@ -32,7 +32,19 @@
     customHelp: $("[data-custom-bid-help]"),
     player: $("[data-live-stream-player]"),
     placeholder: $("[data-live-video-placeholder]"),
-    viewers: $("[data-live-viewers]")
+    viewers: $("[data-live-viewers]"),
+    videoHud: $("[data-video-auction-hud]"),
+    videoImage: $("[data-video-auction-image]"),
+    videoImagePlaceholder: $("[data-video-auction-image-placeholder]"),
+    videoTitle: $("[data-video-auction-title]"),
+    videoDetail: $("[data-video-auction-detail]"),
+    videoBid: $("[data-video-auction-bid]"),
+    videoBidLabel: $("[data-video-auction-bid-label]"),
+    videoQuickBid: $("[data-video-auction-quick-bid]"),
+    videoCustomToggle: $("[data-video-auction-custom-toggle]"),
+    videoCustomForm: $("[data-video-auction-custom-form]"),
+    videoCustomInput: $("[data-video-auction-custom-input]"),
+    videoStatus: $("[data-video-auction-status]")
   };
 
   let lot = null;
@@ -41,6 +53,7 @@
   let activePlaybackUrl = "";
   let refreshInFlight = false;
   let heartbeatInFlight = false;
+  let videoHudStateKey = "";
 
   const money = (cents) => `$${(Number(cents || 0) / 100).toFixed(2)}`;
   const dollars = (cents) => (Number(cents || 0) / 100).toFixed(2);
@@ -120,10 +133,85 @@
     els.current.classList.add("bid-pop");
   };
 
+  const setVideoBidStatus = (message, kind = "") => {
+    if (!els.videoStatus) return;
+    els.videoStatus.textContent = message;
+    if (kind) els.videoStatus.dataset.kind = kind;
+    else delete els.videoStatus.dataset.kind;
+  };
+
+  const closeVideoCustomBid = () => {
+    if (els.videoCustomForm) els.videoCustomForm.hidden = true;
+    if (els.videoCustomToggle) els.videoCustomToggle.setAttribute("aria-expanded", "false");
+  };
+
+  const renderVideoAuctionHud = (nextLot) => {
+    if (!els.videoHud) return;
+    const scheduled = nextLot?.status === "scheduled";
+    const live = nextLot?.status === "live";
+    const state = nextLot ? (scheduled ? "scheduled" : live ? "live" : "closed") : "waiting";
+    const stateKey = `${nextLot?.id || "none"}:${state}:${nextLot?.viewerBidState || ""}`;
+    const title = nextLot?.title || "Waiting for the next item";
+    const currentCents = Number(nextLot?.currentBidCents || nextLot?.startingBidCents || 0);
+    const minimumCents = Number(nextLot?.minNextBidCents || 0);
+
+    els.videoHud.dataset.state = state;
+    if (els.videoTitle) els.videoTitle.textContent = title;
+    if (els.videoDetail) {
+      els.videoDetail.textContent = nextLot
+        ? nextLot.condition || nextLot.description || (scheduled ? "Queued for this show." : "Live auction item.")
+        : "The seller has not opened an auction.";
+    }
+    if (els.videoBidLabel) els.videoBidLabel.textContent = scheduled ? "Starting bid" : "Current bid";
+    if (els.videoBid) els.videoBid.textContent = money(currentCents);
+
+    if (els.videoImage && els.videoImagePlaceholder) {
+      if (nextLot?.imageUrl) {
+        els.videoImage.src = nextLot.imageUrl;
+        els.videoImage.alt = `${title} auction item`;
+        els.videoImage.hidden = false;
+        els.videoImagePlaceholder.hidden = true;
+      } else {
+        els.videoImage.removeAttribute("src");
+        els.videoImage.alt = "";
+        els.videoImage.hidden = true;
+        els.videoImagePlaceholder.hidden = false;
+      }
+    }
+
+    if (els.videoQuickBid) {
+      els.videoQuickBid.disabled = !live;
+      els.videoQuickBid.textContent = live ? `BID ${money(minimumCents)}` : scheduled ? "BIDDING OPENS LIVE" : nextLot ? "AUCTION CLOSED" : "BID";
+    }
+    if (els.videoCustomToggle) {
+      els.videoCustomToggle.disabled = !live;
+      if (!live) closeVideoCustomBid();
+    }
+    if (els.videoCustomInput) {
+      els.videoCustomInput.min = String(Math.max(0.01, minimumCents / 100));
+      els.videoCustomInput.placeholder = minimumCents ? `Minimum ${money(minimumCents)}` : "Enter custom bid";
+      if (live && (!Number.isFinite(Number(els.videoCustomInput.value)) || Number(els.videoCustomInput.value) * 100 < minimumCents)) {
+        els.videoCustomInput.value = dollars(minimumCents);
+      }
+    }
+
+    if (stateKey !== videoHudStateKey) {
+      if (!nextLot) setVideoBidStatus("Bidding opens when an item goes live.");
+      else if (scheduled) setVideoBidStatus("Bidding opens when the seller starts this item.");
+      else if (!live) setVideoBidStatus("This auction has closed.");
+      else if (!token()) setVideoBidStatus("Sign in to your Profile before bidding.");
+      else if (nextLot.viewerBidState === "winning") setVideoBidStatus("You're currently winning this item.");
+      else if (nextLot.viewerBidState === "losing") setVideoBidStatus(`Bid again from ${money(minimumCents)}.`);
+      else setVideoBidStatus(`Quick bid places the next bid at ${money(minimumCents)}.`);
+      videoHudStateKey = stateKey;
+    }
+  };
+
   const render = (nextLot) => {
     lot = nextLot || null;
     if (lot?.status === "live" && lot.playbackUrl) setPlayback(lot.playbackUrl);
     if (!lot) {
+      renderVideoAuctionHud(null);
       els.card.dataset.state = "ready";
       els.status.textContent = "No auction is live yet. Keep this page open.";
       els.title.textContent = "No live auction yet";
@@ -144,6 +232,7 @@
     const scheduled = lot.status === "scheduled";
     const live = lot.status === "live";
     const nextCurrent = Number(lot.currentBidCents || lot.startingBidCents || 0);
+    renderVideoAuctionHud(lot);
     els.card.dataset.state = scheduled ? "scheduled" : lot.viewerBidState || "ready";
     els.status.textContent = scheduled
       ? "Show published. This auction item is queued."
@@ -237,19 +326,28 @@
   };
 
   const placeBid = async (payload = {}) => {
-    if (!lot || lot.status !== "live") return;
+    if (!lot || lot.status !== "live") {
+      setVideoBidStatus("Bidding is not open for this item.", "error");
+      return false;
+    }
     if (!token()) {
       els.copy.textContent = "Sign in to your Profile before bidding.";
-      return;
+      setVideoBidStatus("Sign in to your Profile before bidding.", "error");
+      return false;
     }
     els.copy.textContent = "Sending bid...";
+    setVideoBidStatus("Sending bid...");
     try {
       const data = await api(`/live/auction/lots/${lot.id}/bid`, { method: "POST", body: JSON.stringify(payload) });
       render(data.lot);
+      setVideoBidStatus(`Bid accepted. Current bid is ${money(data.lot.currentBidCents)}.`);
+      return true;
     } catch (err) {
       els.copy.textContent = err.message;
+      setVideoBidStatus(err.message, "error");
       syncCustomBidWindow();
       setSlider(0);
+      return false;
     }
   };
 
@@ -292,6 +390,37 @@
       }
       await placeBid({ bidAmount });
       input.value = "";
+    });
+  }
+
+  if (els.videoQuickBid) {
+    els.videoQuickBid.addEventListener("click", async () => {
+      await placeBid();
+    });
+  }
+
+  if (els.videoCustomToggle && els.videoCustomForm) {
+    els.videoCustomToggle.addEventListener("click", () => {
+      const shouldOpen = els.videoCustomForm.hidden;
+      els.videoCustomForm.hidden = !shouldOpen;
+      els.videoCustomToggle.setAttribute("aria-expanded", String(shouldOpen));
+      if (shouldOpen) els.videoCustomInput?.focus();
+    });
+
+    els.videoCustomForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const bidAmount = Number(els.videoCustomInput?.value);
+      const minimumCents = Number(lot?.minNextBidCents || 0);
+      if (!Number.isFinite(bidAmount) || bidAmount <= 0) {
+        setVideoBidStatus("Enter a valid custom bid amount.", "error");
+        return;
+      }
+      if (minimumCents && Math.round(bidAmount * 100) < minimumCents) {
+        if (els.videoCustomInput) els.videoCustomInput.value = dollars(minimumCents);
+        setVideoBidStatus(`Minimum bid is now ${money(minimumCents)}.`, "error");
+        return;
+      }
+      if (await placeBid({ bidAmount })) closeVideoCustomBid();
     });
   }
 

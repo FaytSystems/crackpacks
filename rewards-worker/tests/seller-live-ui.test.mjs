@@ -27,6 +27,11 @@ test("Seller Hub exposes the connected Seller Live cockpit controls", async () =
   assert.ok(videoIndex < chatIndex);
   assert.match(html, /data-chat-messages/);
   assert.match(html, /data-chat-form/);
+  assert.match(html, /data-seller-video-auction-hud/);
+  assert.match(html, /data-seller-video-auction-title/);
+  assert.match(html, /data-seller-video-auction-bid/);
+  assert.match(html, /data-seller-bid-preview/);
+  assert.match(html, /data-seller-custom-bid-preview/);
 });
 
 test("Seller Live long-press and queue-selection behavior is wired", async () => {
@@ -70,4 +75,26 @@ test("desktop live rooms order auction, video, and shared chat", async () => {
   assert.match(chatScript, /encodeURIComponent\(activeShowId\).*\/chat/s);
   assert.match(chatScript, /escapeHtml\(message\.message/);
   assert.match(chatScript, /setInterval\(refresh/);
+});
+
+test("video auction HUD exposes live buyer bids and a locked seller preview", async () => {
+  const [liveHtml, liveScript, sellerScript, hudCss, routes] = await Promise.all([
+    read("live.html"),
+    read("assets/js/live.js"),
+    read("assets/js/streams-hub.js"),
+    read("assets/css/video-auction-hud.css"),
+    read("rewards-worker/src/platform-routes.js")
+  ]);
+  assert.match(liveHtml, /data-video-auction-hud/);
+  assert.match(liveHtml, /data-video-auction-quick-bid/);
+  assert.match(liveHtml, /data-video-auction-custom-toggle/);
+  assert.match(liveHtml, /data-video-auction-custom-form/);
+  assert.match(liveScript, /renderVideoAuctionHud/);
+  assert.match(liveScript, /videoQuickBid\.addEventListener\("click"/);
+  assert.match(liveScript, /placeBid\(\{ bidAmount \}\)/);
+  assert.match(sellerScript, /renderSellerVideoAuctionHud/);
+  assert.match(sellerScript, /quickBid\.textContent = `BID \$\{dollars\(minimumCents\)\}`/);
+  assert.match(hudCss, /\.video-auction-hud\[data-state="live"\]/);
+  assert.match(hudCss, /@media \(max-width: 520px\)/);
+  assert.match(routes, /Sellers cannot bid on their own auction\./);
 });

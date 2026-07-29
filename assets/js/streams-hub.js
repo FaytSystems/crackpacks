@@ -644,6 +644,62 @@
     return String(left.id || "").localeCompare(String(right.id || ""));
   }
 
+  function renderSellerVideoAuctionHud(current) {
+    const hud = $("[data-seller-video-auction-hud]");
+    if (!hud) return;
+    const image = $("[data-seller-video-auction-image]");
+    const imagePlaceholder = $("[data-seller-video-auction-image-placeholder]");
+    const title = $("[data-seller-video-auction-title]");
+    const detail = $("[data-seller-video-auction-detail]");
+    const bid = $("[data-seller-video-auction-bid]");
+    const quickBid = $("[data-seller-bid-preview]");
+    const customBid = $("[data-seller-custom-bid-preview]");
+    const status = $("[data-seller-video-auction-status]");
+
+    hud.dataset.state = current ? "live" : "waiting";
+    if (!current) {
+      if (image) {
+        image.removeAttribute("src");
+        image.alt = "";
+        image.hidden = true;
+      }
+      if (imagePlaceholder) imagePlaceholder.hidden = false;
+      if (title) title.textContent = "Waiting for the next item";
+      if (detail) detail.textContent = "No live auction yet.";
+      if (bid) bid.textContent = "$0.00";
+      if (quickBid) quickBid.textContent = "BID";
+      if (customBid) customBid.textContent = "CUSTOM BID";
+      if (status) status.textContent = "Buyer controls preview. Sellers cannot bid on their own auction.";
+      return;
+    }
+
+    const currentCents = Number(current.current_bid_cents ?? current.starting_bid_cents ?? 0);
+    const minimumCents = currentCents + Number(current.bid_increment_cents || 0);
+    if (image && imagePlaceholder) {
+      if (current.image_url) {
+        image.src = current.image_url;
+        image.alt = `${current.title || "Live"} auction item`;
+        image.hidden = false;
+        imagePlaceholder.hidden = true;
+      } else {
+        image.removeAttribute("src");
+        image.alt = "";
+        image.hidden = true;
+        imagePlaceholder.hidden = false;
+      }
+    }
+    if (title) title.textContent = current.title || "Live auction";
+    if (detail) {
+      detail.textContent = current.winning_display
+        ? `Leading bidder: @${current.winning_display}`
+        : current.item_condition || current.description || "Awaiting the first buyer bid.";
+    }
+    if (bid) bid.textContent = dollars(currentCents);
+    if (quickBid) quickBid.textContent = `BID ${dollars(minimumCents)}`;
+    if (customBid) customBid.textContent = "CUSTOM BID";
+    if (status) status.textContent = `Buyers can quick bid ${dollars(minimumCents)} or enter a custom bid. Seller controls stay locked.`;
+  }
+
   function renderBroadcastAuctionConsole(lots = [], show = null) {
     const currentHost = $("[data-broadcast-current-item]");
     const list = $("[data-broadcast-sale-list]");
@@ -651,9 +707,10 @@
     const queueCount = $("[data-broadcast-queue-count]");
     const auctionButton = $("[data-auction-off]");
     const endButton = $("[data-broadcast-end-show]");
+    const current = lots.find(lot => lot.status === "live") || null;
+    renderSellerVideoAuctionHud(current);
     if (!currentHost || !list || !liveState || !queueCount || !auctionButton || !endButton) return;
     const activeShow = show && ["open", "live"].includes(String(show.status || ""));
-    const current = lots.find(lot => lot.status === "live") || null;
     const queued = lots.filter(lot => lot.status === "scheduled").sort(auctionQueueOrder);
     const itemsForSale = [...(current ? [current] : []), ...queued];
     const next = queued[0] || null;

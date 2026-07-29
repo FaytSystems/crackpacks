@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="assets/css/styles.css?v=1.10.1">
   <link rel="stylesheet" href="assets/css/live.css?v=1.2.0">
   <link rel="stylesheet" href="assets/css/live-chat.css?v=1.0.0">
+  <link rel="stylesheet" href="assets/css/video-auction-hud.css?v=1.0.0">
 </head>
 <body data-page="live">
   <header class="site-header">
@@ -60,6 +61,31 @@
         <img class="live-show-thumbnail" data-live-show-thumbnail src="" alt="" hidden>
         <div class="live-video-placeholder" data-live-video-placeholder>Stream player connects here when a breaker session is live.</div>
         <iframe class="live-stream-player" data-live-stream-player title="Crack Packs live stream" allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture" allowfullscreen hidden></iframe>
+        <section class="video-auction-hud" data-video-auction-hud data-state="waiting" aria-label="Auction attached to this video">
+          <div class="video-auction-hud-image">
+            <img data-video-auction-image src="" alt="" hidden>
+            <span data-video-auction-image-placeholder>No item</span>
+          </div>
+          <div class="video-auction-hud-copy">
+            <span>Now selling</span>
+            <strong data-video-auction-title>Waiting for the next item</strong>
+            <small data-video-auction-detail>The seller has not opened an auction.</small>
+          </div>
+          <div class="video-auction-hud-bid">
+            <span data-video-auction-bid-label>Current bid</span>
+            <strong data-video-auction-bid>$0.00</strong>
+          </div>
+          <div class="video-auction-hud-actions">
+            <button class="video-auction-hud-button is-bid" data-video-auction-quick-bid type="button" disabled>BID</button>
+            <button class="video-auction-hud-button" data-video-auction-custom-toggle type="button" aria-expanded="false" disabled>CUSTOM BID</button>
+          </div>
+          <form class="video-auction-custom-form" data-video-auction-custom-form hidden>
+            <label class="sr-only" for="video-custom-bid">Custom bid amount</label>
+            <input id="video-custom-bid" data-video-auction-custom-input type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="Enter custom bid">
+            <button class="video-auction-hud-button is-bid" type="submit">PLACE BID</button>
+          </form>
+          <p class="video-auction-hud-status" data-video-auction-status aria-live="polite">Bidding opens when an item goes live.</p>
+        </section>
       </div>
       <aside class="live-chat-card live-chat-panel" data-live-chat aria-label="Live show chat">
         <header class="live-chat-head">
@@ -88,6 +114,6 @@
   <script src="assets/js/app.js?v=1.9.9"></script>
   <script src="assets/js/portal-mode.js?v=1.2.5"></script>
   <script src="assets/js/live-chat.js?v=1.0.0"></script>
-  <script src="assets/js/live.js?v=1.2.0"></script>
+  <script src="assets/js/live.js?v=1.2.1"></script>
 </body>
 </html>

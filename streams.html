@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.7.0">
   <link rel="stylesheet" href="assets/css/streams-hub.css?v=2.3.0">
   <link rel="stylesheet" href="assets/css/live-chat.css?v=1.0.0">
+  <link rel="stylesheet" href="assets/css/video-auction-hud.css?v=1.0.0">
 </head>
 <body data-page="streams">
   <a class="skip-link" href="#main">Skip to content</a>
@@ -230,6 +231,26 @@
             </div>
             <iframe data-seller-broadcast-player title="Seller live broadcast monitor" allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture" allowfullscreen hidden></iframe>
           </div>
+          <section class="video-auction-hud" data-seller-video-auction-hud data-state="waiting" aria-label="Auction attached to the seller video monitor">
+            <div class="video-auction-hud-image">
+              <img data-seller-video-auction-image src="" alt="" hidden>
+              <span data-seller-video-auction-image-placeholder>No item</span>
+            </div>
+            <div class="video-auction-hud-copy">
+              <span>Now selling</span>
+              <strong data-seller-video-auction-title>Waiting for the next item</strong>
+              <small data-seller-video-auction-detail>No live auction yet.</small>
+            </div>
+            <div class="video-auction-hud-bid">
+              <span>Current bid</span>
+              <strong data-seller-video-auction-bid>$0.00</strong>
+            </div>
+            <div class="video-auction-hud-actions" aria-label="Buyer bidding controls preview">
+              <button class="video-auction-hud-button is-bid" data-seller-bid-preview type="button" disabled>BID</button>
+              <button class="video-auction-hud-button" data-seller-custom-bid-preview type="button" disabled>CUSTOM BID</button>
+            </div>
+            <p class="video-auction-hud-status" data-seller-video-auction-status>Buyer controls preview. Sellers cannot bid on their own auction.</p>
+          </section>
           <p class="fine-print">This monitor follows your permanent Cloudflare Live Input. When OBS is disconnected, Cloudflare displays that the stream has not started.</p>
         </article>
         <aside class="holo-panel seller-live-chat live-chat-panel" data-live-chat data-seller-tool-panel="show-control" aria-label="Live show chat">
@@ -636,6 +657,6 @@
   <script src="assets/js/app.js?v=1.9.9"></script>
   <script src="assets/js/portal-mode.js?v=1.2.5"></script>
   <script src="assets/js/live-chat.js?v=1.0.0"></script>
-  <script src="assets/js/streams-hub.js?v=2.3.0"></script>
+  <script src="assets/js/streams-hub.js?v=2.3.1"></script>
 </body>
 </html>
