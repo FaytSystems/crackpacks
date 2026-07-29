@@ -23,6 +23,7 @@
   const sellerSetupDestination = () => authToken() ? "referral.html?return=seller" : "referral.html?mode=signin&return=seller";
   const sellerToolHashes = new Set([
     "#seller-home",
+    "#seller-live",
     "#seller-show-control",
     "#go-live",
     "#seller-obs",

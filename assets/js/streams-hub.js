@@ -25,6 +25,15 @@
   let pendingCloseShowId = "";
   let closeShowTrigger = null;
   let auctionAdvancePending = false;
+  let autoNextActive = false;
+  let autoNextShowId = "";
+  let autoNextDeadline = 0;
+  let autoNextTickTimer = 0;
+  let autoNextStepTimer = 0;
+  let auctionHoldTimer = 0;
+  let suppressAuctionNextClick = false;
+  const AUTO_NEXT_HOLD_MS = 3000;
+  const ALLOWED_AUCTION_DURATIONS = new Set([15, 30, 45, 60, 90, 120]);
   const requestedHubTab = new URLSearchParams(location.search).get("tab") || "";
   let activeTab = ["all", "live", "upcoming", "followed", "watchlist"].includes(requestedHubTab)
     ? requestedHubTab
@@ -36,7 +45,7 @@
   const OBS_GUIDE_COMPLETED_KEY = "cp_obs_guide_completed";
   const sellerToolMeta = {
     home: { hash: "#seller-home", title: "Seller home", copy: "Shows, store inventory, orders, and live tools at a glance." },
-    "show-control": { hash: "#seller-show-control", title: "Show control", copy: "Monitor the live feed and move queued inventory into the active auction." },
+    "show-control": { hash: "#seller-live", title: "Seller Live", copy: "Monitor OBS, organize the Auction Block, and control the active sale queue." },
     obs: { hash: "#seller-obs", title: "Private OBS connection", copy: "Create, reveal, and reuse the protected RTMPS server and stream key." },
     simulcast: { hash: "#seller-simulcast", title: "Simulcast", copy: "Relay the Crack Packs broadcast securely to the connected YouTube channel." },
     shows: { hash: "#create-show", title: "Shows", copy: "Schedule a show, upload its thumbnail, and prepare it for buyers." },
@@ -50,6 +59,7 @@
   };
   const sellerToolAliases = {
     "#go-live": "show-control",
+    "#seller-show-control": "show-control",
     "#seller-my-listings": "show-inventory"
   };
 
@@ -619,8 +629,13 @@
     const queued = lots.filter(lot => lot.status === "scheduled").sort(auctionQueueOrder);
     const itemsForSale = [...(current ? [current] : []), ...queued];
     const next = queued[0] || null;
+    const durationControl = $("[data-auto-next-duration]");
     liveState.textContent = current ? "LIVE" : (activeShow ? "Ready" : "Waiting");
     queueCount.textContent = `${queued.length} queued`;
+    if (durationControl && current) {
+      const duration = Number(current.auction_duration_seconds || 30);
+      if ([...durationControl.options].some(option => Number(option.value) === duration)) durationControl.value = String(duration);
+    }
     if (current) {
       const price = dollars(current.current_bid_cents ?? current.starting_bid_cents);
       const image = current.image_url ? `<img src="${escapeHtml(current.image_url)}" alt="" loading="lazy">` : "";
@@ -632,21 +647,31 @@
         ? `<strong>No live auction yet.</strong><span>${next ? `${escapeHtml(next.title)} is first in the queue.` : "Add items from your store or the Shows manager."}</span>`
         : `<strong>Choose an active show.</strong><span>The sale queue will load here.</span>`;
     }
-    list.innerHTML = itemsForSale.length ? itemsForSale.map((lot, index) => {
+    list.innerHTML = itemsForSale.length ? itemsForSale.map(lot => {
       const live = lot.status === "live";
+      const queueIndex = live ? -1 : queued.findIndex(item => item.id === lot.id);
       const price = dollars(lot.current_bid_cents ?? lot.starting_bid_cents);
+      const duration = Number(lot.auction_duration_seconds || 30);
       const image = lot.image_url
         ? `<img src="${escapeHtml(lot.image_url)}" alt="" loading="lazy">`
         : `<span class="seller-auction-queue-image-placeholder" aria-hidden="true">No image</span>`;
+      const controls = live
+        ? `<span class="seller-auction-queue-status">Live</span>`
+        : `<div class="seller-auction-queue-actions">
+            <span class="seller-auction-queue-status">Queued</span>
+            <button type="button" data-queue-move="up" data-lot-id="${lot.id}" aria-label="Move ${escapeHtml(lot.title)} up" title="Move up" ${queueIndex <= 0 ? "disabled" : ""}>&uarr;</button>
+            <button type="button" data-queue-move="down" data-lot-id="${lot.id}" aria-label="Move ${escapeHtml(lot.title)} down" title="Move down" ${queueIndex >= queued.length - 1 ? "disabled" : ""}>&darr;</button>
+            <button class="seller-queue-run-button" type="button" data-queue-run="${lot.id}">Run now</button>
+          </div>`;
       return `
         <article class="seller-auction-queue-item ${live ? "is-live" : ""}">
-          <span class="seller-auction-queue-number">${live ? "&#9679;" : index + 1}</span>
+          <span class="seller-auction-queue-number">${live ? "&#9679;" : queueIndex + 1}</span>
           ${image}
           <div class="seller-auction-queue-copy">
             <strong>${escapeHtml(lot.title)}</strong>
-            <span>${live ? "Current bid" : "Starting bid"} ${price} &middot; ${escapeHtml(lot.item_condition || lot.sale_type || "Sale item")}</span>
+            <span>${live ? "Current bid" : "Starting bid"} ${price} &middot; ${duration}s &middot; ${escapeHtml(lot.item_condition || lot.sale_type || "Sale item")}</span>
           </div>
-          <span class="seller-auction-queue-status">${live ? "Live" : "Queued"}</span>
+          ${controls}
         </article>
       `;
     }).join("") : `<div class="stream-empty">${activeShow ? "No items are queued for this show." : "Choose an active show to load its sale items."}</div>`;
@@ -656,6 +681,164 @@
       : "No queued item is available for the live auction");
     endButton.disabled = !activeShow;
     endButton.dataset.broadcastEndShow = activeShow ? show.id : "";
+    syncAutoNextControls();
+  }
+
+  function selectedAuctionDuration() {
+    const requested = Number($("[data-auto-next-duration]")?.value || 30);
+    return ALLOWED_AUCTION_DURATIONS.has(requested) ? requested : 30;
+  }
+
+  function currentBroadcastLot() {
+    return sellerShowLots.find(lot => lot.status === "live") || null;
+  }
+
+  function queuedBroadcastLots() {
+    return sellerShowLots.filter(lot => lot.status === "scheduled").sort(auctionQueueOrder);
+  }
+
+  function clearAutoNextTimers() {
+    window.clearInterval(autoNextTickTimer);
+    window.clearTimeout(autoNextStepTimer);
+    autoNextTickTimer = 0;
+    autoNextStepTimer = 0;
+    autoNextDeadline = 0;
+  }
+
+  function clearAuctionHold() {
+    window.clearTimeout(auctionHoldTimer);
+    auctionHoldTimer = 0;
+    $("[data-auction-next]")?.classList.remove("is-holding");
+  }
+
+  function syncAutoNextControls() {
+    const panel = $("[data-auto-next-panel]");
+    const mode = $("[data-auto-next-mode]");
+    const countdown = $("[data-auto-next-countdown]");
+    const copy = $("[data-auto-next-copy]");
+    const stop = $("[data-auto-next-stop]");
+    const next = $("[data-auction-next]");
+    if (panel) panel.dataset.state = autoNextActive ? "auto" : "manual";
+    if (mode) mode.textContent = autoNextActive ? "AUTO-NEXT ARMED" : "Manual queue";
+    if (countdown && !autoNextActive) countdown.textContent = "--";
+    if (copy) copy.textContent = autoNextActive
+      ? "The active auction will close at zero and the next Auction Block item will start."
+      : "Tap NEXT AUCTION once to advance. Hold it for 3 seconds to arm the timed queue.";
+    if (stop) stop.disabled = !autoNextActive;
+    if (next) next.classList.toggle("is-auto-next-active", autoNextActive);
+  }
+
+  function updateAutoNextCountdown() {
+    if (!autoNextActive || !autoNextDeadline) return;
+    const countdown = $("[data-auto-next-countdown]");
+    if (countdown) countdown.textContent = `${Math.max(0, Math.ceil((autoNextDeadline - Date.now()) / 1000))}s`;
+  }
+
+  function stopAutoNext(message = "", state = "success") {
+    const wasActive = autoNextActive;
+    autoNextActive = false;
+    autoNextShowId = "";
+    clearAutoNextTimers();
+    clearAuctionHold();
+    syncAutoNextControls();
+    if (message && wasActive) setStatus("[data-broadcast-auction-status]", message, state);
+  }
+
+  async function advanceAuctionQueue({ nextLotId = "", source = "manual" } = {}) {
+    if (auctionAdvancePending) return null;
+    const show = selectedSellerShow();
+    if (!show) throw new Error("Choose an active show first.");
+    auctionAdvancePending = true;
+    renderBroadcastAuctionConsole(sellerShowLots, show);
+    setStatus("[data-broadcast-auction-status]", nextLotId ? "Starting the selected auction..." : "Advancing the auction queue...");
+    try {
+      const result = await api(`/seller/shows/${encodeURIComponent(show.id)}/auction-off`, {
+        method: "POST",
+        body: JSON.stringify(nextLotId ? { nextLotId } : {})
+      });
+      await Promise.all([loadSellerLots(show.id), loadShows()]);
+      const closed = result.closedLot?.title ? `${result.closedLot.title} finished. ` : "";
+      const selected = source === "selected" ? "Selected item" : (result.lot?.title || "The next item");
+      setStatus("[data-broadcast-auction-status]", `${closed}${selected} is live. ${Number(result.remainingQueued || 0)} item(s) remain queued.`, "success");
+      return result;
+    } finally {
+      auctionAdvancePending = false;
+      renderBroadcastAuctionConsole(sellerShowLots, selectedSellerShow());
+    }
+  }
+
+  async function runAutoNextStep() {
+    if (!autoNextActive) return;
+    const show = selectedSellerShow();
+    if (!show || show.id !== autoNextShowId) {
+      stopAutoNext("Auto-Next stopped because the active show changed.", "error");
+      return;
+    }
+    const current = currentBroadcastLot();
+    const queued = queuedBroadcastLots();
+    try {
+      if (current && !queued.length) {
+        await api(`/seller/lots/${encodeURIComponent(current.id)}/close`, { method: "POST", body: "{}" });
+        await Promise.all([loadSellerLots(show.id), loadShows()]);
+        stopAutoNext("Auction Block complete. The final auction closed and Auto-Next stopped.");
+        return;
+      }
+      await advanceAuctionQueue({ source: "auto" });
+      if (autoNextActive) scheduleAutoNext();
+    } catch (error) {
+      stopAutoNext(`Auto-Next stopped: ${error.message}`, "error");
+    }
+  }
+
+  function scheduleAutoNext() {
+    if (!autoNextActive) return;
+    clearAutoNextTimers();
+    const current = currentBroadcastLot();
+    if (!current) {
+      runAutoNextStep();
+      return;
+    }
+    const durationSeconds = selectedAuctionDuration();
+    const openedAt = Date.parse(current.opened_at || "");
+    const elapsed = Number.isFinite(openedAt) ? Math.max(0, Date.now() - openedAt) : 0;
+    const remaining = Math.max(1000, durationSeconds * 1000 - elapsed);
+    autoNextDeadline = Date.now() + remaining;
+    updateAutoNextCountdown();
+    autoNextTickTimer = window.setInterval(updateAutoNextCountdown, 250);
+    autoNextStepTimer = window.setTimeout(runAutoNextStep, remaining);
+  }
+
+  async function startAutoNext() {
+    const show = selectedSellerShow();
+    const activeItems = [...(currentBroadcastLot() ? [currentBroadcastLot()] : []), ...queuedBroadcastLots()];
+    if (!show) {
+      setStatus("[data-broadcast-auction-status]", "Choose an active show before arming Auto-Next.", "error");
+      return;
+    }
+    if (!activeItems.length) {
+      setStatus("[data-broadcast-auction-status]", "Add at least one auction to the Auction Block first.", "error");
+      return;
+    }
+    autoNextActive = true;
+    autoNextShowId = show.id;
+    syncAutoNextControls();
+    setStatus("[data-broadcast-auction-status]", `AUTO-NEXT armed at ${selectedAuctionDuration()} seconds per auction.`, "success");
+    scheduleAutoNext();
+  }
+
+  async function reorderAuctionQueue(lotId, direction) {
+    const show = selectedSellerShow();
+    if (!show) throw new Error("Choose an active show first.");
+    const queued = queuedBroadcastLots();
+    const index = queued.findIndex(lot => lot.id === lotId);
+    const nextIndex = direction === "up" ? index - 1 : index + 1;
+    if (index < 0 || nextIndex < 0 || nextIndex >= queued.length) return;
+    [queued[index], queued[nextIndex]] = [queued[nextIndex], queued[index]];
+    await api(`/seller/shows/${encodeURIComponent(show.id)}/lots/reorder`, {
+      method: "POST",
+      body: JSON.stringify({ lotIds: queued.map(lot => lot.id) })
+    });
+    await loadSellerLots(show.id);
   }
 
   function numberedLotSettings(item) {
@@ -1345,6 +1528,9 @@
 
   [$("[data-seller-show-select]"), $("[data-broadcast-show-select]")].filter(Boolean).forEach(select => {
     select.addEventListener("change", event => {
+      if (autoNextActive && event.currentTarget.value !== autoNextShowId) {
+        stopAutoNext("Auto-Next stopped because the active show changed.");
+      }
       selectSellerShow(event.currentTarget.value).catch(error => {
         setStatus("[data-seller-lot-status]", error.message, "error");
         setStatus("[data-broadcast-auction-status]", error.message, "error");
@@ -1366,26 +1552,74 @@
       button.disabled = false;
     }
   });
-  $("[data-auction-off]")?.addEventListener("click", async event => {
-    if (auctionAdvancePending) return;
-    const button = event.currentTarget;
-    const show = selectedSellerShow();
-    if (!show) {
-      setStatus("[data-broadcast-auction-status]", "Choose an active show first.", "error");
+  const auctionNextButton = $("[data-auction-next]");
+  const startAuctionHold = event => {
+    if (!auctionNextButton || auctionNextButton.disabled || auctionAdvancePending || autoNextActive) return;
+    if (event.type === "pointerdown" && event.button !== 0) return;
+    clearAuctionHold();
+    suppressAuctionNextClick = false;
+    auctionNextButton.classList.add("is-holding");
+    setStatus("[data-broadcast-auction-status]", "Keep holding NEXT AUCTION to arm AUTO-NEXT...");
+    auctionHoldTimer = window.setTimeout(() => {
+      auctionHoldTimer = 0;
+      suppressAuctionNextClick = true;
+      auctionNextButton.classList.remove("is-holding");
+      startAutoNext();
+    }, AUTO_NEXT_HOLD_MS);
+  };
+  const cancelAuctionHold = () => {
+    if (!auctionHoldTimer) return;
+    clearAuctionHold();
+    setStatus("[data-broadcast-auction-status]", "");
+  };
+  auctionNextButton?.addEventListener("pointerdown", startAuctionHold);
+  auctionNextButton?.addEventListener("pointerup", cancelAuctionHold);
+  auctionNextButton?.addEventListener("pointercancel", cancelAuctionHold);
+  auctionNextButton?.addEventListener("pointerleave", cancelAuctionHold);
+  auctionNextButton?.addEventListener("keydown", event => {
+    if (!event.repeat && ["Enter", " "].includes(event.key)) startAuctionHold(event);
+  });
+  auctionNextButton?.addEventListener("keyup", event => {
+    if (["Enter", " "].includes(event.key)) cancelAuctionHold();
+  });
+  auctionNextButton?.addEventListener("contextmenu", event => event.preventDefault());
+  auctionNextButton?.addEventListener("click", async event => {
+    if (suppressAuctionNextClick) {
+      suppressAuctionNextClick = false;
+      event.preventDefault();
       return;
     }
-    auctionAdvancePending = true;
-    button.disabled = true;
-    setStatus("[data-broadcast-auction-status]", "Advancing the auction queue...");
+    if (autoNextActive) stopAutoNext("Auto-Next stopped. Manual queue control restored.");
     try {
-      const result = await api(`/seller/shows/${encodeURIComponent(show.id)}/auction-off`, { method: "POST", body: "{}" });
-      await Promise.all([loadSellerLots(show.id), loadShows()]);
-      const closed = result.closedLot?.title ? `${result.closedLot.title} finished. ` : "";
-      setStatus("[data-broadcast-auction-status]", `${closed}${result.lot?.title || "The next item"} is live. ${Number(result.remainingQueued || 0)} item(s) remain queued.`, "success");
+      await advanceAuctionQueue();
     } catch (error) {
       setStatus("[data-broadcast-auction-status]", error.message, "error");
-    } finally {
-      auctionAdvancePending = false;
+    }
+  });
+  $("[data-auto-next-stop]")?.addEventListener("click", () => {
+    stopAutoNext("Auto-Next stopped. Choose an Auction Block item or advance one at a time.");
+  });
+  $("[data-auto-next-duration]")?.addEventListener("change", () => {
+    if (!autoNextActive) return;
+    setStatus("[data-broadcast-auction-status]", `Auto-Next timer changed to ${selectedAuctionDuration()} seconds.`, "success");
+    scheduleAutoNext();
+  });
+  $("[data-broadcast-sale-list]")?.addEventListener("click", async event => {
+    const move = event.target.closest("[data-queue-move]");
+    const run = event.target.closest("[data-queue-run]");
+    if (!move && !run) return;
+    const controls = $$("[data-broadcast-sale-list] button");
+    controls.forEach(button => { button.disabled = true; });
+    try {
+      if (move) {
+        await reorderAuctionQueue(move.dataset.lotId, move.dataset.queueMove);
+        setStatus("[data-broadcast-auction-status]", "Auction Block order saved.", "success");
+      } else {
+        if (autoNextActive) stopAutoNext("Auto-Next stopped so the selected item can run.");
+        await advanceAuctionQueue({ nextLotId: run.dataset.queueRun, source: "selected" });
+      }
+    } catch (error) {
+      setStatus("[data-broadcast-auction-status]", error.message, "error");
       renderBroadcastAuctionConsole(sellerShowLots, selectedSellerShow());
     }
   });
@@ -1448,12 +1682,14 @@
           storeListingId,
           startingBid: Number(data.get("startingBid")),
           bidIncrement: Number(data.get("bidIncrement")),
+          auctionDurationSeconds: Number(data.get("auctionDurationSeconds")),
           lotCount: Number(data.get("lotCount")),
           numberStart: Number(data.get("numberStart"))
         })
       });
       form.elements.startingBid.value = "1.00";
       form.elements.bidIncrement.value = "1.00";
+      form.elements.auctionDurationSeconds.value = "30";
       form.elements.lotCount.value = "1";
       form.elements.numberStart.value = "1";
       await Promise.all([loadSellerLots(showId), loadSellerStoreListings()]);
@@ -1499,7 +1735,7 @@
         await loadSellerLots(showId);
         setStatus("[data-seller-lot-status]", "Auction lot added.", "success");
       }
-      form.reset(); form.elements.startingBid.value = "1.00"; form.elements.bidIncrement.value = "1.00"; form.elements.storePrice.value = "1.00"; form.elements.storeQuantity.value = "1"; form.elements.fixedShipping.value = "5.00"; form.elements.shippingPayer.value = "buyer"; form.elements.saleTypeStore.value = "singles";
+      form.reset(); form.elements.startingBid.value = "1.00"; form.elements.bidIncrement.value = "1.00"; form.elements.auctionDurationSeconds.value = "30"; form.elements.storePrice.value = "1.00"; form.elements.storeQuantity.value = "1"; form.elements.fixedShipping.value = "5.00"; form.elements.shippingPayer.value = "buyer"; form.elements.saleTypeStore.value = "singles";
       if (form.elements.storeShowId) form.elements.storeShowId.value = "";
       syncListingDestinationUi();
     } catch (error) { setStatus("[data-seller-lot-status]", error.message, "error"); }
@@ -1511,6 +1747,7 @@
     const copy = $("[data-close-show-copy]");
     const show = sellerShows.find(item => item.id === showId);
     if (!modal || !showId) return;
+    if (autoNextActive) stopAutoNext("Auto-Next stopped while the show close confirmation is open.");
     pendingCloseShowId = showId;
     closeShowTrigger = trigger || null;
     if (copy) copy.textContent = `Closing ${show?.title || "this show"} ends the broadcast session and cancels every remaining scheduled or open auction.`;
@@ -1747,7 +1984,10 @@
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) loadShows();
   });
-  window.addEventListener("pagehide", () => window.clearInterval(showsRefreshTimer), { once: true });
+  window.addEventListener("pagehide", () => {
+    window.clearInterval(showsRefreshTimer);
+    stopAutoNext();
+  }, { once: true });
   if (!viewerOnly) {
     syncSellerSectionNav();
     window.addEventListener("hashchange", syncSellerSectionNav);

@@ -1866,6 +1866,7 @@ function auctionView(row, viewerId = "", env = {}) {
     status: row.status, startingBidCents: Number(row.starting_bid_cents), bidIncrementCents: increment,
     currentBidCents: current, minNextBidCents: current + increment, imageUrl: row.image_url || "",
     condition: row.item_condition || "", saleType: row.sale_type || "sealed", viewerCount: Number(row.viewer_count || 0),
+    auctionDurationSeconds: Number(row.auction_duration_seconds || 30), openedAt: row.opened_at || "", closesAt: row.closes_at || "",
     viewerBidState: !viewerId || !row.winning_member_id ? "ready" : row.winning_member_id === viewerId ? "winning" : "losing",
     showWinnerBanner: row.status === "sold" && bannerUntil > Date.now(), winningDisplay: row.winning_display || "CRACKPACKS buyer",
     playbackUrl: playbackUrl(env, row.cloudflare_live_input_uid)
@@ -1885,9 +1886,9 @@ async function currentAuction(request, env, cors, url) {
         lot.status='live'
         OR (lot.status='sold' AND lot.winner_banner_until>?)
         OR (?<>'' AND lot.status='scheduled')
-      )
+    )
     ORDER BY CASE lot.status WHEN 'live' THEN 0 WHEN 'sold' THEN 1 ELSE 2 END,
-      CASE WHEN lot.status='scheduled' THEN lot.created_at END ASC,
+      CASE WHEN lot.status='scheduled' THEN COALESCE(lot.queue_position,lot.rowid) END ASC,
       lot.updated_at DESC
     LIMIT 1
   `).bind(requestedShow, requestedShow, now(), requestedShow).first();
@@ -2167,7 +2168,7 @@ async function listShows(request, env, cors) {
       SELECT lot.id
       FROM breaker_auction_lots lot
       WHERE lot.session_id=session.id AND lot.member_id=session.member_id AND lot.status IN ('live','scheduled')
-      ORDER BY CASE lot.status WHEN 'live' THEN 0 ELSE 1 END,lot.created_at ASC
+      ORDER BY CASE lot.status WHEN 'live' THEN 0 ELSE 1 END,COALESCE(lot.queue_position,lot.rowid) ASC,lot.created_at ASC
       LIMIT 1
     )
     WHERE session.status IN ('open','live','recording_ready') OR (session.scheduled_at IS NOT NULL AND session.scheduled_at>?)
@@ -3525,13 +3526,40 @@ async function sellerShowLots(request, env, cors, showId) {
   const show = await env.DB.prepare(`SELECT * FROM breaker_stream_sessions WHERE id=? AND member_id=?`).bind(showId, auth.member.id).first();
   if (!show) return json({ error: "Show not found." }, 404, cors);
   const rows = await env.DB.prepare(`
-    SELECT lot.*,lot.rowid queue_position,winner.live_username winning_display
+    SELECT lot.*,COALESCE(lot.queue_position,lot.rowid) queue_position,winner.live_username winning_display
     FROM breaker_auction_lots lot LEFT JOIN members winner ON winner.id=lot.winning_member_id
     WHERE lot.session_id=? AND lot.member_id=?
-    ORDER BY CASE lot.status WHEN 'live' THEN 0 WHEN 'scheduled' THEN 1 ELSE 2 END,lot.created_at ASC,lot.rowid ASC
+    ORDER BY CASE lot.status WHEN 'live' THEN 0 WHEN 'scheduled' THEN 1 ELSE 2 END,
+      COALESCE(lot.queue_position,lot.rowid) ASC,lot.created_at ASC,lot.rowid ASC
     LIMIT 200
   `).bind(showId, auth.member.id).all();
   return json({ show, lots: rows.results || [] }, 200, cors);
+}
+
+async function reorderAuctionLots(request, env, cors, showId) {
+  const auth = await requireMember(request, env, cors, { seller: true });
+  if (auth.error) return auth.error;
+  const show = await env.DB.prepare(`SELECT id FROM breaker_stream_sessions WHERE id=? AND member_id=? AND status IN ('open','live')`)
+    .bind(showId, auth.member.id).first();
+  if (!show) return json({ error: "Show not found or already ended." }, 404, cors);
+  const data = await boundedJson(request, 16000);
+  const lotIds = Array.isArray(data.lotIds) ? data.lotIds.map(value => clean(value, 80)) : [];
+  if (!lotIds.length || lotIds.length > 200 || lotIds.some(id => !validUuid(id)) || new Set(lotIds).size !== lotIds.length) {
+    return json({ error: "Send each queued auction ID once in the desired order." }, 400, cors);
+  }
+  const rows = await env.DB.prepare(`SELECT id FROM breaker_auction_lots WHERE session_id=? AND member_id=? AND status='scheduled'`)
+    .bind(showId, auth.member.id).all();
+  const queuedIds = (rows.results || []).map(row => row.id);
+  const queuedSet = new Set(queuedIds);
+  if (queuedIds.length !== lotIds.length || lotIds.some(id => !queuedSet.has(id))) {
+    return json({ error: "The Auction Block changed. Refresh the queue before reordering it." }, 409, cors);
+  }
+  const stamp = now();
+  await env.DB.batch(lotIds.map((lotId, index) => (
+    env.DB.prepare(`UPDATE breaker_auction_lots SET queue_position=?,updated_at=? WHERE id=? AND session_id=? AND member_id=? AND status='scheduled'`)
+      .bind(index + 1, stamp, lotId, showId, auth.member.id)
+  )));
+  return json({ ok: true, lotIds }, 200, cors);
 }
 
 async function endSellerShow(request, env, cors, showId) {
@@ -3565,8 +3593,12 @@ async function createAuctionLot(request, env, cors, showId) {
   const storeListingId = clean(data.storeListingId, 80);
   const lotCount = Number(data.lotCount ?? 1);
   const numberStart = Number(data.numberStart ?? 1);
+  const auctionDurationSeconds = Number(data.auctionDurationSeconds ?? 30);
   if (!Number.isInteger(lotCount) || lotCount < 1 || lotCount > 100) return json({ error: "Create between 1 and 100 auctions at a time." }, 400, cors);
   if (!Number.isInteger(numberStart) || numberStart < 1 || numberStart > 999999) return json({ error: "Auction numbering must start between 1 and 999999." }, 400, cors);
+  if (!Number.isInteger(auctionDurationSeconds) || auctionDurationSeconds < 5 || auctionDurationSeconds > 3600) {
+    return json({ error: "Auction time must be between 5 seconds and 60 minutes." }, 400, cors);
+  }
   let storeListing = null;
   if (storeListingId) {
     if (!validUuid(storeListingId)) return json({ error: "Choose valid inventory from your personal store." }, 400, cors);
@@ -3597,11 +3629,14 @@ async function createAuctionLot(request, env, cors, showId) {
   const condition = clean(storeListing?.item_condition || data.condition, 80);
   const requestedSaleType = storeListing?.sale_type || data.saleType;
   const saleType = ["cards","breaks","singles","sealed","rip_ship","rtyh","buy_ship"].includes(requestedSaleType) ? requestedSaleType : "sealed";
+  const queue = await env.DB.prepare(`SELECT COALESCE(MAX(queue_position),0) max_position FROM breaker_auction_lots WHERE session_id=? AND member_id=? AND status='scheduled'`)
+    .bind(showId, auth.member.id).first();
+  const queueStart = Number(queue?.max_position || 0) + 1;
   const lotIds = Array.from({ length: lotCount }, () => uid());
   const insertLots = lotIds.map((lotId, index) => {
     const lotTitle = lotCount > 1 ? `${title} #${numberStart + index}` : title;
-    return env.DB.prepare(`INSERT INTO breaker_auction_lots(id,session_id,member_id,title,description,status,starting_bid_cents,bid_increment_cents,created_at,updated_at,image_url,item_condition,sale_type) VALUES(?,?,?,?,?,'scheduled',?,?,?,?,?,?,?)`)
-      .bind(lotId, showId, auth.member.id, lotTitle, description, startingBid, increment, stamp, stamp, imageUrl, condition, saleType);
+    return env.DB.prepare(`INSERT INTO breaker_auction_lots(id,session_id,member_id,title,description,status,starting_bid_cents,bid_increment_cents,created_at,updated_at,image_url,item_condition,sale_type,queue_position,auction_duration_seconds) VALUES(?,?,?,?,?,'scheduled',?,?,?,?,?,?,?,?,?)`)
+      .bind(lotId, showId, auth.member.id, lotTitle, description, startingBid, increment, stamp, stamp, imageUrl, condition, saleType, queueStart + index, auctionDurationSeconds);
   });
   if (!storeListing) {
     if (insertLots.length === 1) await insertLots[0].run();
@@ -3640,10 +3675,12 @@ async function changeAuctionStatus(request, env, cors, lotId, action) {
   if (!lot) return json({ error: "Auction lot not found." }, 404, cors);
   if (action === "open") {
     if (String(env.LIVE_AUCTIONS_ENABLED || "false") !== "true") return json({ error: "Live auctions are locked until production payment and seller payout review is complete." }, 503, cors);
+    const openedAt = now();
+    const closesAt = new Date(Date.now() + Number(lot.auction_duration_seconds || 30) * 1000).toISOString();
     await env.DB.batch([
       env.DB.prepare(`UPDATE breaker_auction_lots SET status='cancelled',updated_at=? WHERE member_id=? AND status='live' AND id<>?`).bind(now(), auth.member.id, lot.id),
-      env.DB.prepare(`UPDATE breaker_auction_lots SET status='live',opened_at=?,current_bid_cents=NULL,winning_member_id=NULL,updated_at=? WHERE id=? AND status='scheduled'`).bind(now(), now(), lot.id),
-      env.DB.prepare(`UPDATE breaker_stream_sessions SET status='live',updated_at=? WHERE id=?`).bind(now(), lot.session_id)
+      env.DB.prepare(`UPDATE breaker_auction_lots SET status='live',opened_at=?,closes_at=?,current_bid_cents=NULL,winning_member_id=NULL,updated_at=? WHERE id=? AND status='scheduled'`).bind(openedAt, closesAt, openedAt, lot.id),
+      env.DB.prepare(`UPDATE breaker_stream_sessions SET status='live',updated_at=? WHERE id=?`).bind(openedAt, lot.session_id)
     ]);
   } else {
     const bannerUntil = new Date(Date.now() + 5000).toISOString();
@@ -3662,6 +3699,9 @@ async function auctionOffNext(request, env, cors, showId) {
   if (String(env.LIVE_AUCTIONS_ENABLED || "false") !== "true") {
     return json({ error: "Live auctions are locked until production payment and seller payout review is complete." }, 503, cors);
   }
+  const data = await boundedJson(request, 1200);
+  const requestedLotId = clean(data.nextLotId, 80);
+  if (requestedLotId && !validUuid(requestedLotId)) return json({ error: "Choose a valid queued auction." }, 400, cors);
   const show = await env.DB.prepare(`SELECT id,title,status FROM breaker_stream_sessions WHERE id=? AND member_id=? AND status IN ('open','live')`)
     .bind(showId, auth.member.id).first();
   if (!show) return json({ error: "Show not found or already ended." }, 404, cors);
@@ -3675,13 +3715,14 @@ async function auctionOffNext(request, env, cors, showId) {
     return json({ error: "Another show already has a live auction. Finish or end that show before advancing this queue." }, 409, cors);
   }
   const next = await env.DB.prepare(`
-    SELECT lot.*,lot.rowid queue_position
+    SELECT lot.*,COALESCE(lot.queue_position,lot.rowid) queue_position
     FROM breaker_auction_lots lot
-    WHERE lot.session_id=? AND lot.member_id=? AND lot.status='scheduled'
-    ORDER BY lot.created_at ASC,lot.rowid ASC LIMIT 1
-  `).bind(showId, auth.member.id).first();
-  if (!next) return json({ error: "No queued item is ready. Add another sale item before using AUCTION OFF." }, 409, cors);
+    WHERE lot.session_id=? AND lot.member_id=? AND lot.status='scheduled' AND (?='' OR lot.id=?)
+    ORDER BY COALESCE(lot.queue_position,lot.rowid) ASC,lot.created_at ASC,lot.rowid ASC LIMIT 1
+  `).bind(showId, auth.member.id, requestedLotId, requestedLotId).first();
+  if (!next) return json({ error: "No queued item is ready. Add another sale item before using NEXT AUCTION." }, 409, cors);
   const stamp = now();
+  const closesAt = new Date(Date.now() + Number(next.auction_duration_seconds || 30) * 1000).toISOString();
   const statements = [];
   if (current) {
     const bannerUntil = new Date(Date.now() + 5000).toISOString();
@@ -3694,14 +3735,14 @@ async function auctionOffNext(request, env, cors, showId) {
   }
   const nextStatementIndex = statements.length;
   statements.push(
-    env.DB.prepare(`UPDATE breaker_auction_lots SET status='live',opened_at=?,current_bid_cents=NULL,winning_member_id=NULL,updated_at=? WHERE id=? AND session_id=? AND member_id=? AND status='scheduled'`)
-      .bind(stamp, stamp, next.id, showId, auth.member.id),
+    env.DB.prepare(`UPDATE breaker_auction_lots SET status='live',opened_at=?,closes_at=?,current_bid_cents=NULL,winning_member_id=NULL,updated_at=? WHERE id=? AND session_id=? AND member_id=? AND status='scheduled'`)
+      .bind(stamp, closesAt, stamp, next.id, showId, auth.member.id),
     env.DB.prepare(`UPDATE breaker_stream_sessions SET status='live',updated_at=? WHERE id=? AND member_id=? AND status IN ('open','live')`)
       .bind(stamp, showId, auth.member.id)
   );
   const results = await env.DB.batch(statements);
   if (Number(results?.[nextStatementIndex]?.meta?.changes || 0) !== 1) {
-    return json({ error: "The auction queue changed while AUCTION OFF was running. Refresh the queue and try again." }, 409, cors);
+    return json({ error: "The Auction Block changed while NEXT AUCTION was running. Refresh the queue and try again." }, 409, cors);
   }
   const updated = await env.DB.prepare(`
     SELECT lot.*,session.viewer_count,session.cloudflare_live_input_uid,winner.live_username winning_display
@@ -4033,6 +4074,8 @@ export async function handlePlatformRoute(request, env, cors) {
   const sellerLotMatch = url.pathname.match(/^\/seller\/shows\/([0-9a-f-]{36})\/lots$/i);
   if (sellerLotMatch && request.method === "GET") return sellerShowLots(request, env, cors, sellerLotMatch[1]);
   if (sellerLotMatch && request.method === "POST") return createAuctionLot(request, env, cors, sellerLotMatch[1]);
+  const sellerLotReorderMatch = url.pathname.match(/^\/seller\/shows\/([0-9a-f-]{36})\/lots\/reorder$/i);
+  if (sellerLotReorderMatch && request.method === "POST") return reorderAuctionLots(request, env, cors, sellerLotReorderMatch[1]);
   const sellerShowEndMatch = url.pathname.match(/^\/seller\/shows\/([0-9a-f-]{36})\/end$/i);
   if (sellerShowEndMatch && request.method === "POST") return endSellerShow(request, env, cors, sellerShowEndMatch[1]);
   const sellerAuctionOffMatch = url.pathname.match(/^\/seller\/shows\/([0-9a-f-]{36})\/auction-off$/i);

@@ -11,7 +11,7 @@
   const sellerSetupUrl = () => (token() ? "referral.html?return=seller" : "referral.html?mode=signin&return=seller");
   const masterSetupUrl = () => (token() ? "admin.html" : "referral.html?mode=signin&portal=master");
   const sellerAccountUrl = "streams.html#seller-home";
-  const sellerGoLiveUrl = "streams.html#seller-show-control";
+  const sellerGoLiveUrl = "streams.html#seller-live";
   const sellerCreateShowUrl = "streams.html#create-show";
   let ownerSignupUrl = "referral.html?mode=signup";
   let portalState = { signedIn: false, sellerAccess: false, employeeAccess: false, masterAccess: false, activePortal: "buyer" };

@@ -1265,12 +1265,13 @@ test("seller cannot schedule store inventory already assigned to an active lot",
   assert.equal(batchCalled, false);
 });
 
-test("AUCTION OFF settles the current lot and promotes the next queued item", async () => {
+test("NEXT AUCTION settles the current lot and promotes a selected queued item", async () => {
   const memberId = "11111111-1111-4111-8111-111111111111";
   const showId = "22222222-2222-4222-8222-222222222222";
   const currentLotId = "33333333-3333-4333-8333-333333333333";
   const nextLotId = "44444444-4444-4444-8444-444444444444";
   const batches = [];
+  let scheduledQueryArgs = [];
   const member = {
     id: memberId,
     email_verified_at: "2026-07-24T00:00:00.000Z",
@@ -1308,6 +1309,7 @@ test("AUCTION OFF settles the current lot and promotes the next queued item", as
                   };
                 }
                 if (sql.includes("lot.status='scheduled'")) {
+                  scheduledQueryArgs = args;
                   return {
                     id: nextLotId,
                     session_id: showId,
@@ -1349,7 +1351,7 @@ test("AUCTION OFF settles the current lot and promotes the next queued item", as
   const response = await handlePlatformRoute(new Request(`https://api.crackpacks.test/seller/shows/${showId}/auction-off`, {
     method: "POST",
     headers: { Authorization: "Bearer session-token" },
-    body: "{}"
+    body: JSON.stringify({ nextLotId })
   }), env, {});
 
   assert.equal(response.status, 200);
@@ -1364,11 +1366,75 @@ test("AUCTION OFF settles the current lot and promotes the next queued item", as
   assert.match(batches[0][0].sql, /status=CASE WHEN winning_member_id IS NULL THEN 'cancelled' ELSE 'sold' END/);
   assert.match(batches[0][1].sql, /UPDATE breaker_auction_bids SET status='winning'/);
   assert.match(batches[0][2].sql, /SET status='live'/);
-  assert.equal(batches[0][2].args[2], nextLotId);
+  assert.match(batches[0][2].sql, /closes_at=/);
+  assert.equal(batches[0][2].args[3], nextLotId);
   assert.match(batches[0][3].sql, /UPDATE breaker_stream_sessions SET status='live'/);
+  assert.deepEqual(scheduledQueryArgs.slice(2), [nextLotId, nextLotId]);
 });
 
-test("AUCTION OFF refuses to finish a live lot when the queue is empty", async () => {
+test("seller can save an exact Auction Block order", async () => {
+  const memberId = "11111111-1111-4111-8111-111111111111";
+  const showId = "22222222-2222-4222-8222-222222222222";
+  const lotIds = [
+    "33333333-3333-4333-8333-333333333333",
+    "44444444-4444-4444-8444-444444444444",
+    "55555555-5555-4555-8555-555555555555"
+  ];
+  const reordered = [lotIds[2], lotIds[0], lotIds[1]];
+  let batchStatements = [];
+  const env = {
+    AUTH_SECRET: "test-secret",
+    DB: {
+      prepare(sql) {
+        return {
+          bind(...args) {
+            return {
+              sql,
+              args,
+              first: async () => {
+                if (sql.includes("JOIN members m")) {
+                  return {
+                    id: memberId,
+                    email_verified_at: "2026-07-24T00:00:00.000Z",
+                    device_verified: 1,
+                    identity_status: "verified",
+                    stripe_identity_status: "verified",
+                    live_username: "ShowBuilder"
+                  };
+                }
+                if (sql.includes("FROM breaker_profiles")) return { status: "active" };
+                if (sql.includes("SELECT id FROM breaker_stream_sessions")) return { id: showId };
+                return null;
+              },
+              all: async () => sql.includes("SELECT id FROM breaker_auction_lots")
+                ? { results: lotIds.map(id => ({ id })) }
+                : { results: [] },
+              run: async () => ({ success: true, meta: { changes: 1 } })
+            };
+          }
+        };
+      },
+      batch: async statements => {
+        batchStatements = statements;
+        return statements.map(() => ({ success: true, meta: { changes: 1 } }));
+      }
+    }
+  };
+
+  const response = await handlePlatformRoute(new Request(`https://api.crackpacks.test/seller/shows/${showId}/lots/reorder`, {
+    method: "POST",
+    headers: { Authorization: "Bearer session-token" },
+    body: JSON.stringify({ lotIds: reordered })
+  }), env, {});
+
+  assert.equal(response.status, 200);
+  assert.deepEqual((await response.json()).lotIds, reordered);
+  assert.equal(batchStatements.length, 3);
+  assert.deepEqual(batchStatements.map(statement => statement.args[0]), [1, 2, 3]);
+  assert.deepEqual(batchStatements.map(statement => statement.args[2]), reordered);
+});
+
+test("NEXT AUCTION refuses to finish a live lot when the queue is empty", async () => {
   const memberId = "11111111-1111-4111-8111-111111111111";
   const showId = "22222222-2222-4222-8222-222222222222";
   let batchCalled = false;
