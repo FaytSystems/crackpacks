@@ -661,6 +661,37 @@ body[data-seller-tool="show-control"] .seller-tool-menu.is-open .seller-tool-men
   gap: 10px;
 }
 
+.seller-payout-status {
+  margin: 0;
+  min-height: 0;
+  color: rgba(255,255,255,0.82);
+  font-weight: 800;
+}
+
+.seller-payout-status:not(:empty) {
+  padding: 12px 14px;
+  border: 1px solid rgba(56,232,255,0.42);
+  border-radius: 7px;
+  background: rgba(56,232,255,0.08);
+}
+
+.seller-payout-status[data-kind="error"] {
+  border-color: rgba(255,100,130,0.78);
+  color: #ffd6df;
+  background: rgba(255,75,111,0.12);
+}
+
+.seller-payout-status[data-kind="success"] {
+  border-color: rgba(117,255,183,0.68);
+  color: #bfffd7;
+  background: rgba(117,255,183,0.1);
+}
+
+.seller-payout-status:focus {
+  outline: 2px solid #38e8ff;
+  outline-offset: 2px;
+}
+
 .seller-launch-readiness ul {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

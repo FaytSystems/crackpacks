@@ -9,7 +9,7 @@
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/css/styles.css?v=1.11.2">
   <link rel="stylesheet" href="assets/css/nav-profile.css?v=2.7.0">
-  <link rel="stylesheet" href="assets/css/streams-hub.css?v=2.7.0">
+  <link rel="stylesheet" href="assets/css/streams-hub.css?v=2.8.0">
   <link rel="stylesheet" href="assets/css/live-chat.css?v=1.0.0">
   <link rel="stylesheet" href="assets/css/video-auction-hud.css?v=1.0.0">
 </head>
@@ -140,10 +140,10 @@
           <div><span>Requirements</span><strong data-payout-requirements>Checking</strong></div>
         </div>
         <div class="seller-payout-actions">
-          <button class="btn btn-primary" type="button" data-seller-payout-start>Set up seller payouts</button>
+          <button class="btn btn-primary" type="button" data-seller-payout-start aria-describedby="seller-payout-status">Set up seller payouts</button>
           <button class="btn btn-outline" type="button" data-seller-payout-refresh>Refresh status</button>
         </div>
-        <p class="campaign-form-status" data-seller-payout-status aria-live="polite"></p>
+        <p class="campaign-form-status seller-payout-status" id="seller-payout-status" data-seller-payout-status role="status" aria-live="polite" tabindex="-1"></p>
         <section class="seller-launch-readiness" aria-labelledby="seller-readiness-title">
           <h3 id="seller-readiness-title">Launch readiness</h3>
           <ul data-seller-readiness-list></ul>
@@ -919,6 +919,6 @@
   <script src="assets/js/portal-mode.js?v=1.2.5"></script>
   <script src="assets/js/live-chat.js?v=1.0.0"></script>
   <script src="assets/js/auction-realtime.js?v=1.0.0"></script>
-  <script src="assets/js/streams-hub.js?v=2.7.0"></script>
+  <script src="assets/js/streams-hub.js?v=2.8.0"></script>
 </body>
 </html>

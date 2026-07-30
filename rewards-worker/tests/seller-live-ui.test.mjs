@@ -306,6 +306,25 @@ test("END SHOW terminates the public feed and removes the public directory card"
   assert.match(routes, /publicRemoved: true/);
 });
 
+test("seller payout setup reports progress, validates Stripe, and exposes failures", async () => {
+  const [html, publicHtml, script, css] = await Promise.all([
+    read("streams.html"),
+    read("live-shows.html"),
+    read("assets/js/streams-hub.js"),
+    read("assets/css/streams-hub.css")
+  ]);
+  assert.match(html, /data-seller-payout-start aria-describedby="seller-payout-status"/);
+  assert.match(html, /data-seller-payout-status role="status"/);
+  assert.match(html, /streams-hub\.js\?v=2\.8\.0/);
+  assert.match(publicHtml, /streams-hub\.js\?v=2\.8\.0/);
+  assert.match(script, /Creating your secure Stripe payout setup/);
+  assert.match(script, /payoutUrl\.protocol !== "https:"/);
+  assert.match(script, /stripe\\\.com/);
+  assert.match(script, /status\?\.scrollIntoView/);
+  assert.match(css, /\.seller-payout-status\[data-kind="error"\]/);
+  assert.match(css, /\.seller-payout-status\[data-kind="success"\]/);
+});
+
 test("Seller Live enforces Stream Credits before start and during a one-minute grace period", async () => {
   const [html, script, css, routes, worker] = await Promise.all([
     read("streams.html"),

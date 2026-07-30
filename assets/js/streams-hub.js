@@ -2851,14 +2851,29 @@
 
   $("[data-seller-payout-start]")?.addEventListener("click", async event => {
     const button = event.currentTarget;
+    const idleLabel = button.textContent;
     button.disabled = true;
+    button.setAttribute("aria-busy", "true");
+    button.textContent = "Opening Stripe...";
+    setStatus("[data-seller-payout-status]", "Creating your secure Stripe payout setup...", "");
     try {
       const payload = await api("/seller/payouts/onboarding", { method: "POST", body: "{}" });
       if (!payload.url) throw new Error("Stripe did not return a payout setup link.");
-      window.location.assign(payload.url);
+      const payoutUrl = new URL(payload.url);
+      if (payoutUrl.protocol !== "https:" || !/(^|\.)stripe\.com$/i.test(payoutUrl.hostname)) {
+        throw new Error("Stripe returned an invalid payout setup link.");
+      }
+      button.textContent = "Redirecting...";
+      setStatus("[data-seller-payout-status]", "Secure link created. Redirecting to Stripe...", "success");
+      window.location.assign(payoutUrl.href);
     } catch (error) {
       setStatus("[data-seller-payout-status]", error.message, "error");
+      const status = $("[data-seller-payout-status]");
+      status?.focus({ preventScroll: true });
+      status?.scrollIntoView({ behavior: "smooth", block: "nearest" });
       button.disabled = false;
+      button.removeAttribute("aria-busy");
+      button.textContent = idleLabel;
     }
   });
 
